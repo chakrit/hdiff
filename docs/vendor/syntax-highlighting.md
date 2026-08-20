@@ -74,3 +74,60 @@ for `syntect` 5.3.0 at audit time.
 Triage verdict: **GO**, with the exact version pinned in `Cargo.lock` when adopted. This is not a
 full transitive-closure or artifact-vs-repository audit; the dependency should be rechecked when
 the lockfile and feature set are introduced.
+
+## Standard audit follow-up
+
+Audit date: 2026-08-20. The exact crates.io artifact for `syntect` 5.3.0 was downloaded and
+unpacked without executing code. The manifest sets `build = false`, has no `build.rs`, and
+ships no native object or shared-library files. The recommended `default-fancy` feature path
+uses `fancy-regex` and does not enable `onig`/`onig_sys`; the lockfile records the optional
+native path but it is not in the recommended feature closure.
+
+The published artifact was compared with the Git tag `v5.3.0` at commit
+`e4670846ecf16d8832db6c43d531bec466214e27`. No shipped source file differed from the tag. The
+artifact-only files were Cargo-generated metadata (`.cargo_vcs_info.json`, `Cargo.toml.orig`);
+the repository-only files were maintainer tooling, test fixtures, and CI material. No
+unmapped executable blob was found; the `.packdump` files are embedded syntax/theme data.
+
+Capability review of the shipped `src/` found no networking, process spawning, credential or
+environment-secret reads, persistence writes, dynamic loading, or obfuscation. `std::env` and
+`std::process::exit` hits occur only in examples. The sole `unsafe` block is the documented
+unchecked style-bit conversion in `src/highlighting/style.rs`.
+
+The source-package lockfile contains the default-fancy dependency closure at 5.3.0,
+including `fancy-regex`, `regex`, `regex-automata`, `regex-syntax`, `bincode`, `flate2`,
+`fnv`, `once_cell`, `plist`, `serde`, `serde_derive`, `thiserror`, `walkdir`, and `yaml-rust`
+plus their supporting crates. It also contains dev-only and optional `onig` packages; those
+are outside the recommended default-fancy runtime path.
+
+OSV and GitHub Advisory searches found no advisory naming `syntect` 5.3.0. Advisory databases
+can lag, and this static review does not prove that every transitive crate's published bytes
+match its VCS source. Re-run the audit against hdiff's committed `Cargo.lock` immediately
+before installation, including advisory checks for every resolved package.
+
+Standard-audit verdict: **GO WITH CAVEAT**. The direct package and artifact integrity checks
+are clean; adoption remains contingent on pinning the resolved lockfile and repeating the
+transitive advisory/artifact review when the dependency is actually added.
+
+## hdiff lockfile audit
+
+hdiff was initialized as a Rust binary crate and added `syntect = 5.3.0` with
+`default-features = false` and `features = ["default-fancy"]`. `Cargo.lock` resolves 48
+packages. `cargo test --locked` passed (10.77s compile/test profile) and
+`cargo clippy --locked --all-targets --all-features` passed (3.58s check profile).
+
+The resolved default-fancy closure contains no networking, process execution, credential or
+secret reads, dynamic loading, or persistence markers in the downloaded Rust sources. No
+resolved package contains a `build.rs` hook or shipped native object/shared-library blob.
+
+OSV querybatch over all 48 locked crates returned two informational advisories:
+
+- `bincode 1.3.3` — `RUSTSEC-2025-0141`, unmaintained after the project ceased development.
+- `yaml-rust 0.4.5` — `RUSTSEC-2024-0320`, unmaintained and recommends the `yaml-rust2` fork.
+
+These are transitive dependencies enabled by syntect's `dump-*` and `yaml-load` features;
+they are not known exploit advisories, but they reduce maintenance confidence. Replacing them
+is not an hdiff-local change because syntect owns those feature edges. Final verdict for the
+current lockfile: **NEEDS-HUMAN REVIEW / CONDITIONAL GO**. The dependency is technically
+clean and tests pass, but adoption should be accepted only with explicit approval of these two
+unmaintained transitive crates or an upstream syntect feature/dependency change.
