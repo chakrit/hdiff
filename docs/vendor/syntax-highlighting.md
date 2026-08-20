@@ -131,3 +131,27 @@ is not an hdiff-local change because syntect owns those feature edges. Final ver
 current lockfile: **NEEDS-HUMAN REVIEW / CONDITIONAL GO**. The dependency is technically
 clean and tests pass, but adoption should be accepted only with explicit approval of these two
 unmaintained transitive crates or an upstream syntect feature/dependency change.
+
+## Advisory applicability review
+
+Reviewed 2026-08-20 against the RustSec advisory pages and syntect 5.3.0 source.
+
+`bincode 1.3.3` is flagged only as unmaintained (`RUSTSEC-2025-0141`); the advisory states
+that 1.3.3 is considered complete and lists no patched version or vulnerability. Syntect uses
+it for serialization/deserialization of its own `SyntaxSet` and `ThemeSet` dump format in
+`src/dumps.rs`. hdiff uses the built-in embedded dumps, not attacker-controlled dump files, so
+the advisory does not currently create an exploitable hdiff path. Keep the dependency pinned
+and avoid exposing syntect's file-dump loading APIs to untrusted input.
+
+`yaml-rust 0.4.5` is also flagged only as unmaintained (`RUSTSEC-2024-0320`); the advisory
+reports no patched version or vulnerability and recommends `yaml-rust2` as a maintained fork.
+Syntect uses it behind `yaml-load` to parse Sublime syntax/theme definitions. hdiff's planned
+baseline uses syntect's bundled definitions and does not accept user-supplied grammar files, so
+the advisory does not currently create an exploitable hdiff path. If custom grammars become a
+feature, treat their parsing as an untrusted-input boundary and reassess resource-exhaustion
+risk before enabling it.
+
+Applicability decision: **not currently applicable as a security vulnerability**; both findings
+are maintenance-risk advisories. They remain recorded as conditional-go caveats because the
+dependency edges are owned by syntect and cannot be replaced from hdiff without changing the
+upstream feature design.
