@@ -1,5 +1,34 @@
 # Rust syntax-highlighting libraries
 
+> Current decision: the Tree-sitter strategy below supersedes the earlier syntect recommendation.
+
+## Tree-sitter decision
+
+Decision date: 2026-08-20. Remove syntect completely. Use `tree-sitter` and
+`tree-sitter-highlight` with statically linked grammar crates for Rust, JavaScript, Python, Go,
+and C. Keep the grammar set deliberately small until usage justifies another parser.
+
+The highlighter boundary accepts a language and a borrowed source slice and returns terminal
+spans. It owns one parser and highlight configuration per language, initializes each lazily on
+first use, reuses parser/query state across lines, and keeps a bounded cache of parsed files.
+Diff prefixes are stripped into a borrowed payload view; returned byte ranges are translated
+back to display columns without allocating or copying the source line. Highlighting runs only
+for visible rows, with plain-text fallback for unknown languages or parser errors.
+
+This is the performance shape: no runtime grammar discovery, no filesystem lookup in the hot
+path, no per-line parser construction, no whole-file string copies, and no syntax-tree work
+for rows outside the viewport. The document model remains independent of Tree-sitter node and
+query types so the renderer can stay terminal-focused.
+
+Tree-sitter queries assign semantic capture names such as `keyword`, `function`, `type`, and
+`string`; hdiff maps those captures to a compact terminal style table. Grammar crates and
+queries are version-pinned together. Adding a language is an explicit dependency and registry
+entry, not a dynamic plugin scan.
+
+The initial dependency set is `tree-sitter 0.26.12`, `tree-sitter-highlight 0.26.12`,
+`tree-sitter-rust 0.24.2`, `tree-sitter-javascript 0.25.0`, `tree-sitter-python 0.25.0`,
+`tree-sitter-go 0.25.0`, and `tree-sitter-c 0.24.2`.
+
 Status: researched 2026-08-20. Version and feature details are observations from the
 listed sources and must be rechecked when the dependency is added.
 

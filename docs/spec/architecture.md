@@ -130,8 +130,8 @@ Rust is the proposed implementation language because the product is a terminal C
 control over input, rendering, cleanup, and startup behavior. The terminal library, argument
 parser, and diff-parser choices are not yet settled; they should be selected from maintained
 public APIs and evaluated against resize events, raw-mode restoration, ANSI handling, and test
-seams. Syntax highlighting is assigned to `syntect` through an hdiff-owned boundary; the
-dependency rationale and alternative are recorded in
+seams. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned boundary; the
+parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
 
 The first test boundary should be terminal-independent: parser fixtures, state-transition tests,
