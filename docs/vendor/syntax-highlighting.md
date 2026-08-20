@@ -29,6 +29,35 @@ The initial dependency set is `tree-sitter 0.26.12`, `tree-sitter-highlight 0.26
 `tree-sitter-rust 0.24.2`, `tree-sitter-javascript 0.25.0`, `tree-sitter-python 0.25.0`,
 `tree-sitter-go 0.25.0`, and `tree-sitter-c 0.24.2`.
 
+## Tree-sitter standard safety audit
+
+Audit date: 2026-08-20. The committed `Cargo.lock` contains 33 packages. The exact registry
+sources were acquired with `cargo vendor target/audit-vendor` without applying its Cargo
+configuration. The default closure has no optional WASM or Wasmtime feature enabled.
+
+The direct parser crates contain legitimate build scripts that compile their bundled parser C
+source into the build output using `cc`; they do not download files, invoke shells, read
+credentials, or write outside `OUT_DIR`. `tree-sitter-language` only publishes WASM metadata
+when a WASM target is selected. No precompiled object, shared-library, DLL, or WASM blob is
+shipped in the audited packages.
+
+The runtime source closure has no networking, process execution, environment-secret reads,
+persistence writes, dynamic loading, or obfuscation markers. The C sources contain no socket,
+process, dynamic-loader, or memory-protection calls. FFI and `unsafe` code are limited to the
+documented Rust bindings to the bundled Tree-sitter C parser library; grammar crates expose
+their generated `LANGUAGE` handles through that binding.
+
+The published artifacts were compared with the matching GitHub tags for `tree-sitter`,
+`tree-sitter-highlight`, `tree-sitter-c`, `tree-sitter-go`, `tree-sitter-javascript`,
+`tree-sitter-python`, and `tree-sitter-rust`. Differences were limited to Cargo-generated
+manifests/metadata, generated Rust bindings, and packaged C/query files expected by the crate
+publish configuration; no unexplained executable payload was found.
+
+OSV querybatch over all 33 locked crates returned zero advisories. The direct repositories are
+the official Tree-sitter organization projects, with stable tagged releases matching the
+locked versions. Standard-audit verdict: **GO**. Continue to pin the lockfile and keep the
+WASM/Wasmtime feature disabled unless it is separately audited.
+
 Status: researched 2026-08-20. Version and feature details are observations from the
 listed sources and must be rechecked when the dependency is added.
 
