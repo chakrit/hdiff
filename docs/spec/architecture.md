@@ -1,11 +1,11 @@
 ---
-status: draft
+status: accepted
 ---
 
 # hdiff initial architecture
 
-This document is the first architectural position for `hdiff`. It is intentionally a review
-draft: statements under “Open decisions” are questions, not settled behavior.
+This document records the accepted first-release architecture for `hdiff`. Statements under
+“Open decisions” remain intentionally unresolved.
 
 ## Product intent
 
@@ -22,14 +22,14 @@ and faithful rendering of the supplied diff.
 
 ### In scope
 
-- Read unified diff text from standard input.
-- Read a diff from one or more file arguments when that input shape is useful to the CLI.
+- Read unified diff text from standard input or one patch-file operand.
+- Compare POSIX-style file and directory operands, including recursive `-r` mode.
 - Parse the stream into files, hunks, and line records while preserving original text.
 - Show a navigable file list and a focused diff view.
 - Navigate files, hunks, and lines with a small discoverable keymap.
 - Scroll vertically without losing the current location.
 - Resize cleanly and redraw from retained state.
-- Toggle at least a normal diff view and a side-by-side view if the terminal width permits.
+- Toggle unified and side-by-side views without silently changing the selected mode.
 - Provide a pager-first TUI with a persistent bottom toolbar that shows the active mode and
   context-sensitive shortcut hints.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
@@ -69,35 +69,50 @@ not parse diff text, and input handling must not mutate parsed records in place.
 
 ## Core model
 
-The document is the source of truth and retains enough original content to render unknown or
-partially understood diff lines without data loss.
+The document is the source of truth and retains enough original content to render unknown but
+valid diff lines without data loss.
 
 - `DiffDocument`: ordered files and document-level metadata.
 - `DiffFile`: file identity, headers, and ordered hunks.
 - `Hunk`: old/new ranges, header text, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
-- `Cursor`: the currently focused file/hunk/record location.
-- `ViewMode`: a tagged choice of unified or side-by-side presentation.
-- `Viewport`: terminal width, height, and scroll offsets.
+- `Selection`: the active file-list selection; diff movement is viewport-based and has no
+  editing cursor.
+- `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
+  and other session-local display choices.
+- `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
+- `Layout`: derived panes, rows, effective visibility, and footer hints.
 
 The interaction state is a value that transitions in response to an input event. A transition
 returns a new state and a rendering request; it does not reach into the terminal or document.
-This makes navigation testable without a real terminal and keeps invalid cursor positions out of
-the renderer.
+Selection, viewport position, and preferences are authoritative interaction state. Wrapping,
+row numbers, pane geometry, and rendered rows are derived. This makes navigation testable
+without a real terminal and keeps invalid positions out of the renderer.
 
 ## User-facing feature sequence
 
 The implementation should land in slices that each leave a usable surface:
 
-1. Parse stdin and render a static, faithful unified diff.
+1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
-3. Add file/hunk navigation and a visible position indicator.
+3. Add file/hunk navigation and synchronized file selection.
 4. Add the interactive file list and synchronized file selection.
-5. Add side-by-side rendering where width allows; defer horizontal scrolling until real usage
-   demonstrates that wrapping or a wider layout cannot solve the need.
-6. Add robust malformed-input handling and non-terminal output behavior.
-7. Refine highlighting coverage and additional navigation after the core interaction is stable;
-   highlighting itself remains a first-release capability.
+5. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+6. Add implicit Tree-sitter semantic strategies with textual fallback.
+7. Refine highlighting coverage and additional navigation after the core interaction is stable.
+
+## Input contract
+
+The command follows the POSIX `diff` operand model where practical. Two file operands compare
+files; two directory operands compare corresponding entries; `-r` enables recursive directory
+comparison; and `-` denotes standard input. hdiff adds viewer modes for one existing patch or
+diff file and for a unified diff supplied on standard input. It accepts unified diffs from any
+producer and performs no Git operations.
+
+Structural parsing is strict. Valid unknown lines are preserved where they can be attached
+unambiguously, but malformed or truncated input is rejected with a contextual non-zero error
+before the interactive TUI starts. The first release does not model partial documents in the
+TUI.
 
 ## Initial CLI surface
 
@@ -107,9 +122,9 @@ The first command should be intentionally small:
 hdiff [OPTIONS] [FILE ...]
 ```
 
-The default input is standard input. Options should describe representations or input policy,
-not encode interactive procedures. The exact option names and whether file arguments belong in
-the first release remain open until the input contract is tested against real usage.
+Options describe representations or input policy, not interactive procedures. Runtime display
+changes are session-local. An rc file may provide defaults, but hdiff never writes those
+changes back during a session.
 
 ## Interaction model
 
@@ -119,24 +134,109 @@ and a compact toolbar for the common actions. The toolbar is a navigational aid,
 control plane; every setting has one keyboard path, and changing it produces a new interaction
 state and immediate redraw.
 
-The toolbar should expose the current file, view mode, highlighting state, and the shortcuts
-relevant to the current context. A help view can expose the complete keymap when the compact
-toolbar cannot fit it. The exact visual treatment and command vocabulary remain open, but the
-pager-first model and live shortcut-driven settings are settled product requirements.
+The left file list is the primary navigation pane. As width decreases it collapses before the
+diff view; a compact footer hint remains when possible. If the terminal is too narrow or too
+short for the minimum layout, the only rendered content is `screen too narrow` or
+`screen too short`. The selected layout is never silently replaced by another layout.
+
+The toolbar/footer should expose the current file and the shortcuts relevant to the current
+context. A help view can expose the complete keymap when the compact footer cannot fit it.
+The pager-first model and live shortcut-driven settings are settled product requirements.
+
+## View model
+
+View choices are orthogonal rather than one growing mode enum:
+
+- `DiffLayout`: unified or side-by-side;
+- `DiffGranularity`: line-based or character-based;
+- `DiffSemantics`: textual or Tree-sitter semantic strategy;
+- navigation-pane state: file list visibility and active pane;
+- display preferences: wrapping, context-line count, diff contrast, highlighting, and color
+  capability.
+
+`EffectiveView` derives the renderable combination from these preferences, document
+capabilities, language support, and terminal dimensions. Tree-sitter semantic diff is used when
+the language and parser are available, with textual fallback otherwise. The user-selected
+layout is preserved through resizes; hdiff does not automatically switch between unified and
+side-by-side.
+
+Wrapping is session-local and toggled independently from layout. When wrapping is disabled,
+horizontal movement uses one synchronized offset for side-by-side panes. Context-line changes
+are session-local and recompute the visible layout without mutating the document.
+
+Diff contrast is a session-local preference with four intensity levels, independent of
+line-versus-character diff granularity:
+
+1. `none`: no diff-specific contrast; render additions, deletions, and context with the base
+   palette;
+2. `low`: the preferred default, using a gray/silver diff background, muted body text, and
+   restrained red minus and green plus markers;
+3. `high`: stronger red/green emphasis while retaining readable surrounding context;
+4. `max`: the strongest red/green highlighting, including full-line emphasis where the active
+   layout supports it.
+
+The `low` palette is the locked preferred display: neutral gray/silver surroundings and muted
+text keep the diff readable, while red deletions and green additions remain immediately
+recognizable without saturating the whole terminal. Contrast changes never alter the parsed
+document and apply consistently in unified and side-by-side layouts. `DiffGranularity` controls
+whether differences are represented as lines or characters; `DiffContrast` controls only their
+visual intensity and never changes that representation.
+
+The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
+`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` paragraph-like movement,
+`Tab` file rotation, `w` wrapping, `c` line/character detail, `v` unified/side-by-side,
+`+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
+bindings. There is no diff editing cursor; movement changes the viewport.
 
 ## Technology direction
 
-Rust is the proposed implementation language because the product is a terminal CLI with strict
-control over input, rendering, cleanup, and startup behavior. The terminal library, argument
-parser, and diff-parser choices are not yet settled; they should be selected from maintained
-public APIs and evaluated against resize events, raw-mode restoration, ANSI handling, and test
-seams. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned boundary; the
-parser set and performance rationale are recorded in
+Rust is the implementation language. `ratatui` owns layout and rendering; `crossterm` owns
+terminal I/O, events, resize, raw mode, alternate-screen handling, and lifecycle operations.
+The backend must support event reads from an explicit controlling-terminal handle when stdin
+contains diff data. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned
+boundary; the parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
 
 The first test boundary should be terminal-independent: parser fixtures, state-transition tests,
 layout snapshots, and renderer output tests. A small number of end-to-end terminal checks can be
 added after the lifecycle boundary is known.
+
+## Input and terminal boundary
+
+The first release reads the complete input before entering raw mode. Input is represented as
+`InputSource = Stdin | DiffFiles(Vec<PathBuf>)`; combining piped standard input with file
+arguments is an explicit usage error. Interactive mode requires a controlling terminal
+independent of the data source, so `stdin` supplies diff bytes while the controlling terminal
+supplies events and output. If no controlling terminal is available, hdiff produces finite
+non-interactive output. hdiff is the pager and must not launch or depend on an external pager.
+The output contract decides whether interactive mode is attempted before a controlling
+terminal is opened. The terminal backend must read events from an explicit controlling-terminal
+handle rather than rebinding standard input.
+
+## Interaction and layout state
+
+Interaction state is split into selection, viewport, preferences, and derived layout. Resize is
+an event; layout is recomputed from retained content and the latest dimensions, with resize
+bursts coalesced. The selected layout is preserved through resize. The file-list pane collapses
+before the diff view, and below minimum width or height the layout renders only the corresponding
+screen-size message. Zero-sized layouts remain valid values rather than arithmetic errors.
+
+## Lossless and safe rendering
+
+Each record retains exact source bytes, decoded text, classification, and sanitized style
+spans. Parsing uses ANSI-free text. Rendering interprets supported SGR styling only and never
+replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal. The authoritative
+document is never truncated; only decoding, highlighting, wrapping, and visible-row work may
+be bounded.
+
+Terminal setup is staged and idempotent. After terminal acquisition, every return path restores
+raw mode, the alternate screen, cursor state, and controlling-terminal attributes. Broken pipes
+are quiet success only for finite non-interactive output.
+
+The terminal-independent test boundary must cover invalid UTF-8, CRLF, embedded SGR/OSC/CSI,
+combining marks, double-width graphemes, tabs, zero- and one-row terminals, long lines,
+resizing while focused on a wrapped record, resize storms, read errors after partial input,
+draw errors, Ctrl-C, and broken pipes.
 
 ## Failure and safety posture
 
@@ -144,20 +244,34 @@ added after the lifecycle boundary is known.
 - Preserve unknown diff lines rather than silently dropping them.
 - Restore terminal state on every exit path after raw mode is entered.
 - Treat a resize as a new layout calculation over the same document and interaction state.
-- Report malformed input with context while still displaying the recoverable portion when safe.
+- Reject malformed or truncated input with context before entering the interactive TUI.
 - Make non-terminal output finite and script-friendly rather than entering an interactive loop.
+- Interpret only supported SGR styling. Preserve source bytes separately, neutralize OSC/CSI/DCS
+  and other unsupported control sequences, and never replay arbitrary input escapes.
+- Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when the
+  terminal supports it, falling back by capability. User-configurable themes are later scope.
+
+## Terminal lifecycle
+
+Interactive mode is decided from the output contract before a controlling terminal is opened.
+Terminal setup is staged and idempotent, with ownership unwound in reverse order. Quit and
+Ctrl-C restore terminal state cleanly. Resize events coalesce to the latest dimensions and
+trigger a redraw. Draw and read failures report diagnostics after cleanup. Broken pipes are
+quiet success only for finite non-interactive output. Suspend/resume is supported only through
+a safe public backend transaction; otherwise it remains deferred. A cleanup guard or panic hook
+is best effort; SIGKILL and abort-style termination cannot be restored.
 
 ## Open decisions for review
 
-- Is `hdiff` specifically a Git diff viewer, or must unified diffs from any producer be first-class?
-- Should file arguments mean “diff these paths” or “read these already-produced diff files”?
-- Is side-by-side comparison a first-release requirement or a later view mode?
-- What is the minimum keymap: familiar pager keys only, or explicit file-list shortcuts too?
-- What should the non-terminal contract be: pass-through, normalized rendering, or an error?
-- Which terminal backend and parser crates meet the lifecycle and test requirements?
+- What exact option names and rc-file location should the input and display contract use?
+- Which character-diff and Tree-sitter semantic-diff algorithms should implement the strategy
+  boundaries?
 
 ## Next design work
 
-The next pass should study `dandavison/delta` and comparable terminal viewers, then amend this
-document with the chosen input contract, dependency selections, state-transition vocabulary,
-and initial keymap. Implementation begins only after those choices are reviewed.
+Prior-art review of Delta, Tig, and Difftastic is recorded in
+`docs/vendor/terminal-diff-viewers.md`. The first implementation slice is: strict unified-diff
+parsing; POSIX-style operands plus patch-file/stdin modes; terminal acquisition and cleanup;
+file list, footer, and faithful unified rendering; viewport movement, wrapping, horizontal
+scrolling, resize, the locked keymap, context-line settings, and capability-aware color.
+Side-by-side, character, and semantic strategies follow behind the explicit view boundaries.
