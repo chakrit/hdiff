@@ -6,10 +6,15 @@ status: accepted
 
 ## Current position
 
-The strict, loss-preserving unified-diff parser and input-selection boundary are complete.
-The static renderer is also complete: it produces finite non-interactive output, preserves
-source bytes in the document, neutralizes terminal controls, and treats broken pipes as quiet
-success for finite output.
+The strict, loss-preserving Git/unified-diff parser and finite-output boundary are complete.
+They accept multi-line hunks, extended Git metadata, ANSI-colored Git output, and metadata-only
+Git sections. Finite rendering preserves review content while neutralizing terminal controls and
+treats broken pipes as quiet success.
+
+The interactive terminal UI is not complete. Its manual CROSSTERM drawing path conflicts with
+the accepted Ratatui rendering boundary and does not present separate panes reliably. Do not
+describe file navigation, hunk navigation, resize handling, or the file list as delivered until
+they are rendered through Ratatui and pass the human checks below.
 
 ## Completed slices
 
@@ -17,19 +22,60 @@ success for finite output.
 2. Record terminal-diff-viewer prior art and the Tree-sitter dependency decision and audit.
 3. Implement strict parsing, loss-preserving document types, patch/stdin input selection, and
    malformed-input rejection.
-4. Implement safe finite unified rendering and quiet broken-pipe handling.
-5. Implement terminal lifecycle handling with explicit controlling-TTY events, staged cleanup,
-   pager navigation, and resize redraw.
-6. Implement file/hunk navigation and the interactive file list with synchronized selection.
+4. Implement safe finite unified rendering and quiet broken-pipe handling, including Git
+   metadata, multi-line hunks, colored input, and metadata-only Git sections.
 
-## Next slice
+## Interactive delivery sequence
 
-Implement side-by-side rendering, character detail, and synchronized horizontal scrolling.
+Each slice is incomplete until its automated checks and its human check both pass.
+
+1. Establish the Ratatui application boundary and render a unified view with distinct file-list
+   and diff panes. CROSSTERM remains responsible only for terminal lifecycle and events.
+
+   Human check: run `./git.sh diff HEAD~2` in a normal terminal. The file list is visibly padded
+   or divided from the diff pane; no file name touches a diff header. The selected file is clear,
+   the complete selected diff is visible in its pane, and `q` restores the terminal normally.
+
+2. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
+   file rotation, hunk movement, and resize.
+
+   Human check: with a multi-file, multi-hunk diff open, verify `j`/`k`, `Ctrl-D`/`Ctrl-U`, and
+   `g`/`G` move only the diff viewport; `Tab` changes the selected file and returns that file to
+   its top; `{` and `}` move between that file's hunks; resizing redraws the same selected file
+   and does not leave terminal artifacts; `q` restores the terminal.
+
+3. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
+   viewport meaning, and file-list pane.
+
+   Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
+   aligned panes; switching back to unified view retains the selected file and approximate
+   location. Resize both views without overlap or clipped pane borders.
+
+4. Add character-level detail within changed line pairs and session-local context controls.
+
+   Human check: press `c` on a changed line and see only changed character spans gain detail;
+   press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
+   that the selected file and current hunk remain understandable.
+
+5. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+
+   Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
+   Both before and after panes move by the same horizontal offset and their aligned content stays
+   aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
 ## Later slices
 
-1. Tree-sitter semantic strategies with textual fallback.
-2. Highlighting coverage and additional navigation after the core interaction is stable.
+1. Add implicit Tree-sitter semantic strategies with textual fallback.
+
+   Human check: open supported and unsupported source files in the same diff. Supported files
+   gain semantic detail when available; unsupported files remain readable with textual diffing,
+   and neither case changes the selected layout unexpectedly.
+
+2. Refine highlighting coverage and additional navigation after the core interaction is stable.
+
+   Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
+   footer/help text matches the key behavior, additions and deletions remain distinguishable, and
+   low contrast remains readable without saturating the whole terminal.
 
 ## Working rule
 
