@@ -40,8 +40,8 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
         index += 2;
         while index < lines.len() && decoded_line(lines[index]).starts_with("@@ ") {
             let header = source_line(lines[index]);
-            let expected =
-                hunk_count(&header.text).ok_or_else(|| error(index, "invalid hunk header"))?;
+            let expected = hunk_count(&header.structural_text)
+                .ok_or_else(|| error(index, "invalid hunk header"))?;
             index += 1;
             let mut records = Vec::new();
             let mut old_seen = 0;
@@ -54,10 +54,11 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
                     break;
                 }
 
-                let (kind, payload) = match line.first() {
-                    Some(b' ') => (RecordKind::Context, &line[1..]),
-                    Some(b'+') => (RecordKind::Addition, &line[1..]),
-                    Some(b'-') => (RecordKind::Deletion, &line[1..]),
+                let structural_line = decoded_line(line);
+                let (kind, payload) = match structural_line.as_bytes().first() {
+                    Some(b' ') => (RecordKind::Context, after_visible_marker(line)),
+                    Some(b'+') => (RecordKind::Addition, after_visible_marker(line)),
+                    Some(b'-') => (RecordKind::Deletion, after_visible_marker(line)),
                     _ => (RecordKind::Raw, line),
                 };
                 if kind != RecordKind::Raw {
@@ -106,22 +107,48 @@ fn error(line: usize, message: &str) -> ParseError {
 
 fn hunk_count(header: &str) -> Option<(usize, usize)> {
     let mut parts = header.split_whitespace();
-    parts.next()?;
-    let old = parts
-        .next()?
-        .trim_start_matches('-')
-        .split(',')
-        .next()?
-        .parse()
-        .ok()?;
-    let new = parts
-        .next()?
-        .trim_start_matches('+')
-        .split(',')
-        .next()?
-        .parse()
-        .ok()?;
+    (parts.next()? == "@@").then_some(())?;
+    let old = range_count(parts.next()?, '-')?;
+    let new = range_count(parts.next()?, '+')?;
+    (parts.next()? == "@@").then_some(())?;
+
     Some((old, new))
+}
+
+fn range_count(range: &str, prefix: char) -> Option<usize> {
+    let range = range.strip_prefix(prefix)?;
+    let (start, count) = match range.split_once(',') {
+        Some((start, count)) => (start, count),
+        None => (range, "1"),
+    };
+    start.parse::<usize>().ok()?;
+
+    count.parse().ok()
+}
+
+fn after_visible_marker(line: &[u8]) -> &[u8] {
+    let mut index = 0;
+    while index < line.len() {
+        if line[index] == b'\x1b' {
+            index += 1;
+            if line.get(index) == Some(&b'[') {
+                index += 1;
+                while let Some(byte) = line.get(index) {
+                    index += 1;
+                    if (b'@'..=b'~').contains(byte) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if !line[index].is_ascii_control() {
+            return &line[index + 1..];
+        }
+        index += 1;
+    }
+
+    unreachable!("record has a visible marker")
 }
 
 #[cfg(test)]
@@ -140,28 +167,32 @@ mod tests {
     }
 
     #[test]
-    fn parses_git_extended_headers_before_a_file_hunk() {
-        let input = b"diff --git a/readme.txt b/readme.txt\nindex 1111111..2222222 100644\n--- a/readme.txt\n+++ b/readme.txt\n@@ -1 +1 @@\n-old\n+new\n";
+    fn parses_git_fixture_with_extended_headers_and_multiline_hunks() {
+        let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
-        let document = parse_unified_diff(input).expect("valid Git patch");
+        let document = parse_unified_diff(input).expect("valid Git fixture");
 
-        assert_eq!(document.files.len(), 1);
-        assert_eq!(document.files[0].old_path, "a/readme.txt");
+        assert_eq!(document.files.len(), 2);
+        assert_eq!(document.files[0].metadata.len(), 3);
+        assert_eq!(document.files[0].hunks[0].records.len(), 3);
+        assert_eq!(document.files[1].metadata.len(), 2);
+        assert_eq!(document.files[1].hunks[0].records.len(), 4);
     }
 
     #[test]
-    fn parses_colored_git_extended_headers_before_a_file_hunk() {
-        let input = b"\x1b[1mdiff --git a/readme.txt b/readme.txt\x1b[m\nindex 1111111..2222222 100644\n\x1b[1m--- a/readme.txt\x1b[m\n\x1b[1m+++ b/readme.txt\x1b[m\n@@ -1 +1 @@\n-old\n+new\n";
+    fn parses_colored_git_fixture_with_multiline_hunks() {
+        let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
-        let document = parse_unified_diff(input).expect("valid colored Git patch");
+        let document = parse_unified_diff(input).expect("valid colored Git fixture");
 
-        assert_eq!(document.files.len(), 1);
-        assert_eq!(document.files[0].new_path, "b/readme.txt");
+        assert_eq!(document.files.len(), 2);
+        assert_eq!(document.files[0].hunks[0].records.len(), 3);
+        assert_eq!(document.files[1].hunks[0].records.len(), 4);
     }
 
     #[test]
     fn rejects_git_metadata_without_a_file_header() {
-        let input = b"diff --git a/readme.txt b/readme.txt\nindex 1111111..2222222 100644\n";
+        let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
         assert!(parse_unified_diff(input).is_err());
     }

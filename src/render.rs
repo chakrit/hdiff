@@ -65,25 +65,25 @@ mod tests {
     }
 
     #[test]
-    fn renders_git_extended_headers_before_the_unified_hunk() {
-        let input = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
+    fn renders_git_fixture_in_original_order() {
+        let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
-        let document = parse_unified_diff(input).expect("valid Git patch");
+        let document = parse_unified_diff(input).expect("valid Git fixture");
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
     }
 
     #[test]
-    fn renders_colored_git_headers_without_terminal_controls() {
-        let input = b"\x1b[1mdiff --git a/file b/file\x1b[m\nindex 1111111..2222222 100644\n\x1b[1m--- a/file\x1b[m\n\x1b[1m+++ b/file\x1b[m\n@@ -1 +1 @@\n-old\n+new\n";
+    fn renders_colored_git_fixture_without_terminal_controls() {
+        let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
-        let document = parse_unified_diff(input).expect("valid colored Git patch");
+        let document = parse_unified_diff(input).expect("valid colored Git fixture");
         let rendered = render_unified(&document);
 
         assert_eq!(
             rendered,
-            b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"
+            include_bytes!("../tests/fixtures/git-multiline.patch")
         );
     }
 
