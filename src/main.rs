@@ -4,15 +4,10 @@ pub mod actions;
 pub mod document;
 pub mod input;
 pub mod interaction;
+pub mod layout;
 pub mod parser;
 pub mod render;
 pub mod terminal;
-
-fn render_input(input: &[u8]) -> Result<Vec<u8>, String> {
-    let document = parser::parse_unified_diff(input).map_err(|error| error.message)?;
-
-    Ok(render::render_unified(&document))
-}
 
 fn main() -> Result<(), String> {
     let operands = std::env::args_os()
@@ -34,7 +29,8 @@ fn main() -> Result<(), String> {
             return Err("file comparison is not implemented yet".to_owned());
         }
     };
-    let output = render_input(&input)?;
+    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+    let output = render::render_unified(&document);
 
     match terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout())) {
         terminal::OutputMode::Finite => {
@@ -47,7 +43,7 @@ fn main() -> Result<(), String> {
                 .map_err(|error| error.to_string())?;
         }
         terminal::OutputMode::Interactive => {
-            terminal::run_interactive(&output).map_err(|error| error.to_string())?;
+            terminal::run_interactive(&document).map_err(|error| error.to_string())?;
         }
     }
 
@@ -56,13 +52,14 @@ fn main() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::render_input;
+    use crate::{parser::parse_unified_diff, render::render_unified};
 
     #[test]
     fn turns_diff_input_into_finite_safe_output() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
 
-        let output = render_input(input).expect("valid diff");
+        let document = parse_unified_diff(input).expect("valid diff");
+        let output = render_unified(&document);
 
         assert_eq!(output, input);
     }

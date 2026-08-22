@@ -1,16 +1,24 @@
-use crate::document::{DiffDocument, RecordKind, SourceLine};
+use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine};
 
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
     let mut output = Vec::new();
 
     for file in &document.files {
-        append_line(&mut output, None, &file.old_header);
-        append_line(&mut output, None, &file.new_header);
-        for hunk in &file.hunks {
-            append_line(&mut output, None, &hunk.header);
-            for record in &hunk.records {
-                append_line(&mut output, marker(&record.kind), &record.payload);
-            }
+        output.extend_from_slice(&render_file(file));
+    }
+
+    output
+}
+
+pub fn render_file(file: &DiffFile) -> Vec<u8> {
+    let mut output = Vec::new();
+
+    append_line(&mut output, None, &file.old_header);
+    append_line(&mut output, None, &file.new_header);
+    for hunk in &file.hunks {
+        append_line(&mut output, None, &hunk.header);
+        for record in &hunk.records {
+            append_line(&mut output, marker(&record.kind), &record.payload);
         }
     }
 
@@ -38,7 +46,7 @@ fn marker(kind: &RecordKind) -> Option<u8> {
     }
 }
 
-fn sanitize(text: &str) -> String {
+pub(crate) fn sanitize(text: &str) -> String {
     #[derive(Clone, Copy)]
     enum State {
         Text,
@@ -81,7 +89,7 @@ fn sanitize(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_unified;
+    use super::{render_file, render_unified};
     use crate::parser::parse_unified_diff;
 
     #[test]
@@ -128,5 +136,16 @@ mod tests {
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
+    }
+
+    #[test]
+    fn renders_one_file_with_the_same_safe_output_as_the_document_renderer() {
+        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n";
+        let document = parse_unified_diff(input).expect("valid diff");
+
+        let rendered = render_file(&document.files[0]);
+
+        assert_eq!(rendered, render_unified(&document));
+        assert!(!rendered.contains(&b'\x1b'));
     }
 }

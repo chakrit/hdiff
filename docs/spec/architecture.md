@@ -182,10 +182,11 @@ whether differences are represented as lines or characters; `DiffContrast` contr
 visual intensity and never changes that representation.
 
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
-`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` paragraph-like movement,
-`Tab` file rotation, `w` wrapping, `c` line/character detail, `v` unified/side-by-side,
+`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` prior/next hunk movement,
+`Tab` file rotation with wraparound, `w` wrapping, `c` line/character detail, `v` unified/side-by-side,
 `+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
-bindings. There is no diff editing cursor; movement changes the viewport.
+bindings. File rotation selects the next file and moves the viewport to its top. There is no
+diff editing cursor; movement changes the viewport.
 
 ## Technology direction
 

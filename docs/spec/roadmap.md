@@ -20,17 +20,16 @@ success for finite output.
 4. Implement safe finite unified rendering and quiet broken-pipe handling.
 5. Implement terminal lifecycle handling with explicit controlling-TTY events, staged cleanup,
    pager navigation, and resize redraw.
+6. Implement file/hunk navigation and the interactive file list with synchronized selection.
 
 ## Next slice
 
-Implement file/hunk navigation and the interactive file list with synchronized selection.
+Implement side-by-side rendering, character detail, and synchronized horizontal scrolling.
 
 ## Later slices
 
-1. File/hunk navigation and the interactive file list with synchronized selection.
-2. Side-by-side rendering, character detail, and synchronized horizontal scrolling.
-3. Tree-sitter semantic strategies with textual fallback.
-4. Highlighting coverage and additional navigation after the core interaction is stable.
+1. Tree-sitter semantic strategies with textual fallback.
+2. Highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Working rule
 
