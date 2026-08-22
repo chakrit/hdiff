@@ -6,9 +6,9 @@ status: accepted
 
 ## Current position
 
-hdiff is a new repository with no implementation, commits, or existing architecture to
-reverse-engineer. The first phase establishes the project shape and records relevant
-prior art before feature design begins.
+hdiff has a strict, loss-preserving unified-diff parser and input-source boundary. The
+current slice adds terminal-independent safe unified rendering and finite non-interactive
+output before terminal lifecycle and navigation work begins.
 
 ## Steps
 
@@ -27,6 +27,4 @@ prior art before feature design begins.
 
 ## Explicit non-goals for this phase
 
-- No feature implementation.
-- No final keymap or architecture is settled.
 - No remote publication.
