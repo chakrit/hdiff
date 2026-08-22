@@ -1,13 +1,18 @@
-use std::{
-    io::{self, Write},
-    time::Duration,
-};
+use std::{io, time::Duration};
 
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, Show},
     event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    Frame, Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Layout as RatatuiLayout},
+    style::{Modifier, Style},
+    text::{Line, Text},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
 use crate::{
@@ -64,7 +69,7 @@ fn cleanup_failure(error: io::Error, cleanup_result: io::Result<()>) -> io::Erro
 }
 
 fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Result<()> {
-    let (mut width, height) = terminal::size()?;
+    let (_, height) = terminal::size()?;
     let mut interaction = Interaction {
         selected_file: 0,
         viewport: Viewport {
@@ -74,7 +79,7 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
     };
     let mut view = layout(document, &interaction);
 
-    draw(session.writer(), &view, &interaction.viewport, width)?;
+    draw(session.terminal_mut(), &view, &interaction.viewport)?;
 
     let mut pending_event = None;
     loop {
@@ -84,13 +89,6 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
         let Some(input) = input_for_event(event) else {
             continue;
         };
-
-        if let Input::Resize {
-            width: next_width, ..
-        } = input
-        {
-            width = next_width;
-        }
 
         let transition = {
             let bounds = NavigationBounds {
@@ -106,7 +104,7 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
             Transition::RedrawInteraction(next_interaction) => {
                 interaction = next_interaction;
                 view = layout(document, &interaction);
-                draw(session.writer(), &view, &interaction.viewport, width)?;
+                draw(session.terminal_mut(), &view, &interaction.viewport)?;
             }
         }
     }
@@ -158,78 +156,86 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
 }
 
 fn draw(
-    writer: &mut impl Write,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     layout: &Layout,
     viewport: &Viewport,
-    width: u16,
 ) -> io::Result<()> {
-    execute!(writer, MoveTo(0, 0), Clear(ClearType::All))?;
-
-    let has_file_list = width > 24;
-    let file_list_width = match has_file_list {
-        true => 24,
-        false => 0,
-    };
-    let diff_width = usize::from(width.saturating_sub(file_list_width));
-    for row in 0..viewport.height {
-        if has_file_list {
-            let file = layout.files.get(row);
-            let prefix = match file.map(|file| file.selected) {
-                Some(true) => "> ",
-                _ => "  ",
-            };
-            let label = file.map(|file| file.label.as_str()).unwrap_or("");
-            write_truncated(writer, prefix, usize::from(file_list_width))?;
-            write_truncated(
-                writer,
-                label,
-                usize::from(file_list_width).saturating_sub(2),
-            )?;
-        }
-        let line = layout
-            .diff_lines
-            .get(viewport.offset + row)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let line_without_ending = line
-            .strip_suffix(b"\r\n")
-            .or_else(|| line.strip_suffix(b"\n"))
-            .unwrap_or(line);
-        let text = std::str::from_utf8(line_without_ending)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        write_truncated(writer, text, diff_width)?;
-        writer.write_all(b"\r\n")?;
-    }
-    writer.flush()
+    terminal
+        .draw(|frame| render_frame(frame, layout, viewport))
+        .map(|_| ())
 }
 
-fn write_truncated(writer: &mut impl Write, text: &str, width: usize) -> io::Result<()> {
-    let end = text
-        .char_indices()
-        .nth(width)
-        .map_or(text.len(), |(index, _)| index);
-    writer.write_all(&text.as_bytes()[..end])
+fn render_frame(frame: &mut Frame, layout: &Layout, viewport: &Viewport) {
+    let area = frame.area();
+    if area.width < 20 {
+        frame.render_widget(Paragraph::new("screen too narrow"), area);
+        return;
+    }
+    if area.height < 3 {
+        frame.render_widget(Paragraph::new("screen too short"), area);
+        return;
+    }
+
+    let lines = visible_diff_lines(layout, viewport);
+    let diff = Paragraph::new(Text::from(lines))
+        .block(Block::default().borders(Borders::ALL).title("Diff"));
+    if area.width < 25 {
+        frame.render_widget(diff, area);
+        return;
+    }
+
+    let panes = RatatuiLayout::horizontal([Constraint::Length(24), Constraint::Min(1)]).split(area);
+    let mut selected_file = ListState::default();
+    selected_file.select(layout.files.iter().position(|file| file.selected));
+    let files = layout
+        .files
+        .iter()
+        .map(|file| ListItem::new(file.label.as_str()))
+        .collect::<Vec<_>>();
+    let file_list = List::new(files)
+        .block(Block::default().borders(Borders::ALL).title("Files"))
+        .highlight_symbol("> ")
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    frame.render_stateful_widget(file_list, panes[0], &mut selected_file);
+    frame.render_widget(diff, panes[1]);
+}
+
+fn visible_diff_lines(layout: &Layout, viewport: &Viewport) -> Vec<Line<'static>> {
+    layout
+        .diff_lines
+        .iter()
+        .skip(viewport.offset)
+        .map(|line| {
+            let without_ending = line
+                .strip_suffix(b"\r\n")
+                .or_else(|| line.strip_suffix(b"\n"))
+                .unwrap_or(line);
+            Line::from(String::from_utf8_lossy(without_ending).into_owned())
+        })
+        .collect()
 }
 
 struct TerminalSession {
-    writer: io::Stdout,
+    terminal: Terminal<CrosstermBackend<io::Stdout>>,
     stages: Vec<SetupStage>,
 }
 
 impl TerminalSession {
     fn start() -> io::Result<Self> {
+        let backend = CrosstermBackend::new(io::stdout());
+        let terminal = Terminal::new(backend)?;
         let mut session = TerminalSession {
-            writer: io::stdout(),
+            terminal,
             stages: Vec::new(),
         };
 
         terminal::enable_raw_mode()?;
         session.stages.push(SetupStage::RawMode);
-        if let Err(error) = execute!(session.writer, EnterAlternateScreen) {
+        if let Err(error) = execute!(session.terminal.backend_mut(), EnterAlternateScreen) {
             return Err(cleanup_failure(error, session.cleanup()));
         }
         session.stages.push(SetupStage::AlternateScreen);
-        if let Err(error) = execute!(session.writer, Hide) {
+        if let Err(error) = execute!(session.terminal.backend_mut(), Hide) {
             return Err(cleanup_failure(error, session.cleanup()));
         }
         session.stages.push(SetupStage::HiddenCursor);
@@ -237,16 +243,18 @@ impl TerminalSession {
         Ok(session)
     }
 
-    fn writer(&mut self) -> &mut io::Stdout {
-        &mut self.writer
+    fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<io::Stdout>> {
+        &mut self.terminal
     }
 
     fn cleanup(&mut self) -> io::Result<()> {
         let mut errors = Vec::new();
         for stage in cleanup_order(&self.stages) {
             let result = match stage {
-                SetupStage::HiddenCursor => execute!(self.writer, Show),
-                SetupStage::AlternateScreen => execute!(self.writer, LeaveAlternateScreen),
+                SetupStage::HiddenCursor => execute!(self.terminal.backend_mut(), Show),
+                SetupStage::AlternateScreen => {
+                    execute!(self.terminal.backend_mut(), LeaveAlternateScreen)
+                }
                 SetupStage::RawMode => terminal::disable_raw_mode(),
             };
             if let Err(error) = result {
@@ -269,8 +277,64 @@ pub fn cleanup_order(stages: &[SetupStage]) -> Vec<SetupStage> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend};
 
-    use super::{Input, OutputMode, SetupStage, cleanup_order, input_for_event, mode_for_output};
+    use super::{
+        Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, input_for_event,
+        mode_for_output, render_frame,
+    };
+    use crate::{layout::layout, parser::parse_unified_diff};
+
+    #[test]
+    fn renders_distinct_file_and_diff_panes() {
+        let document = parse_unified_diff(
+            b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
+        )
+        .expect("valid two-file diff");
+        let interaction = Interaction {
+            selected_file: 1,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
+
+        terminal
+            .draw(|frame| render_frame(frame, &view, &interaction.viewport))
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(0, 0)].symbol(), "┌");
+        assert_eq!(rendered[(24, 0)].symbol(), "┌");
+        assert_eq!(rendered[(3, 1)].symbol(), "a");
+        assert_eq!(rendered[(1, 2)].symbol(), ">");
+        assert_eq!(rendered[(25, 5)].symbol(), "+");
+    }
+
+    #[test]
+    fn collapses_the_file_list_before_the_diff_pane() {
+        let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
+            .expect("valid diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
+
+        terminal
+            .draw(|frame| render_frame(frame, &view, &interaction.viewport))
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(1, 0)].symbol(), "D");
+        assert_eq!(rendered[(1, 1)].symbol(), "-");
+    }
 
     #[test]
     fn requests_interactive_mode_only_for_terminal_output() {

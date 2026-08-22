@@ -28,7 +28,10 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
                     .first()
                     .map(|line| sanitize(&line.text))
                     .unwrap_or_default(),
-                crate::document::DiffFile::Unified(file) => sanitize(&file.old_path),
+                crate::document::DiffFile::Unified(file) => match file.old_path.as_str() {
+                    "/dev/null" => sanitize(&file.new_path),
+                    _ => sanitize(&file.old_path),
+                },
             };
             FileListRow {
                 label,
@@ -149,5 +152,23 @@ mod tests {
                 .map(ToOwned::to_owned)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn labels_an_added_file_with_its_new_path() {
+        let document =
+            parse_unified_diff(b"--- /dev/null\n+++ b/added-file.txt\n@@ -0,0 +1 @@\n+new\n")
+                .expect("valid added-file diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+
+        let view = layout(&document, &interaction);
+
+        assert_eq!(view.files[0].label, "b/added-file.txt");
     }
 }

@@ -74,6 +74,7 @@ valid diff lines without data loss.
 
 - `DiffDocument`: ordered files and document-level metadata.
 - `DiffFile`: file identity, headers, and ordered hunks.
+- File-list labels use the new header path when the old header path is `/dev/null`.
 - `Hunk`: old/new ranges, header text, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `Selection`: the active file-list selection; diff movement is viewport-based and has no
@@ -194,6 +195,11 @@ The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal move
 `+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
 bindings. File rotation selects the next file and moves the viewport to its top. There is no
 diff editing cursor; movement changes the viewport.
+
+A dedicated shortcut-audit slice will make shifted shortcuts perform meaningful inverse actions.
+When a key's meaning is ambiguous, follow Vim semantics.
+
+The left file-list pane will show shortcut hints at its bottom.
 
 ## Technology direction
 
