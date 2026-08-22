@@ -6,24 +6,35 @@ status: accepted
 
 ## Current position
 
-hdiff has a strict, loss-preserving unified-diff parser and input-source boundary. The
-current slice adds terminal-independent safe unified rendering and finite non-interactive
-output before terminal lifecycle and navigation work begins.
+The strict, loss-preserving unified-diff parser and input-selection boundary are complete.
+The static renderer is also complete: it produces finite non-interactive output, preserves
+source bytes in the document, neutralizes terminal controls, and treats broken pipes as quiet
+success for finite output.
 
-## Steps
+## Completed slices
 
-1. Study the intended terminal UI and choose the Rust CLI stack, entry point, test strategy,
-   formatting, and input/rendering boundaries.
-2. Study `dandavison/delta` as prior art, focusing on pager boundaries, terminal resizing,
-   navigation state, view toggles, ANSI handling, and failure cases.
-3. Complete ACE Phase 1 read-only onboarding: select active skills and prepare the proposed
-   `AGENTS.md` and `ace.toml` changes as one approval-gated batch.
-4. Record delta findings in `docs/vendor/` and hdiff’s settled architecture and interaction
-   surface in `docs/spec/`.
-5. Design and implement resize handling, view-mode shortcuts, file switching, and an
-   interactive file list as separate slices with terminal edge-case tests.
-6. Validate behavior, commit logical slices locally, and wait for explicit approval before
-   any push or other shared-state publication.
+1. Establish the Rust CLI direction, architecture, testing boundary, and durable project records.
+2. Record terminal-diff-viewer prior art and the Tree-sitter dependency decision and audit.
+3. Implement strict parsing, loss-preserving document types, patch/stdin input selection, and
+   malformed-input rejection.
+4. Implement safe finite unified rendering and quiet broken-pipe handling.
+
+## Next slice
+
+Implement the terminal lifecycle: acquire an explicit controlling terminal, perform staged
+cleanup, handle quit and Ctrl-C, move the vertical viewport, and coalesce resize redraws over
+the committed terminal-independent renderer.
+
+## Later slices
+
+1. File/hunk navigation and the interactive file list with synchronized selection.
+2. Side-by-side rendering, character detail, and synchronized horizontal scrolling.
+3. Tree-sitter semantic strategies with textual fallback.
+4. Highlighting coverage and additional navigation after the core interaction is stable.
+
+## Working rule
+
+get docs uptodate before implement always
 
 ## Explicit non-goals for this phase
 

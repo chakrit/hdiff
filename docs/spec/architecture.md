@@ -95,11 +95,10 @@ The implementation should land in slices that each leave a usable surface:
 
 1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
-3. Add file/hunk navigation and synchronized file selection.
-4. Add the interactive file list and synchronized file selection.
-5. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
-6. Add implicit Tree-sitter semantic strategies with textual fallback.
-7. Refine highlighting coverage and additional navigation after the core interaction is stable.
+3. Add file/hunk navigation and the interactive file list with synchronized selection.
+4. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+5. Add implicit Tree-sitter semantic strategies with textual fallback.
+6. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Input contract
 
@@ -203,13 +202,13 @@ added after the lifecycle boundary is known.
 
 ## Input and terminal boundary
 
-The first release reads the complete input before entering raw mode. Input is represented as
-`InputSource = Stdin | DiffFiles(Vec<PathBuf>)`; combining piped standard input with file
-arguments is an explicit usage error. Interactive mode requires a controlling terminal
-independent of the data source, so `stdin` supplies diff bytes while the controlling terminal
-supplies events and output. If no controlling terminal is available, hdiff produces finite
-non-interactive output. hdiff is the pager and must not launch or depend on an external pager.
-The output contract decides whether interactive mode is attempted before a controlling
+The first release reads the complete input before entering raw mode. Input selection distinguishes
+standard input, one existing patch file, and two comparison operands; combining piped standard
+input with file arguments is an explicit usage error. Interactive mode requires a controlling
+terminal independent of the data source, so `stdin` supplies diff bytes while the controlling
+terminal supplies events and output. If no controlling terminal is available, hdiff produces
+finite non-interactive output. hdiff is the pager and must not launch or depend on an external
+pager. The output contract decides whether interactive mode is attempted before a controlling
 terminal is opened. The terminal backend must read events from an explicit controlling-terminal
 handle rather than rebinding standard input.
 
@@ -270,8 +269,7 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 ## Next design work
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
-`docs/vendor/terminal-diff-viewers.md`. The first implementation slice is: strict unified-diff
-parsing; POSIX-style operands plus patch-file/stdin modes; terminal acquisition and cleanup;
-file list, footer, and faithful unified rendering; viewport movement, wrapping, horizontal
-scrolling, resize, the locked keymap, context-line settings, and capability-aware color.
-Side-by-side, character, and semantic strategies follow behind the explicit view boundaries.
+`docs/vendor/terminal-diff-viewers.md`. The next implementation slice is terminal lifecycle:
+controlling-terminal acquisition and cleanup, quit and Ctrl-C, vertical viewport movement, and
+resize redraw. Navigation, layout, side-by-side, character, and semantic strategies follow in
+the feature sequence above.
