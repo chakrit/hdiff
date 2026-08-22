@@ -1,4 +1,6 @@
-use crate::document::{DiffDocument, DiffFile, Hunk, Record, RecordKind, SourceLine};
+use crate::document::{
+    DiffDocument, DiffFile, Hunk, Record, RecordKind, SourceLine, UnifiedDiffFile,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseError {
@@ -14,11 +16,19 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
 
     while index < lines.len() {
         let mut metadata = Vec::new();
-        while index < lines.len() && decoded_line(lines[index]).starts_with("diff --git ") {
-            while index < lines.len() && !decoded_line(lines[index]).starts_with("--- ") {
+        if index < lines.len() && decoded_line(lines[index]).starts_with("diff --git ") {
+            while index < lines.len()
+                && !decoded_line(lines[index]).starts_with("--- ")
+                && (metadata.is_empty() || !decoded_line(lines[index]).starts_with("diff --git "))
+            {
                 metadata.push(source_line(lines[index]));
                 index += 1;
             }
+        }
+
+        if index == lines.len() || decoded_line(lines[index]).starts_with("diff --git ") {
+            files.push(DiffFile::Metadata { lines: metadata });
+            continue;
         }
 
         let Some(old_header_bytes) = lines.get(index) else {
@@ -79,14 +89,14 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
         if hunks.is_empty() {
             return Err(error(index, "file has no hunks"));
         }
-        files.push(DiffFile {
+        files.push(DiffFile::Unified(Box::new(UnifiedDiffFile {
             metadata,
             old_path: old_header[4..].to_owned(),
             new_path: new_header[4..].to_owned(),
             old_header: source_line(old_header_bytes),
             new_header: source_line(new_header_bytes),
             hunks,
-        });
+        })));
     }
     Ok(DiffDocument { files })
 }
@@ -129,31 +139,56 @@ fn range_count(range: &str, prefix: char) -> Option<usize> {
 fn after_visible_marker(line: &[u8]) -> &[u8] {
     let mut index = 0;
     while index < line.len() {
-        if line[index] == b'\x1b' {
-            index += 1;
-            if line.get(index) == Some(&b'[') {
-                index += 1;
-                while let Some(byte) = line.get(index) {
-                    index += 1;
-                    if (b'@'..=b'~').contains(byte) {
-                        break;
-                    }
-                }
+        match (line[index], line.get(index + 1)) {
+            (b'\x1b', Some(b'[')) => index = after_control_sequence(line, index + 2),
+            (b'\x1b', Some(b']' | b'P' | b'X' | b'^' | b'_')) => {
+                index = after_string_sequence(line, index + 2);
             }
-            continue;
+            (b'\x1b', _) => index += 2,
+            (byte, _) if !byte.is_ascii_control() => return &line[index + 1..],
+            _ => index += 1,
         }
-        if !line[index].is_ascii_control() {
-            return &line[index + 1..];
-        }
-        index += 1;
     }
 
     unreachable!("record has a visible marker")
 }
 
+fn after_control_sequence(line: &[u8], mut index: usize) -> usize {
+    while let Some(byte) = line.get(index) {
+        index += 1;
+        if (b'@'..=b'~').contains(byte) {
+            break;
+        }
+    }
+
+    index
+}
+
+fn after_string_sequence(line: &[u8], mut index: usize) -> usize {
+    while index < line.len() {
+        match (line[index], line.get(index + 1)) {
+            (b'\x07', _) => return index + 1,
+            (b'\x1b', Some(b'\\')) => return index + 2,
+            _ => index += 1,
+        }
+    }
+
+    index
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_unified_diff;
+    use crate::document::{DiffDocument, DiffFile, Hunk};
+
+    fn single_unified_hunks(document: &DiffDocument) -> &[Hunk] {
+        assert_eq!(document.files.len(), 1);
+        let DiffFile::Unified(file) = &document.files[0] else {
+            panic!("fixture section should be unified");
+        };
+
+        &file.hunks
+    }
 
     #[test]
     fn parses_file_hunk_and_records() {
@@ -162,8 +197,8 @@ mod tests {
         let document = parse_unified_diff(input.as_bytes()).expect("valid unified diff");
 
         assert_eq!(document.files.len(), 1);
-        assert_eq!(document.files[0].hunks.len(), 1);
-        assert_eq!(document.files[0].hunks[0].records.len(), 2);
+        assert_eq!(single_unified_hunks(&document).len(), 1);
+        assert_eq!(single_unified_hunks(&document)[0].records.len(), 2);
     }
 
     #[test]
@@ -173,10 +208,16 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid Git fixture");
 
         assert_eq!(document.files.len(), 2);
-        assert_eq!(document.files[0].metadata.len(), 3);
-        assert_eq!(document.files[0].hunks[0].records.len(), 3);
-        assert_eq!(document.files[1].metadata.len(), 2);
-        assert_eq!(document.files[1].hunks[0].records.len(), 4);
+        let DiffFile::Unified(file) = &document.files[0] else {
+            panic!("first fixture section should be unified");
+        };
+        assert_eq!(file.metadata.len(), 3);
+        assert_eq!(file.hunks[0].records.len(), 3);
+        let DiffFile::Unified(file) = &document.files[1] else {
+            panic!("second fixture section should be unified");
+        };
+        assert_eq!(file.metadata.len(), 2);
+        assert_eq!(file.hunks[0].records.len(), 4);
     }
 
     #[test]
@@ -186,15 +227,33 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid colored Git fixture");
 
         assert_eq!(document.files.len(), 2);
-        assert_eq!(document.files[0].hunks[0].records.len(), 3);
-        assert_eq!(document.files[1].hunks[0].records.len(), 4);
+        let DiffFile::Unified(file) = &document.files[0] else {
+            panic!("first fixture section should be unified");
+        };
+        assert_eq!(file.hunks[0].records.len(), 3);
+        let DiffFile::Unified(file) = &document.files[1] else {
+            panic!("second fixture section should be unified");
+        };
+        assert_eq!(file.hunks[0].records.len(), 4);
     }
 
     #[test]
-    fn rejects_git_metadata_without_a_file_header() {
+    fn parses_git_metadata_without_a_file_header() {
         let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
-        assert!(parse_unified_diff(input).is_err());
+        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+
+        assert!(matches!(document.files[0], DiffFile::Metadata { .. }));
+    }
+
+    #[test]
+    fn parses_metadata_only_git_fixture() {
+        let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
+
+        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+
+        assert_eq!(document.files.len(), 1);
+        assert!(matches!(document.files[0], DiffFile::Metadata { .. }));
     }
 
     #[test]
@@ -209,7 +268,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
 
         let document = parse_unified_diff(input).expect("structurally valid diff");
-        let payload = &document.files[0].hunks[0].records[1].payload;
+        let payload = &single_unified_hunks(&document)[0].records[1].payload;
 
         assert_eq!(payload.bytes, b"\xffnew\n");
         assert_eq!(payload.text, "\u{fffd}new");
@@ -220,7 +279,7 @@ mod tests {
         let input = b"--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n";
 
         let document = parse_unified_diff(input).expect("valid CRLF diff");
-        let payload = &document.files[0].hunks[0].records[0].payload;
+        let payload = &single_unified_hunks(&document)[0].records[0].payload;
 
         assert_eq!(payload.bytes, b"old\r\n");
         assert_eq!(payload.text, "old");
@@ -231,7 +290,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n--- filename\n";
 
         let document = parse_unified_diff(input).expect("valid deletion record");
-        let record = &document.files[0].hunks[0].records[0];
+        let record = &single_unified_hunks(&document)[0].records[0];
 
         assert_eq!(record.kind, crate::document::RecordKind::Deletion);
         assert_eq!(record.payload.text, "-- filename");

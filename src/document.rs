@@ -27,7 +27,13 @@ impl SourceLine {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DiffFile {
+pub enum DiffFile {
+    Metadata { lines: Vec<SourceLine> },
+    Unified(Box<UnifiedDiffFile>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnifiedDiffFile {
     pub metadata: Vec<SourceLine>,
     pub old_path: String,
     pub new_path: String,

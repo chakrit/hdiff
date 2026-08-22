@@ -22,9 +22,18 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         .files
         .iter()
         .enumerate()
-        .map(|(index, file)| FileListRow {
-            label: sanitize(&file.old_path),
-            selected: index == interaction.selected_file,
+        .map(|(index, file)| {
+            let label = match file {
+                crate::document::DiffFile::Metadata { lines } => lines
+                    .first()
+                    .map(|line| sanitize(&line.text))
+                    .unwrap_or_default(),
+                crate::document::DiffFile::Unified(file) => sanitize(&file.old_path),
+            };
+            FileListRow {
+                label,
+                selected: index == interaction.selected_file,
+            }
         })
         .collect();
     let Some(file) = document.files.get(interaction.selected_file) else {
@@ -38,16 +47,20 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         .split_inclusive(|byte| *byte == b'\n')
         .map(ToOwned::to_owned)
         .collect();
-    let mut line_offset = file.metadata.len() + 2;
-    let hunk_offsets = file
-        .hunks
-        .iter()
-        .map(|hunk| {
-            let offset = line_offset;
-            line_offset += 1 + hunk.records.len();
-            offset
-        })
-        .collect();
+    let hunk_offsets = match file {
+        crate::document::DiffFile::Metadata { .. } => Vec::new(),
+        crate::document::DiffFile::Unified(file) => {
+            let mut line_offset = file.metadata.len() + 2;
+            file.hunks
+                .iter()
+                .map(|hunk| {
+                    let offset = line_offset;
+                    line_offset += 1 + hunk.records.len();
+                    offset
+                })
+                .collect()
+        }
+    };
 
     Layout {
         files,
@@ -106,6 +119,35 @@ mod tests {
                 b"-old-again\n".to_vec(),
                 b"+new-again\n".to_vec(),
             ]
+        );
+    }
+
+    #[test]
+    fn lays_out_a_metadata_only_file_without_hunk_offsets() {
+        let document =
+            parse_unified_diff(include_bytes!("../tests/fixtures/git-rename-only.patch"))
+                .expect("valid metadata-only Git fixture");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+
+        let view = layout(&document, &interaction);
+
+        assert_eq!(
+            view.files[0].label,
+            "diff --git a/old-name.txt b/new-name.txt"
+        );
+        assert_eq!(view.hunk_offsets, Vec::<usize>::new());
+        assert_eq!(
+            view.diff_lines,
+            include_bytes!("../tests/fixtures/git-rename-only.patch")
+                .split_inclusive(|byte| *byte == b'\n')
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
         );
     }
 }

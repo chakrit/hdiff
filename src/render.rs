@@ -13,15 +13,24 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
     let mut output = Vec::new();
 
-    for line in &file.metadata {
-        append_line(&mut output, None, line);
-    }
-    append_line(&mut output, None, &file.old_header);
-    append_line(&mut output, None, &file.new_header);
-    for hunk in &file.hunks {
-        append_line(&mut output, None, &hunk.header);
-        for record in &hunk.records {
-            append_line(&mut output, marker(&record.kind), &record.payload);
+    match file {
+        DiffFile::Metadata { lines } => {
+            for line in lines {
+                append_line(&mut output, None, line);
+            }
+        }
+        DiffFile::Unified(file) => {
+            for line in &file.metadata {
+                append_line(&mut output, None, line);
+            }
+            append_line(&mut output, None, &file.old_header);
+            append_line(&mut output, None, &file.new_header);
+            for hunk in &file.hunks {
+                append_line(&mut output, None, &hunk.header);
+                for record in &hunk.records {
+                    append_line(&mut output, marker(&record.kind), &record.payload);
+                }
+            }
         }
     }
 
@@ -75,6 +84,16 @@ mod tests {
     }
 
     #[test]
+    fn renders_metadata_only_git_fixture_in_original_order() {
+        let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
+
+        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+        let rendered = render_unified(&document);
+
+        assert_eq!(rendered, input);
+    }
+
+    #[test]
     fn renders_colored_git_fixture_without_terminal_controls() {
         let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
@@ -84,6 +103,19 @@ mod tests {
         assert_eq!(
             rendered,
             include_bytes!("../tests/fixtures/git-multiline.patch")
+        );
+    }
+
+    #[test]
+    fn removes_control_sequences_before_a_record_marker() {
+        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n\x1b]8;;https://bad\x07+new\n";
+
+        let document = parse_unified_diff(input).expect("valid diff with a controlled record");
+        let rendered = render_unified(&document);
+
+        assert_eq!(
+            rendered,
+            b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"
         );
     }
 

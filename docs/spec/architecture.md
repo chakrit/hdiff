@@ -117,6 +117,9 @@ Git extended headers beginning with `diff --git` are ordered per-file metadata a
 that file's unified headers. ANSI control sequences are ignored for structural recognition while
 the original source bytes remain available for safe rendering.
 
+Metadata-only Git sections, including binary changes, pure renames, and mode-only changes, are
+valid review content and render without requiring unified headers or hunks.
+
 ## Initial CLI surface
 
 The first command should be intentionally small:
