@@ -113,6 +113,10 @@ unambiguously, but malformed or truncated input is rejected with a contextual no
 before the interactive TUI starts. The first release does not model partial documents in the
 TUI.
 
+Git extended headers beginning with `diff --git` are ordered per-file metadata and render before
+that file's unified headers. ANSI control sequences are ignored for structural recognition while
+the original source bytes remain available for safe rendering.
+
 ## Initial CLI surface
 
 The first command should be intentionally small:

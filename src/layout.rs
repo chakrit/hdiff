@@ -1,7 +1,7 @@
 use crate::{
-    document::DiffDocument,
+    document::{DiffDocument, sanitize},
     interaction::Interaction,
-    render::{render_file, sanitize},
+    render::render_file,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,7 +38,7 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         .split_inclusive(|byte| *byte == b'\n')
         .map(ToOwned::to_owned)
         .collect();
-    let mut line_offset = 2;
+    let mut line_offset = file.metadata.len() + 2;
     let hunk_offsets = file
         .hunks
         .iter()

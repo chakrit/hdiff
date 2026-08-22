@@ -1,4 +1,4 @@
-use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine};
+use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine, sanitize};
 
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
     let mut output = Vec::new();
@@ -13,6 +13,9 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
     let mut output = Vec::new();
 
+    for line in &file.metadata {
+        append_line(&mut output, None, line);
+    }
     append_line(&mut output, None, &file.old_header);
     append_line(&mut output, None, &file.new_header);
     for hunk in &file.hunks {
@@ -46,47 +49,6 @@ fn marker(kind: &RecordKind) -> Option<u8> {
     }
 }
 
-pub(crate) fn sanitize(text: &str) -> String {
-    #[derive(Clone, Copy)]
-    enum State {
-        Text,
-        Escape,
-        ControlSequence,
-        StringSequence,
-        StringEscape,
-    }
-
-    let mut output = String::new();
-    let mut state = State::Text;
-    for character in text.chars() {
-        state = match (state, character) {
-            (State::Text, '\u{1b}') => State::Escape,
-            (State::Text, '\t') => {
-                output.push(character);
-                State::Text
-            }
-            (State::Text, character) if !character.is_control() => {
-                output.push(character);
-                State::Text
-            }
-            (State::Text, _) => State::Text,
-            (State::Escape, '[') => State::ControlSequence,
-            (State::Escape, ']' | 'P' | 'X' | '^' | '_') => State::StringSequence,
-            (State::Escape, _) => State::Text,
-            (State::ControlSequence, '@'..='~') => State::Text,
-            (State::ControlSequence, _) => State::ControlSequence,
-            (State::StringSequence, '\u{7}') => State::Text,
-            (State::StringSequence, '\u{1b}') => State::StringEscape,
-            (State::StringSequence, _) => State::StringSequence,
-            (State::StringEscape, '\\') => State::Text,
-            (State::StringEscape, '\u{1b}') => State::StringEscape,
-            (State::StringEscape, _) => State::StringSequence,
-        };
-    }
-
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::{render_file, render_unified};
@@ -100,6 +62,29 @@ mod tests {
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
+    }
+
+    #[test]
+    fn renders_git_extended_headers_before_the_unified_hunk() {
+        let input = b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
+
+        let document = parse_unified_diff(input).expect("valid Git patch");
+        let rendered = render_unified(&document);
+
+        assert_eq!(rendered, input);
+    }
+
+    #[test]
+    fn renders_colored_git_headers_without_terminal_controls() {
+        let input = b"\x1b[1mdiff --git a/file b/file\x1b[m\nindex 1111111..2222222 100644\n\x1b[1m--- a/file\x1b[m\n\x1b[1m+++ b/file\x1b[m\n@@ -1 +1 @@\n-old\n+new\n";
+
+        let document = parse_unified_diff(input).expect("valid colored Git patch");
+        let rendered = render_unified(&document);
+
+        assert_eq!(
+            rendered,
+            b"diff --git a/file b/file\nindex 1111111..2222222 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"
+        );
     }
 
     #[test]

@@ -13,7 +13,17 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut index = 0;
 
     while index < lines.len() {
-        let old_header_bytes = lines[index];
+        let mut metadata = Vec::new();
+        while index < lines.len() && decoded_line(lines[index]).starts_with("diff --git ") {
+            while index < lines.len() && !decoded_line(lines[index]).starts_with("--- ") {
+                metadata.push(source_line(lines[index]));
+                index += 1;
+            }
+        }
+
+        let Some(old_header_bytes) = lines.get(index) else {
+            return Err(error(index, "missing file header"));
+        };
         let old_header = decoded_line(old_header_bytes);
         if !old_header.starts_with("--- ") {
             return Err(error(index, "expected file header"));
@@ -69,6 +79,7 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
             return Err(error(index, "file has no hunks"));
         }
         files.push(DiffFile {
+            metadata,
             old_path: old_header[4..].to_owned(),
             new_path: new_header[4..].to_owned(),
             old_header: source_line(old_header_bytes),
@@ -80,19 +91,11 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
 }
 
 fn source_line(bytes: &[u8]) -> SourceLine {
-    SourceLine {
-        bytes: bytes.to_vec(),
-        text: decoded_line(bytes).into_owned(),
-    }
+    SourceLine::from_bytes(bytes)
 }
 
-fn decoded_line(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
-    let without_line_feed = bytes.strip_suffix(b"\n").unwrap_or(bytes);
-    let content = without_line_feed
-        .strip_suffix(b"\r")
-        .unwrap_or(without_line_feed);
-
-    String::from_utf8_lossy(content)
+fn decoded_line(bytes: &[u8]) -> String {
+    SourceLine::from_bytes(bytes).structural_text
 }
 
 fn error(line: usize, message: &str) -> ParseError {
@@ -134,6 +137,33 @@ mod tests {
         assert_eq!(document.files.len(), 1);
         assert_eq!(document.files[0].hunks.len(), 1);
         assert_eq!(document.files[0].hunks[0].records.len(), 2);
+    }
+
+    #[test]
+    fn parses_git_extended_headers_before_a_file_hunk() {
+        let input = b"diff --git a/readme.txt b/readme.txt\nindex 1111111..2222222 100644\n--- a/readme.txt\n+++ b/readme.txt\n@@ -1 +1 @@\n-old\n+new\n";
+
+        let document = parse_unified_diff(input).expect("valid Git patch");
+
+        assert_eq!(document.files.len(), 1);
+        assert_eq!(document.files[0].old_path, "a/readme.txt");
+    }
+
+    #[test]
+    fn parses_colored_git_extended_headers_before_a_file_hunk() {
+        let input = b"\x1b[1mdiff --git a/readme.txt b/readme.txt\x1b[m\nindex 1111111..2222222 100644\n\x1b[1m--- a/readme.txt\x1b[m\n\x1b[1m+++ b/readme.txt\x1b[m\n@@ -1 +1 @@\n-old\n+new\n";
+
+        let document = parse_unified_diff(input).expect("valid colored Git patch");
+
+        assert_eq!(document.files.len(), 1);
+        assert_eq!(document.files[0].new_path, "b/readme.txt");
+    }
+
+    #[test]
+    fn rejects_git_metadata_without_a_file_header() {
+        let input = b"diff --git a/readme.txt b/readme.txt\nindex 1111111..2222222 100644\n";
+
+        assert!(parse_unified_diff(input).is_err());
     }
 
     #[test]
