@@ -3,8 +3,10 @@
 pub mod actions;
 pub mod document;
 pub mod input;
+pub mod interaction;
 pub mod parser;
 pub mod render;
+pub mod terminal;
 
 fn render_input(input: &[u8]) -> Result<Vec<u8>, String> {
     let document = parser::parse_unified_diff(input).map_err(|error| error.message)?;
