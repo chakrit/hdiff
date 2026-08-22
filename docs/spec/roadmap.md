@@ -18,12 +18,12 @@ success for finite output.
 3. Implement strict parsing, loss-preserving document types, patch/stdin input selection, and
    malformed-input rejection.
 4. Implement safe finite unified rendering and quiet broken-pipe handling.
+5. Implement terminal lifecycle handling with explicit controlling-TTY events, staged cleanup,
+   pager navigation, and resize redraw.
 
 ## Next slice
 
-Implement the terminal lifecycle: acquire an explicit controlling terminal, perform staged
-cleanup, handle quit and Ctrl-C, move the vertical viewport, and coalesce resize redraws over
-the committed terminal-independent renderer.
+Implement file/hunk navigation and the interactive file list with synchronized selection.
 
 ## Later slices
 

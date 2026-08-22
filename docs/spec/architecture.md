@@ -189,8 +189,9 @@ bindings. There is no diff editing cursor; movement changes the viewport.
 
 ## Technology direction
 
-Rust is the implementation language. `ratatui` owns layout and rendering; `crossterm` owns
-terminal I/O, events, resize, raw mode, alternate-screen handling, and lifecycle operations.
+Rust is the implementation language. `ratatui` owns layout and rendering; CROSSTERM 0.29 with
+`use-dev-tty` owns terminal I/O, events, resize, raw mode, alternate-screen handling, and
+lifecycle operations.
 The backend must support event reads from an explicit controlling-terminal handle when stdin
 contains diff data. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned
 boundary; the parser set and performance rationale are recorded in
@@ -269,7 +270,5 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 ## Next design work
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
-`docs/vendor/terminal-diff-viewers.md`. The next implementation slice is terminal lifecycle:
-controlling-terminal acquisition and cleanup, quit and Ctrl-C, vertical viewport movement, and
-resize redraw. Navigation, layout, side-by-side, character, and semantic strategies follow in
-the feature sequence above.
+`docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Navigation, layout,
+side-by-side, character, and semantic strategies follow in the feature sequence above.

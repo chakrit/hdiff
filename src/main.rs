@@ -35,13 +35,21 @@ fn main() -> Result<(), String> {
         }
     };
     let output = render_input(&input)?;
-    let mut stdout = std::io::stdout();
-    let mut output_context = actions::write_output::OutputContext {
-        writer: &mut stdout,
-    };
-    actions::write_output::WriteOutput { bytes: &output }
-        .run(&mut output_context)
-        .map_err(|error| error.to_string())?;
+
+    match terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout())) {
+        terminal::OutputMode::Finite => {
+            let mut stdout = std::io::stdout();
+            let mut output_context = actions::write_output::OutputContext {
+                writer: &mut stdout,
+            };
+            actions::write_output::WriteOutput { bytes: &output }
+                .run(&mut output_context)
+                .map_err(|error| error.to_string())?;
+        }
+        terminal::OutputMode::Interactive => {
+            terminal::run_interactive(&output).map_err(|error| error.to_string())?;
+        }
+    }
 
     Ok(())
 }

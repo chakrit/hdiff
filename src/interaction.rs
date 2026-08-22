@@ -26,8 +26,16 @@ pub enum Transition {
 pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Transition {
     match input {
         Input::Quit | Input::Interrupt => Transition::Exit,
-        Input::Down => redraw(viewport.offset.saturating_add(1), viewport.height, line_count),
-        Input::Up => redraw(viewport.offset.saturating_sub(1), viewport.height, line_count),
+        Input::Down => redraw(
+            viewport.offset.saturating_add(1),
+            viewport.height,
+            line_count,
+        ),
+        Input::Up => redraw(
+            viewport.offset.saturating_sub(1),
+            viewport.height,
+            line_count,
+        ),
         Input::HalfPageDown => {
             let distance = viewport.height.saturating_div(2).max(1);
 
