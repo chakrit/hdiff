@@ -196,8 +196,9 @@ The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal move
 bindings. File rotation selects the next file and moves the viewport to its top. There is no
 diff editing cursor; movement changes the viewport.
 
-A dedicated shortcut-audit slice will make shifted shortcuts perform meaningful inverse actions.
-When a key's meaning is ambiguous, follow Vim semantics.
+A dedicated shortcut-audit slice makes shifted shortcuts perform meaningful inverse actions.
+`Shift-Tab` rotates to the previous file, the inverse of `Tab`; when a key's meaning is
+ambiguous, follow Vim semantics.
 
 The left file-list pane will show shortcut hints at its bottom.
 

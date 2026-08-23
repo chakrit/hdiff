@@ -148,7 +148,9 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Input::HalfPageUp),
         (KeyCode::Char('g'), _) => Some(Input::Top),
         (KeyCode::Char('G'), _) => Some(Input::Bottom),
+        (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
         (KeyCode::Tab, _) => Some(Input::NextFile),
+        (KeyCode::BackTab, _) => Some(Input::PreviousFile),
         (KeyCode::Char('{'), _) => Some(Input::PreviousHunk),
         (KeyCode::Char('}'), _) => Some(Input::NextHunk),
         _ => None,
@@ -357,6 +359,20 @@ mod tests {
                 KeyModifiers::NONE
             ))),
             Some(Input::NextFile)
+        );
+        assert_eq!(
+            input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                KeyCode::BackTab,
+                KeyModifiers::SHIFT
+            ))),
+            Some(Input::PreviousFile)
+        );
+        assert_eq!(
+            input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                KeyCode::Tab,
+                KeyModifiers::SHIFT
+            ))),
+            Some(Input::PreviousFile)
         );
         assert_eq!(
             input_for_event(CrosstermEvent::Key(KeyEvent::new(

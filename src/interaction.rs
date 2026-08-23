@@ -26,6 +26,7 @@ pub enum Input {
     Top,
     Bottom,
     NextFile,
+    PreviousFile,
     PreviousHunk,
     NextHunk,
     Quit,
@@ -40,6 +41,7 @@ pub fn transition_interaction(
 ) -> Transition {
     match input {
         Input::NextFile => return select_next_file(interaction, bounds.file_count),
+        Input::PreviousFile => return select_previous_file(interaction, bounds.file_count),
         Input::PreviousHunk => return jump_to_previous_hunk(interaction, bounds),
         Input::NextHunk => return jump_to_next_hunk(interaction, bounds),
         _ => {}
@@ -62,6 +64,22 @@ fn select_next_file(interaction: &Interaction, file_count: usize) -> Transition 
         _ => (interaction.selected_file + 1) % file_count,
     };
 
+    redraw_selected_file(interaction, selected_file)
+}
+
+fn select_previous_file(interaction: &Interaction, file_count: usize) -> Transition {
+    let selected_file = match file_count {
+        0 => 0,
+        _ => interaction
+            .selected_file
+            .checked_sub(1)
+            .unwrap_or(file_count - 1),
+    };
+
+    redraw_selected_file(interaction, selected_file)
+}
+
+fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Transition {
     Transition::RedrawInteraction(Interaction {
         selected_file,
         viewport: Viewport {
@@ -117,7 +135,7 @@ pub enum Transition {
 pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Transition {
     match input {
         Input::Quit | Input::Interrupt => Transition::Exit,
-        Input::NextFile | Input::PreviousHunk | Input::NextHunk => {
+        Input::NextFile | Input::PreviousFile | Input::PreviousHunk | Input::NextHunk => {
             Transition::Redraw(viewport.clone())
         }
         Input::Down => redraw(
@@ -246,6 +264,35 @@ mod tests {
             next,
             Transition::RedrawInteraction(Interaction {
                 selected_file: 0,
+                viewport: Viewport {
+                    offset: 0,
+                    height: 3,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn rotates_to_the_previous_file_and_resets_the_viewport() {
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 4,
+                height: 3,
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: 2,
+            line_count: 10,
+            hunk_offsets: &[2, 6],
+        };
+
+        let next = transition_interaction(&interaction, Input::PreviousFile, &bounds);
+
+        assert_eq!(
+            next,
+            Transition::RedrawInteraction(Interaction {
+                selected_file: 1,
                 viewport: Viewport {
                     offset: 0,
                     height: 3,

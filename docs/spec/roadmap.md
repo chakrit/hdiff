@@ -26,6 +26,7 @@ resize handling, or later interactive slices as delivered until they pass their 
    metadata, multi-line hunks, colored input, and metadata-only Git sections.
 5. Establish the Ratatui application boundary and render a unified view with distinct file-list
    and diff panes.
+6. Audit the shortcut map so `Shift-Tab` rotates to the previous file, the inverse of `Tab`.
 
 ## Remaining interactive delivery sequence
 
@@ -57,12 +58,6 @@ Each slice is incomplete until its automated checks and its human check both pas
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
-
-6. Audit the shortcut map so shifted shortcuts perform meaningful inverse actions; follow Vim
-   semantics when a key's meaning is ambiguous.
-
-   Human check: exercise every reversible shortcut and its shifted form. Each shifted shortcut
-   performs its inverse action without changing the selected file unexpectedly.
 
 7. Add shortcut hints to the bottom of the left file-list pane.
 
