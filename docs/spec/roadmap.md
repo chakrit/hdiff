@@ -32,6 +32,12 @@ resize handling, or later interactive slices as delivered until they pass their 
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
+1. Add Tree-sitter syntax highlighting with textual fallback before further navigation work.
+
+   Human check: open supported and unsupported source files in the same diff. Supported payload
+   lines gain syntax detail; unsupported files remain readable as plain text, and neither case
+   changes the selected layout unexpectedly.
+
 2. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
    file rotation, hunk movement, and resize.
 

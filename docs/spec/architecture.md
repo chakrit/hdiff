@@ -96,10 +96,11 @@ The implementation should land in slices that each leave a usable surface:
 
 1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
-3. Add file/hunk navigation and the interactive file list with synchronized selection.
-4. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
-5. Add implicit Tree-sitter semantic strategies with textual fallback.
-6. Refine highlighting coverage and additional navigation after the core interaction is stable.
+3. Add Tree-sitter syntax highlighting with textual fallback.
+4. Add file/hunk navigation and the interactive file list with synchronized selection.
+5. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+6. Add implicit Tree-sitter semantic strategies with textual fallback.
+7. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Input contract
 
@@ -211,6 +212,9 @@ The backend must support event reads from an explicit controlling-terminal handl
 contains diff data. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned
 boundary; the parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
+Syntax highlighting precedes further navigation work. It projects each hunk's old and new
+records into separate bounded virtual source buffers, maps returned spans back to sanitized
+record payloads, and leaves unsupported languages and highlighting failures as plain text.
 
 The first test boundary should be terminal-independent: parser fixtures, state-transition tests,
 layout snapshots, and renderer output tests. A small number of end-to-end terminal checks can be
@@ -285,5 +289,6 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 ## Next design work
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
-`docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Navigation, layout,
-side-by-side, character, and semantic strategies follow in the feature sequence above.
+`docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Tree-sitter syntax
+highlighting, navigation, layout, side-by-side, character, and semantic strategies follow in
+the feature sequence above.
