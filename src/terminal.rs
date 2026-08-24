@@ -219,6 +219,7 @@ fn render_frame(
             diff,
             file_list_width,
             separator_padding,
+            color_count,
         ),
     }
 }
@@ -230,6 +231,7 @@ fn render_split_panes(
     diff: Paragraph<'_>,
     file_list_width: u16,
     separator_padding: u16,
+    color_count: u16,
 ) {
     let panes = RatatuiLayout::horizontal([
         Constraint::Length(file_list_width),
@@ -243,20 +245,26 @@ fn render_split_panes(
         RatatuiLayout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(panes[0]);
     let mut selected_file = ListState::default();
     selected_file.select(layout.files.iter().position(|file| file.selected));
+    let chrome = chrome_palette(color_count);
     let files = layout
         .files
         .iter()
-        .map(|file| ListItem::new(file.label.as_str()))
+        .map(|file| {
+            ListItem::new(Line::styled(
+                file.label.as_str(),
+                Style::default().fg(chrome.file_list),
+            ))
+        })
         .collect::<Vec<_>>();
     let file_list = List::new(files)
         .highlight_symbol("> ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     let separator = Text::from(
         (0..area.height)
-            .map(|_| Line::styled("│", Style::default().fg(Color::DarkGray)))
+            .map(|_| Line::styled("│", Style::default().fg(chrome.separator)))
             .collect::<Vec<_>>(),
     );
-    let hints = Paragraph::new("Tab next · ⇧Tab prev").style(Style::default().fg(Color::DarkGray));
+    let hints = Paragraph::new("Tab next · ⇧Tab prev").style(Style::default().fg(chrome.footer));
 
     frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
     frame.render_widget(hints, file_list_areas[1]);
@@ -286,6 +294,10 @@ fn visible_diff_lines(
                 .unwrap_or(line);
             styled_line(
                 without_ending,
+                row_kind(
+                    layout.record_addresses.get(index).and_then(Option::as_ref),
+                    line.first(),
+                ),
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
                 color_count,
             )
@@ -309,13 +321,36 @@ fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<Synta
     }
 }
 
-fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'static> {
+#[derive(Clone, Copy)]
+enum RowKind {
+    Metadata,
+    Context,
+    Addition,
+    Deletion,
+}
+
+fn row_kind(record: Option<&crate::render::RecordAddress>, marker: Option<&u8>) -> RowKind {
+    match record {
+        None => RowKind::Metadata,
+        Some(_) => match marker {
+            Some(b'+') => RowKind::Addition,
+            Some(b'-') => RowKind::Deletion,
+            _ => RowKind::Context,
+        },
+    }
+}
+
+fn styled_line(
+    bytes: &[u8],
+    row_kind: RowKind,
+    syntax: &[SyntaxSpan],
+    color_count: u16,
+) -> Line<'static> {
     let text = String::from_utf8_lossy(bytes).into_owned();
-    let marker = bytes.first().copied();
     let palette = low_contrast_palette(color_count);
     let mut rendered = Vec::new();
-    let mut cursor = match marker {
-        Some(b'+') => {
+    let mut cursor = match row_kind {
+        RowKind::Addition => {
             rendered.push(Span::styled(
                 text[..1].to_owned(),
                 Style::default().fg(palette.addition_marker),
@@ -323,7 +358,7 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
             rendered.push(Span::raw(" "));
             1
         }
-        Some(b'-') => {
+        RowKind::Deletion => {
             rendered.push(Span::styled(
                 text[..1].to_owned(),
                 Style::default().fg(palette.deletion_marker),
@@ -331,11 +366,15 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
             rendered.push(Span::raw(" "));
             1
         }
-        _ => 0,
+        RowKind::Context | RowKind::Metadata => {
+            rendered.push(Span::raw("  "));
+            usize::from(matches!(row_kind, RowKind::Context))
+        }
     };
     for span in syntax {
-        let start = span.start + 1;
-        let end = span.end + 1;
+        let source_offset = usize::from(!matches!(row_kind, RowKind::Metadata));
+        let start = span.start + source_offset;
+        let end = span.end + source_offset;
         if start > cursor {
             rendered.push(Span::raw(text[cursor..start].to_owned()));
         }
@@ -350,17 +389,29 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
     }
     let line = Line::from(rendered);
 
-    match marker {
-        Some(b'+') => line.style(Style::default().bg(palette.addition_background)),
-        Some(b'-') => line.style(Style::default().fg(palette.deletion_body)),
-        _ => line,
+    match row_kind {
+        RowKind::Addition => line.style(
+            Style::default()
+                .bg(palette.addition_background)
+                .fg(palette.addition_body),
+        ),
+        RowKind::Deletion => line.style(
+            Style::default()
+                .bg(palette.deletion_background)
+                .fg(palette.deletion_body),
+        ),
+        RowKind::Context => line.style(Style::default().fg(palette.context_body)),
+        RowKind::Metadata => line,
     }
 }
 
 #[derive(Clone, Copy)]
 struct LowContrastPalette {
     addition_background: Color,
+    addition_body: Color,
+    deletion_background: Color,
     deletion_body: Color,
+    context_body: Color,
     deletion_marker: Color,
     addition_marker: Color,
 }
@@ -369,21 +420,57 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
     match color_count {
         u16::MAX => LowContrastPalette {
             addition_background: Color::Rgb(35, 73, 43),
+            addition_body: Color::Rgb(220, 235, 220),
+            deletion_background: Color::Rgb(50, 30, 30),
             deletion_body: Color::Rgb(150, 150, 150),
+            context_body: Color::Rgb(180, 180, 180),
             deletion_marker: Color::Rgb(206, 74, 74),
-            addition_marker: Color::Rgb(98, 173, 99),
+            addition_marker: Color::Rgb(112, 195, 115),
         },
         256.. => LowContrastPalette {
             addition_background: Color::Indexed(22),
+            addition_body: Color::Indexed(255),
+            deletion_background: Color::Indexed(52),
             deletion_body: Color::Indexed(245),
+            context_body: Color::Indexed(250),
             deletion_marker: Color::Indexed(167),
             addition_marker: Color::Indexed(71),
         },
         _ => LowContrastPalette {
             addition_background: Color::Green,
+            addition_body: Color::White,
+            deletion_background: Color::Red,
             deletion_body: Color::DarkGray,
+            context_body: Color::Gray,
             deletion_marker: Color::Red,
             addition_marker: Color::Green,
+        },
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ChromePalette {
+    file_list: Color,
+    separator: Color,
+    footer: Color,
+}
+
+fn chrome_palette(color_count: u16) -> ChromePalette {
+    match color_count {
+        u16::MAX => ChromePalette {
+            file_list: Color::Rgb(160, 160, 160),
+            separator: Color::Rgb(125, 125, 125),
+            footer: Color::Rgb(110, 110, 110),
+        },
+        256.. => ChromePalette {
+            file_list: Color::Indexed(246),
+            separator: Color::Indexed(243),
+            footer: Color::Indexed(240),
+        },
+        _ => ChromePalette {
+            file_list: Color::Gray,
+            separator: Color::DarkGray,
+            footer: Color::DarkGray,
         },
     }
 }
@@ -533,6 +620,9 @@ mod tests {
             ((24, 0), " ", "left separator padding"),
             ((25, 0), "│", "separator"),
             ((26, 0), " ", "right separator padding"),
+            ((27, 0), " ", "metadata marker column"),
+            ((28, 0), " ", "metadata marker spacing"),
+            ((29, 0), "-", "metadata content"),
             ((0, 1), ">", "selection marker"),
             ((27, 3), "-", "deletion marker"),
             ((27, 4), "+", "addition marker"),
@@ -542,7 +632,12 @@ mod tests {
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
-        assert_eq!(rendered[(0, 9)].fg, Color::DarkGray, "footer hint");
+        assert_eq!(rendered[(2, 0)].fg, Color::Rgb(160, 160, 160), "file label");
+        assert_eq!(
+            rendered[(0, 9)].fg,
+            Color::Rgb(110, 110, 110),
+            "footer hint"
+        );
     }
 
     #[test]
@@ -581,7 +676,7 @@ mod tests {
     #[test]
     fn renders_syntax_and_low_contrast_record_styles() {
         let document = parse_unified_diff(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() { let label = \"value\"; }\n",
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-old\n+fn added() { let label = \"value\"; }\n",
         )
         .expect("valid Rust diff");
         let interaction = Interaction {
@@ -610,36 +705,47 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected_symbols = [
-            ((28, 3), " ", "deletion marker spacing"),
-            ((28, 4), " ", "addition marker spacing"),
+            ((27, 0), " ", "header marker column"),
+            ((28, 0), " ", "header marker spacing"),
+            ((29, 0), "-", "header content"),
+            ((27, 3), " ", "context marker column"),
+            ((28, 3), " ", "context marker spacing"),
+            ((28, 4), " ", "deletion marker spacing"),
+            ((28, 5), " ", "addition marker spacing"),
         ];
         let expected_styles = [
             (
-                (27, 3),
-                Color::Rgb(206, 74, 74),
+                (29, 3),
+                Color::Rgb(180, 180, 180),
                 Color::Reset,
-                "deletion marker",
+                "context payload",
             ),
             (
                 (27, 4),
-                Color::Rgb(98, 173, 99),
+                Color::Rgb(206, 74, 74),
+                Color::Rgb(50, 30, 30),
+                "deletion marker",
+            ),
+            (
+                (27, 5),
+                Color::Rgb(112, 195, 115),
                 Color::Rgb(35, 73, 43),
                 "addition marker",
             ),
             (
-                (29, 3),
+                (29, 4),
                 Color::Rgb(150, 150, 150),
-                Color::Reset,
+                Color::Rgb(50, 30, 30),
                 "deletion payload",
             ),
             (
-                (29, 4),
+                (29, 5),
                 Color::Rgb(86, 156, 214),
                 Color::Rgb(35, 73, 43),
                 "addition keyword",
             ),
             (
-                (54, 4),
+                (54, 5),
                 Color::Rgb(206, 145, 120),
                 Color::Rgb(35, 73, 43),
                 "addition string",

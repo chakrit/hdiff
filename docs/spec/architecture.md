@@ -183,18 +183,20 @@ line-versus-character diff granularity:
 
 1. `none`: no diff-specific contrast; render additions, deletions, and context with the base
    palette;
-2. `low`: the preferred default, using a muted red minus marker and muted deletion text with no
-   deletion background, plus a restrained green addition background and green plus marker;
+2. `low`: the preferred default, using dim red deletion background and muted deletion text,
+   quiet neutral context, and a restrained green addition background with a brighter plus marker;
 3. `high`: stronger red/green emphasis while retaining readable surrounding context;
 4. `max`: the strongest red/green highlighting, including full-line emphasis where the active
    layout supports it.
 
-The `low` palette is the locked preferred display: muted deletion text recedes without a full-line
-background, while additions retain a restrained green background and marker. Every record marker
-is followed by one space before its payload. Contrast changes never alter the parsed document and
-apply consistently in unified and side-by-side layouts. `DiffGranularity` controls whether
-differences are represented as lines or characters; `DiffContrast` controls only their visual
-intensity and never changes that representation.
+The `low` palette is the locked preferred display: additions are strongest; deletion text is muted
+over a dim red background; context is quieter neutral text. Every rendered row reserves a marker
+column and one payload spacer: addition and deletion markers occupy that column, while metadata,
+hunks, and context leave it blank so all payloads align. The separator remains neutral, and each
+change background begins after its right-hand gutter. Contrast changes never alter the parsed
+document and apply consistently in unified and side-by-side layouts. `DiffGranularity` controls
+whether differences are represented as lines or characters; `DiffContrast` controls only their
+visual intensity and never changes that representation.
 
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
 `Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` prior/next hunk movement,

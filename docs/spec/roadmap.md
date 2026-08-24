@@ -16,9 +16,10 @@ file-list and diff panes, while CROSSTERM retains terminal lifecycle and event o
 slice passed its automated and human checks. Do not describe file navigation, hunk navigation,
 resize handling, or later interactive slices as delivered until they pass their own human checks.
 
-Low-contrast addition and deletion styling uses muted, background-free deletions and restrained
-green addition backgrounds, with spaced markers and retained syntax colors. Its automated checks
-pass; the mixed-language terminal human check remains required to complete the slice.
+Low-contrast styling reserves aligned marker and payload columns on every row. Context is quiet
+neutral text; deletions use muted text over a dim red background; additions retain the strongest
+green emphasis and syntax colors. Its automated checks pass; the mixed-language terminal human
+check remains required to complete the slice.
 
 The compact two-column layout has no pane borders, labels, or titles; it renders one separator
 with one space on each side between the file list and diff, keeps muted file-navigation hints at
@@ -52,9 +53,9 @@ Each slice is incomplete until its automated checks and its human check both pas
    applies tokens only to visible payloads; errors, unsupported paths, oversized hunks, and
    context records whose old and new paths select different languages retain textual rendering.
 
-2. Add asymmetric low-contrast addition and deletion styling before the compact layout. Deletions
-   have muted content and no background; additions remain highlighted while syntax colors stay
-   visible; every record marker has one space before its payload.
+2. Add asymmetric low-contrast addition and deletion styling before the compact layout. Additions
+   are strongest; deletion content is muted over a dim red background; context is quiet neutral
+   text; every rendered row has aligned marker and payload columns.
 
    Human check: open a mixed-language diff and verify additions and deletions are visibly
    distinguishable without obscuring syntax colors or saturating whole lines.
