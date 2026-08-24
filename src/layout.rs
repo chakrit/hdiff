@@ -4,6 +4,35 @@ use crate::{
     render::{RecordAddress, render_file_lines},
 };
 
+const MINIMUM_SCREEN_WIDTH: u16 = 20;
+const MINIMUM_SCREEN_HEIGHT: u16 = 3;
+const FILE_LIST_WIDTH: u16 = 24;
+const SEPARATOR_WIDTH: u16 = 1;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum PaneLayout {
+    TooNarrow,
+    TooShort,
+    DiffOnly,
+    Split { file_list_width: u16 },
+}
+
+pub fn pane_layout(width: u16, height: u16) -> PaneLayout {
+    if width < MINIMUM_SCREEN_WIDTH {
+        return PaneLayout::TooNarrow;
+    }
+    if height < MINIMUM_SCREEN_HEIGHT {
+        return PaneLayout::TooShort;
+    }
+    if width < FILE_LIST_WIDTH + SEPARATOR_WIDTH + 1 {
+        return PaneLayout::DiffOnly;
+    }
+
+    PaneLayout::Split {
+        file_list_width: FILE_LIST_WIDTH,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileListRow {
     pub label: String,
@@ -79,7 +108,7 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileListRow, layout};
+    use super::{FileListRow, PaneLayout, layout, pane_layout};
     use crate::{
         interaction::{Interaction, Viewport},
         parser::parse_unified_diff,
@@ -175,5 +204,18 @@ mod tests {
         let view = layout(&document, &interaction);
 
         assert_eq!(view.files[0].label, "b/added-file.txt");
+    }
+
+    #[test]
+    fn derives_compact_pane_visibility_from_terminal_size() {
+        assert_eq!(pane_layout(19, 3), PaneLayout::TooNarrow);
+        assert_eq!(pane_layout(20, 2), PaneLayout::TooShort);
+        assert_eq!(pane_layout(25, 3), PaneLayout::DiffOnly);
+        assert_eq!(
+            pane_layout(26, 3),
+            PaneLayout::Split {
+                file_list_width: 24,
+            }
+        );
     }
 }

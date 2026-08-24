@@ -16,9 +16,14 @@ file-list and diff panes, while CROSSTERM retains terminal lifecycle and event o
 slice passed its automated and human checks. Do not describe file navigation, hunk navigation,
 resize handling, or later interactive slices as delivered until they pass their own human checks.
 
-Low-contrast addition and deletion styling is implemented with a neutral gray background, muted
-record text, restrained red/green markers, and retained syntax colors. Its automated checks pass;
-the mixed-language terminal human check remains required to complete the slice.
+Low-contrast addition and deletion styling uses muted, background-free deletions and restrained
+green addition backgrounds, with spaced markers and retained syntax colors. Its automated checks
+pass; the mixed-language terminal human check remains required to complete the slice.
+
+The compact two-column layout has no pane borders, labels, or titles; it renders one separator
+between the file list and diff, keeps muted file-navigation hints at the bottom of the list, and
+collapses the list before the diff. Its automated checks pass; the multi-file terminal human check
+remains required to complete the slice.
 
 ## Completed slices
 
@@ -47,17 +52,17 @@ Each slice is incomplete until its automated checks and its human check both pas
    applies tokens only to visible payloads; errors, unsupported paths, oversized hunks, and
    context records whose old and new paths select different languages retain textual rendering.
 
-2. Add low-contrast addition and deletion styling before the compact layout. Addition and deletion
-   markers remain immediately recognizable while surrounding content stays readable and syntax
-   colors remain visible.
+2. Add asymmetric low-contrast addition and deletion styling before the compact layout. Deletions
+   have muted content and no background; additions remain highlighted while syntax colors stay
+   visible; every record marker has one space before its payload.
 
    Human check: open a mixed-language diff and verify additions and deletions are visibly
    distinguishable without obscuring syntax colors or saturating whole lines.
 
-3. Replace pane chrome with a compact two-column layout before local Git integration. The left
-   column contains the Tab-switchable file list and muted shortcut hints at its bottom; the right
-   column contains the diff. One vertical separator divides the columns. Pane borders, labels,
-   and titles are absent so content uses the available terminal cells.
+3. The compact two-column layout is implemented before local Git integration. The left column
+   contains the Tab-switchable file list and muted shortcut hints at its bottom; the right column
+   contains the diff. One vertical separator divides the columns. Pane borders, labels, and titles
+   are absent so content uses the available terminal cells.
 
    Human check: open a multi-file diff and verify the file list and muted hints occupy the left
    column, the diff occupies the right column, exactly one vertical separator is visible, and no

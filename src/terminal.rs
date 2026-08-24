@@ -13,13 +13,13 @@ use ratatui::{
     layout::{Constraint, Layout as RatatuiLayout},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{List, ListItem, ListState, Paragraph},
 };
 
 use crate::{
     document::{DiffDocument, DiffFile},
     interaction::{self, Input, Interaction, NavigationBounds, Transition, Viewport},
-    layout::{Layout, layout},
+    layout::{Layout, PaneLayout, layout, pane_layout},
     syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
 };
 
@@ -200,26 +200,36 @@ fn render_frame(
     color_count: u16,
 ) {
     let area = frame.area();
-    if area.width < 20 {
-        frame.render_widget(Paragraph::new("screen too narrow"), area);
-        return;
-    }
-    if area.height < 3 {
-        frame.render_widget(Paragraph::new("screen too short"), area);
-        return;
-    }
-
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
     let lines = visible_diff_lines(layout, viewport, file, syntax, color_count);
-    let diff = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title("Diff"));
-    if area.width < 25 {
-        frame.render_widget(diff, area);
-        return;
-    }
+    let diff = Paragraph::new(Text::from(lines));
 
-    let panes = RatatuiLayout::horizontal([Constraint::Length(24), Constraint::Min(1)]).split(area);
+    match pane_layout(area.width, area.height) {
+        PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
+        PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
+        PaneLayout::DiffOnly => frame.render_widget(diff, area),
+        PaneLayout::Split { file_list_width } => {
+            render_split_panes(frame, layout, area, diff, file_list_width)
+        }
+    }
+}
+
+fn render_split_panes(
+    frame: &mut Frame,
+    layout: &Layout,
+    area: ratatui::layout::Rect,
+    diff: Paragraph<'_>,
+    file_list_width: u16,
+) {
+    let panes = RatatuiLayout::horizontal([
+        Constraint::Length(file_list_width),
+        Constraint::Length(1),
+        Constraint::Min(1),
+    ])
+    .split(area);
+    let file_list_areas =
+        RatatuiLayout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(panes[0]);
     let mut selected_file = ListState::default();
     selected_file.select(layout.files.iter().position(|file| file.selected));
     let files = layout
@@ -228,11 +238,19 @@ fn render_frame(
         .map(|file| ListItem::new(file.label.as_str()))
         .collect::<Vec<_>>();
     let file_list = List::new(files)
-        .block(Block::default().borders(Borders::ALL).title("Files"))
         .highlight_symbol("> ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-    frame.render_stateful_widget(file_list, panes[0], &mut selected_file);
-    frame.render_widget(diff, panes[1]);
+    let separator = Text::from(
+        (0..area.height)
+            .map(|_| Line::styled("│", Style::default().fg(Color::DarkGray)))
+            .collect::<Vec<_>>(),
+    );
+    let hints = Paragraph::new("Tab next · ⇧Tab prev").style(Style::default().fg(Color::DarkGray));
+
+    frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
+    frame.render_widget(hints, file_list_areas[1]);
+    frame.render_widget(Paragraph::new(separator), panes[1]);
+    frame.render_widget(diff, panes[2]);
 }
 
 fn visible_diff_lines(
@@ -291,6 +309,7 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
                 text[..1].to_owned(),
                 Style::default().fg(palette.addition_marker),
             ));
+            rendered.push(Span::raw(" "));
             1
         }
         Some(b'-') => {
@@ -298,6 +317,7 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
                 text[..1].to_owned(),
                 Style::default().fg(palette.deletion_marker),
             ));
+            rendered.push(Span::raw(" "));
             1
         }
         _ => 0,
@@ -320,17 +340,16 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
     let line = Line::from(rendered);
 
     match marker {
-        Some(b'+') | Some(b'-') => {
-            line.style(Style::default().bg(palette.background).fg(palette.body))
-        }
+        Some(b'+') => line.style(Style::default().bg(palette.addition_background)),
+        Some(b'-') => line.style(Style::default().fg(palette.deletion_body)),
         _ => line,
     }
 }
 
 #[derive(Clone, Copy)]
 struct LowContrastPalette {
-    background: Color,
-    body: Color,
+    addition_background: Color,
+    deletion_body: Color,
     deletion_marker: Color,
     addition_marker: Color,
 }
@@ -338,20 +357,20 @@ struct LowContrastPalette {
 fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
     match color_count {
         u16::MAX => LowContrastPalette {
-            background: Color::Rgb(45, 45, 48),
-            body: Color::Rgb(190, 190, 190),
+            addition_background: Color::Rgb(35, 73, 43),
+            deletion_body: Color::Rgb(150, 150, 150),
             deletion_marker: Color::Rgb(206, 74, 74),
             addition_marker: Color::Rgb(98, 173, 99),
         },
         256.. => LowContrastPalette {
-            background: Color::Indexed(236),
-            body: Color::Indexed(250),
+            addition_background: Color::Indexed(22),
+            deletion_body: Color::Indexed(245),
             deletion_marker: Color::Indexed(167),
             addition_marker: Color::Indexed(71),
         },
         _ => LowContrastPalette {
-            background: Color::DarkGray,
-            body: Color::Gray,
+            addition_background: Color::Green,
+            deletion_body: Color::DarkGray,
             deletion_marker: Color::Red,
             addition_marker: Color::Green,
         },
@@ -468,7 +487,7 @@ mod tests {
     };
 
     #[test]
-    fn renders_distinct_file_and_diff_panes() {
+    fn renders_compact_file_and_diff_panes_with_one_separator() {
         let document = parse_unified_diff(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
         )
@@ -498,11 +517,13 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(0, 0)].symbol(), "┌");
-        assert_eq!(rendered[(24, 0)].symbol(), "┌");
-        assert_eq!(rendered[(3, 1)].symbol(), "a");
-        assert_eq!(rendered[(1, 2)].symbol(), ">");
-        assert_eq!(rendered[(25, 5)].symbol(), "+");
+        assert_eq!(rendered[(2, 0)].symbol(), "a");
+        assert_eq!(rendered[(24, 0)].symbol(), "│");
+        assert_eq!(rendered[(0, 1)].symbol(), ">");
+        assert_eq!(rendered[(25, 3)].symbol(), "-");
+        assert_eq!(rendered[(25, 4)].symbol(), "+");
+        assert_eq!(rendered[(0, 9)].symbol(), "T");
+        assert_eq!(rendered[(0, 9)].fg, Color::DarkGray);
     }
 
     #[test]
@@ -534,8 +555,8 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(1, 0)].symbol(), "D");
-        assert_eq!(rendered[(1, 1)].symbol(), "-");
+        assert_eq!(rendered[(0, 3)].symbol(), "-");
+        assert_eq!(rendered[(1, 3)].symbol(), " ");
     }
 
     #[test]
@@ -569,12 +590,15 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(25, 4)].fg, Color::Rgb(206, 74, 74));
-        assert_eq!(rendered[(25, 5)].fg, Color::Rgb(98, 173, 99));
-        assert_eq!(rendered[(27, 4)].bg, Color::Rgb(45, 45, 48));
-        assert_eq!(rendered[(26, 5)].bg, Color::Rgb(45, 45, 48));
-        assert_eq!(rendered[(26, 5)].fg, Color::Rgb(86, 156, 214));
-        assert_eq!(rendered[(51, 5)].fg, Color::Rgb(206, 145, 120));
+        assert_eq!(rendered[(25, 3)].fg, Color::Rgb(206, 74, 74));
+        assert_eq!(rendered[(25, 4)].fg, Color::Rgb(98, 173, 99));
+        assert_eq!(rendered[(26, 3)].symbol(), " ");
+        assert_eq!(rendered[(26, 4)].symbol(), " ");
+        assert_eq!(rendered[(27, 3)].bg, Color::Reset);
+        assert_eq!(rendered[(27, 3)].fg, Color::Rgb(150, 150, 150));
+        assert_eq!(rendered[(27, 4)].bg, Color::Rgb(35, 73, 43));
+        assert_eq!(rendered[(27, 4)].fg, Color::Rgb(86, 156, 214));
+        assert_eq!(rendered[(52, 4)].fg, Color::Rgb(206, 145, 120));
     }
 
     #[test]
@@ -594,8 +618,8 @@ mod tests {
     #[test]
     fn falls_back_from_truecolor_to_256_and_basic_low_contrast_colors() {
         assert_eq!(
-            low_contrast_palette(u16::MAX).background,
-            Color::Rgb(45, 45, 48)
+            low_contrast_palette(u16::MAX).addition_background,
+            Color::Rgb(35, 73, 43)
         );
         assert_eq!(
             low_contrast_palette(256).addition_marker,

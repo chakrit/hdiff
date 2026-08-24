@@ -97,7 +97,7 @@ The implementation should land in slices that each leave a usable surface:
 1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
 3. Add Tree-sitter syntax highlighting with textual fallback.
-4. Add low-contrast addition and deletion styling before the compact layout.
+4. Add asymmetric low-contrast addition and deletion styling before the compact layout.
 5. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
    left, a diff view on the right, and one vertical separator with no pane borders or labels.
 6. Add file/hunk navigation and the interactive file list with synchronized selection.
@@ -179,18 +179,18 @@ line-versus-character diff granularity:
 
 1. `none`: no diff-specific contrast; render additions, deletions, and context with the base
    palette;
-2. `low`: the preferred default, using a gray/silver diff background, muted body text, and
-   restrained red minus and green plus markers;
+2. `low`: the preferred default, using a muted red minus marker and muted deletion text with no
+   deletion background, plus a restrained green addition background and green plus marker;
 3. `high`: stronger red/green emphasis while retaining readable surrounding context;
 4. `max`: the strongest red/green highlighting, including full-line emphasis where the active
    layout supports it.
 
-The `low` palette is the locked preferred display: neutral gray/silver surroundings and muted
-text keep the diff readable, while red deletions and green additions remain immediately
-recognizable without saturating the whole terminal. Contrast changes never alter the parsed
-document and apply consistently in unified and side-by-side layouts. `DiffGranularity` controls
-whether differences are represented as lines or characters; `DiffContrast` controls only their
-visual intensity and never changes that representation.
+The `low` palette is the locked preferred display: muted deletion text recedes without a full-line
+background, while additions retain a restrained green background and marker. Every record marker
+is followed by one space before its payload. Contrast changes never alter the parsed document and
+apply consistently in unified and side-by-side layouts. `DiffGranularity` controls whether
+differences are represented as lines or characters; `DiffContrast` controls only their visual
+intensity and never changes that representation.
 
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
 `Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` prior/next hunk movement,
@@ -298,6 +298,6 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
 `docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Tree-sitter syntax
-highlighting is complete. Low-contrast addition/deletion styling is implemented and awaits its
-mixed-language terminal human check. Compact layout, navigation, side-by-side, character, and
+highlighting is complete. Low-contrast addition/deletion styling and compact layout are
+implemented and await their terminal human checks. Navigation, side-by-side, character, and
 semantic strategies follow in the feature sequence above.
