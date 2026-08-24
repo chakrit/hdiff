@@ -205,13 +205,12 @@ fn render_frame(
     let area = frame.area();
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
-    let lines = visible_diff_lines(layout, viewport, file, syntax, color_count);
-    let diff = Paragraph::new(Text::from(lines));
+    let rows = visible_diff_rows(layout, viewport, file, syntax, color_count);
 
     match pane_layout(area.width, area.height) {
         PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
         PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
-        PaneLayout::DiffOnly => frame.render_widget(diff, area),
+        PaneLayout::DiffOnly => render_diff_rows(frame, rows, area),
         PaneLayout::Split {
             file_list_width,
             separator_padding,
@@ -219,7 +218,7 @@ fn render_frame(
             frame,
             layout,
             area,
-            diff,
+            rows,
             file_list_width,
             separator_padding,
             color_count,
@@ -231,7 +230,7 @@ fn render_split_panes(
     frame: &mut Frame,
     layout: &Layout,
     area: ratatui::layout::Rect,
-    diff: Paragraph<'_>,
+    rows: Vec<DiffRow>,
     file_list_width: u16,
     separator_padding: u16,
     color_count: u16,
@@ -280,7 +279,15 @@ fn render_split_panes(
     frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
     frame.render_widget(hints, file_list_areas[1]);
     frame.render_widget(Paragraph::new(separator), panes[2]);
-    frame.render_widget(diff, panes[4]);
+    render_diff_rows(frame, rows, panes[4]);
+}
+
+fn render_diff_rows(frame: &mut Frame, rows: Vec<DiffRow>, area: ratatui::layout::Rect) {
+    for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
+        let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
+
+        frame.render_widget(Paragraph::new(row.line).style(row.style), row_area);
+    }
 }
 
 fn footer_hints() -> Vec<Line<'static>> {
@@ -294,13 +301,18 @@ fn footer_hints() -> Vec<Line<'static>> {
     ]
 }
 
-fn visible_diff_lines(
+struct DiffRow {
+    line: Line<'static>,
+    style: Style,
+}
+
+fn visible_diff_rows(
     layout: &Layout,
     viewport: &Viewport,
     file: Option<&DiffFile>,
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
-) -> Vec<Line<'static>> {
+) -> Vec<DiffRow> {
     let spans = file
         .map(|file| syntax_rows(file, syntax))
         .unwrap_or_default();
@@ -314,12 +326,17 @@ fn visible_diff_lines(
                 .strip_suffix(b"\r\n")
                 .or_else(|| line.strip_suffix(b"\n"))
                 .unwrap_or(line);
-            styled_line(
+            let row_kind = row_kind(layout.line_kinds.get(index), line.first());
+            let palette = low_contrast_palette(color_count);
+            let style = row_style(row_kind, palette, color_count);
+            let line = styled_line(
                 without_ending,
-                row_kind(layout.line_kinds.get(index), line.first()),
+                row_kind,
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
                 color_count,
-            )
+            );
+
+            DiffRow { line, style }
         })
         .collect()
 }
@@ -411,22 +428,20 @@ fn styled_line(
     if cursor < text.len() {
         rendered.push(Span::raw(text[cursor..].to_owned()));
     }
-    let line = Line::from(rendered);
+    Line::from(rendered).style(row_style(row_kind, palette, color_count))
+}
 
+fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -> Style {
     match row_kind {
-        RowKind::Addition => line.style(
-            Style::default()
-                .bg(palette.addition_background)
-                .fg(palette.addition_body),
-        ),
-        RowKind::Deletion => line.style(
-            Style::default()
-                .bg(palette.deletion_background)
-                .fg(palette.deletion_body),
-        ),
-        RowKind::Context => line.style(Style::default().fg(palette.context_body)),
-        RowKind::HunkHeader => line.style(Style::default().fg(hunk_header_color(color_count))),
-        RowKind::Metadata => line,
+        RowKind::Addition => Style::default()
+            .bg(palette.addition_background)
+            .fg(palette.addition_body),
+        RowKind::Deletion => Style::default()
+            .bg(palette.deletion_background)
+            .fg(palette.deletion_body),
+        RowKind::Context => Style::default().fg(palette.context_body),
+        RowKind::HunkHeader => Style::default().fg(hunk_header_color(color_count)),
+        RowKind::Metadata => Style::default(),
     }
 }
 
@@ -782,6 +797,18 @@ mod tests {
                 Color::Rgb(206, 145, 120),
                 Color::Rgb(35, 73, 43),
                 "addition string",
+            ),
+            (
+                (79, 4),
+                Color::Rgb(150, 150, 150),
+                Color::Rgb(50, 30, 30),
+                "deletion background reaches the diff pane edge",
+            ),
+            (
+                (79, 5),
+                Color::Rgb(220, 235, 220),
+                Color::Rgb(35, 73, 43),
+                "addition background reaches the diff pane edge",
             ),
         ];
 

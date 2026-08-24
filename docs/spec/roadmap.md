@@ -26,6 +26,10 @@ with one space on each side between the file list and diff, keeps muted file-nav
 the bottom of the list, and collapses the list before the diff. Its automated checks pass; the
 multi-file terminal human check remains required to complete the slice.
 
+Addition and deletion rows extend their backgrounds through the right edge of the active diff
+pane while retaining marker and syntax colors. Its automated checks pass; the mixed-language
+terminal human check remains required to complete the slice.
+
 The terminal smoke suite uses one fixed-size tmux session and a multi-file Rust, JavaScript,
 Python, Go, and C fixture. It captures ANSI-styled panes after launch and each Tab-selected file,
 then exits with `q`; SMOKE locks this observable terminal surface for drift review.
@@ -85,7 +89,7 @@ Each slice is incomplete until its automated checks and its human check both pas
    Human check: open a multi-file diff and verify the footer identifies vertical, page, top/bottom,
    hunk, file-rotation, and exit controls without reducing the file list below usable height.
 
-6. Extend addition and deletion backgrounds through the right edge of the active diff pane.
+6. Addition and deletion backgrounds extend through the right edge of the active diff pane.
 
    Human check: open a mixed-language diff and verify every addition and deletion background
    continues through the remaining visible cells without changing the marker or syntax colors.
