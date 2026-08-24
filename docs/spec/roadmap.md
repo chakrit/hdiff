@@ -18,17 +18,16 @@ resize handling, or later interactive slices as delivered until they pass their 
 
 Low-contrast styling reserves aligned marker and payload columns on every row. Context is quiet
 neutral text; deletions use muted text over a dim red background; additions retain the strongest
-green emphasis and syntax colors. Its automated checks pass; the mixed-language terminal human
-check remains required to complete the slice.
+green emphasis and syntax colors. Its automated and mixed-language terminal checks pass.
 
 The compact two-column layout has no pane borders, labels, or titles; it renders one separator
 with one space on each side between the file list and diff, keeps muted file-navigation hints at
-the bottom of the list, and collapses the list before the diff. Its automated checks pass; the
-multi-file terminal human check remains required to complete the slice.
+the bottom of the list, and collapses the list before the diff. Its automated and multi-file
+terminal checks pass.
 
 Addition and deletion rows extend their backgrounds through the right edge of the active diff
-pane while retaining marker and syntax colors. Its automated checks pass; the mixed-language
-terminal human check remains required to complete the slice.
+pane while retaining marker and syntax colors. Its automated and mixed-language terminal checks
+pass.
 
 The terminal smoke suite uses one fixed-size tmux session and a multi-file Rust, JavaScript,
 Python, Go, and C fixture. It captures ANSI-styled panes after launch and each Tab-selected file,
@@ -45,56 +44,18 @@ then exits with `q`; SMOKE locks this observable terminal surface for drift revi
 5. Establish the Ratatui application boundary and render a unified view with distinct file-list
    and diff panes.
 6. Audit the shortcut map so `Shift-Tab` rotates to the previous file, the inverse of `Tab`.
+7. Add Tree-sitter syntax highlighting with textual fallback.
+8. Add asymmetric low-contrast addition and deletion styling with aligned marker and payload
+   columns.
+9. Add the compact two-column layout, including the multi-row file-list footer and hunk-header
+   styling.
+10. Extend addition and deletion backgrounds through the active diff pane's right edge.
 
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Add Tree-sitter syntax highlighting with textual fallback before further navigation work.
-
-   Human check: open supported and unsupported source files in the same diff. Supported payload
-   lines gain syntax detail; unsupported files remain readable as plain text, and neither case
-   changes the selected layout unexpectedly.
-
-   The safe renderer is the only producer of display rows. Tree-sitter receives bounded virtual
-   old/new hunk sources and returns semantic tokens mapped to those row payloads. The terminal
-   applies tokens only to visible payloads; errors, unsupported paths, oversized hunks, and
-   context records whose old and new paths select different languages retain textual rendering.
-
-2. Add asymmetric low-contrast addition and deletion styling before the compact layout. Additions
-   are strongest; deletion content is muted over a dim red background; context is quiet neutral
-   text; every rendered row has aligned marker and payload columns.
-
-   Human check: open a mixed-language diff and verify additions and deletions are visibly
-   distinguishable without obscuring syntax colors or saturating whole lines.
-
-3. The compact two-column layout is implemented before local Git integration. The left column
-   contains the Tab-switchable file list and muted shortcut hints at its bottom; the right column
-   contains the diff. One vertical separator with one space on each side divides the columns. Pane
-   borders, labels, and titles are absent so content uses the available terminal cells.
-
-   Human check: open a multi-file diff and verify the file list and muted hints occupy the left
-   column, the diff occupies the right column, exactly one vertical separator is visible, and no
-   pane border, label, or title consumes space.
-
-4. Render hunk headers beginning with `@@` as muted cyan-blue structural lines while retaining
-   neutral styling for Git metadata and file headers.
-
-   Human check: open a multi-hunk diff and verify every `@@` header is visually distinct from
-   source context without competing with additions or deletions.
-
-5. Expand the file-list footer into a compact multi-row reference for every implemented movement,
-   file-rotation, and exit shortcut.
-
-   Human check: open a multi-file diff and verify the footer identifies vertical, page, top/bottom,
-   hunk, file-rotation, and exit controls without reducing the file list below usable height.
-
-6. Addition and deletion backgrounds extend through the right edge of the active diff pane.
-
-   Human check: open a mixed-language diff and verify every addition and deletion background
-   continues through the remaining visible cells without changing the marker or syntax colors.
-
-7. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
+1. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
    file rotation, hunk movement, and resize.
 
    Human check: with a multi-file, multi-hunk diff open, verify `j`/`k`, `Ctrl-D`/`Ctrl-U`, and
@@ -102,20 +63,20 @@ Each slice is incomplete until its automated checks and its human check both pas
    its top; `{` and `}` move between that file's hunks; resizing redraws the same selected file
    and does not leave terminal artifacts; `q` restores the terminal.
 
-8. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
+2. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
    viewport meaning, and file-list pane.
 
    Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
    aligned panes; switching back to unified view retains the selected file and approximate
    location. Resize both views without overlap or a displaced column separator.
 
-9. Add character-level detail within changed line pairs and session-local context controls.
+3. Add character-level detail within changed line pairs and session-local context controls.
 
    Human check: press `c` on a changed line and see only changed character spans gain detail;
    press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
    that the selected file and current hunk remain understandable.
 
-10. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+4. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
@@ -123,8 +84,7 @@ Each slice is incomplete until its automated checks and its human check both pas
 
 ## Deferred work
 
-Local Git integration remains deferred until the syntax-highlighting, contrast, and compact-layout
-slices are usable in a real terminal.
+Local Git integration remains deferred.
 
 ## Later slices
 
