@@ -209,9 +209,17 @@ fn render_frame(
         PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
         PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
         PaneLayout::DiffOnly => frame.render_widget(diff, area),
-        PaneLayout::Split { file_list_width } => {
-            render_split_panes(frame, layout, area, diff, file_list_width)
-        }
+        PaneLayout::Split {
+            file_list_width,
+            separator_padding,
+        } => render_split_panes(
+            frame,
+            layout,
+            area,
+            diff,
+            file_list_width,
+            separator_padding,
+        ),
     }
 }
 
@@ -221,10 +229,13 @@ fn render_split_panes(
     area: ratatui::layout::Rect,
     diff: Paragraph<'_>,
     file_list_width: u16,
+    separator_padding: u16,
 ) {
     let panes = RatatuiLayout::horizontal([
         Constraint::Length(file_list_width),
+        Constraint::Length(separator_padding),
         Constraint::Length(1),
+        Constraint::Length(separator_padding),
         Constraint::Min(1),
     ])
     .split(area);
@@ -249,8 +260,8 @@ fn render_split_panes(
 
     frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
     frame.render_widget(hints, file_list_areas[1]);
-    frame.render_widget(Paragraph::new(separator), panes[1]);
-    frame.render_widget(diff, panes[2]);
+    frame.render_widget(Paragraph::new(separator), panes[2]);
+    frame.render_widget(diff, panes[4]);
 }
 
 fn visible_diff_lines(
@@ -517,13 +528,21 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(2, 0)].symbol(), "a");
-        assert_eq!(rendered[(24, 0)].symbol(), "│");
-        assert_eq!(rendered[(0, 1)].symbol(), ">");
-        assert_eq!(rendered[(25, 3)].symbol(), "-");
-        assert_eq!(rendered[(25, 4)].symbol(), "+");
-        assert_eq!(rendered[(0, 9)].symbol(), "T");
-        assert_eq!(rendered[(0, 9)].fg, Color::DarkGray);
+        let expected_symbols = [
+            ((2, 0), "a", "first file"),
+            ((24, 0), " ", "left separator padding"),
+            ((25, 0), "│", "separator"),
+            ((26, 0), " ", "right separator padding"),
+            ((0, 1), ">", "selection marker"),
+            ((27, 3), "-", "deletion marker"),
+            ((27, 4), "+", "addition marker"),
+            ((0, 9), "T", "footer hint"),
+        ];
+
+        for ((x, y), expected, name) in expected_symbols {
+            assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
+        }
+        assert_eq!(rendered[(0, 9)].fg, Color::DarkGray, "footer hint");
     }
 
     #[test]
@@ -590,15 +609,52 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(25, 3)].fg, Color::Rgb(206, 74, 74));
-        assert_eq!(rendered[(25, 4)].fg, Color::Rgb(98, 173, 99));
-        assert_eq!(rendered[(26, 3)].symbol(), " ");
-        assert_eq!(rendered[(26, 4)].symbol(), " ");
-        assert_eq!(rendered[(27, 3)].bg, Color::Reset);
-        assert_eq!(rendered[(27, 3)].fg, Color::Rgb(150, 150, 150));
-        assert_eq!(rendered[(27, 4)].bg, Color::Rgb(35, 73, 43));
-        assert_eq!(rendered[(27, 4)].fg, Color::Rgb(86, 156, 214));
-        assert_eq!(rendered[(52, 4)].fg, Color::Rgb(206, 145, 120));
+        let expected_symbols = [
+            ((28, 3), " ", "deletion marker spacing"),
+            ((28, 4), " ", "addition marker spacing"),
+        ];
+        let expected_styles = [
+            (
+                (27, 3),
+                Color::Rgb(206, 74, 74),
+                Color::Reset,
+                "deletion marker",
+            ),
+            (
+                (27, 4),
+                Color::Rgb(98, 173, 99),
+                Color::Rgb(35, 73, 43),
+                "addition marker",
+            ),
+            (
+                (29, 3),
+                Color::Rgb(150, 150, 150),
+                Color::Reset,
+                "deletion payload",
+            ),
+            (
+                (29, 4),
+                Color::Rgb(86, 156, 214),
+                Color::Rgb(35, 73, 43),
+                "addition keyword",
+            ),
+            (
+                (54, 4),
+                Color::Rgb(206, 145, 120),
+                Color::Rgb(35, 73, 43),
+                "addition string",
+            ),
+        ];
+
+        for ((x, y), expected, name) in expected_symbols {
+            assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
+        }
+        for ((x, y), expected_foreground, expected_background, name) in expected_styles {
+            let cell = &rendered[(x, y)];
+
+            assert_eq!(cell.fg, expected_foreground, "{name} foreground");
+            assert_eq!(cell.bg, expected_background, "{name} background");
+        }
     }
 
     #[test]

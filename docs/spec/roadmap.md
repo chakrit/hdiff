@@ -21,9 +21,9 @@ green addition backgrounds, with spaced markers and retained syntax colors. Its 
 pass; the mixed-language terminal human check remains required to complete the slice.
 
 The compact two-column layout has no pane borders, labels, or titles; it renders one separator
-between the file list and diff, keeps muted file-navigation hints at the bottom of the list, and
-collapses the list before the diff. Its automated checks pass; the multi-file terminal human check
-remains required to complete the slice.
+with one space on each side between the file list and diff, keeps muted file-navigation hints at
+the bottom of the list, and collapses the list before the diff. Its automated checks pass; the
+multi-file terminal human check remains required to complete the slice.
 
 ## Completed slices
 
@@ -61,8 +61,8 @@ Each slice is incomplete until its automated checks and its human check both pas
 
 3. The compact two-column layout is implemented before local Git integration. The left column
    contains the Tab-switchable file list and muted shortcut hints at its bottom; the right column
-   contains the diff. One vertical separator divides the columns. Pane borders, labels, and titles
-   are absent so content uses the available terminal cells.
+   contains the diff. One vertical separator with one space on each side divides the columns. Pane
+   borders, labels, and titles are absent so content uses the available terminal cells.
 
    Human check: open a multi-file diff and verify the file list and muted hints occupy the left
    column, the diff occupies the right column, exactly one vertical separator is visible, and no

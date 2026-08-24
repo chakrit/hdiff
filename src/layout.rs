@@ -8,13 +8,17 @@ const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const MINIMUM_SCREEN_HEIGHT: u16 = 3;
 const FILE_LIST_WIDTH: u16 = 24;
 const SEPARATOR_WIDTH: u16 = 1;
+const SEPARATOR_PADDING: u16 = 1;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PaneLayout {
     TooNarrow,
     TooShort,
     DiffOnly,
-    Split { file_list_width: u16 },
+    Split {
+        file_list_width: u16,
+        separator_padding: u16,
+    },
 }
 
 pub fn pane_layout(width: u16, height: u16) -> PaneLayout {
@@ -24,12 +28,13 @@ pub fn pane_layout(width: u16, height: u16) -> PaneLayout {
     if height < MINIMUM_SCREEN_HEIGHT {
         return PaneLayout::TooShort;
     }
-    if width < FILE_LIST_WIDTH + SEPARATOR_WIDTH + 1 {
+    if width < FILE_LIST_WIDTH + SEPARATOR_PADDING + SEPARATOR_WIDTH + SEPARATOR_PADDING + 1 {
         return PaneLayout::DiffOnly;
     }
 
     PaneLayout::Split {
         file_list_width: FILE_LIST_WIDTH,
+        separator_padding: SEPARATOR_PADDING,
     }
 }
 
@@ -208,14 +213,21 @@ mod tests {
 
     #[test]
     fn derives_compact_pane_visibility_from_terminal_size() {
-        assert_eq!(pane_layout(19, 3), PaneLayout::TooNarrow);
-        assert_eq!(pane_layout(20, 2), PaneLayout::TooShort);
-        assert_eq!(pane_layout(25, 3), PaneLayout::DiffOnly);
-        assert_eq!(
-            pane_layout(26, 3),
-            PaneLayout::Split {
-                file_list_width: 24,
-            }
-        );
+        let cases = [
+            ((19, 3), PaneLayout::TooNarrow),
+            ((20, 2), PaneLayout::TooShort),
+            ((27, 3), PaneLayout::DiffOnly),
+            (
+                (28, 3),
+                PaneLayout::Split {
+                    file_list_width: 24,
+                    separator_padding: 1,
+                },
+            ),
+        ];
+
+        for ((width, height), expected) in cases {
+            assert_eq!(pane_layout(width, height), expected, "{width}×{height}");
+        }
     }
 }
