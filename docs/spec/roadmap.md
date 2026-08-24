@@ -82,6 +82,14 @@ Each slice is incomplete until its automated checks and its human check both pas
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
+5. Display continuity markers on each content-pane edge when content extends beyond the visible
+   frame: downward for content below, upward for content above, and leftward or rightward for
+   horizontally clipped content.
+
+   Human check: open a diff that exceeds the pane vertically and horizontally. Verify that each
+   marker appears only while content continues past its corresponding edge, disappears at that
+   edge's boundary, and does not obscure diff content or pane layout.
+
 ## Deferred work
 
 Local Git integration remains deferred.
