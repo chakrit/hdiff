@@ -20,8 +20,11 @@ use crate::{
     document::{DiffDocument, DiffFile},
     interaction::{self, Input, Interaction, NavigationBounds, Transition, Viewport},
     layout::{Layout, PaneLayout, layout, pane_layout},
+    render::RenderedLineKind,
     syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
 };
+
+const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupStage {
@@ -241,8 +244,16 @@ fn render_split_panes(
         Constraint::Min(1),
     ])
     .split(area);
-    let file_list_areas =
-        RatatuiLayout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(panes[0]);
+    let hints = footer_hints();
+    let footer_height = area
+        .height
+        .saturating_sub(MINIMUM_FILE_LIST_HEIGHT)
+        .min(hints.len() as u16);
+    let file_list_areas = RatatuiLayout::vertical([
+        Constraint::Min(MINIMUM_FILE_LIST_HEIGHT),
+        Constraint::Length(footer_height),
+    ])
+    .split(panes[0]);
     let mut selected_file = ListState::default();
     selected_file.select(layout.files.iter().position(|file| file.selected));
     let chrome = chrome_palette(color_count);
@@ -264,12 +275,23 @@ fn render_split_panes(
             .map(|_| Line::styled("│", Style::default().fg(chrome.separator)))
             .collect::<Vec<_>>(),
     );
-    let hints = Paragraph::new("Tab next · ⇧Tab prev").style(Style::default().fg(chrome.footer));
+    let hints = Paragraph::new(hints).style(Style::default().fg(chrome.footer));
 
     frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
     frame.render_widget(hints, file_list_areas[1]);
     frame.render_widget(Paragraph::new(separator), panes[2]);
     frame.render_widget(diff, panes[4]);
+}
+
+fn footer_hints() -> Vec<Line<'static>> {
+    vec![
+        Line::raw("j/k  ↑/↓  move"),
+        Line::raw("^D/^U  page"),
+        Line::raw("g/G  top/end"),
+        Line::raw("{/}  hunk"),
+        Line::raw("Tab/⇧Tab file"),
+        Line::raw("q/^C exit"),
+    ]
 }
 
 fn visible_diff_lines(
@@ -294,10 +316,7 @@ fn visible_diff_lines(
                 .unwrap_or(line);
             styled_line(
                 without_ending,
-                row_kind(
-                    layout.record_addresses.get(index).and_then(Option::as_ref),
-                    line.first(),
-                ),
+                row_kind(layout.line_kinds.get(index), line.first()),
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
                 color_count,
             )
@@ -324,19 +343,21 @@ fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<Synta
 #[derive(Clone, Copy)]
 enum RowKind {
     Metadata,
+    HunkHeader,
     Context,
     Addition,
     Deletion,
 }
 
-fn row_kind(record: Option<&crate::render::RecordAddress>, marker: Option<&u8>) -> RowKind {
-    match record {
-        None => RowKind::Metadata,
-        Some(_) => match marker {
+fn row_kind(kind: Option<&RenderedLineKind>, marker: Option<&u8>) -> RowKind {
+    match kind {
+        Some(RenderedLineKind::HunkHeader) => RowKind::HunkHeader,
+        Some(RenderedLineKind::Record(_)) => match marker {
             Some(b'+') => RowKind::Addition,
             Some(b'-') => RowKind::Deletion,
             _ => RowKind::Context,
         },
+        Some(RenderedLineKind::Metadata | RenderedLineKind::FileHeader) | None => RowKind::Metadata,
     }
 }
 
@@ -366,13 +387,16 @@ fn styled_line(
             rendered.push(Span::raw(" "));
             1
         }
-        RowKind::Context | RowKind::Metadata => {
+        RowKind::Context | RowKind::Metadata | RowKind::HunkHeader => {
             rendered.push(Span::raw("  "));
             usize::from(matches!(row_kind, RowKind::Context))
         }
     };
     for span in syntax {
-        let source_offset = usize::from(!matches!(row_kind, RowKind::Metadata));
+        let source_offset = usize::from(matches!(
+            row_kind,
+            RowKind::Context | RowKind::Addition | RowKind::Deletion
+        ));
         let start = span.start + source_offset;
         let end = span.end + source_offset;
         if start > cursor {
@@ -401,7 +425,16 @@ fn styled_line(
                 .fg(palette.deletion_body),
         ),
         RowKind::Context => line.style(Style::default().fg(palette.context_body)),
+        RowKind::HunkHeader => line.style(Style::default().fg(hunk_header_color(color_count))),
         RowKind::Metadata => line,
+    }
+}
+
+fn hunk_header_color(color_count: u16) -> Color {
+    match color_count {
+        u16::MAX => Color::Rgb(100, 155, 175),
+        256.. => Color::Indexed(109),
+        _ => Color::Cyan,
     }
 }
 
@@ -575,8 +608,8 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, style::Color};
 
     use super::{
-        Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, input_for_event,
-        low_contrast_palette, mode_for_output, render_frame, syntax_color,
+        Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, hunk_header_color,
+        input_for_event, low_contrast_palette, mode_for_output, render_frame, syntax_color,
     };
     use crate::{
         layout::layout,
@@ -626,7 +659,7 @@ mod tests {
             ((0, 1), ">", "selection marker"),
             ((27, 3), "-", "deletion marker"),
             ((27, 4), "+", "addition marker"),
-            ((0, 9), "T", "footer hint"),
+            ((0, 8), "T", "footer hint"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
@@ -764,6 +797,101 @@ mod tests {
     }
 
     #[test]
+    fn renders_hunk_headers_as_muted_cyan_blue() {
+        let document = parse_unified_diff(
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
+        )
+        .expect("valid Rust diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        for y in [2, 5] {
+            let hunk_header = &rendered[(29, y)];
+
+            assert_eq!(hunk_header.symbol(), "@");
+            assert_eq!(hunk_header.fg, Color::Rgb(100, 155, 175));
+            assert_eq!(hunk_header.bg, Color::Reset);
+        }
+        assert_eq!(
+            rendered[(29, 0)].fg,
+            Color::Reset,
+            "file header stays neutral"
+        );
+    }
+
+    #[test]
+    fn renders_current_shortcuts_in_a_multiline_footer() {
+        let document = parse_unified_diff(
+            b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
+        )
+        .expect("valid two-file diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 12,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        let expected = [
+            ((0, 6), "j", "vertical movement"),
+            ((0, 7), "^", "page movement"),
+            ((0, 8), "g", "top and bottom"),
+            ((0, 9), "{", "hunk movement"),
+            ((0, 10), "T", "file rotation"),
+            ((0, 11), "q", "exit"),
+        ];
+
+        for ((x, y), symbol, name) in expected {
+            assert_eq!(rendered[(x, y)].symbol(), symbol, "{name}");
+            assert_eq!(
+                rendered[(x, y)].fg,
+                Color::Rgb(110, 110, 110),
+                "{name} color"
+            );
+        }
+    }
+
+    #[test]
     fn falls_back_from_truecolor_to_256_and_basic_semantic_colors() {
         assert_eq!(
             syntax_color(SyntaxClass::Keyword, u16::MAX),
@@ -788,6 +916,13 @@ mod tests {
             Color::Indexed(71)
         );
         assert_eq!(low_contrast_palette(8).deletion_marker, Color::Red);
+    }
+
+    #[test]
+    fn falls_back_from_truecolor_to_256_and_basic_hunk_header_colors() {
+        assert_eq!(hunk_header_color(u16::MAX), Color::Rgb(100, 155, 175));
+        assert_eq!(hunk_header_color(256), Color::Indexed(109));
+        assert_eq!(hunk_header_color(8), Color::Cyan);
     }
 
     #[test]

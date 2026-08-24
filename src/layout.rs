@@ -1,7 +1,7 @@
 use crate::{
     document::{DiffDocument, sanitize},
     interaction::Interaction,
-    render::{RecordAddress, render_file_lines},
+    render::{RenderedLineKind, render_file_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -48,7 +48,7 @@ pub struct FileListRow {
 pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<Vec<u8>>,
-    pub record_addresses: Vec<Option<RecordAddress>>,
+    pub line_kinds: Vec<RenderedLineKind>,
     pub hunk_offsets: Vec<usize>,
 }
 
@@ -78,16 +78,15 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         return Layout {
             files,
             diff_lines: Vec::new(),
-            record_addresses: Vec::new(),
+            line_kinds: Vec::new(),
             hunk_offsets: Vec::new(),
         };
     };
     let rendered_lines = render_file_lines(file);
-    let diff_lines = rendered_lines
-        .iter()
-        .map(|line| line.bytes.clone())
-        .collect();
-    let record_addresses = rendered_lines.into_iter().map(|line| line.record).collect();
+    let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
+        .into_iter()
+        .map(|line| (line.bytes, line.kind))
+        .unzip();
     let hunk_offsets = match file {
         crate::document::DiffFile::Metadata { .. } => Vec::new(),
         crate::document::DiffFile::Unified(file) => {
@@ -106,7 +105,7 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
     Layout {
         files,
         diff_lines,
-        record_addresses,
+        line_kinds,
         hunk_offsets,
     }
 }
@@ -117,6 +116,7 @@ mod tests {
     use crate::{
         interaction::{Interaction, Viewport},
         parser::parse_unified_diff,
+        render::RenderedLineKind,
     };
 
     #[test]
@@ -149,6 +149,8 @@ mod tests {
             ]
         );
         assert_eq!(view.hunk_offsets, vec![2, 5]);
+        assert_eq!(view.line_kinds[2], RenderedLineKind::HunkHeader);
+        assert_eq!(view.line_kinds[5], RenderedLineKind::HunkHeader);
         assert_eq!(
             view.diff_lines,
             vec![
@@ -184,6 +186,11 @@ mod tests {
             "diff --git a/old-name.txt b/new-name.txt"
         );
         assert_eq!(view.hunk_offsets, Vec::<usize>::new());
+        assert!(
+            view.line_kinds
+                .iter()
+                .all(|kind| matches!(kind, RenderedLineKind::Metadata))
+        );
         assert_eq!(
             view.diff_lines,
             include_bytes!("../tests/fixtures/git-rename-only.patch")

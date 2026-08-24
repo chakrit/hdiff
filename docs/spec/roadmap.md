@@ -73,12 +73,24 @@ Each slice is incomplete until its automated checks and its human check both pas
    column, the diff occupies the right column, exactly one vertical separator is visible, and no
    pane border, label, or title consumes space.
 
-4. Extend addition and deletion backgrounds through the right edge of the active diff pane.
+4. Render hunk headers beginning with `@@` as muted cyan-blue structural lines while retaining
+   neutral styling for Git metadata and file headers.
+
+   Human check: open a multi-hunk diff and verify every `@@` header is visually distinct from
+   source context without competing with additions or deletions.
+
+5. Expand the file-list footer into a compact multi-row reference for every implemented movement,
+   file-rotation, and exit shortcut.
+
+   Human check: open a multi-file diff and verify the footer identifies vertical, page, top/bottom,
+   hunk, file-rotation, and exit controls without reducing the file list below usable height.
+
+6. Extend addition and deletion backgrounds through the right edge of the active diff pane.
 
    Human check: open a mixed-language diff and verify every addition and deletion background
    continues through the remaining visible cells without changing the marker or syntax colors.
 
-5. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
+7. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
    file rotation, hunk movement, and resize.
 
    Human check: with a multi-file, multi-hunk diff open, verify `j`/`k`, `Ctrl-D`/`Ctrl-U`, and
@@ -86,20 +98,20 @@ Each slice is incomplete until its automated checks and its human check both pas
    its top; `{` and `}` move between that file's hunks; resizing redraws the same selected file
    and does not leave terminal artifacts; `q` restores the terminal.
 
-6. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
+8. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
    viewport meaning, and file-list pane.
 
    Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
    aligned panes; switching back to unified view retains the selected file and approximate
    location. Resize both views without overlap or a displaced column separator.
 
-7. Add character-level detail within changed line pairs and session-local context controls.
+9. Add character-level detail within changed line pairs and session-local context controls.
 
    Human check: press `c` on a changed line and see only changed character spans gain detail;
    press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
    that the selected file and current hunk remain understandable.
 
-8. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+10. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays

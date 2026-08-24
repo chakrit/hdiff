@@ -6,10 +6,18 @@ pub struct RecordAddress {
     pub record_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderedLineKind {
+    Metadata,
+    FileHeader,
+    HunkHeader,
+    Record(RecordAddress),
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct RenderedLine {
     pub bytes: Vec<u8>,
-    pub record: Option<RecordAddress>,
+    pub kind: RenderedLineKind,
 }
 
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
@@ -35,25 +43,38 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     match file {
         DiffFile::Metadata { lines } => {
             for line in lines {
-                rendered_lines.push(rendered_line(None, line, None));
+                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, None, line));
             }
         }
         DiffFile::Unified(file) => {
             for line in &file.metadata {
-                rendered_lines.push(rendered_line(None, line, None));
+                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, None, line));
             }
-            rendered_lines.push(rendered_line(None, &file.old_header, None));
-            rendered_lines.push(rendered_line(None, &file.new_header, None));
+            rendered_lines.push(rendered_line(
+                RenderedLineKind::FileHeader,
+                None,
+                &file.old_header,
+            ));
+            rendered_lines.push(rendered_line(
+                RenderedLineKind::FileHeader,
+                None,
+                &file.new_header,
+            ));
             for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-                rendered_lines.push(rendered_line(None, &hunk.header, None));
+                rendered_lines.push(rendered_line(
+                    RenderedLineKind::HunkHeader,
+                    None,
+                    &hunk.header,
+                ));
                 for (record_index, record) in hunk.records.iter().enumerate() {
+                    let address = RecordAddress {
+                        hunk_index,
+                        record_index,
+                    };
                     rendered_lines.push(rendered_line(
+                        RenderedLineKind::Record(address),
                         marker(&record.kind),
                         &record.payload,
-                        Some(RecordAddress {
-                            hunk_index,
-                            record_index,
-                        }),
                     ));
                 }
             }
@@ -63,11 +84,7 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     rendered_lines
 }
 
-fn rendered_line(
-    marker: Option<u8>,
-    line: &SourceLine,
-    record: Option<RecordAddress>,
-) -> RenderedLine {
+fn rendered_line(kind: RenderedLineKind, marker: Option<u8>, line: &SourceLine) -> RenderedLine {
     let mut bytes = Vec::new();
     if let Some(marker) = marker {
         bytes.push(marker);
@@ -78,7 +95,7 @@ fn rendered_line(
     } else if line.bytes.ends_with(b"\n") {
         bytes.push(b'\n');
     }
-    RenderedLine { bytes, record }
+    RenderedLine { bytes, kind }
 }
 
 fn marker(kind: &RecordKind) -> Option<u8> {
@@ -92,8 +109,8 @@ fn marker(kind: &RecordKind) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_file, render_unified};
-    use crate::parser::parse_unified_diff;
+    use super::{RecordAddress, RenderedLineKind, render_file, render_file_lines, render_unified};
+    use crate::{document::DiffFile, parser::parse_unified_diff};
 
     #[test]
     fn renders_unified_structure_in_source_order() {
@@ -103,6 +120,40 @@ mod tests {
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
+    }
+
+    #[test]
+    fn classifies_metadata_file_headers_hunks_and_records() {
+        let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
+        let document = parse_unified_diff(input).expect("valid Git diff with two hunks");
+        let DiffFile::Unified(file) = &document.files[0] else {
+            panic!("expected unified file");
+        };
+
+        let lines = render_file_lines(&document.files[0]);
+        let kinds = lines.iter().map(|line| line.kind).collect::<Vec<_>>();
+
+        assert_eq!(kinds[0], RenderedLineKind::Metadata);
+        assert_eq!(kinds[1], RenderedLineKind::Metadata);
+        assert_eq!(kinds[2], RenderedLineKind::FileHeader);
+        assert_eq!(kinds[3], RenderedLineKind::FileHeader);
+        assert_eq!(kinds[4], RenderedLineKind::HunkHeader);
+        assert_eq!(kinds[7], RenderedLineKind::HunkHeader);
+        assert_eq!(
+            kinds[5],
+            RenderedLineKind::Record(RecordAddress {
+                hunk_index: 0,
+                record_index: 0,
+            })
+        );
+        assert_eq!(
+            kinds[8],
+            RenderedLineKind::Record(RecordAddress {
+                hunk_index: 1,
+                record_index: 0,
+            })
+        );
+        assert_eq!(file.hunks.len(), 2);
     }
 
     #[test]

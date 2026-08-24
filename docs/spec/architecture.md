@@ -198,6 +198,9 @@ document and apply consistently in unified and side-by-side layouts. `DiffGranul
 whether differences are represented as lines or characters; `DiffContrast` controls only their
 visual intensity and never changes that representation.
 
+Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
+file headers retain neutral metadata styling.
+
 Addition and deletion backgrounds extend through the right edge of the active diff pane, including
 cells after the final source character.
 
@@ -213,6 +216,10 @@ A dedicated shortcut-audit slice makes shifted shortcuts perform meaningful inve
 ambiguous, follow Vim semantics.
 
 The left file-list pane will show shortcut hints at its bottom.
+
+The file-list footer is a compact multi-row reference for every currently implemented key: vertical
+movement, page movement, top/bottom, hunk movement, file rotation, and exit. It uses only the
+available footer rows and never advertises a deferred shortcut.
 
 ## Technology direction
 
