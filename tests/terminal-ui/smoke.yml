@@ -1,0 +1,11 @@
+config:
+  interpreter: /bin/sh
+  timeout: 3s
+checks:
+  - exitcode
+  - stdout
+  - stderr
+tests:
+  - name: fixed-size mixed-language terminal session
+    commands:
+      - tests/terminal-ui/capture.sh tests/fixtures/mixed-language-layout.patch target/debug/hdiff

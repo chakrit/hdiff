@@ -198,6 +198,9 @@ document and apply consistently in unified and side-by-side layouts. `DiffGranul
 whether differences are represented as lines or characters; `DiffContrast` controls only their
 visual intensity and never changes that representation.
 
+Addition and deletion backgrounds extend through the right edge of the active diff pane, including
+cells after the final source character.
+
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
 `Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` prior/next hunk movement,
 `Tab` file rotation with wraparound, `w` wrapping, `c` line/character detail, `v` unified/side-by-side,
@@ -230,9 +233,10 @@ semantic tokens only on visible payload ranges. Additions use the new path's lan
 deletions use the old path's language; context records remain textual when the paths select
 different languages. Headers, metadata, raw records, and diff markers remain textual.
 
-The first test boundary should be terminal-independent: parser fixtures, state-transition tests,
-layout snapshots, and renderer output tests. A small number of end-to-end terminal checks can be
-added after the lifecycle boundary is known.
+The first test boundary is terminal-independent: parser fixtures, state-transition tests, layout
+snapshots, and renderer output tests. End-to-end terminal checks run hdiff in fixed-size tmux
+sessions, drive pager inputs with `send-keys`, capture ANSI-styled panes, and lock those captures
+with SMOKE. The tmux script owns and removes its uniquely named session on every exit path.
 
 ## Input and terminal boundary
 
