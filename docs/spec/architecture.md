@@ -223,6 +223,10 @@ The file-list footer is a compact multi-row reference for every currently implem
 movement, page movement, top/bottom, hunk movement, file rotation, and exit. It uses only the
 available footer rows and never advertises a deferred shortcut.
 
+The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
+and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
+middots: `g·G` top/bottom, `{·}` next/previous hunk, `(⇧)Tab` next/previous file, and `q` exit.
+
 ## Technology direction
 
 Rust is the implementation language. `ratatui` owns layout and rendering; CROSSTERM 0.29 with

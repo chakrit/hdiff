@@ -292,12 +292,16 @@ fn render_diff_rows(frame: &mut Frame, rows: Vec<DiffRow>, area: ratatui::layout
 
 fn footer_hints() -> Vec<Line<'static>> {
     vec![
-        Line::raw("j/k  ↑/↓  move"),
-        Line::raw("^D/^U  page"),
-        Line::raw("g/G  top/end"),
-        Line::raw("{/}  hunk"),
-        Line::raw("Tab/⇧Tab file"),
-        Line::raw("q/^C exit"),
+        Line::raw("   k"),
+        Line::raw(" h · l  movement"),
+        Line::raw("   j"),
+        Line::raw(""),
+        Line::raw("  ^U    page up"),
+        Line::raw("  ^D    page down"),
+        Line::raw("  g·G   top/bottom"),
+        Line::raw("  {·}   next/prev hunk"),
+        Line::raw("(⇧)Tab  next/prev file"),
+        Line::raw("   q    exit"),
     ]
 }
 
@@ -674,7 +678,7 @@ mod tests {
             ((0, 1), ">", "selection marker"),
             ((27, 3), "-", "deletion marker"),
             ((27, 4), "+", "addition marker"),
-            ((0, 8), "T", "footer hint"),
+            ((3, 3), "k", "footer hint"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
@@ -882,7 +886,7 @@ mod tests {
             },
         };
         let view = layout(&document, &interaction);
-        let mut terminal = Terminal::new(TestBackend::new(80, 12)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
         let mut syntax = SyntaxHighlighter::default();
 
         terminal
@@ -900,12 +904,18 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected = [
-            ((0, 6), "j", "vertical movement"),
-            ((0, 7), "^", "page movement"),
-            ((0, 8), "g", "top and bottom"),
-            ((0, 9), "{", "hunk movement"),
-            ((0, 10), "T", "file rotation"),
-            ((0, 11), "q", "exit"),
+            ((3, 4), "k", "upward movement"),
+            ((1, 5), "h", "leftward movement"),
+            ((3, 5), "·", "movement separator"),
+            ((5, 5), "l", "rightward movement"),
+            ((8, 5), "m", "movement label"),
+            ((3, 6), "j", "downward movement"),
+            ((2, 8), "^", "page up"),
+            ((2, 9), "^", "page down"),
+            ((2, 10), "g", "top and bottom"),
+            ((2, 11), "{", "hunk movement"),
+            ((0, 12), "(", "file rotation"),
+            ((3, 13), "q", "exit"),
         ];
 
         for ((x, y), symbol, name) in expected {
