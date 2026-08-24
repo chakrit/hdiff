@@ -26,7 +26,7 @@ and faithful rendering of the supplied diff.
 - Compare POSIX-style file and directory operands, including recursive `-r` mode.
 - Parse the stream into files, hunks, and line records while preserving original text.
 - Show a navigable file list and a focused diff view.
-- Navigate files, hunks, and lines with a small discoverable keymap.
+- Navigate files and linearly move the diff viewport with a small discoverable keymap.
 - Scroll vertically without losing the current location.
 - Resize cleanly and redraw from retained state.
 - Toggle unified and side-by-side views without silently changing the selected mode.
@@ -79,8 +79,8 @@ valid diff lines without data loss.
   their original protocol text.
 - `Hunk`: old/new ranges, header text, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
-- `Selection`: the active file-list selection; diff movement is viewport-based and has no
-  editing cursor.
+- `Selection`: the active file-list selection; the viewport offset is the reader's current
+  cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
   and other session-local display choices.
 - `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
@@ -103,7 +103,7 @@ The implementation should land in slices that each leave a usable surface:
 5. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
    left, a diff view on the right, and one vertical separator padded by one space on each side,
    with no pane borders or labels.
-6. Add file/hunk navigation and the interactive file list with synchronized selection.
+6. Add file navigation and the interactive file list with synchronized selection.
 7. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
 8. Add implicit Tree-sitter semantic strategies with textual fallback.
 9. Refine highlighting coverage and additional navigation after the core interaction is stable.
@@ -191,8 +191,9 @@ line-versus-character diff granularity:
 4. `max`: the strongest red/green highlighting, including full-line emphasis where the active
    layout supports it.
 
-The `low` palette is the locked preferred display: additions are strongest; deletion text is muted
-over a dim red background; context is quieter neutral text. Every rendered row reserves a marker
+The `low` palette is the locked preferred display: additions are strongest; deletion text and
+syntax spans are muted by a row-wide dim modifier over a dim red background; context is quieter
+neutral text. Every rendered row reserves a marker
 column and one payload spacer: addition and deletion markers occupy that column, while metadata,
 hunks, and context leave it blank so all payloads align. The separator remains neutral, and each
 change background begins after its right-hand gutter. Contrast changes never alter the parsed
@@ -207,11 +208,11 @@ Addition and deletion backgrounds extend through the right edge of the active di
 cells after the final source character.
 
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
-`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `{`/`}` prior/next hunk movement,
-`Tab` file rotation with wraparound, `w` wrapping, `c` line/character detail, `v` unified/side-by-side,
+`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `Tab` file rotation with wraparound,
+`w` wrapping, `c` line/character detail, `v` unified/side-by-side,
 `+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
 bindings. File rotation selects the next file and moves the viewport to its top. There is no
-diff editing cursor; movement changes the viewport.
+separate diff editing cursor; movement changes the viewport.
 
 A dedicated shortcut-audit slice makes shifted shortcuts perform meaningful inverse actions.
 `Shift-Tab` rotates to the previous file, the inverse of `Tab`; when a key's meaning is
@@ -220,12 +221,12 @@ ambiguous, follow Vim semantics.
 The left file-list pane will show shortcut hints at its bottom.
 
 The file-list footer is a compact multi-row reference for every currently implemented key: vertical
-movement, page movement, top/bottom, hunk movement, file rotation, and exit. It uses only the
+movement, page movement, top/bottom, file rotation, and exit. It uses only the
 available footer rows and never advertises a deferred shortcut.
 
 The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
 and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
-middots: `g·G` top/bottom, `{·}` next/previous hunk, `(⇧)Tab` next/previous file, and `q` exit.
+middots: `g·G` top/bottom, `(⇧)Tab` next/previous file, and `q` exit.
 
 ## Technology direction
 

@@ -11,10 +11,9 @@ pub struct Interaction {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct NavigationBounds<'a> {
+pub struct NavigationBounds {
     pub file_count: usize,
     pub line_count: usize,
-    pub hunk_offsets: &'a [usize],
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -27,8 +26,6 @@ pub enum Input {
     Bottom,
     NextFile,
     PreviousFile,
-    PreviousHunk,
-    NextHunk,
     Quit,
     Interrupt,
     Resize { width: u16, height: u16 },
@@ -37,13 +34,11 @@ pub enum Input {
 pub fn transition_interaction(
     interaction: &Interaction,
     input: Input,
-    bounds: &NavigationBounds<'_>,
+    bounds: &NavigationBounds,
 ) -> Transition {
     match input {
         Input::NextFile => return select_next_file(interaction, bounds.file_count),
         Input::PreviousFile => return select_previous_file(interaction, bounds.file_count),
-        Input::PreviousHunk => return jump_to_previous_hunk(interaction, bounds),
-        Input::NextHunk => return jump_to_next_hunk(interaction, bounds),
         _ => {}
     }
     let transition = transition(&interaction.viewport, input, bounds.line_count);
@@ -89,42 +84,6 @@ fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Tran
     })
 }
 
-fn jump_to_previous_hunk(interaction: &Interaction, bounds: &NavigationBounds<'_>) -> Transition {
-    let offset = bounds
-        .hunk_offsets
-        .iter()
-        .rev()
-        .find(|offset| **offset < interaction.viewport.offset)
-        .copied()
-        .or_else(|| bounds.hunk_offsets.first().copied())
-        .unwrap_or(0);
-
-    redraw_interaction(interaction, offset, bounds.line_count)
-}
-
-fn jump_to_next_hunk(interaction: &Interaction, bounds: &NavigationBounds<'_>) -> Transition {
-    let offset = bounds
-        .hunk_offsets
-        .iter()
-        .find(|offset| **offset > interaction.viewport.offset)
-        .copied()
-        .unwrap_or(interaction.viewport.offset);
-
-    redraw_interaction(interaction, offset, bounds.line_count)
-}
-
-fn redraw_interaction(interaction: &Interaction, offset: usize, line_count: usize) -> Transition {
-    let maximum_offset = line_count.saturating_sub(interaction.viewport.height);
-
-    Transition::RedrawInteraction(Interaction {
-        selected_file: interaction.selected_file,
-        viewport: Viewport {
-            offset: offset.min(maximum_offset),
-            height: interaction.viewport.height,
-        },
-    })
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Transition {
     Redraw(Viewport),
@@ -135,7 +94,7 @@ pub enum Transition {
 pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Transition {
     match input {
         Input::Quit | Input::Interrupt => Transition::Exit,
-        Input::NextFile | Input::PreviousFile | Input::PreviousHunk | Input::NextHunk => {
+        Input::NextFile | Input::PreviousFile => {
             Transition::Redraw(viewport.clone())
         }
         Input::Down => redraw(
@@ -255,7 +214,6 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             line_count: 10,
-            hunk_offsets: &[2, 6],
         };
 
         let next = transition_interaction(&interaction, Input::NextFile, &bounds);
@@ -284,7 +242,6 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             line_count: 10,
-            hunk_offsets: &[2, 6],
         };
 
         let next = transition_interaction(&interaction, Input::PreviousFile, &bounds);
@@ -301,61 +258,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn jumps_between_hunks_without_leaving_the_selected_file() {
-        let interaction = Interaction {
-            selected_file: 1,
-            viewport: Viewport {
-                offset: 3,
-                height: 2,
-            },
-        };
-        let bounds = NavigationBounds {
-            file_count: 2,
-            line_count: 10,
-            hunk_offsets: &[2, 6],
-        };
-
-        let next = transition_interaction(&interaction, Input::NextHunk, &bounds);
-
-        assert_eq!(
-            next,
-            Transition::RedrawInteraction(Interaction {
-                selected_file: 1,
-                viewport: Viewport {
-                    offset: 6,
-                    height: 2,
-                },
-            })
-        );
-    }
-
-    #[test]
-    fn keeps_the_first_hunk_visible_when_moving_to_the_previous_hunk() {
-        let interaction = Interaction {
-            selected_file: 0,
-            viewport: Viewport {
-                offset: 2,
-                height: 2,
-            },
-        };
-        let bounds = NavigationBounds {
-            file_count: 1,
-            line_count: 10,
-            hunk_offsets: &[2, 6],
-        };
-
-        let previous = transition_interaction(&interaction, Input::PreviousHunk, &bounds);
-
-        assert_eq!(
-            previous,
-            Transition::RedrawInteraction(Interaction {
-                selected_file: 0,
-                viewport: Viewport {
-                    offset: 2,
-                    height: 2,
-                },
-            })
-        );
-    }
 }

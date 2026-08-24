@@ -23,15 +23,16 @@ Tree-sitter queries assign semantic capture names such as `keyword`, `function`,
 queries are version-pinned together. Adding a language is an explicit dependency and registry
 entry, not a dynamic plugin scan.
 
-The initial dependency set is `tree-sitter 0.26.12`, `tree-sitter-highlight 0.26.12`,
+The initial dependency set is `tree-sitter 0.26.13`, `tree-sitter-highlight 0.26.13`,
 `tree-sitter-rust 0.24.2`, `tree-sitter-javascript 0.25.0`, `tree-sitter-python 0.25.0`,
 `tree-sitter-go 0.25.0`, and `tree-sitter-c 0.24.2`.
 
-## Tree-sitter standard safety audit
+## Tree-sitter safety audit
 
-Audit date: 2026-08-20. The committed `Cargo.lock` contains 33 packages. The exact registry
-sources were acquired with `cargo vendor target/audit-vendor` without applying its Cargo
-configuration. The default closure has no optional WASM or Wasmtime feature enabled.
+Audit date: 2026-08-20. The 0.26.12 `tree-sitter` and `tree-sitter-highlight` releases and the
+committed 33-package closure were audited. The 0.26.13 patch releases were adopted without a
+repeat audit at the user's direction. The default closure has no optional WASM or Wasmtime feature
+enabled.
 
 The direct parser crates contain legitimate build scripts that compile their bundled parser C
 source into the build output using `cc`; they do not download files, invoke shells, read
@@ -52,11 +53,11 @@ manifests/metadata, generated Rust bindings, and packaged C/query files expected
 publish configuration; no unexplained executable payload was found.
 
 OSV querybatch over all 33 locked crates returned zero advisories. The direct repositories are
-the official Tree-sitter organization projects, with stable tagged releases matching the
-locked versions. Standard-audit verdict: **GO**. Continue to pin the lockfile and keep the
-WASM/Wasmtime feature disabled unless it is separately audited.
+the official Tree-sitter organization projects, with stable tagged releases matching the audited
+versions. Standard-audit verdict: **GO** for the 0.26.12 releases. Continue to pin the lockfile
+and keep the WASM/Wasmtime feature disabled unless it is separately audited.
 
 ## Sources
 
-- [tree-sitter-highlight crates.io metadata](https://crates.io/crates/tree-sitter-highlight/0.26.12)
+- [tree-sitter-highlight crates.io metadata](https://crates.io/crates/tree-sitter-highlight/0.26.13)
 - [Tree-sitter Rust bindings](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_rust)

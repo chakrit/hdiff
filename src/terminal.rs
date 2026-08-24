@@ -111,7 +111,6 @@ fn run_loop(
             let bounds = NavigationBounds {
                 file_count: document.files.len(),
                 line_count: view.diff_lines.len(),
-                hunk_offsets: &view.hunk_offsets,
             };
             interaction::transition_interaction(&interaction, input, &bounds)
         };
@@ -175,8 +174,6 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
         (KeyCode::Tab, _) => Some(Input::NextFile),
         (KeyCode::BackTab, _) => Some(Input::PreviousFile),
-        (KeyCode::Char('{'), _) => Some(Input::PreviousHunk),
-        (KeyCode::Char('}'), _) => Some(Input::NextHunk),
         _ => None,
     }
 }
@@ -299,7 +296,6 @@ fn footer_hints() -> Vec<Line<'static>> {
         Line::raw("  ^U    page up"),
         Line::raw("  ^D    page down"),
         Line::raw("  g·G   top/bottom"),
-        Line::raw("  {·}   next/prev hunk"),
         Line::raw("(⇧)Tab  next/prev file"),
         Line::raw("   q    exit"),
     ]
@@ -442,7 +438,8 @@ fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -
             .fg(palette.addition_body),
         RowKind::Deletion => Style::default()
             .bg(palette.deletion_background)
-            .fg(palette.deletion_body),
+            .fg(palette.deletion_body)
+            .add_modifier(Modifier::DIM),
         RowKind::Context => Style::default().fg(palette.context_body),
         RowKind::HunkHeader => Style::default().fg(hunk_header_color(color_count)),
         RowKind::Metadata => Style::default(),
@@ -624,7 +621,7 @@ pub fn cleanup_order(stages: &[SetupStage]) -> Vec<SetupStage> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{Terminal, backend::TestBackend, style::Color};
+    use ratatui::{Terminal, backend::TestBackend, style::{Color, Modifier}};
 
     use super::{
         Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, hunk_header_color,
@@ -728,7 +725,7 @@ mod tests {
     #[test]
     fn renders_syntax_and_low_contrast_record_styles() {
         let document = parse_unified_diff(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-old\n+fn added() { let label = \"value\"; }\n",
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
         )
         .expect("valid Rust diff");
         let interaction = Interaction {
@@ -786,9 +783,9 @@ mod tests {
             ),
             (
                 (29, 4),
-                Color::Rgb(150, 150, 150),
+                Color::Rgb(86, 156, 214),
                 Color::Rgb(50, 30, 30),
-                "deletion payload",
+                "deletion keyword",
             ),
             (
                 (29, 5),
@@ -825,6 +822,10 @@ mod tests {
             assert_eq!(cell.fg, expected_foreground, "{name} foreground");
             assert_eq!(cell.bg, expected_background, "{name} background");
         }
+        assert!(
+            rendered[(29, 4)].modifier.contains(Modifier::DIM),
+            "deletion syntax inherits row-wide dimming"
+        );
     }
 
     #[test]
@@ -904,16 +905,15 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected = [
-            ((3, 4), "k", "upward movement"),
-            ((1, 5), "h", "leftward movement"),
-            ((3, 5), "·", "movement separator"),
-            ((5, 5), "l", "rightward movement"),
-            ((8, 5), "m", "movement label"),
-            ((3, 6), "j", "downward movement"),
-            ((2, 8), "^", "page up"),
-            ((2, 9), "^", "page down"),
-            ((2, 10), "g", "top and bottom"),
-            ((2, 11), "{", "hunk movement"),
+            ((3, 5), "k", "upward movement"),
+            ((1, 6), "h", "leftward movement"),
+            ((3, 6), "·", "movement separator"),
+            ((5, 6), "l", "rightward movement"),
+            ((8, 6), "m", "movement label"),
+            ((3, 7), "j", "downward movement"),
+            ((2, 9), "^", "page up"),
+            ((2, 10), "^", "page down"),
+            ((2, 11), "g", "top and bottom"),
             ((0, 12), "(", "file rotation"),
             ((3, 13), "q", "exit"),
         ];
@@ -998,13 +998,16 @@ mod tests {
             ))),
             Some(Input::PreviousFile)
         );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('}'),
-                KeyModifiers::NONE
-            ))),
-            Some(Input::NextHunk)
-        );
+        for key in ['{', '}'] {
+            assert_eq!(
+                input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                    KeyCode::Char(key),
+                    KeyModifiers::NONE
+                ))),
+                None,
+                "{key} has no cursor-visible destination"
+            );
+        }
         assert_eq!(
             input_for_event(CrosstermEvent::Resize(100, 30)),
             Some(Input::Resize {

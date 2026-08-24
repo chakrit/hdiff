@@ -13,8 +13,9 @@ treats broken pipes as quiet success.
 
 The first interactive Ratatui rendering boundary is implemented: the unified view has distinct
 file-list and diff panes, while CROSSTERM retains terminal lifecycle and event ownership. The
-slice passed its automated and human checks. Do not describe file navigation, hunk navigation,
-resize handling, or later interactive slices as delivered until they pass their own human checks.
+interaction slice adds vertical viewport movement, file rotation, and resize redraw; its automated
+and human checks passed. The viewport is the reader's cursor, and hunk jumps are absent until a
+visible hunk focus makes their destination legible.
 
 Low-contrast styling reserves aligned marker and payload columns on every row. Context is quiet
 neutral text; deletions use muted text over a dim red background; additions retain the strongest
@@ -50,39 +51,33 @@ then exits with `q`; SMOKE locks this observable terminal surface for drift revi
 9. Add the compact two-column layout, including the multi-row file-list footer and hunk-header
    styling.
 10. Extend addition and deletion backgrounds through the active diff pane's right edge.
+11. Connect Ratatui rendering to authoritative interaction state for viewport movement, file
+    rotation, and resize.
 
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
-   file rotation, hunk movement, and resize.
-
-   Human check: with a multi-file, multi-hunk diff open, verify `j`/`k`, `Ctrl-D`/`Ctrl-U`, and
-   `g`/`G` move only the diff viewport; `Tab` changes the selected file and returns that file to
-   its top; `{` and `}` move between that file's hunks; resizing redraws the same selected file
-   and does not leave terminal artifacts; `q` restores the terminal.
-
-2. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
+1. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
    viewport meaning, and file-list pane.
 
    Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
    aligned panes; switching back to unified view retains the selected file and approximate
    location. Resize both views without overlap or a displaced column separator.
 
-3. Add character-level detail within changed line pairs and session-local context controls.
+2. Add character-level detail within changed line pairs and session-local context controls.
 
    Human check: press `c` on a changed line and see only changed character spans gain detail;
    press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
    that the selected file and current hunk remain understandable.
 
-4. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+3. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
-5. Display continuity markers on each content-pane edge when content extends beyond the visible
+4. Display continuity markers on each content-pane edge when content extends beyond the visible
    frame: downward for content below, upward for content above, and leftward or rightward for
    horizontally clipped content.
 

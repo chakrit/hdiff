@@ -49,7 +49,6 @@ pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<Vec<u8>>,
     pub line_kinds: Vec<RenderedLineKind>,
-    pub hunk_offsets: Vec<usize>,
 }
 
 pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
@@ -70,7 +69,6 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
             files,
             diff_lines: Vec::new(),
             line_kinds: Vec::new(),
-            hunk_offsets: Vec::new(),
         };
     };
     let rendered_lines = render_file_lines(file);
@@ -78,26 +76,10 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         .into_iter()
         .map(|line| (line.bytes, line.kind))
         .unzip();
-    let hunk_offsets = match file {
-        crate::document::DiffFile::Metadata { .. } => Vec::new(),
-        crate::document::DiffFile::Unified(file) => {
-            let mut line_offset = file.metadata.len() + 2;
-            file.hunks
-                .iter()
-                .map(|hunk| {
-                    let offset = line_offset;
-                    line_offset += 1 + hunk.records.len();
-                    offset
-                })
-                .collect()
-        }
-    };
-
     Layout {
         files,
         diff_lines,
         line_kinds,
-        hunk_offsets,
     }
 }
 
@@ -149,7 +131,7 @@ mod tests {
     };
 
     #[test]
-    fn derives_selected_file_rows_and_hunk_offsets() {
+    fn derives_selected_file_rows() {
         let document = parse_unified_diff(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
@@ -177,7 +159,6 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(view.hunk_offsets, vec![2, 5]);
         assert_eq!(view.line_kinds[2], RenderedLineKind::HunkHeader);
         assert_eq!(view.line_kinds[5], RenderedLineKind::HunkHeader);
         assert_eq!(
@@ -196,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn lays_out_a_metadata_only_file_without_hunk_offsets() {
+    fn lays_out_a_metadata_only_file() {
         let document =
             parse_unified_diff(include_bytes!("../tests/fixtures/git-rename-only.patch"))
                 .expect("valid metadata-only Git fixture");
@@ -211,7 +192,6 @@ mod tests {
         let view = layout(&document, &interaction);
 
         assert_eq!(view.files[0].label, "old-name.txt → new-name.txt");
-        assert_eq!(view.hunk_offsets, Vec::<usize>::new());
         assert!(
             view.line_kinds
                 .iter()
