@@ -30,8 +30,8 @@ and faithful rendering of the supplied diff.
 - Scroll vertically without losing the current location.
 - Resize cleanly and redraw from retained state.
 - Toggle unified and side-by-side views without silently changing the selected mode.
-- Provide a pager-first TUI with a persistent bottom toolbar that shows the active mode and
-  context-sensitive shortcut hints.
+- Provide a pager-first TUI with muted, context-sensitive shortcut hints at the bottom of the
+  file-list column.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
   immediately.
 - Exit cleanly on EOF, quit input, and terminal errors.
@@ -97,10 +97,12 @@ The implementation should land in slices that each leave a usable surface:
 1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
 3. Add Tree-sitter syntax highlighting with textual fallback.
-4. Add file/hunk navigation and the interactive file list with synchronized selection.
-5. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
-6. Add implicit Tree-sitter semantic strategies with textual fallback.
-7. Refine highlighting coverage and additional navigation after the core interaction is stable.
+4. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
+   left, a diff view on the right, and one vertical separator with no pane borders or labels.
+5. Add file/hunk navigation and the interactive file list with synchronized selection.
+6. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+7. Add implicit Tree-sitter semantic strategies with textual fallback.
+8. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Input contract
 
@@ -137,19 +139,18 @@ changes back during a session.
 ## Interaction model
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main
-viewport, and a bottom command/status strip provides the familiar `:` entry point for commands
-and a compact toolbar for the common actions. The toolbar is a navigational aid, not a second
-control plane; every setting has one keyboard path, and changing it produces a new interaction
-state and immediate redraw.
+viewport, and the file-list column ends with muted shortcut hints. The hints are a navigational
+aid, not a second control plane; every setting has one keyboard path, and changing it produces a
+new interaction state and immediate redraw.
 
 The left file list is the primary navigation pane. As width decreases it collapses before the
 diff view; a compact footer hint remains when possible. If the terminal is too narrow or too
 short for the minimum layout, the only rendered content is `screen too narrow` or
 `screen too short`. The selected layout is never silently replaced by another layout.
 
-The toolbar/footer should expose the current file and the shortcuts relevant to the current
-context. A help view can expose the complete keymap when the compact footer cannot fit it.
-The pager-first model and live shortcut-driven settings are settled product requirements.
+The file-list hints expose shortcuts relevant to the current context. A help view can expose the
+complete keymap when the compact hints cannot fit. The pager-first model and live
+shortcut-driven settings are settled product requirements.
 
 ## View model
 

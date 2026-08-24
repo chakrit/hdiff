@@ -43,7 +43,16 @@ Each slice is incomplete until its automated checks and its human check both pas
    applies tokens only to visible payloads; errors, unsupported paths, oversized hunks, and
    context records whose old and new paths select different languages retain textual rendering.
 
-2. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
+2. Replace pane chrome with a compact two-column layout before local Git integration. The left
+   column contains the Tab-switchable file list and muted shortcut hints at its bottom; the right
+   column contains the diff. One vertical separator divides the columns. Pane borders, labels,
+   and titles are absent so content uses the available terminal cells.
+
+   Human check: open a multi-file diff and verify the file list and muted hints occupy the left
+   column, the diff occupies the right column, exactly one vertical separator is visible, and no
+   pane border, label, or title consumes space.
+
+3. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
    file rotation, hunk movement, and resize.
 
    Human check: with a multi-file, multi-hunk diff open, verify `j`/`k`, `Ctrl-D`/`Ctrl-U`, and
@@ -51,29 +60,29 @@ Each slice is incomplete until its automated checks and its human check both pas
    its top; `{` and `}` move between that file's hunks; resizing redraws the same selected file
    and does not leave terminal artifacts; `q` restores the terminal.
 
-3. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
+4. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
    viewport meaning, and file-list pane.
 
    Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
    aligned panes; switching back to unified view retains the selected file and approximate
-   location. Resize both views without overlap or clipped pane borders.
+   location. Resize both views without overlap or a displaced column separator.
 
-4. Add character-level detail within changed line pairs and session-local context controls.
+5. Add character-level detail within changed line pairs and session-local context controls.
 
    Human check: press `c` on a changed line and see only changed character spans gain detail;
    press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
    that the selected file and current hunk remain understandable.
 
-5. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+6. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
-7. Add shortcut hints to the bottom of the left file-list pane.
+## Deferred work
 
-   Human check: open a multi-file diff and verify the hints remain visible at the bottom of the
-   file-list pane, describe the available navigation shortcuts, and do not overlap file labels.
+Local Git integration remains deferred until the syntax-highlighting and compact-layout slices
+are usable in a real terminal.
 
 ## Later slices
 
