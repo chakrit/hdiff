@@ -97,12 +97,13 @@ The implementation should land in slices that each leave a usable surface:
 1. Parse valid unified diffs and render a static, faithful unified diff.
 2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
 3. Add Tree-sitter syntax highlighting with textual fallback.
-4. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
+4. Add low-contrast addition and deletion styling before the compact layout.
+5. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
    left, a diff view on the right, and one vertical separator with no pane borders or labels.
-5. Add file/hunk navigation and the interactive file list with synchronized selection.
-6. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
-7. Add implicit Tree-sitter semantic strategies with textual fallback.
-8. Refine highlighting coverage and additional navigation after the core interaction is stable.
+6. Add file/hunk navigation and the interactive file list with synchronized selection.
+7. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+8. Add implicit Tree-sitter semantic strategies with textual fallback.
+9. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Input contract
 
