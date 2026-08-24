@@ -4,6 +4,7 @@ use crossterm::{
     cursor::{Hide, Show},
     event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
+    style::available_color_count,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
@@ -19,7 +20,7 @@ use crate::{
     document::{DiffDocument, DiffFile},
     interaction::{self, Input, Interaction, NavigationBounds, Transition, Viewport},
     layout::{Layout, layout},
-    syntax::{SyntaxHighlighter, SyntaxSpan},
+    syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +45,7 @@ pub fn mode_for_output(is_terminal: bool) -> OutputMode {
 
 pub fn run_interactive(document: &DiffDocument) -> io::Result<()> {
     let mut session = TerminalSession::start()?;
-    let result = run_loop(&mut session, document);
+    let result = run_loop(&mut session, document, available_color_count());
     let cleanup_result = session.cleanup();
 
     combine_results(result, cleanup_result)
@@ -69,7 +70,11 @@ fn cleanup_failure(error: io::Error, cleanup_result: io::Result<()>) -> io::Erro
     }
 }
 
-fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Result<()> {
+fn run_loop(
+    session: &mut TerminalSession,
+    document: &DiffDocument,
+    color_count: u16,
+) -> io::Result<()> {
     let (_, height) = terminal::size()?;
     let mut interaction = Interaction {
         selected_file: 0,
@@ -87,6 +92,7 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
         &view,
         &interaction.viewport,
         &mut syntax,
+        color_count,
     )?;
 
     let mut pending_event = None;
@@ -118,6 +124,7 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
                     &view,
                     &interaction.viewport,
                     &mut syntax,
+                    color_count,
                 )?;
             }
         }
@@ -177,9 +184,10 @@ fn draw(
     layout: &Layout,
     viewport: &Viewport,
     syntax: &mut SyntaxHighlighter,
+    color_count: u16,
 ) -> io::Result<()> {
     terminal
-        .draw(|frame| render_frame(frame, document, layout, viewport, syntax))
+        .draw(|frame| render_frame(frame, document, layout, viewport, syntax, color_count))
         .map(|_| ())
 }
 
@@ -189,6 +197,7 @@ fn render_frame(
     layout: &Layout,
     viewport: &Viewport,
     syntax: &mut SyntaxHighlighter,
+    color_count: u16,
 ) {
     let area = frame.area();
     if area.width < 20 {
@@ -202,7 +211,7 @@ fn render_frame(
 
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
-    let lines = visible_diff_lines(layout, viewport, file, syntax);
+    let lines = visible_diff_lines(layout, viewport, file, syntax, color_count);
     let diff = Paragraph::new(Text::from(lines))
         .block(Block::default().borders(Borders::ALL).title("Diff"));
     if area.width < 25 {
@@ -231,6 +240,7 @@ fn visible_diff_lines(
     viewport: &Viewport,
     file: Option<&DiffFile>,
     syntax: &mut SyntaxHighlighter,
+    color_count: u16,
 ) -> Vec<Line<'static>> {
     let spans = file
         .map(|file| syntax_rows(file, syntax))
@@ -248,6 +258,7 @@ fn visible_diff_lines(
             styled_line(
                 without_ending,
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
+                color_count,
             )
         })
         .collect()
@@ -269,7 +280,7 @@ fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<Synta
     }
 }
 
-fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan]) -> Line<'static> {
+fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'static> {
     let text = String::from_utf8_lossy(bytes).into_owned();
     let mut rendered = Vec::new();
     let mut cursor = 0;
@@ -281,7 +292,7 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan]) -> Line<'static> {
         }
         rendered.push(Span::styled(
             text[start..end].to_owned(),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(syntax_color(span.class, color_count)),
         ));
         cursor = end;
     }
@@ -289,6 +300,41 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan]) -> Line<'static> {
         rendered.push(Span::raw(text[cursor..].to_owned()));
     }
     Line::from(rendered)
+}
+
+fn syntax_color(class: SyntaxClass, color_count: u16) -> Color {
+    match color_count {
+        u16::MAX => match class {
+            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Rgb(86, 156, 214),
+            SyntaxClass::String => Color::Rgb(206, 145, 120),
+            SyntaxClass::Comment => Color::Rgb(106, 153, 85),
+            SyntaxClass::Number => Color::Rgb(181, 206, 168),
+            SyntaxClass::Function => Color::Rgb(220, 220, 170),
+            SyntaxClass::Type => Color::Rgb(78, 201, 176),
+            SyntaxClass::Operator => Color::Rgb(212, 212, 212),
+            SyntaxClass::Property => Color::Rgb(156, 220, 254),
+            SyntaxClass::Variable => Color::Rgb(220, 220, 220),
+        },
+        256.. => match class {
+            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Indexed(75),
+            SyntaxClass::String => Color::Indexed(180),
+            SyntaxClass::Comment => Color::Indexed(107),
+            SyntaxClass::Number => Color::Indexed(151),
+            SyntaxClass::Function => Color::Indexed(187),
+            SyntaxClass::Type => Color::Indexed(80),
+            SyntaxClass::Operator => Color::Indexed(252),
+            SyntaxClass::Property => Color::Indexed(153),
+            SyntaxClass::Variable => Color::Indexed(253),
+        },
+        _ => match class {
+            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Blue,
+            SyntaxClass::String => Color::Yellow,
+            SyntaxClass::Comment | SyntaxClass::Number => Color::Green,
+            SyntaxClass::Function | SyntaxClass::Type => Color::Cyan,
+            SyntaxClass::Operator | SyntaxClass::Variable => Color::White,
+            SyntaxClass::Property => Color::Magenta,
+        },
+    }
 }
 
 struct TerminalSession {
@@ -357,9 +403,13 @@ mod tests {
 
     use super::{
         Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, input_for_event,
-        mode_for_output, render_frame,
+        mode_for_output, render_frame, syntax_color,
     };
-    use crate::{layout::layout, parser::parse_unified_diff, syntax::SyntaxHighlighter};
+    use crate::{
+        layout::layout,
+        parser::parse_unified_diff,
+        syntax::{SyntaxClass, SyntaxHighlighter},
+    };
 
     #[test]
     fn renders_distinct_file_and_diff_panes() {
@@ -379,7 +429,16 @@ mod tests {
         let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
+            .draw(|frame| {
+                render_frame(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -406,7 +465,16 @@ mod tests {
         let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
+            .draw(|frame| {
+                render_frame(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -417,7 +485,7 @@ mod tests {
     #[test]
     fn renders_supported_payloads_with_syntax_style() {
         let document = parse_unified_diff(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n",
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() { let label = \"value\"; }\n",
         )
         .expect("valid Rust diff");
         let interaction = Interaction {
@@ -432,10 +500,35 @@ mod tests {
         let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
+            .draw(|frame| {
+                render_frame(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
             .expect("render frame");
 
-        assert_eq!(terminal.backend().buffer()[(26, 5)].fg, Color::Yellow);
+        let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(26, 5)].fg, Color::Rgb(86, 156, 214));
+        assert_eq!(rendered[(51, 5)].fg, Color::Rgb(206, 145, 120));
+    }
+
+    #[test]
+    fn falls_back_from_truecolor_to_256_and_basic_semantic_colors() {
+        assert_eq!(
+            syntax_color(SyntaxClass::Keyword, u16::MAX),
+            Color::Rgb(86, 156, 214)
+        );
+        assert_eq!(syntax_color(SyntaxClass::String, 256), Color::Indexed(180));
+        assert_eq!(syntax_color(SyntaxClass::Type, 8), Color::Cyan);
+        assert_ne!(
+            syntax_color(SyntaxClass::Keyword, 8),
+            syntax_color(SyntaxClass::String, 8)
+        );
     }
 
     #[test]
