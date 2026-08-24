@@ -298,5 +298,6 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
 `docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Tree-sitter syntax
-highlighting, navigation, layout, side-by-side, character, and semantic strategies follow in
-the feature sequence above.
+highlighting is complete. Low-contrast addition/deletion styling is implemented and awaits its
+mixed-language terminal human check. Compact layout, navigation, side-by-side, character, and
+semantic strategies follow in the feature sequence above.

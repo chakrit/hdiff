@@ -16,6 +16,10 @@ file-list and diff panes, while CROSSTERM retains terminal lifecycle and event o
 slice passed its automated and human checks. Do not describe file navigation, hunk navigation,
 resize handling, or later interactive slices as delivered until they pass their own human checks.
 
+Low-contrast addition and deletion styling is implemented with a neutral gray background, muted
+record text, restrained red/green markers, and retained syntax colors. Its automated checks pass;
+the mixed-language terminal human check remains required to complete the slice.
+
 ## Completed slices
 
 1. Establish the Rust CLI direction, architecture, testing boundary, and durable project records.

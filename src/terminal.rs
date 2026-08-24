@@ -282,8 +282,26 @@ fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<Synta
 
 fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'static> {
     let text = String::from_utf8_lossy(bytes).into_owned();
+    let marker = bytes.first().copied();
+    let palette = low_contrast_palette(color_count);
     let mut rendered = Vec::new();
-    let mut cursor = 0;
+    let mut cursor = match marker {
+        Some(b'+') => {
+            rendered.push(Span::styled(
+                text[..1].to_owned(),
+                Style::default().fg(palette.addition_marker),
+            ));
+            1
+        }
+        Some(b'-') => {
+            rendered.push(Span::styled(
+                text[..1].to_owned(),
+                Style::default().fg(palette.deletion_marker),
+            ));
+            1
+        }
+        _ => 0,
+    };
     for span in syntax {
         let start = span.start + 1;
         let end = span.end + 1;
@@ -299,7 +317,45 @@ fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan], color_count: u16) -> Line<'s
     if cursor < text.len() {
         rendered.push(Span::raw(text[cursor..].to_owned()));
     }
-    Line::from(rendered)
+    let line = Line::from(rendered);
+
+    match marker {
+        Some(b'+') | Some(b'-') => {
+            line.style(Style::default().bg(palette.background).fg(palette.body))
+        }
+        _ => line,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LowContrastPalette {
+    background: Color,
+    body: Color,
+    deletion_marker: Color,
+    addition_marker: Color,
+}
+
+fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
+    match color_count {
+        u16::MAX => LowContrastPalette {
+            background: Color::Rgb(45, 45, 48),
+            body: Color::Rgb(190, 190, 190),
+            deletion_marker: Color::Rgb(206, 74, 74),
+            addition_marker: Color::Rgb(98, 173, 99),
+        },
+        256.. => LowContrastPalette {
+            background: Color::Indexed(236),
+            body: Color::Indexed(250),
+            deletion_marker: Color::Indexed(167),
+            addition_marker: Color::Indexed(71),
+        },
+        _ => LowContrastPalette {
+            background: Color::DarkGray,
+            body: Color::Gray,
+            deletion_marker: Color::Red,
+            addition_marker: Color::Green,
+        },
+    }
 }
 
 fn syntax_color(class: SyntaxClass, color_count: u16) -> Color {
@@ -403,7 +459,7 @@ mod tests {
 
     use super::{
         Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, input_for_event,
-        mode_for_output, render_frame, syntax_color,
+        low_contrast_palette, mode_for_output, render_frame, syntax_color,
     };
     use crate::{
         layout::layout,
@@ -483,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_supported_payloads_with_syntax_style() {
+    fn renders_syntax_and_low_contrast_record_styles() {
         let document = parse_unified_diff(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() { let label = \"value\"; }\n",
         )
@@ -513,6 +569,10 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(25, 4)].fg, Color::Rgb(206, 74, 74));
+        assert_eq!(rendered[(25, 5)].fg, Color::Rgb(98, 173, 99));
+        assert_eq!(rendered[(27, 4)].bg, Color::Rgb(45, 45, 48));
+        assert_eq!(rendered[(26, 5)].bg, Color::Rgb(45, 45, 48));
         assert_eq!(rendered[(26, 5)].fg, Color::Rgb(86, 156, 214));
         assert_eq!(rendered[(51, 5)].fg, Color::Rgb(206, 145, 120));
     }
@@ -529,6 +589,19 @@ mod tests {
             syntax_color(SyntaxClass::Keyword, 8),
             syntax_color(SyntaxClass::String, 8)
         );
+    }
+
+    #[test]
+    fn falls_back_from_truecolor_to_256_and_basic_low_contrast_colors() {
+        assert_eq!(
+            low_contrast_palette(u16::MAX).background,
+            Color::Rgb(45, 45, 48)
+        );
+        assert_eq!(
+            low_contrast_palette(256).addition_marker,
+            Color::Indexed(71)
+        );
+        assert_eq!(low_contrast_palette(8).deletion_marker, Color::Red);
     }
 
     #[test]
