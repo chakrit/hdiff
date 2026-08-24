@@ -154,6 +154,9 @@ The file-list hints expose shortcuts relevant to the current context. A help vie
 complete keymap when the compact hints cannot fit. The pager-first model and live
 shortcut-driven settings are settled product requirements.
 
+Unselected file-list labels use a medium-muted neutral tone, one level brighter than the separator
+and footer hints. The selected file remains visually distinct through the reversed selection style.
+
 ## View model
 
 View choices are orthogonal rather than one growing mode enum:
