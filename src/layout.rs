@@ -1,7 +1,7 @@
 use crate::{
     document::{DiffDocument, sanitize},
-    interaction::Interaction,
-    render::{RenderedLineKind, render_file_lines},
+    interaction::{DiffLayout, Interaction},
+    render::{RenderedLine, RenderedLineKind, render_file_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -49,6 +49,32 @@ pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<Vec<u8>>,
     pub line_kinds: Vec<RenderedLineKind>,
+    pub side_by_side_rows: Vec<SideBySideRow>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SideBySideRow {
+    Shared(SideBySideLine),
+    Paired {
+        before: Option<SideBySideLine>,
+        after: Option<SideBySideLine>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideBySideLine {
+    pub bytes: Vec<u8>,
+    pub kind: RenderedLineKind,
+    pub source_index: usize,
+}
+
+impl Layout {
+    pub fn line_count(&self, display_layout: DiffLayout) -> usize {
+        match display_layout {
+            DiffLayout::Unified => self.diff_lines.len(),
+            DiffLayout::Vertical | DiffLayout::Stacked => self.side_by_side_rows.len(),
+        }
+    }
 }
 
 pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
@@ -69,9 +95,11 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
             files,
             diff_lines: Vec::new(),
             line_kinds: Vec::new(),
+            side_by_side_rows: Vec::new(),
         };
     };
     let rendered_lines = render_file_lines(file);
+    let side_by_side_rows = side_by_side_rows(&rendered_lines);
     let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
         .into_iter()
         .map(|line| (line.bytes, line.kind))
@@ -80,6 +108,57 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         files,
         diff_lines,
         line_kinds,
+        side_by_side_rows,
+    }
+}
+
+fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
+    let mut rows = Vec::new();
+    let mut index = 0;
+
+    while index < rendered_lines.len() {
+        let line = &rendered_lines[index];
+        if !is_changed_line(line) {
+            rows.push(SideBySideRow::Shared(side_by_side_line(line, index)));
+            index += 1;
+            continue;
+        }
+
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        while index < rendered_lines.len() && is_changed_line(&rendered_lines[index]) {
+            let line = &rendered_lines[index];
+            let side_line = side_by_side_line(line, index);
+            match line.bytes.first() {
+                Some(b'-') => before.push(side_line),
+                Some(b'+') => after.push(side_line),
+                _ => unreachable!("changed rows have a change marker"),
+            }
+            index += 1;
+        }
+
+        let pair_count = before.len().max(after.len());
+        for pair_index in 0..pair_count {
+            rows.push(SideBySideRow::Paired {
+                before: before.get(pair_index).cloned(),
+                after: after.get(pair_index).cloned(),
+            });
+        }
+    }
+
+    rows
+}
+
+fn is_changed_line(line: &RenderedLine) -> bool {
+    matches!(line.kind, RenderedLineKind::Record(_))
+        && matches!(line.bytes.first(), Some(b'+') | Some(b'-'))
+}
+
+fn side_by_side_line(line: &RenderedLine, source_index: usize) -> SideBySideLine {
+    SideBySideLine {
+        bytes: line.bytes.clone(),
+        kind: line.kind,
+        source_index,
     }
 }
 
@@ -123,9 +202,9 @@ fn display_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileListRow, PaneLayout, layout, pane_layout};
+    use super::{FileListRow, PaneLayout, SideBySideRow, layout, pane_layout};
     use crate::{
-        interaction::{Interaction, Viewport},
+        interaction::{DiffLayout, Interaction, Viewport},
         parser::parse_unified_diff,
         render::RenderedLineKind,
     };
@@ -138,6 +217,7 @@ mod tests {
         .expect("valid multi-file diff");
         let interaction = Interaction {
             selected_file: 1,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -183,6 +263,7 @@ mod tests {
                 .expect("valid metadata-only Git fixture");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -207,12 +288,49 @@ mod tests {
     }
 
     #[test]
+    fn aligns_asymmetric_changed_blocks_with_blank_vertical_peers() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+        )
+        .expect("valid asymmetric diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            layout: DiffLayout::Unified,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+
+        let view = layout(&document, &interaction);
+
+        assert_eq!(view.side_by_side_rows.len(), 6);
+        assert_eq!(view.line_count(DiffLayout::Unified), 7);
+        assert_eq!(view.line_count(DiffLayout::Vertical), 6);
+        assert!(matches!(
+            &view.side_by_side_rows[3],
+            SideBySideRow::Paired {
+                before: Some(before),
+                after: Some(after),
+            } if before.bytes == b"-old first\n" && after.bytes == b"+new first\n"
+        ));
+        assert!(matches!(
+            &view.side_by_side_rows[4],
+            SideBySideRow::Paired {
+                before: Some(before),
+                after: None,
+            } if before.bytes == b"-old second\n"
+        ));
+    }
+
+    #[test]
     fn labels_an_added_file_with_its_new_path() {
         let document =
             parse_unified_diff(b"--- /dev/null\n+++ b/added-file.txt\n@@ -0,0 +1 @@\n+new\n")
                 .expect("valid added-file diff");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,

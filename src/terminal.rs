@@ -18,8 +18,8 @@ use ratatui::{
 
 use crate::{
     document::{DiffDocument, DiffFile},
-    interaction::{self, Input, Interaction, NavigationBounds, Transition, Viewport},
-    layout::{Layout, PaneLayout, layout, pane_layout},
+    interaction::{self, DiffLayout, Input, Interaction, NavigationBounds, Transition, Viewport},
+    layout::{Layout, PaneLayout, SideBySideLine, SideBySideRow, layout, pane_layout},
     render::RenderedLineKind,
     syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
 };
@@ -81,6 +81,7 @@ fn run_loop(
     let (_, height) = terminal::size()?;
     let mut interaction = Interaction {
         selected_file: 0,
+        layout: DiffLayout::Unified,
         viewport: Viewport {
             offset: 0,
             height: usize::from(height),
@@ -94,6 +95,7 @@ fn run_loop(
         document,
         &view,
         &interaction.viewport,
+        interaction.layout,
         &mut syntax,
         color_count,
     )?;
@@ -110,7 +112,8 @@ fn run_loop(
         let transition = {
             let bounds = NavigationBounds {
                 file_count: document.files.len(),
-                line_count: view.diff_lines.len(),
+                unified_line_count: view.line_count(DiffLayout::Unified),
+                paired_line_count: view.line_count(DiffLayout::Vertical),
             };
             interaction::transition_interaction(&interaction, input, &bounds)
         };
@@ -125,6 +128,7 @@ fn run_loop(
                     document,
                     &view,
                     &interaction.viewport,
+                    interaction.layout,
                     &mut syntax,
                     color_count,
                 )?;
@@ -171,6 +175,7 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Input::HalfPageUp),
         (KeyCode::Char('g'), _) => Some(Input::Top),
         (KeyCode::Char('G'), _) => Some(Input::Bottom),
+        (KeyCode::Char('v'), _) => Some(Input::NextLayout),
         (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
         (KeyCode::Tab, _) => Some(Input::NextFile),
         (KeyCode::BackTab, _) => Some(Input::PreviousFile),
@@ -183,14 +188,26 @@ fn draw(
     document: &DiffDocument,
     layout: &Layout,
     viewport: &Viewport,
+    display_layout: DiffLayout,
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) -> io::Result<()> {
     terminal
-        .draw(|frame| render_frame(frame, document, layout, viewport, syntax, color_count))
+        .draw(|frame| {
+            render_frame_with_layout(
+                frame,
+                document,
+                layout,
+                viewport,
+                display_layout,
+                syntax,
+                color_count,
+            )
+        })
         .map(|_| ())
 }
 
+#[cfg(test)]
 fn render_frame(
     frame: &mut Frame,
     document: &DiffDocument,
@@ -199,15 +216,42 @@ fn render_frame(
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) {
+    render_frame_with_layout(
+        frame,
+        document,
+        layout,
+        viewport,
+        DiffLayout::Unified,
+        syntax,
+        color_count,
+    );
+}
+
+fn render_frame_with_layout(
+    frame: &mut Frame,
+    document: &DiffDocument,
+    layout: &Layout,
+    viewport: &Viewport,
+    display_layout: DiffLayout,
+    syntax: &mut SyntaxHighlighter,
+    color_count: u16,
+) {
     let area = frame.area();
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
     let rows = visible_diff_rows(layout, viewport, file, syntax, color_count);
+    let side_by_side_rows = visible_side_by_side_rows(layout, viewport, file, syntax, color_count);
+    let display = DisplayRows {
+        unified: rows,
+        side_by_side: side_by_side_rows,
+        layout: display_layout,
+        color_count,
+    };
 
     match pane_layout(area.width, area.height) {
         PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
         PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
-        PaneLayout::DiffOnly => render_diff_rows(frame, rows, area),
+        PaneLayout::DiffOnly => render_display_layout(frame, display, area),
         PaneLayout::Split {
             file_list_width,
             separator_padding,
@@ -215,10 +259,9 @@ fn render_frame(
             frame,
             layout,
             area,
-            rows,
             file_list_width,
             separator_padding,
-            color_count,
+            display,
         ),
     }
 }
@@ -227,10 +270,9 @@ fn render_split_panes(
     frame: &mut Frame,
     layout: &Layout,
     area: ratatui::layout::Rect,
-    rows: Vec<DiffRow>,
     file_list_width: u16,
     separator_padding: u16,
-    color_count: u16,
+    display: DisplayRows,
 ) {
     let panes = RatatuiLayout::horizontal([
         Constraint::Length(file_list_width),
@@ -252,7 +294,7 @@ fn render_split_panes(
     .split(panes[0]);
     let mut selected_file = ListState::default();
     selected_file.select(layout.files.iter().position(|file| file.selected));
-    let chrome = chrome_palette(color_count);
+    let chrome = chrome_palette(display.color_count);
     let files = layout
         .files
         .iter()
@@ -276,7 +318,7 @@ fn render_split_panes(
     frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
     frame.render_widget(hints, file_list_areas[1]);
     frame.render_widget(Paragraph::new(separator), panes[2]);
-    render_diff_rows(frame, rows, panes[4]);
+    render_display_layout(frame, display, panes[4]);
 }
 
 fn render_diff_rows(frame: &mut Frame, rows: Vec<DiffRow>, area: ratatui::layout::Rect) {
@@ -285,6 +327,97 @@ fn render_diff_rows(frame: &mut Frame, rows: Vec<DiffRow>, area: ratatui::layout
 
         frame.render_widget(Paragraph::new(row.line).style(row.style), row_area);
     }
+}
+
+fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: ratatui::layout::Rect) {
+    match display.layout {
+        DiffLayout::Unified => render_diff_rows(frame, display.unified, area),
+        DiffLayout::Vertical => {
+            render_vertical_rows(frame, display.side_by_side, area, display.color_count)
+        }
+        DiffLayout::Stacked => {
+            render_stacked_rows(frame, display.side_by_side, area, display.color_count)
+        }
+    }
+}
+
+fn render_vertical_rows(
+    frame: &mut Frame,
+    rows: Vec<VisibleSideBySideRow>,
+    area: ratatui::layout::Rect,
+    color_count: u16,
+) {
+    let panes = RatatuiLayout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Length(1),
+        Constraint::Percentage(50),
+    ])
+    .split(area);
+    let separator_style = Style::default().fg(inner_separator_color(color_count));
+
+    for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
+        let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
+        match row {
+            VisibleSideBySideRow::Shared(row) => render_diff_rows(frame, vec![row], row_area),
+            VisibleSideBySideRow::Paired { before, after } => {
+                let before_area =
+                    ratatui::layout::Rect::new(panes[0].x, row_area.y, panes[0].width, 1);
+                let separator_area = ratatui::layout::Rect::new(panes[1].x, row_area.y, 1, 1);
+                let after_area =
+                    ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
+                if let Some(before) = before {
+                    render_diff_rows(frame, vec![before], before_area);
+                }
+                frame.render_widget(
+                    Paragraph::new(Line::styled("│", separator_style)),
+                    separator_area,
+                );
+                if let Some(after) = after {
+                    render_diff_rows(frame, vec![after], after_area);
+                }
+            }
+        }
+    }
+}
+
+fn render_stacked_rows(
+    frame: &mut Frame,
+    rows: Vec<VisibleSideBySideRow>,
+    area: ratatui::layout::Rect,
+    color_count: u16,
+) {
+    let panes = RatatuiLayout::vertical([
+        Constraint::Percentage(50),
+        Constraint::Length(1),
+        Constraint::Percentage(50),
+    ])
+    .split(area);
+    let mut before_rows = Vec::new();
+    let mut after_rows = Vec::new();
+
+    for row in rows {
+        match row {
+            VisibleSideBySideRow::Shared(row) => {
+                before_rows.push(row.clone());
+                after_rows.push(row);
+            }
+            VisibleSideBySideRow::Paired { before, after } => {
+                before_rows.extend(before);
+                after_rows.extend(after);
+            }
+        }
+    }
+
+    let separator = "─".repeat(usize::from(area.width));
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            separator,
+            Style::default().fg(inner_separator_color(color_count)),
+        )),
+        panes[1],
+    );
+    render_diff_rows(frame, before_rows, panes[0]);
+    render_diff_rows(frame, after_rows, panes[2]);
 }
 
 fn footer_hints() -> Vec<Line<'static>> {
@@ -296,14 +429,31 @@ fn footer_hints() -> Vec<Line<'static>> {
         Line::raw("  ^U    page up"),
         Line::raw("  ^D    page down"),
         Line::raw("  g·G   top/bottom"),
+        Line::raw("  v    cycle layout"),
         Line::raw("(⇧)Tab  next/prev file"),
         Line::raw("   q    exit"),
     ]
 }
 
+#[derive(Clone)]
 struct DiffRow {
     line: Line<'static>,
     style: Style,
+}
+
+enum VisibleSideBySideRow {
+    Shared(DiffRow),
+    Paired {
+        before: Option<DiffRow>,
+        after: Option<DiffRow>,
+    },
+}
+
+struct DisplayRows {
+    unified: Vec<DiffRow>,
+    side_by_side: Vec<VisibleSideBySideRow>,
+    layout: DiffLayout,
+    color_count: u16,
 }
 
 fn visible_diff_rows(
@@ -322,23 +472,79 @@ fn visible_diff_rows(
         .enumerate()
         .skip(viewport.offset)
         .map(|(index, line)| {
-            let without_ending = line
-                .strip_suffix(b"\r\n")
-                .or_else(|| line.strip_suffix(b"\n"))
-                .unwrap_or(line);
-            let row_kind = row_kind(layout.line_kinds.get(index), line.first());
-            let palette = low_contrast_palette(color_count);
-            let style = row_style(row_kind, palette, color_count);
-            let line = styled_line(
-                without_ending,
-                row_kind,
+            diff_row(
+                line,
+                layout.line_kinds.get(index),
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
                 color_count,
-            );
-
-            DiffRow { line, style }
+            )
         })
         .collect()
+}
+
+fn visible_side_by_side_rows(
+    layout: &Layout,
+    viewport: &Viewport,
+    file: Option<&DiffFile>,
+    syntax: &mut SyntaxHighlighter,
+    color_count: u16,
+) -> Vec<VisibleSideBySideRow> {
+    let spans = file
+        .map(|file| syntax_rows(file, syntax))
+        .unwrap_or_default();
+
+    layout
+        .side_by_side_rows
+        .iter()
+        .skip(viewport.offset)
+        .map(|row| match row {
+            SideBySideRow::Shared(line) => {
+                VisibleSideBySideRow::Shared(diff_row_for_side(line, &spans, color_count))
+            }
+            SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
+                before: before
+                    .as_ref()
+                    .map(|line| diff_row_for_side(line, &spans, color_count)),
+                after: after
+                    .as_ref()
+                    .map(|line| diff_row_for_side(line, &spans, color_count)),
+            },
+        })
+        .collect()
+}
+
+fn diff_row_for_side(
+    line: &SideBySideLine,
+    spans: &[Vec<SyntaxSpan>],
+    color_count: u16,
+) -> DiffRow {
+    diff_row(
+        &line.bytes,
+        Some(&line.kind),
+        spans
+            .get(line.source_index)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+        color_count,
+    )
+}
+
+fn diff_row(
+    line: &[u8],
+    kind: Option<&RenderedLineKind>,
+    spans: &[SyntaxSpan],
+    color_count: u16,
+) -> DiffRow {
+    let without_ending = line
+        .strip_suffix(b"\r\n")
+        .or_else(|| line.strip_suffix(b"\n"))
+        .unwrap_or(line);
+    let row_kind = row_kind(kind, line.first());
+    let palette = low_contrast_palette(color_count);
+    let style = row_style(row_kind, palette, color_count);
+    let line = styled_line(without_ending, row_kind, spans, color_count);
+
+    DiffRow { line, style }
 }
 
 fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<SyntaxSpan>> {
@@ -524,6 +730,14 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
     }
 }
 
+fn inner_separator_color(color_count: u16) -> Color {
+    match color_count {
+        u16::MAX => Color::Rgb(95, 95, 95),
+        256.. => Color::Indexed(238),
+        _ => Color::DarkGray,
+    }
+}
+
 fn syntax_color(class: SyntaxClass, color_count: u16) -> Color {
     match color_count {
         u16::MAX => match class {
@@ -621,11 +835,16 @@ pub fn cleanup_order(stages: &[SetupStage]) -> Vec<SetupStage> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{Terminal, backend::TestBackend, style::{Color, Modifier}};
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        style::{Color, Modifier},
+    };
 
     use super::{
-        Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, hunk_header_color,
-        input_for_event, low_contrast_palette, mode_for_output, render_frame, syntax_color,
+        DiffLayout, Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order,
+        hunk_header_color, input_for_event, low_contrast_palette, mode_for_output, render_frame,
+        render_frame_with_layout, syntax_color,
     };
     use crate::{
         layout::layout,
@@ -641,6 +860,7 @@ mod tests {
         .expect("valid two-file diff");
         let interaction = Interaction {
             selected_file: 1,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -695,6 +915,7 @@ mod tests {
             .expect("valid diff");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -723,6 +944,49 @@ mod tests {
     }
 
     #[test]
+    fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+        )
+        .expect("valid asymmetric diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            layout: DiffLayout::Vertical,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame_with_layout(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    interaction.layout,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(27, 3)].symbol(), "-", "before marker");
+        assert_eq!(rendered[(54, 3)].symbol(), "+", "after marker");
+        assert_eq!(rendered[(53, 3)].symbol(), "│", "inner separator");
+        assert_eq!(
+            rendered[(53, 3)].fg,
+            Color::Rgb(95, 95, 95),
+            "inner separator is dimmer than the outer separator"
+        );
+    }
+
+    #[test]
     fn renders_syntax_and_low_contrast_record_styles() {
         let document = parse_unified_diff(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
@@ -730,6 +994,7 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -836,6 +1101,7 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -881,6 +1147,7 @@ mod tests {
         .expect("valid two-file diff");
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 0,
                 height: 12,
@@ -905,17 +1172,18 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected = [
-            ((3, 5), "k", "upward movement"),
-            ((1, 6), "h", "leftward movement"),
-            ((3, 6), "·", "movement separator"),
-            ((5, 6), "l", "rightward movement"),
-            ((8, 6), "m", "movement label"),
-            ((3, 7), "j", "downward movement"),
-            ((2, 9), "^", "page up"),
-            ((2, 10), "^", "page down"),
-            ((2, 11), "g", "top and bottom"),
+            ((3, 4), "k", "upward movement"),
+            ((1, 5), "h", "leftward movement"),
+            ((3, 5), "·", "movement separator"),
+            ((5, 5), "l", "rightward movement"),
+            ((8, 5), "m", "movement label"),
+            ((3, 6), "j", "downward movement"),
+            ((2, 8), "^", "page up"),
+            ((2, 9), "^", "page down"),
+            ((2, 10), "g", "top and bottom"),
             ((0, 12), "(", "file rotation"),
             ((3, 13), "q", "exit"),
+            ((2, 11), "v", "layout cycle"),
         ];
 
         for ((x, y), symbol, name) in expected {
@@ -983,6 +1251,13 @@ mod tests {
                 KeyModifiers::NONE
             ))),
             Some(Input::NextFile)
+        );
+        assert_eq!(
+            input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                KeyCode::Char('v'),
+                KeyModifiers::NONE
+            ))),
+            Some(Input::NextLayout)
         );
         assert_eq!(
             input_for_event(CrosstermEvent::Key(KeyEvent::new(

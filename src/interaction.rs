@@ -7,13 +7,31 @@ pub struct Viewport {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Interaction {
     pub selected_file: usize,
+    pub layout: DiffLayout,
     pub viewport: Viewport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffLayout {
+    Unified,
+    Vertical,
+    Stacked,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct NavigationBounds {
     pub file_count: usize,
-    pub line_count: usize,
+    pub unified_line_count: usize,
+    pub paired_line_count: usize,
+}
+
+impl NavigationBounds {
+    fn line_count(&self, layout: DiffLayout) -> usize {
+        match layout {
+            DiffLayout::Unified => self.unified_line_count,
+            DiffLayout::Vertical | DiffLayout::Stacked => self.paired_line_count,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -26,6 +44,7 @@ pub enum Input {
     Bottom,
     NextFile,
     PreviousFile,
+    NextLayout,
     Quit,
     Interrupt,
     Resize { width: u16, height: u16 },
@@ -39,18 +58,46 @@ pub fn transition_interaction(
     match input {
         Input::NextFile => return select_next_file(interaction, bounds.file_count),
         Input::PreviousFile => return select_previous_file(interaction, bounds.file_count),
+        Input::NextLayout => return select_next_layout(interaction, bounds),
         _ => {}
     }
-    let transition = transition(&interaction.viewport, input, bounds.line_count);
+    let transition = transition(
+        &interaction.viewport,
+        input,
+        bounds.line_count(interaction.layout),
+    );
 
     match transition {
         Transition::Exit => Transition::Exit,
         Transition::Redraw(viewport) => Transition::RedrawInteraction(Interaction {
             selected_file: interaction.selected_file,
+            layout: interaction.layout,
             viewport,
         }),
         Transition::RedrawInteraction(_) => unreachable!("viewport transition cannot nest"),
     }
+}
+
+fn select_next_layout(interaction: &Interaction, bounds: &NavigationBounds) -> Transition {
+    let layout = match interaction.layout {
+        DiffLayout::Unified => DiffLayout::Vertical,
+        DiffLayout::Vertical => DiffLayout::Stacked,
+        DiffLayout::Stacked => DiffLayout::Unified,
+    };
+
+    let maximum_offset = bounds
+        .line_count(layout)
+        .saturating_sub(interaction.viewport.height);
+    let offset = interaction.viewport.offset.min(maximum_offset);
+
+    Transition::RedrawInteraction(Interaction {
+        selected_file: interaction.selected_file,
+        layout,
+        viewport: Viewport {
+            offset,
+            height: interaction.viewport.height,
+        },
+    })
 }
 
 fn select_next_file(interaction: &Interaction, file_count: usize) -> Transition {
@@ -77,6 +124,7 @@ fn select_previous_file(interaction: &Interaction, file_count: usize) -> Transit
 fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Transition {
     Transition::RedrawInteraction(Interaction {
         selected_file,
+        layout: interaction.layout,
         viewport: Viewport {
             offset: 0,
             height: interaction.viewport.height,
@@ -94,7 +142,7 @@ pub enum Transition {
 pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Transition {
     match input {
         Input::Quit | Input::Interrupt => Transition::Exit,
-        Input::NextFile | Input::PreviousFile => {
+        Input::NextFile | Input::PreviousFile | Input::NextLayout => {
             Transition::Redraw(viewport.clone())
         }
         Input::Down => redraw(
@@ -144,7 +192,7 @@ fn redraw(offset: usize, height: usize, line_count: usize) -> Transition {
 #[cfg(test)]
 mod tests {
     use super::{
-        Input, Interaction, NavigationBounds, Transition, Viewport, transition,
+        DiffLayout, Input, Interaction, NavigationBounds, Transition, Viewport, transition,
         transition_interaction,
     };
 
@@ -206,6 +254,7 @@ mod tests {
     fn rotates_files_and_resets_the_viewport() {
         let interaction = Interaction {
             selected_file: 1,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 4,
                 height: 3,
@@ -213,7 +262,8 @@ mod tests {
         };
         let bounds = NavigationBounds {
             file_count: 2,
-            line_count: 10,
+            unified_line_count: 10,
+            paired_line_count: 10,
         };
 
         let next = transition_interaction(&interaction, Input::NextFile, &bounds);
@@ -222,6 +272,7 @@ mod tests {
             next,
             Transition::RedrawInteraction(Interaction {
                 selected_file: 0,
+                layout: DiffLayout::Unified,
                 viewport: Viewport {
                     offset: 0,
                     height: 3,
@@ -234,6 +285,7 @@ mod tests {
     fn rotates_to_the_previous_file_and_resets_the_viewport() {
         let interaction = Interaction {
             selected_file: 0,
+            layout: DiffLayout::Unified,
             viewport: Viewport {
                 offset: 4,
                 height: 3,
@@ -241,7 +293,8 @@ mod tests {
         };
         let bounds = NavigationBounds {
             file_count: 2,
-            line_count: 10,
+            unified_line_count: 10,
+            paired_line_count: 10,
         };
 
         let next = transition_interaction(&interaction, Input::PreviousFile, &bounds);
@@ -250,6 +303,7 @@ mod tests {
             next,
             Transition::RedrawInteraction(Interaction {
                 selected_file: 1,
+                layout: DiffLayout::Unified,
                 viewport: Viewport {
                     offset: 0,
                     height: 3,
@@ -258,4 +312,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cycles_layouts_without_changing_the_reader_position() {
+        let interaction = Interaction {
+            selected_file: 1,
+            layout: DiffLayout::Unified,
+            viewport: Viewport {
+                offset: 4,
+                height: 3,
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: 2,
+            unified_line_count: 10,
+            paired_line_count: 10,
+        };
+
+        let Transition::RedrawInteraction(vertical) =
+            transition_interaction(&interaction, Input::NextLayout, &bounds)
+        else {
+            panic!("layout change redraws interaction");
+        };
+        let Transition::RedrawInteraction(stacked) =
+            transition_interaction(&vertical, Input::NextLayout, &bounds)
+        else {
+            panic!("layout change redraws interaction");
+        };
+        let Transition::RedrawInteraction(unified) =
+            transition_interaction(&stacked, Input::NextLayout, &bounds)
+        else {
+            panic!("layout change redraws interaction");
+        };
+
+        assert_eq!(vertical.layout, DiffLayout::Vertical);
+        assert_eq!(stacked.layout, DiffLayout::Stacked);
+        assert_eq!(unified, interaction);
+    }
 }

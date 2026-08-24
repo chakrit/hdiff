@@ -60,7 +60,18 @@ trap cleanup EXIT HUP INT TERM
 tmux new-session -d -x 120 -y 36 -s "$session" env TERM=screen-256color "$binary" "$fixture"
 
 wait_for 'pub fn greeting()'
-capture Rust
+capture Unified
+
+tmux send-keys -t "$target" v
+wait_for 'pub fn greeting()'
+capture Vertical
+
+tmux send-keys -t "$target" v
+wait_for 'pub fn greeting()'
+capture Stacked
+
+tmux send-keys -t "$target" v
+wait_for 'pub fn greeting()'
 
 tmux send-keys -t "$target" Tab
 wait_for 'export const greeting'

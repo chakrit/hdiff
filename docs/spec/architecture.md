@@ -29,7 +29,8 @@ and faithful rendering of the supplied diff.
 - Navigate files and linearly move the diff viewport with a small discoverable keymap.
 - Scroll vertically without losing the current location.
 - Resize cleanly and redraw from retained state.
-- Toggle unified and side-by-side views without silently changing the selected mode.
+- Cycle unified, vertical-split, and stacked-split views without silently changing the selected
+  mode.
 - Provide a pager-first TUI with muted, context-sensitive shortcut hints at the bottom of the
   file-list column.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
@@ -104,7 +105,8 @@ The implementation should land in slices that each leave a usable surface:
    left, a diff view on the right, and one vertical separator padded by one space on each side,
    with no pane borders or labels.
 6. Add file navigation and the interactive file list with synchronized selection.
-7. Add side-by-side rendering, character detail, and synchronized horizontal scrolling.
+7. Add vertical and stacked split rendering, character detail, and synchronized horizontal
+   scrolling.
 8. Add implicit Tree-sitter semantic strategies with textual fallback.
 9. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
@@ -163,7 +165,7 @@ and footer hints. The selected file remains visually distinct through the revers
 
 View choices are orthogonal rather than one growing mode enum:
 
-- `DiffLayout`: unified or side-by-side;
+- `DiffLayout`: unified, vertical split, or stacked split;
 - `DiffGranularity`: line-based or character-based;
 - `DiffSemantics`: textual or Tree-sitter semantic strategy;
 - navigation-pane state: file list visibility and active pane;
@@ -173,8 +175,14 @@ View choices are orthogonal rather than one growing mode enum:
 `EffectiveView` derives the renderable combination from these preferences, document
 capabilities, language support, and terminal dimensions. Tree-sitter semantic diff is used when
 the language and parser are available, with textual fallback otherwise. The user-selected
-layout is preserved through resizes; hdiff does not automatically switch between unified and
-side-by-side.
+layout is preserved through resizes; hdiff does not automatically switch between layouts. `v`
+cycles unified, vertical split, and stacked split in that order.
+
+Vertical split renders each changed block as aligned before/after pairs, adding a blank cell on
+the shorter side. A more dimmed separator divides the before and after panes; each pane retains
+the marker column and payload spacer used by unified rendering. Stacked split derives the same
+pairs but omits absent peers rather than adding blank rows, so each pane presents only its source
+lines while shared hunk headers and context retain orientation.
 
 Wrapping is session-local and toggled independently from layout. When wrapping is disabled,
 horizontal movement uses one synchronized offset for side-by-side panes. Context-line changes
@@ -209,7 +217,7 @@ cells after the final source character.
 
 The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
 `Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `Tab` file rotation with wraparound,
-`w` wrapping, `c` line/character detail, `v` unified/side-by-side,
+`w` wrapping, `c` line/character detail, `v` cycles unified/vertical split/stacked split,
 `+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
 bindings. File rotation selects the next file and moves the viewport to its top. There is no
 separate diff editing cursor; movement changes the viewport.
@@ -221,12 +229,12 @@ ambiguous, follow Vim semantics.
 The left file-list pane will show shortcut hints at its bottom.
 
 The file-list footer is a compact multi-row reference for every currently implemented key: vertical
-movement, page movement, top/bottom, file rotation, and exit. It uses only the
+movement, page movement, top/bottom, layout cycling, file rotation, and exit. It uses only the
 available footer rows and never advertises a deferred shortcut.
 
 The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
 and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
-middots: `g·G` top/bottom, `(⇧)Tab` next/previous file, and `q` exit.
+middots: `g·G` top/bottom, `v` cycle layout, `(⇧)Tab` next/previous file, and `q` exit.
 
 ## Technology direction
 

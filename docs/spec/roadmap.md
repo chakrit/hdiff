@@ -31,8 +31,14 @@ pane while retaining marker and syntax colors. Its automated and mixed-language 
 pass.
 
 The terminal smoke suite uses one fixed-size tmux session and a multi-file Rust, JavaScript,
-Python, Go, and C fixture. It captures ANSI-styled panes after launch and each Tab-selected file,
-then exits with `q`; SMOKE locks this observable terminal surface for drift review.
+Python, Go, and C fixture. It captures unified, vertical, and stacked ANSI-styled panes, then
+each Tab-selected file, before exiting with `q`; SMOKE locks this observable terminal surface for
+drift review.
+
+The `v` layout cycle now preserves the selected file and viewport through unified, vertical, and
+stacked displays. Vertical display aligns changed rows with a dimmer inner separator and retains
+each pane's marker and spacer columns; stacked display omits unmatched peers rather than creating
+blank rows. Unit and terminal-smoke checks cover the three layouts.
 
 ## Completed slices
 
@@ -53,31 +59,25 @@ then exits with `q`; SMOKE locks this observable terminal surface for drift revi
 10. Extend addition and deletion backgrounds through the active diff pane's right edge.
 11. Connect Ratatui rendering to authoritative interaction state for viewport movement, file
     rotation, and resize.
+12. Add unified, vertical, and stacked layout cycling with paired changed-row derivation.
 
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Add side-by-side line rendering as an explicit Ratatui layout, preserving the selected file,
-   viewport meaning, and file-list pane.
-
-   Human check: press `v` on a changed file. Before and after lines occupy visibly separate,
-   aligned panes; switching back to unified view retains the selected file and approximate
-   location. Resize both views without overlap or a displaced column separator.
-
-2. Add character-level detail within changed line pairs and session-local context controls.
+1. Add character-level detail within changed line pairs and session-local context controls.
 
    Human check: press `c` on a changed line and see only changed character spans gain detail;
    press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
    that the selected file and current hunk remain understandable.
 
-3. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+2. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
-4. Display continuity markers on each content-pane edge when content extends beyond the visible
+3. Display continuity markers on each content-pane edge when content extends beyond the visible
    frame: downward for content below, upward for content above, and leftward or rightward for
    horizontally clipped content.
 
@@ -97,13 +97,18 @@ Local Git integration remains deferred.
    gain semantic detail when available; unsupported files remain readable with textual diffing,
    and neither case changes the selected layout unexpectedly.
 
-2. Refine highlighting coverage and additional navigation after the core interaction is stable.
+2. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
+
+   Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
+   across unified, vertical, and stacked layouts.
+
+3. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
    footer/help text matches the key behavior, additions and deletions remain distinguishable, and
    low contrast remains readable without saturating the whole terminal.
 
-3. Display the existing file list as a folder tree derived from its file names, without adding
+4. Display the existing file list as a folder tree derived from its file names, without adding
    file-system navigation or changing file-selection behavior.
 
    Human check: open a diff containing files at multiple directory depths and verify that the
