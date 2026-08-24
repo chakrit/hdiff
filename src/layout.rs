@@ -1,7 +1,7 @@
 use crate::{
     document::{DiffDocument, sanitize},
     interaction::Interaction,
-    render::render_file,
+    render::{RecordAddress, render_file_lines},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub struct FileListRow {
 pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<Vec<u8>>,
+    pub record_addresses: Vec<Option<RecordAddress>>,
     pub hunk_offsets: Vec<usize>,
 }
 
@@ -43,13 +44,16 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         return Layout {
             files,
             diff_lines: Vec::new(),
+            record_addresses: Vec::new(),
             hunk_offsets: Vec::new(),
         };
     };
-    let diff_lines = render_file(file)
-        .split_inclusive(|byte| *byte == b'\n')
-        .map(ToOwned::to_owned)
+    let rendered_lines = render_file_lines(file);
+    let diff_lines = rendered_lines
+        .iter()
+        .map(|line| line.bytes.clone())
         .collect();
+    let record_addresses = rendered_lines.into_iter().map(|line| line.record).collect();
     let hunk_offsets = match file {
         crate::document::DiffFile::Metadata { .. } => Vec::new(),
         crate::document::DiffFile::Unified(file) => {
@@ -68,6 +72,7 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
     Layout {
         files,
         diff_lines,
+        record_addresses,
         hunk_offsets,
     }
 }

@@ -1,5 +1,17 @@
 use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine, sanitize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordAddress {
+    pub hunk_index: usize,
+    pub record_index: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RenderedLine {
+    pub bytes: Vec<u8>,
+    pub record: Option<RecordAddress>,
+}
+
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
     let mut output = Vec::new();
 
@@ -11,42 +23,62 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 }
 
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
-    let mut output = Vec::new();
+    render_file_lines(file)
+        .into_iter()
+        .flat_map(|line| line.bytes)
+        .collect()
+}
+
+pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
+    let mut rendered_lines = Vec::new();
 
     match file {
         DiffFile::Metadata { lines } => {
             for line in lines {
-                append_line(&mut output, None, line);
+                rendered_lines.push(rendered_line(None, line, None));
             }
         }
         DiffFile::Unified(file) => {
             for line in &file.metadata {
-                append_line(&mut output, None, line);
+                rendered_lines.push(rendered_line(None, line, None));
             }
-            append_line(&mut output, None, &file.old_header);
-            append_line(&mut output, None, &file.new_header);
-            for hunk in &file.hunks {
-                append_line(&mut output, None, &hunk.header);
-                for record in &hunk.records {
-                    append_line(&mut output, marker(&record.kind), &record.payload);
+            rendered_lines.push(rendered_line(None, &file.old_header, None));
+            rendered_lines.push(rendered_line(None, &file.new_header, None));
+            for (hunk_index, hunk) in file.hunks.iter().enumerate() {
+                rendered_lines.push(rendered_line(None, &hunk.header, None));
+                for (record_index, record) in hunk.records.iter().enumerate() {
+                    rendered_lines.push(rendered_line(
+                        marker(&record.kind),
+                        &record.payload,
+                        Some(RecordAddress {
+                            hunk_index,
+                            record_index,
+                        }),
+                    ));
                 }
             }
         }
     }
 
-    output
+    rendered_lines
 }
 
-fn append_line(output: &mut Vec<u8>, marker: Option<u8>, line: &SourceLine) {
+fn rendered_line(
+    marker: Option<u8>,
+    line: &SourceLine,
+    record: Option<RecordAddress>,
+) -> RenderedLine {
+    let mut bytes = Vec::new();
     if let Some(marker) = marker {
-        output.push(marker);
+        bytes.push(marker);
     }
-    output.extend_from_slice(sanitize(&line.text).as_bytes());
+    bytes.extend_from_slice(sanitize(&line.text).as_bytes());
     if line.bytes.ends_with(b"\r\n") {
-        output.extend_from_slice(b"\r\n");
+        bytes.extend_from_slice(b"\r\n");
     } else if line.bytes.ends_with(b"\n") {
-        output.push(b'\n');
+        bytes.push(b'\n');
     }
+    RenderedLine { bytes, record }
 }
 
 fn marker(kind: &RecordKind) -> Option<u8> {

@@ -10,15 +10,16 @@ use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout as RatatuiLayout},
-    style::{Modifier, Style},
-    text::{Line, Text},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
 use crate::{
-    document::DiffDocument,
+    document::{DiffDocument, DiffFile},
     interaction::{self, Input, Interaction, NavigationBounds, Transition, Viewport},
     layout::{Layout, layout},
+    syntax::{SyntaxHighlighter, SyntaxSpan},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,8 +79,15 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
         },
     };
     let mut view = layout(document, &interaction);
+    let mut syntax = SyntaxHighlighter::default();
 
-    draw(session.terminal_mut(), &view, &interaction.viewport)?;
+    draw(
+        session.terminal_mut(),
+        document,
+        &view,
+        &interaction.viewport,
+        &mut syntax,
+    )?;
 
     let mut pending_event = None;
     loop {
@@ -104,7 +112,13 @@ fn run_loop(session: &mut TerminalSession, document: &DiffDocument) -> io::Resul
             Transition::RedrawInteraction(next_interaction) => {
                 interaction = next_interaction;
                 view = layout(document, &interaction);
-                draw(session.terminal_mut(), &view, &interaction.viewport)?;
+                draw(
+                    session.terminal_mut(),
+                    document,
+                    &view,
+                    &interaction.viewport,
+                    &mut syntax,
+                )?;
             }
         }
     }
@@ -159,15 +173,23 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
 
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    document: &DiffDocument,
     layout: &Layout,
     viewport: &Viewport,
+    syntax: &mut SyntaxHighlighter,
 ) -> io::Result<()> {
     terminal
-        .draw(|frame| render_frame(frame, layout, viewport))
+        .draw(|frame| render_frame(frame, document, layout, viewport, syntax))
         .map(|_| ())
 }
 
-fn render_frame(frame: &mut Frame, layout: &Layout, viewport: &Viewport) {
+fn render_frame(
+    frame: &mut Frame,
+    document: &DiffDocument,
+    layout: &Layout,
+    viewport: &Viewport,
+    syntax: &mut SyntaxHighlighter,
+) {
     let area = frame.area();
     if area.width < 20 {
         frame.render_widget(Paragraph::new("screen too narrow"), area);
@@ -178,7 +200,9 @@ fn render_frame(frame: &mut Frame, layout: &Layout, viewport: &Viewport) {
         return;
     }
 
-    let lines = visible_diff_lines(layout, viewport);
+    let selected = layout.files.iter().position(|file| file.selected);
+    let file = selected.and_then(|index| document.files.get(index));
+    let lines = visible_diff_lines(layout, viewport, file, syntax);
     let diff = Paragraph::new(Text::from(lines))
         .block(Block::default().borders(Borders::ALL).title("Diff"));
     if area.width < 25 {
@@ -202,19 +226,69 @@ fn render_frame(frame: &mut Frame, layout: &Layout, viewport: &Viewport) {
     frame.render_widget(diff, panes[1]);
 }
 
-fn visible_diff_lines(layout: &Layout, viewport: &Viewport) -> Vec<Line<'static>> {
+fn visible_diff_lines(
+    layout: &Layout,
+    viewport: &Viewport,
+    file: Option<&DiffFile>,
+    syntax: &mut SyntaxHighlighter,
+) -> Vec<Line<'static>> {
+    let spans = file
+        .map(|file| syntax_rows(file, syntax))
+        .unwrap_or_default();
     layout
         .diff_lines
         .iter()
+        .enumerate()
         .skip(viewport.offset)
-        .map(|line| {
+        .map(|(index, line)| {
             let without_ending = line
                 .strip_suffix(b"\r\n")
                 .or_else(|| line.strip_suffix(b"\n"))
                 .unwrap_or(line);
-            Line::from(String::from_utf8_lossy(without_ending).into_owned())
+            styled_line(
+                without_ending,
+                spans.get(index).map(Vec::as_slice).unwrap_or_default(),
+            )
         })
         .collect()
+}
+
+fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<SyntaxSpan>> {
+    match file {
+        DiffFile::Metadata { lines } => (0..lines.len()).map(|_| Vec::new()).collect(),
+        DiffFile::Unified(file) => {
+            let mut rows = (0..file.metadata.len() + 2)
+                .map(|_| Vec::new())
+                .collect::<Vec<_>>();
+            for hunk_index in 0..file.hunks.len() {
+                rows.push(Vec::new());
+                rows.extend(syntax.highlight_hunk(file, hunk_index));
+            }
+            rows
+        }
+    }
+}
+
+fn styled_line(bytes: &[u8], syntax: &[SyntaxSpan]) -> Line<'static> {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    let mut rendered = Vec::new();
+    let mut cursor = 0;
+    for span in syntax {
+        let start = span.start + 1;
+        let end = span.end + 1;
+        if start > cursor {
+            rendered.push(Span::raw(text[cursor..start].to_owned()));
+        }
+        rendered.push(Span::styled(
+            text[start..end].to_owned(),
+            Style::default().fg(Color::Yellow),
+        ));
+        cursor = end;
+    }
+    if cursor < text.len() {
+        rendered.push(Span::raw(text[cursor..].to_owned()));
+    }
+    Line::from(rendered)
 }
 
 struct TerminalSession {
@@ -279,13 +353,13 @@ pub fn cleanup_order(stages: &[SetupStage]) -> Vec<SetupStage> {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
 
     use super::{
         Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order, input_for_event,
         mode_for_output, render_frame,
     };
-    use crate::{layout::layout, parser::parse_unified_diff};
+    use crate::{layout::layout, parser::parse_unified_diff, syntax::SyntaxHighlighter};
 
     #[test]
     fn renders_distinct_file_and_diff_panes() {
@@ -302,9 +376,10 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| render_frame(frame, &view, &interaction.viewport))
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -328,14 +403,39 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| render_frame(frame, &view, &interaction.viewport))
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
         assert_eq!(rendered[(1, 0)].symbol(), "D");
         assert_eq!(rendered[(1, 1)].symbol(), "-");
+    }
+
+    #[test]
+    fn renders_supported_payloads_with_syntax_style() {
+        let document = parse_unified_diff(
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n",
+        )
+        .expect("valid Rust diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, &mut syntax))
+            .expect("render frame");
+
+        assert_eq!(terminal.backend().buffer()[(26, 5)].fg, Color::Yellow);
     }
 
     #[test]

@@ -9,6 +9,13 @@ are symlinked into `.agents/skills/`. Skill edits go through
 symlinks into the school clone — propose changes back to the school repo
 when ready. Run `ace config` or `ace paths` to debug configuration issues.
 
+## ACE workflow
+
+Continue automatically through ACE workflow steps unless the workflow names an explicit confirm
+gate. Create ACE save points at useful recovery boundaries, especially before context becomes
+large enough to make the work less effective; do not stop merely because an intermediate step
+completed.
+
 ## Durable artifacts
 
 `docs/` holds this project's durable record.

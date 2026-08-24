@@ -7,6 +7,7 @@ pub mod interaction;
 pub mod layout;
 pub mod parser;
 pub mod render;
+pub mod syntax;
 pub mod terminal;
 
 fn main() -> Result<(), String> {

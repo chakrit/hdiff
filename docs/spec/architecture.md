@@ -215,6 +215,12 @@ boundary; the parser set and performance rationale are recorded in
 Syntax highlighting precedes further navigation work. It projects each hunk's old and new
 records into separate bounded virtual source buffers, maps returned spans back to sanitized
 record payloads, and leaves unsupported languages and highlighting failures as plain text.
+Safe rendering is the single source of display rows: each rendered record row retains its hunk
+and record address plus its payload range. Layout derives geometry and navigation offsets from
+those rows without syntax state. The terminal owns the reusable highlighter and overlays its
+semantic tokens only on visible payload ranges. Additions use the new path's language and
+deletions use the old path's language; context records remain textual when the paths select
+different languages. Headers, metadata, raw records, and diff markers remain textual.
 
 The first test boundary should be terminal-independent: parser fixtures, state-transition tests,
 layout snapshots, and renderer output tests. A small number of end-to-end terminal checks can be

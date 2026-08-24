@@ -38,6 +38,11 @@ Each slice is incomplete until its automated checks and its human check both pas
    lines gain syntax detail; unsupported files remain readable as plain text, and neither case
    changes the selected layout unexpectedly.
 
+   The safe renderer is the only producer of display rows. Tree-sitter receives bounded virtual
+   old/new hunk sources and returns semantic tokens mapped to those row payloads. The terminal
+   applies tokens only to visible payloads; errors, unsupported paths, oversized hunks, and
+   context records whose old and new paths select different languages retain textual rendering.
+
 2. Connect Ratatui rendering to the authoritative interaction state for vertical movement,
    file rotation, hunk movement, and resize.
 
