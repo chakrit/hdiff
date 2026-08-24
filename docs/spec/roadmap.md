@@ -100,6 +100,13 @@ Local Git integration remains deferred.
    footer/help text matches the key behavior, additions and deletions remain distinguishable, and
    low contrast remains readable without saturating the whole terminal.
 
+3. Display the existing file list as a folder tree derived from its file names, without adding
+   file-system navigation or changing file-selection behavior.
+
+   Human check: open a diff containing files at multiple directory depths and verify that the
+   left pane shows their shared directories as a readable tree while selecting and rotating files
+   works exactly as it does for the flat list.
+
 ## Working rule
 
 get docs uptodate before implement always

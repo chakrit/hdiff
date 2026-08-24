@@ -58,16 +58,7 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
         .iter()
         .enumerate()
         .map(|(index, file)| {
-            let label = match file {
-                crate::document::DiffFile::Metadata { lines } => lines
-                    .first()
-                    .map(|line| sanitize(&line.text))
-                    .unwrap_or_default(),
-                crate::document::DiffFile::Unified(file) => match file.old_path.as_str() {
-                    "/dev/null" => sanitize(&file.new_path),
-                    _ => sanitize(&file.old_path),
-                },
-            };
+            let label = file_list_label(file);
             FileListRow {
                 label,
                 selected: index == interaction.selected_file,
@@ -110,6 +101,44 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
     }
 }
 
+fn file_list_label(file: &crate::document::DiffFile) -> String {
+    match file {
+        crate::document::DiffFile::Metadata { lines } => lines
+            .first()
+            .map(|line| git_metadata_label(&sanitize(&line.text)))
+            .unwrap_or_default(),
+        crate::document::DiffFile::Unified(file) => match file.old_path.as_str() {
+            "/dev/null" => display_path(&file.new_path),
+            _ => display_path(&file.old_path),
+        },
+    }
+}
+
+fn git_metadata_label(header: &str) -> String {
+    let Some(paths) = header.strip_prefix("diff --git ") else {
+        return header.to_owned();
+    };
+    let Some((old_path, new_path)) = paths.split_once(" b/") else {
+        return header.to_owned();
+    };
+    let old_path = display_path(old_path);
+    let new_path = display_path(&format!("b/{new_path}"));
+
+    match old_path == new_path {
+        true => old_path,
+        false => format!("{old_path} → {new_path}"),
+    }
+}
+
+fn display_path(path: &str) -> String {
+    let sanitized = sanitize(path);
+    sanitized
+        .strip_prefix("a/")
+        .or_else(|| sanitized.strip_prefix("b/"))
+        .unwrap_or(&sanitized)
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{FileListRow, PaneLayout, layout, pane_layout};
@@ -139,11 +168,11 @@ mod tests {
             view.files,
             vec![
                 FileListRow {
-                    label: "a/first".to_owned(),
+                    label: "first".to_owned(),
                     selected: false,
                 },
                 FileListRow {
-                    label: "a/second".to_owned(),
+                    label: "second".to_owned(),
                     selected: true,
                 },
             ]
@@ -181,10 +210,7 @@ mod tests {
 
         let view = layout(&document, &interaction);
 
-        assert_eq!(
-            view.files[0].label,
-            "diff --git a/old-name.txt b/new-name.txt"
-        );
+        assert_eq!(view.files[0].label, "old-name.txt → new-name.txt");
         assert_eq!(view.hunk_offsets, Vec::<usize>::new());
         assert!(
             view.line_kinds
@@ -215,7 +241,7 @@ mod tests {
 
         let view = layout(&document, &interaction);
 
-        assert_eq!(view.files[0].label, "b/added-file.txt");
+        assert_eq!(view.files[0].label, "added-file.txt");
     }
 
     #[test]

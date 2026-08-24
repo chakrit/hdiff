@@ -664,7 +664,7 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected_symbols = [
-            ((2, 0), "a", "first file"),
+            ((2, 0), "f", "first file"),
             ((24, 0), " ", "left separator padding"),
             ((25, 0), "│", "separator"),
             ((26, 0), " ", "right separator padding"),

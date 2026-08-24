@@ -74,7 +74,9 @@ valid diff lines without data loss.
 
 - `DiffDocument`: ordered files and document-level metadata.
 - `DiffFile`: file identity, headers, and ordered hunks.
-- File-list labels use the new header path when the old header path is `/dev/null`.
+- File-list labels use the new header path when the old header path is `/dev/null`; labels
+  omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff headers preserve
+  their original protocol text.
 - `Hunk`: old/new ranges, header text, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `Selection`: the active file-list selection; diff movement is viewport-based and has no
