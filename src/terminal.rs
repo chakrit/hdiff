@@ -17,8 +17,12 @@ use ratatui::{
 };
 
 use crate::{
+    detail::{DetailSpan, changed_pair_detail},
     document::{DiffDocument, DiffFile},
-    interaction::{self, DiffLayout, Input, Interaction, NavigationBounds, Transition, Viewport},
+    interaction::{
+        self, DiffGranularity, DiffLayout, Input, Interaction, NavigationBounds, Transition,
+        ViewPreferences, Viewport,
+    },
     layout::{Layout, PaneLayout, SideBySideLine, SideBySideRow, layout, pane_layout},
     render::RenderedLineKind,
     syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
@@ -81,7 +85,7 @@ fn run_loop(
     let (_, height) = terminal::size()?;
     let mut interaction = Interaction {
         selected_file: 0,
-        layout: DiffLayout::Unified,
+        preferences: ViewPreferences::line(DiffLayout::Unified),
         viewport: Viewport {
             offset: 0,
             height: usize::from(height),
@@ -95,7 +99,7 @@ fn run_loop(
         document,
         &view,
         &interaction.viewport,
-        interaction.layout,
+        &interaction.preferences,
         &mut syntax,
         color_count,
     )?;
@@ -112,8 +116,10 @@ fn run_loop(
         let transition = {
             let bounds = NavigationBounds {
                 file_count: document.files.len(),
-                unified_line_count: view.line_count(DiffLayout::Unified),
-                paired_line_count: view.line_count(DiffLayout::Vertical),
+                unified_line_count: view
+                    .visible_unified_line_count(interaction.preferences.context_lines),
+                paired_line_count: view
+                    .visible_side_by_side_line_count(interaction.preferences.context_lines),
             };
             interaction::transition_interaction(&interaction, input, &bounds)
         };
@@ -128,7 +134,7 @@ fn run_loop(
                     document,
                     &view,
                     &interaction.viewport,
-                    interaction.layout,
+                    &interaction.preferences,
                     &mut syntax,
                     color_count,
                 )?;
@@ -176,6 +182,9 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Char('g'), _) => Some(Input::Top),
         (KeyCode::Char('G'), _) => Some(Input::Bottom),
         (KeyCode::Char('v'), _) => Some(Input::NextLayout),
+        (KeyCode::Char('c'), _) => Some(Input::ToggleGranularity),
+        (KeyCode::Char('+'), _) => Some(Input::IncreaseContext),
+        (KeyCode::Char('-'), _) => Some(Input::DecreaseContext),
         (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
         (KeyCode::Tab, _) => Some(Input::NextFile),
         (KeyCode::BackTab, _) => Some(Input::PreviousFile),
@@ -188,7 +197,7 @@ fn draw(
     document: &DiffDocument,
     layout: &Layout,
     viewport: &Viewport,
-    display_layout: DiffLayout,
+    preferences: &ViewPreferences,
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) -> io::Result<()> {
@@ -199,7 +208,7 @@ fn draw(
                 document,
                 layout,
                 viewport,
-                display_layout,
+                preferences,
                 syntax,
                 color_count,
             )
@@ -216,12 +225,14 @@ fn render_frame(
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) {
+    let preferences = ViewPreferences::line(DiffLayout::Unified);
+
     render_frame_with_layout(
         frame,
         document,
         layout,
         viewport,
-        DiffLayout::Unified,
+        &preferences,
         syntax,
         color_count,
     );
@@ -232,19 +243,36 @@ fn render_frame_with_layout(
     document: &DiffDocument,
     layout: &Layout,
     viewport: &Viewport,
-    display_layout: DiffLayout,
+    preferences: &ViewPreferences,
     syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) {
     let area = frame.area();
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
-    let rows = visible_diff_rows(layout, viewport, file, syntax, color_count);
-    let side_by_side_rows = visible_side_by_side_rows(layout, viewport, file, syntax, color_count);
+    let details = detail_rows(layout, preferences.granularity);
+    let rows = visible_diff_rows(
+        layout,
+        viewport,
+        file,
+        syntax,
+        &details,
+        preferences.context_lines,
+        color_count,
+    );
+    let side_by_side_rows = visible_side_by_side_rows(
+        layout,
+        viewport,
+        file,
+        syntax,
+        &details,
+        preferences.context_lines,
+        color_count,
+    );
     let display = DisplayRows {
         unified: rows,
         side_by_side: side_by_side_rows,
-        layout: display_layout,
+        layout: preferences.layout,
         color_count,
     };
 
@@ -305,9 +333,11 @@ fn render_split_panes(
             ))
         })
         .collect::<Vec<_>>();
-    let file_list = List::new(files)
-        .highlight_symbol("> ")
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    let file_list = List::new(files).highlight_symbol("· ").highlight_style(
+        Style::default()
+            .fg(chrome.selected_file)
+            .bg(chrome.selected_file_background),
+    );
     let separator = Text::from(
         (0..area.height)
             .map(|_| Line::styled("│", Style::default().fg(chrome.separator)))
@@ -357,24 +387,29 @@ fn render_vertical_rows(
 
     for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
         let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
+        let before_area = ratatui::layout::Rect::new(panes[0].x, row_area.y, panes[0].width, 1);
+        let separator_area = ratatui::layout::Rect::new(panes[1].x, row_area.y, 1, 1);
+        let after_area = ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
         match row {
-            VisibleSideBySideRow::Shared(row) => render_diff_rows(frame, vec![row], row_area),
-            VisibleSideBySideRow::Paired { before, after } => {
-                let before_area =
-                    ratatui::layout::Rect::new(panes[0].x, row_area.y, panes[0].width, 1);
-                let separator_area = ratatui::layout::Rect::new(panes[1].x, row_area.y, 1, 1);
-                let after_area =
-                    ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
-                if let Some(before) = before {
-                    render_diff_rows(frame, vec![before], before_area);
-                }
+            VisibleSideBySideRow::Shared(row) => {
+                render_diff_rows(frame, vec![row.clone()], before_area);
                 frame.render_widget(
                     Paragraph::new(Line::styled("│", separator_style)),
                     separator_area,
                 );
-                if let Some(after) = after {
-                    render_diff_rows(frame, vec![after], after_area);
-                }
+                render_diff_rows(frame, vec![row], after_area);
+            }
+            VisibleSideBySideRow::Paired { before, after } => {
+                let Some((before, after)) = aligned_pair(before, after) else {
+                    continue;
+                };
+
+                render_diff_rows(frame, vec![before], before_area);
+                frame.render_widget(
+                    Paragraph::new(Line::styled("│", separator_style)),
+                    separator_area,
+                );
+                render_diff_rows(frame, vec![after], after_area);
             }
         }
     }
@@ -402,8 +437,12 @@ fn render_stacked_rows(
                 after_rows.push(row);
             }
             VisibleSideBySideRow::Paired { before, after } => {
-                before_rows.extend(before);
-                after_rows.extend(after);
+                let Some((before, after)) = aligned_pair(before, after) else {
+                    continue;
+                };
+
+                before_rows.push(before);
+                after_rows.push(after);
             }
         }
     }
@@ -430,6 +469,8 @@ fn footer_hints() -> Vec<Line<'static>> {
         Line::raw("  ^D    page down"),
         Line::raw("  g·G   top/bottom"),
         Line::raw("  v    cycle layout"),
+        Line::raw("  c    character detail"),
+        Line::raw(" +/-   context"),
         Line::raw("(⇧)Tab  next/prev file"),
         Line::raw("   q    exit"),
     ]
@@ -439,6 +480,28 @@ fn footer_hints() -> Vec<Line<'static>> {
 struct DiffRow {
     line: Line<'static>,
     style: Style,
+}
+
+fn aligned_pair(before: Option<DiffRow>, after: Option<DiffRow>) -> Option<(DiffRow, DiffRow)> {
+    match (before, after) {
+        (Some(before), Some(after)) => Some((before, after)),
+        (Some(before), None) => {
+            let after = alignment_peer(&before);
+            Some((before, after))
+        }
+        (None, Some(after)) => {
+            let before = alignment_peer(&after);
+            Some((before, after))
+        }
+        (None, None) => None,
+    }
+}
+
+fn alignment_peer(row: &DiffRow) -> DiffRow {
+    DiffRow {
+        line: Line::raw(""),
+        style: row.style,
+    }
 }
 
 enum VisibleSideBySideRow {
@@ -461,6 +524,8 @@ fn visible_diff_rows(
     viewport: &Viewport,
     file: Option<&DiffFile>,
     syntax: &mut SyntaxHighlighter,
+    details: &[Vec<DetailSpan>],
+    context_lines: usize,
     color_count: u16,
 ) -> Vec<DiffRow> {
     let spans = file
@@ -471,11 +536,13 @@ fn visible_diff_rows(
         .iter()
         .enumerate()
         .skip(viewport.offset)
+        .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
         .map(|(index, line)| {
             diff_row(
                 line,
                 layout.line_kinds.get(index),
                 spans.get(index).map(Vec::as_slice).unwrap_or_default(),
+                details.get(index).map(Vec::as_slice).unwrap_or_default(),
                 color_count,
             )
         })
@@ -487,6 +554,8 @@ fn visible_side_by_side_rows(
     viewport: &Viewport,
     file: Option<&DiffFile>,
     syntax: &mut SyntaxHighlighter,
+    details: &[Vec<DetailSpan>],
+    context_lines: usize,
     color_count: u16,
 ) -> Vec<VisibleSideBySideRow> {
     let spans = file
@@ -497,31 +566,41 @@ fn visible_side_by_side_rows(
         .side_by_side_rows
         .iter()
         .skip(viewport.offset)
+        .filter(|row| side_by_side_row_visible(layout, row, context_lines))
         .map(|row| match row {
             SideBySideRow::Shared(line) => {
-                VisibleSideBySideRow::Shared(diff_row_for_side(line, &spans, color_count))
+                VisibleSideBySideRow::Shared(diff_row_for_side(line, &spans, details, color_count))
             }
             SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
                 before: before
                     .as_ref()
-                    .map(|line| diff_row_for_side(line, &spans, color_count)),
+                    .map(|line| diff_row_for_side(line, &spans, details, color_count)),
                 after: after
                     .as_ref()
-                    .map(|line| diff_row_for_side(line, &spans, color_count)),
+                    .map(|line| diff_row_for_side(line, &spans, details, color_count)),
             },
         })
         .collect()
 }
 
+fn side_by_side_row_visible(layout: &Layout, row: &SideBySideRow, context_lines: usize) -> bool {
+    layout.shows_side_by_side_row(row, context_lines)
+}
+
 fn diff_row_for_side(
     line: &SideBySideLine,
     spans: &[Vec<SyntaxSpan>],
+    details: &[Vec<DetailSpan>],
     color_count: u16,
 ) -> DiffRow {
     diff_row(
         &line.bytes,
         Some(&line.kind),
         spans
+            .get(line.source_index)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+        details
             .get(line.source_index)
             .map(Vec::as_slice)
             .unwrap_or_default(),
@@ -533,6 +612,7 @@ fn diff_row(
     line: &[u8],
     kind: Option<&RenderedLineKind>,
     spans: &[SyntaxSpan],
+    details: &[DetailSpan],
     color_count: u16,
 ) -> DiffRow {
     let without_ending = line
@@ -542,7 +622,7 @@ fn diff_row(
     let row_kind = row_kind(kind, line.first());
     let palette = low_contrast_palette(color_count);
     let style = row_style(row_kind, palette, color_count);
-    let line = styled_line(without_ending, row_kind, spans, color_count);
+    let line = styled_line(without_ending, row_kind, spans, details, color_count);
 
     DiffRow { line, style }
 }
@@ -588,6 +668,7 @@ fn styled_line(
     bytes: &[u8],
     row_kind: RowKind,
     syntax: &[SyntaxSpan],
+    details: &[DetailSpan],
     color_count: u16,
 ) -> Line<'static> {
     let text = String::from_utf8_lossy(bytes).into_owned();
@@ -615,26 +696,84 @@ fn styled_line(
             usize::from(matches!(row_kind, RowKind::Context))
         }
     };
-    for span in syntax {
+    let mut spans = match details.is_empty() {
+        true => syntax
+            .iter()
+            .map(|span| (span.start, span.end, false, span.class))
+            .collect::<Vec<_>>(),
+        false => details
+            .iter()
+            .map(|span| (span.start, span.end, true, SyntaxClass::Variable))
+            .collect::<Vec<_>>(),
+    };
+    spans.sort_by_key(|(start, _, _, _)| *start);
+    for (span_start, span_end, detail, class) in spans {
         let source_offset = usize::from(matches!(
             row_kind,
             RowKind::Context | RowKind::Addition | RowKind::Deletion
         ));
-        let start = span.start + source_offset;
-        let end = span.end + source_offset;
+        let start = span_start + source_offset;
+        let end = span_end + source_offset;
         if start > cursor {
             rendered.push(Span::raw(text[cursor..start].to_owned()));
         }
-        rendered.push(Span::styled(
-            text[start..end].to_owned(),
-            Style::default().fg(syntax_color(span.class, color_count)),
-        ));
+        let style = match detail {
+            true => detail_style(row_kind, palette),
+            false => Style::default().fg(syntax_color(class, color_count)),
+        };
+        rendered.push(Span::styled(text[start..end].to_owned(), style));
         cursor = end;
     }
     if cursor < text.len() {
         rendered.push(Span::raw(text[cursor..].to_owned()));
     }
     Line::from(rendered).style(row_style(row_kind, palette, color_count))
+}
+
+fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
+    let color = match row_kind {
+        RowKind::Addition => palette.addition_marker,
+        RowKind::Deletion => palette.deletion_marker,
+        RowKind::Context | RowKind::HunkHeader | RowKind::Metadata => palette.context_body,
+    };
+
+    Style::default().fg(color).add_modifier(Modifier::DIM)
+}
+
+fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<DetailSpan>> {
+    let mut details = (0..layout.diff_lines.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<_>>();
+    if granularity == DiffGranularity::Line {
+        return details;
+    }
+
+    for row in &layout.side_by_side_rows {
+        let SideBySideRow::Paired {
+            before: Some(before),
+            after: Some(after),
+        } = row
+        else {
+            continue;
+        };
+        let before_text = record_payload(&before.bytes);
+        let after_text = record_payload(&after.bytes);
+        let pair = changed_pair_detail(before_text, after_text);
+        details[before.source_index] = pair.before;
+        details[after.source_index] = pair.after;
+    }
+
+    details
+}
+
+fn record_payload(bytes: &[u8]) -> &str {
+    let payload = bytes.get(1..).unwrap_or_default();
+    let without_ending = payload
+        .strip_suffix(b"\r\n")
+        .or_else(|| payload.strip_suffix(b"\n"))
+        .unwrap_or(payload);
+
+    std::str::from_utf8(without_ending).unwrap_or_default()
 }
 
 fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -> Style {
@@ -706,6 +845,8 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
 #[derive(Clone, Copy)]
 struct ChromePalette {
     file_list: Color,
+    selected_file: Color,
+    selected_file_background: Color,
     separator: Color,
     footer: Color,
 }
@@ -714,16 +855,22 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
     match color_count {
         u16::MAX => ChromePalette {
             file_list: Color::Rgb(160, 160, 160),
+            selected_file: Color::Rgb(220, 220, 220),
+            selected_file_background: Color::Rgb(65, 65, 65),
             separator: Color::Rgb(125, 125, 125),
             footer: Color::Rgb(110, 110, 110),
         },
         256.. => ChromePalette {
             file_list: Color::Indexed(246),
+            selected_file: Color::Indexed(255),
+            selected_file_background: Color::Indexed(238),
             separator: Color::Indexed(243),
             footer: Color::Indexed(240),
         },
         _ => ChromePalette {
             file_list: Color::Gray,
+            selected_file: Color::White,
+            selected_file_background: Color::DarkGray,
             separator: Color::DarkGray,
             footer: Color::DarkGray,
         },
@@ -842,9 +989,9 @@ mod tests {
     };
 
     use super::{
-        DiffLayout, Input, Interaction, OutputMode, SetupStage, Viewport, cleanup_order,
-        hunk_header_color, input_for_event, low_contrast_palette, mode_for_output, render_frame,
-        render_frame_with_layout, syntax_color,
+        DiffLayout, Input, Interaction, OutputMode, SetupStage, ViewPreferences, Viewport,
+        cleanup_order, hunk_header_color, input_for_event, low_contrast_palette, mode_for_output,
+        render_frame, render_frame_with_layout, syntax_color,
     };
     use crate::{
         layout::layout,
@@ -860,7 +1007,7 @@ mod tests {
         .expect("valid two-file diff");
         let interaction = Interaction {
             selected_file: 1,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -892,7 +1039,7 @@ mod tests {
             ((27, 0), " ", "metadata marker column"),
             ((28, 0), " ", "metadata marker spacing"),
             ((29, 0), "-", "metadata content"),
-            ((0, 1), ">", "selection marker"),
+            ((0, 1), "·", "selection marker"),
             ((27, 3), "-", "deletion marker"),
             ((27, 4), "+", "addition marker"),
             ((3, 3), "k", "footer hint"),
@@ -915,7 +1062,7 @@ mod tests {
             .expect("valid diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -951,7 +1098,7 @@ mod tests {
         .expect("valid asymmetric diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Vertical,
+            preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -968,7 +1115,7 @@ mod tests {
                     &document,
                     &view,
                     &interaction.viewport,
-                    interaction.layout,
+                    &interaction.preferences,
                     &mut syntax,
                     u16::MAX,
                 )
@@ -979,10 +1126,86 @@ mod tests {
         assert_eq!(rendered[(27, 3)].symbol(), "-", "before marker");
         assert_eq!(rendered[(54, 3)].symbol(), "+", "after marker");
         assert_eq!(rendered[(53, 3)].symbol(), "│", "inner separator");
+        assert_eq!(rendered[(29, 5)].symbol(), "c", "before context payload");
+        assert_eq!(rendered[(56, 5)].symbol(), "c", "after context payload");
+        assert_eq!(rendered[(53, 5)].symbol(), "│", "context separator");
+        assert_eq!(
+            rendered[(54, 4)].symbol(),
+            " ",
+            "alignment peer has no marker"
+        );
+        assert_eq!(
+            rendered[(79, 4)].bg,
+            Color::Rgb(50, 30, 30),
+            "alignment peer retains deletion background"
+        );
+        assert!(
+            rendered[(79, 4)].modifier.contains(Modifier::DIM),
+            "alignment peer retains deletion dimming"
+        );
         assert_eq!(
             rendered[(53, 3)].fg,
             Color::Rgb(95, 95, 95),
             "inner separator is dimmer than the outer separator"
+        );
+    }
+
+    #[test]
+    fn renders_stacked_alignment_peers_as_markerless_dimmed_rows() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+        )
+        .expect("valid asymmetric diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Stacked),
+            viewport: Viewport {
+                offset: 0,
+                height: 14,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame_with_layout(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &interaction.preferences,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        let context_row = (0..14)
+            .rev()
+            .find(|row| rendered[(29, *row)].symbol() == "c")
+            .expect("after context row");
+        let alignment_peer_row = context_row
+            .checked_sub(1)
+            .expect("alignment peer precedes context");
+
+        assert_eq!(
+            rendered[(29, alignment_peer_row)].symbol(),
+            " ",
+            "alignment peer is empty"
+        );
+        assert_eq!(
+            rendered[(79, alignment_peer_row)].bg,
+            Color::Rgb(50, 30, 30),
+            "alignment peer retains deletion background"
+        );
+        assert!(
+            rendered[(79, alignment_peer_row)]
+                .modifier
+                .contains(Modifier::DIM),
+            "alignment peer retains deletion dimming"
         );
     }
 
@@ -994,7 +1217,7 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -1094,6 +1317,54 @@ mod tests {
     }
 
     #[test]
+    fn renders_character_detail_in_dim_change_colors_and_selects_files_cohesively() {
+        let document =
+            parse_unified_diff(b"--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n")
+                .expect("valid character diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences {
+                layout: DiffLayout::Unified,
+                granularity: crate::interaction::DiffGranularity::Character,
+                context_lines: 3,
+            },
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame_with_layout(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &interaction.preferences,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        let selected_marker = &rendered[(0, 0)];
+        let selected_label = &rendered[(2, 0)];
+
+        assert_eq!(selected_marker.symbol(), "·");
+        assert_eq!(selected_marker.fg, selected_label.fg);
+        assert_eq!(selected_marker.bg, selected_label.bg);
+        assert_eq!(rendered[(30, 3)].fg, Color::Rgb(206, 74, 74));
+        assert_eq!(rendered[(30, 4)].fg, Color::Rgb(112, 195, 115));
+        assert!(rendered[(30, 3)].modifier.contains(Modifier::DIM));
+        assert!(rendered[(30, 4)].modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
     fn renders_hunk_headers_as_muted_cyan_blue() {
         let document = parse_unified_diff(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
@@ -1101,7 +1372,7 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -1147,14 +1418,14 @@ mod tests {
         .expect("valid two-file diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 12,
             },
         };
         let view = layout(&document, &interaction);
-        let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 15)).expect("test terminal");
         let mut syntax = SyntaxHighlighter::default();
 
         terminal
@@ -1172,18 +1443,20 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected = [
-            ((3, 4), "k", "upward movement"),
-            ((1, 5), "h", "leftward movement"),
-            ((3, 5), "·", "movement separator"),
-            ((5, 5), "l", "rightward movement"),
-            ((8, 5), "m", "movement label"),
-            ((3, 6), "j", "downward movement"),
-            ((2, 8), "^", "page up"),
-            ((2, 9), "^", "page down"),
-            ((2, 10), "g", "top and bottom"),
-            ((0, 12), "(", "file rotation"),
-            ((3, 13), "q", "exit"),
-            ((2, 11), "v", "layout cycle"),
+            ((3, 3), "k", "upward movement"),
+            ((1, 4), "h", "leftward movement"),
+            ((3, 4), "·", "movement separator"),
+            ((5, 4), "l", "rightward movement"),
+            ((8, 4), "m", "movement label"),
+            ((3, 5), "j", "downward movement"),
+            ((2, 7), "^", "page up"),
+            ((2, 8), "^", "page down"),
+            ((2, 9), "g", "top and bottom"),
+            ((2, 10), "v", "layout cycle"),
+            ((2, 11), "c", "character detail"),
+            ((1, 12), "+", "context controls"),
+            ((0, 13), "(", "file rotation"),
+            ((3, 14), "q", "exit"),
         ];
 
         for ((x, y), symbol, name) in expected {
@@ -1258,6 +1531,20 @@ mod tests {
                 KeyModifiers::NONE
             ))),
             Some(Input::NextLayout)
+        );
+        assert_eq!(
+            input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                KeyCode::Char('+'),
+                KeyModifiers::NONE
+            ))),
+            Some(Input::IncreaseContext)
+        );
+        assert_eq!(
+            input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                KeyCode::Char('-'),
+                KeyModifiers::NONE
+            ))),
+            Some(Input::DecreaseContext)
         );
         assert_eq!(
             input_for_event(CrosstermEvent::Key(KeyEvent::new(

@@ -83,7 +83,10 @@ valid diff lines without data loss.
 - `Selection`: the active file-list selection; the viewport offset is the reader's current
   cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
-  and other session-local display choices.
+  and other session-local display choices. Character granularity compares corresponding
+  changed-line pairs as identifier/word and delimiter tokens, then compares only sufficiently
+  similar replacement words by grapheme cluster; unrelated replacements remain whole-token spans.
+  Unchanged text retains line-level presentation.
 - `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
 - `Layout`: derived panes, rows, effective visibility, and footer hints.
 
@@ -178,15 +181,19 @@ the language and parser are available, with textual fallback otherwise. The user
 layout is preserved through resizes; hdiff does not automatically switch between layouts. `v`
 cycles unified, vertical split, and stacked split in that order.
 
-Vertical split renders each changed block as aligned before/after pairs, adding a blank cell on
-the shorter side. A more dimmed separator divides the before and after panes; each pane retains
-the marker column and payload spacer used by unified rendering. Stacked split derives the same
-pairs but omits absent peers rather than adding blank rows, so each pane presents only its source
-lines while shared hunk headers and context retain orientation.
+Vertical split renders each changed block as aligned before/after pairs, adding a markerless
+alignment peer with the corresponding dim addition or deletion background on the shorter side.
+Alignment peers are layout-only counterparts for unmatched change rows, not source context lines.
+Shared context and structural rows render in both panes. A more dimmed separator divides the before
+and after panes; each pane retains the marker column and payload spacer used by unified rendering.
+Stacked split derives the same pairs and renders the same alignment peers, so both panes retain
+equal content height while shared hunk headers and context retain orientation.
 
 Wrapping is session-local and toggled independently from layout. When wrapping is disabled,
-horizontal movement uses one synchronized offset for side-by-side panes. Context-line changes
-are session-local and recompute the visible layout without mutating the document.
+horizontal movement uses one synchronized offset for side-by-side panes. Context visibility is
+session-local: hdiff initially retains three context records on either side of each changed
+block within a hunk, `+` increases that bound, and `-` decreases it to zero. Context changes
+recompute the visible layout without mutating the document, selected file, or viewport.
 
 Diff contrast is a session-local preference with four intensity levels, independent of
 line-versus-character diff granularity:
@@ -208,6 +215,13 @@ change background begins after its right-hand gutter. Contrast changes never alt
 document and apply consistently in unified and side-by-side layouts. `DiffGranularity` controls
 whether differences are represented as lines or characters; `DiffContrast` controls only their
 visual intensity and never changes that representation.
+
+Character detail does not use reverse video. It first preserves matching identifier/word and
+delimiter tokens, then uses grapheme spans only for similar replacement words; unrelated words
+remain whole-token changes rather than matching coincidental letters. Its changed spans use dim
+green on addition rows and dim red on deletion rows, reusing the line-change palette while leaving
+unchanged text plain. The selected file row applies one shared muted foreground/background style
+to both its compact `·` marker and file label.
 
 Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
 file headers retain neutral metadata styling.

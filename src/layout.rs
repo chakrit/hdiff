@@ -75,6 +75,55 @@ impl Layout {
             DiffLayout::Vertical | DiffLayout::Stacked => self.side_by_side_rows.len(),
         }
     }
+
+    pub fn shows_unified_row(&self, index: usize, context_lines: usize) -> bool {
+        let Some(RenderedLineKind::Record(address)) = self.line_kinds.get(index) else {
+            return true;
+        };
+        if self.diff_lines[index].first() != Some(&b' ') {
+            return true;
+        }
+
+        self.line_kinds
+            .iter()
+            .enumerate()
+            .any(|(candidate_index, kind)| {
+                let Some(RenderedLineKind::Record(candidate)) = Some(kind) else {
+                    return false;
+                };
+                candidate.hunk_index == address.hunk_index
+                    && candidate.record_index.abs_diff(address.record_index) <= context_lines
+                    && matches!(
+                        self.diff_lines[candidate_index].first(),
+                        Some(b'+') | Some(b'-')
+                    )
+            })
+    }
+
+    pub fn visible_unified_line_count(&self, context_lines: usize) -> usize {
+        self.diff_lines
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| self.shows_unified_row(*index, context_lines))
+            .count()
+    }
+
+    pub fn shows_side_by_side_row(&self, row: &SideBySideRow, context_lines: usize) -> bool {
+        match row {
+            SideBySideRow::Shared(line) => self.shows_unified_row(line.source_index, context_lines),
+            SideBySideRow::Paired { before, after } => before
+                .iter()
+                .chain(after)
+                .any(|line| self.shows_unified_row(line.source_index, context_lines)),
+        }
+    }
+
+    pub fn visible_side_by_side_line_count(&self, context_lines: usize) -> usize {
+        self.side_by_side_rows
+            .iter()
+            .filter(|row| self.shows_side_by_side_row(row, context_lines))
+            .count()
+    }
 }
 
 pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
@@ -204,7 +253,7 @@ fn display_path(path: &str) -> String {
 mod tests {
     use super::{FileListRow, PaneLayout, SideBySideRow, layout, pane_layout};
     use crate::{
-        interaction::{DiffLayout, Interaction, Viewport},
+        interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
         parser::parse_unified_diff,
         render::RenderedLineKind,
     };
@@ -217,7 +266,7 @@ mod tests {
         .expect("valid multi-file diff");
         let interaction = Interaction {
             selected_file: 1,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -263,7 +312,7 @@ mod tests {
                 .expect("valid metadata-only Git fixture");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -295,7 +344,7 @@ mod tests {
         .expect("valid asymmetric diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
@@ -330,7 +379,7 @@ mod tests {
                 .expect("valid added-file diff");
         let interaction = Interaction {
             selected_file: 0,
-            layout: DiffLayout::Unified,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
                 offset: 0,
                 height: 8,
