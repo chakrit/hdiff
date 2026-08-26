@@ -37,8 +37,9 @@ drift review.
 
 The `v` layout cycle now preserves the selected file and viewport through unified, vertical, and
 stacked displays. Vertical display aligns changed rows with a dimmer inner separator and retains
-each pane's marker and spacer columns; stacked display omits unmatched peers rather than creating
-blank rows. Unit and terminal-smoke checks cover the three layouts.
+each pane's marker and spacer columns; both split displays render markerless, dimmed alignment
+peers for unmatched additions and deletions. Unit and terminal-smoke checks cover the three
+layouts.
 
 ## Completed slices
 
@@ -114,6 +115,12 @@ Local Git integration remains deferred.
    Human check: open a diff containing files at multiple directory depths and verify that the
    left pane shows their shared directories as a readable tree while selecting and rotating files
    works exactly as it does for the flat list.
+
+5. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
+   previous result.
+
+   Human check: search a multi-file diff, verify every match is reachable in both directions with
+   `n` and `p`, and confirm the selected result remains visible in its file and viewport.
 
 ## Working rule
 
