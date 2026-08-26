@@ -41,7 +41,8 @@ and faithful rendering of the supplied diff.
 ### Explicitly out of scope
 
 - Editing files or applying patches.
-- Git repository operations, staging, commits, or network access.
+- Git repository operations, staging, commits, or network access, except `--install` writing
+  the two global settings that register hdiff as the default Git difftool.
 - A persistent database, daemon, or background service.
 - A plugin system or user scripting API.
 - Reproducing every feature of an existing pager before the core navigation is reliable.
@@ -119,7 +120,9 @@ The command follows the POSIX `diff` operand model where practical. Two file ope
 files; two directory operands compare corresponding entries; `-r` enables recursive directory
 comparison; and `-` denotes standard input. hdiff adds viewer modes for one existing patch or
 diff file and for a unified diff supplied on standard input. It accepts unified diffs from any
-producer and performs no Git operations.
+producer. `--install` is the sole Git integration: it backs up the exact global config file Git
+will write to a sibling `.bak` file, then overwrites `diff.tool` and `difftool.hdiff.cmd` through
+`git config --global`; hdiff never parses or rewrites Git config text.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached
 unambiguously, but malformed or truncated input is rejected with a contextual non-zero error
@@ -144,6 +147,10 @@ hdiff [OPTIONS] [FILE ...]
 Options describe representations or input policy, not interactive procedures. Runtime display
 changes are session-local. An rc file may provide defaults, but hdiff never writes those
 changes back during a session.
+
+`hdiff --install` registers the current executable as the default user-level Git difftool. Git
+invokes hdiff with its `$LOCAL` and `$REMOTE` temporary files, which hdiff compares through the
+same two-file operand mode available at the command line.
 
 ## Interaction model
 

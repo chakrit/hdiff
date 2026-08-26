@@ -1,4 +1,10 @@
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Command {
+    Install,
+    View(InputSource),
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InputSource {
@@ -9,6 +15,19 @@ pub enum InputSource {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InputError(pub String);
+
+pub fn select_command(arguments: &[OsString]) -> Result<Command, InputError> {
+    match arguments {
+        [argument] if argument == "--install" => Ok(Command::Install),
+        _ if arguments.iter().any(|argument| argument == "--install") => Err(InputError(
+            "--install cannot be combined with diff input operands".to_owned(),
+        )),
+        _ => {
+            let operands = arguments.iter().map(PathBuf::from).collect::<Vec<_>>();
+            select_input(&operands).map(Command::View)
+        }
+    }
+}
 
 pub fn select_input(arguments: &[PathBuf]) -> Result<InputSource, InputError> {
     match arguments {
@@ -21,8 +40,23 @@ pub fn select_input(arguments: &[PathBuf]) -> Result<InputSource, InputError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{InputSource, select_input};
-    use std::path::PathBuf;
+    use super::{Command, InputSource, select_command, select_input};
+    use std::{ffi::OsString, path::PathBuf};
+
+    #[test]
+    fn selects_install_without_input_operands() {
+        assert_eq!(
+            select_command(&[OsString::from("--install")]).expect("install command"),
+            Command::Install
+        );
+    }
+
+    #[test]
+    fn rejects_install_with_input_operands() {
+        let arguments = [OsString::from("--install"), OsString::from("change.patch")];
+
+        assert!(select_command(&arguments).is_err());
+    }
 
     #[test]
     fn selects_stdin_without_operands() {

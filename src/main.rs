@@ -12,11 +12,26 @@ pub mod syntax;
 pub mod terminal;
 
 fn main() -> Result<(), String> {
-    let operands = std::env::args_os()
-        .skip(1)
-        .map(std::path::PathBuf::from)
-        .collect::<Vec<_>>();
-    let source = input::select_input(&operands).map_err(|error| error.0)?;
+    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    let command = input::select_command(&arguments).map_err(|error| error.0)?;
+
+    match command {
+        input::Command::Install => {
+            let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+            let mut context = actions::git_config::InstallGitDifftoolContext;
+
+            actions::git_config::InstallGitDifftool { executable }
+                .run(&mut context)
+                .map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+        input::Command::View(source) => run_viewer(source)?,
+    }
+
+    Ok(())
+}
+
+fn run_viewer(source: input::InputSource) -> Result<(), String> {
     let input = match source {
         input::InputSource::Stdin => {
             let mut input = Vec::new();
@@ -27,8 +42,18 @@ fn main() -> Result<(), String> {
         input::InputSource::DiffFile(path) => {
             std::fs::read(path).map_err(|error| error.to_string())?
         }
-        input::InputSource::Operands(_) => {
-            return Err("file comparison is not implemented yet".to_owned());
+        input::InputSource::Operands(paths) => {
+            let [before, after]: [std::path::PathBuf; 2] = paths
+                .try_into()
+                .map_err(|_| "expected two comparison operands".to_owned())?;
+            let mut context = actions::compare_files::CompareFilesContext;
+
+            actions::compare_files::CompareFiles {
+                before: &before,
+                after: &after,
+            }
+            .run(&mut context)
+            .map_err(|error| error.to_string())?
         }
     };
     let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;

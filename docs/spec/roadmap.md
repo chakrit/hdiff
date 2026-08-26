@@ -41,6 +41,10 @@ each pane's marker and spacer columns; both split displays render markerless, di
 peers for unmatched additions and deletions. Unit and terminal-smoke checks cover the three
 layouts.
 
+`hdiff --install` backs up the global Git configuration file Git will edit, then registers the
+current executable as the default user-level difftool. Git launches hdiff with its `$LOCAL` and
+`$REMOTE` temporary files, which hdiff renders through its two-file comparison mode.
+
 ## Completed slices
 
 1. Establish the Rust CLI direction, architecture, testing boundary, and durable project records.
@@ -61,6 +65,7 @@ layouts.
 11. Connect Ratatui rendering to authoritative interaction state for viewport movement, file
     rotation, and resize.
 12. Add unified, vertical, and stacked layout cycling with paired changed-row derivation.
+13. Add user-level Git difftool installation with global-config backup and two-file comparison.
 
 ## Remaining interactive delivery sequence
 
@@ -88,7 +93,7 @@ Each slice is incomplete until its automated checks and its human check both pas
 
 ## Deferred work
 
-Local Git integration remains deferred.
+Git integrations beyond user-level difftool installation remain deferred.
 
 ## Later slices
 
