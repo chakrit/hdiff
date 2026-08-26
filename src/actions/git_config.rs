@@ -13,8 +13,7 @@ pub struct InstallGitDiffPager {
 pub struct InstallGitDiffPagerContext;
 
 pub struct InstallGitDiffPagerReport {
-    pub backup_path: Option<PathBuf>,
-    pub config_path: PathBuf,
+    pub completed_commands: Vec<String>,
 }
 
 impl InstallGitDiffPager {
@@ -32,11 +31,13 @@ impl InstallGitDiffPager {
             value: &command,
         }
         .run()?;
+        let mut completed_commands = Vec::new();
+        if let Some(backup_path) = backup_path {
+            completed_commands.push(copy_command(&config_path, &backup_path)?);
+        }
+        completed_commands.push(format!("git config --global pager.diff {command}"));
 
-        Ok(InstallGitDiffPagerReport {
-            backup_path,
-            config_path,
-        })
+        Ok(InstallGitDiffPagerReport { completed_commands })
     }
 }
 
@@ -116,7 +117,27 @@ fn pager_command(executable: &Path) -> io::Result<String> {
     let executable = executable
         .to_str()
         .ok_or_else(|| io::Error::other("hdiff executable path is not valid UTF-8"))?;
-    let quoted_executable = executable.replace('\'', "'\"'\"'");
 
-    Ok(format!("'{quoted_executable}'"))
+    Ok(shell_quote(executable))
+}
+
+fn copy_command(source: &Path, destination: &Path) -> io::Result<String> {
+    let source = source
+        .to_str()
+        .ok_or_else(|| io::Error::other("Git config path is not valid UTF-8"))?;
+    let destination = destination
+        .to_str()
+        .ok_or_else(|| io::Error::other("Git config backup path is not valid UTF-8"))?;
+
+    Ok(format!(
+        "cp {} {}",
+        shell_quote(source),
+        shell_quote(destination)
+    ))
+}
+
+fn shell_quote(value: &str) -> String {
+    let escaped_value = value.replace('\'', "'\"'\"'");
+
+    format!("'{escaped_value}'")
 }

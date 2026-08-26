@@ -20,20 +20,10 @@ fn main() -> Result<(), String> {
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
             let mut context = actions::git_config::InstallGitDiffPagerContext;
 
-            let report = actions::git_config::InstallGitDiffPager {
-                executable: executable.clone(),
-            }
-            .run(&mut context)
-            .map_err(|error| error.to_string())?;
-            let backup_line = report
-                .backup_path
-                .map(|path| format!("Backed up Git config: {}\n", path.display()))
-                .unwrap_or_default();
-            let output = format!(
-                "{backup_line}Updated Git config: {}\nSet pager.diff: {}\n",
-                report.config_path.display(),
-                executable.display()
-            );
+            let report = actions::git_config::InstallGitDiffPager { executable }
+                .run(&mut context)
+                .map_err(|error| error.to_string())?;
+            let output = format!("{}\n", report.completed_commands.join("\n"));
             let mut stdout = std::io::stdout();
             let mut output_context = actions::write_output::OutputContext {
                 writer: &mut stdout,
