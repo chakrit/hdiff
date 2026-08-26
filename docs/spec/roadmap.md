@@ -41,6 +41,10 @@ each pane's marker and spacer columns; both split displays render markerless, di
 peers for unmatched additions and deletions. Unit and terminal-smoke checks cover the three
 layouts.
 
+Character detail now coalesces small equal islands inside changed spans, and `+` and `-` adjust
+session-local context visibility without changing the selected file or current viewport. Unit and
+terminal checks cover the completed interaction slice.
+
 `hdiff --install` backs up the global Git configuration file Git will edit, then registers the
 current executable as the user-level `git diff` pager. Git passes the complete unified diff to
 hdiff on standard input, preserving the entire file list in one interactive session.
@@ -71,25 +75,30 @@ hdiff on standard input, preserving the entire file list in one interactive sess
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Add character-level detail within changed line pairs and session-local context controls.
-
-   Human check: press `c` on a changed line and see only changed character spans gain detail;
-   press `c` again to return to line detail. Use `+` and `-` to change visible context and verify
-   that the selected file and current hunk remain understandable.
-
-2. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+1. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
    aligned. Re-enable wrapping and verify no content is lost or rendered over another pane.
 
-3. Display continuity markers on each content-pane edge when content extends beyond the visible
+2. Display continuity markers on each content-pane edge when content extends beyond the visible
    frame: downward for content below, upward for content above, and leftward or rightward for
    horizontally clipped content.
 
    Human check: open a diff that exceeds the pane vertically and horizontally. Verify that each
    marker appears only while content continues past its corresponding edge, disappears at that
    edge's boundary, and does not obscure diff content or pane layout.
+
+## Performance delivery plan
+
+Each phase has its own specification amendment, tests, verification, audit, and commit.
+
+1. Establish the performance contract and representative multi-file measurement baseline.
+2. Build a borrow-first prepared-file representation that preserves renderer and layout output.
+3. Make syntax and character-detail preparation resumable at whole-hunk boundaries.
+4. Add the single-threaded input-first cache reactor and prepare files from first to last.
+5. Remove only measured redundant work from the active render path, including inactive layouts,
+   rows outside the viewport, allocations, cloning, palette construction, and span ordering.
 
 ## Deferred work
 

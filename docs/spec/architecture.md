@@ -306,6 +306,23 @@ bursts coalesced. The selected layout is preserved through resize. The file-list
 before the diff view, and below minimum width or height the layout renders only the corresponding
 screen-size message. Zero-sized layouts remain valid values rather than arithmetic errors.
 
+### Cooperative prepared rendering
+
+Prepared rendering is single-threaded and cooperative. The terminal event loop owns interaction,
+terminal lifecycle, cache-driver progress, prepared-file cache, and redraw decisions. It receives
+immutable document data and prepares files in source order, beginning with the first file and
+continuing through the last.
+
+Startup prioritizes the first visible file. After that first render, an idle turn prepares one
+whole hunk and yields before handling more work. Pending terminal input takes priority over cache
+preparation. A completed file retains its layout-neutral rows, split pairs, syntax spans, and
+character-detail spans for the session; scrolling, file rotation, and layout changes reuse that
+data and construct only the active layout's viewport rows.
+
+No async runtime, executor, channel, or task dependency is part of this boundary. Any future
+asynchronous support must be fast to compile, have a small runtime and binary footprint, and show
+a measured material improvement to startup or interaction before it is introduced.
+
 ## Lossless and safe rendering
 
 Each record retains exact source bytes, decoded text, classification, and sanitized style
