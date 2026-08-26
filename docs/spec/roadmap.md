@@ -100,6 +100,7 @@ Each phase has its own specification amendment, tests, verification, audit, and 
    Completed: the terminal loop receives prepared data and selects only the active viewport.
 4. Measure the final eighth, quarter, and half of pinned Kubernetes first-parent history through
    `hdiff --bench`; the reproducible command is in `docs/guides/kubernetes-benchmark.md`.
+   Completed: the resolved measurements are recorded in `docs/spec/performance.md`.
 5. Remove only measured redundant work from preparation and active rendering, including inactive
    layouts, rows outside the viewport, allocations, cloning, palette construction, and span
    ordering.
