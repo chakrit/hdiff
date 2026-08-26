@@ -18,9 +18,9 @@ fn main() -> Result<(), String> {
     match command {
         input::Command::Install => {
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-            let mut context = actions::git_config::InstallGitDifftoolContext;
+            let mut context = actions::git_config::InstallGitDiffPagerContext;
 
-            actions::git_config::InstallGitDifftool { executable }
+            actions::git_config::InstallGitDiffPager { executable }
                 .run(&mut context)
                 .map_err(|error| error.to_string())?;
             return Ok(());

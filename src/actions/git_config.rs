@@ -6,27 +6,22 @@ use std::{
     process::Command,
 };
 
-pub struct InstallGitDifftool {
+pub struct InstallGitDiffPager {
     pub executable: PathBuf,
 }
 
-pub struct InstallGitDifftoolContext;
+pub struct InstallGitDiffPagerContext;
 
-impl InstallGitDifftool {
-    pub fn run(self, _context: &mut InstallGitDifftoolContext) -> io::Result<()> {
+impl InstallGitDiffPager {
+    pub fn run(self, _context: &mut InstallGitDiffPagerContext) -> io::Result<()> {
         let config_path = global_config_path()?;
 
         BackupGlobalGitConfig { path: &config_path }.run()?;
 
-        let command = difftool_command(&self.executable)?;
+        let command = pager_command(&self.executable)?;
         SetGlobalGitConfig {
-            key: "difftool.hdiff.cmd",
+            key: "pager.diff",
             value: &command,
-        }
-        .run()?;
-        SetGlobalGitConfig {
-            key: "diff.tool",
-            value: "hdiff",
         }
         .run()
     }
@@ -101,11 +96,11 @@ fn configured_global_path(path: OsString) -> io::Result<PathBuf> {
     Ok(path)
 }
 
-fn difftool_command(executable: &Path) -> io::Result<String> {
+fn pager_command(executable: &Path) -> io::Result<String> {
     let executable = executable
         .to_str()
         .ok_or_else(|| io::Error::other("hdiff executable path is not valid UTF-8"))?;
     let quoted_executable = executable.replace('\'', "'\"'\"'");
 
-    Ok(format!("'{quoted_executable}' \"$LOCAL\" \"$REMOTE\""))
+    Ok(format!("'{quoted_executable}'"))
 }

@@ -7,7 +7,7 @@ fn hdiff() -> Command {
 }
 
 #[test]
-fn install_backs_up_and_configures_the_global_difftool() {
+fn install_backs_up_and_configures_the_global_diff_pager() {
     let directory = tempdir().expect("temporary directory");
     let config_path = directory.path().join("gitconfig");
     let original_config = "[user]\n\tname = Test User\n";
@@ -28,15 +28,12 @@ fn install_backs_up_and_configures_the_global_difftool() {
         fs::read_to_string(config_path.with_extension("bak")).expect("read backup"),
         original_config
     );
-    assert_eq!(git_config(&config_path, "diff.tool"), "hdiff");
-
-    let command = git_config(&config_path, "difftool.hdiff.cmd");
-    assert!(command.contains("$LOCAL"));
-    assert!(command.contains("$REMOTE"));
+    let command = git_config(&config_path, "pager.diff");
+    assert!(command.contains(env!("CARGO_BIN_EXE_hdiff")));
 }
 
 #[test]
-fn compares_two_files_for_git_difftool() {
+fn compares_two_files_for_git_diff_pager() {
     let directory = tempdir().expect("temporary directory");
     let before = directory.path().join("before.rs");
     let after = directory.path().join("after.rs");

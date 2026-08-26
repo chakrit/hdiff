@@ -1,22 +1,22 @@
 # Use hdiff for one Git diff
 
-Install hdiff as the current user's default Git difftool:
+Install hdiff as the current user's `git diff` pager:
 
 ```sh
 hdiff --install
 ```
 
 The command copies the exact global Git configuration file Git will edit to a sibling `.bak`
-file, then configures `git difftool` to start the current hdiff executable with Git's temporary
-before and after files. It overwrites only `diff.tool` and `difftool.hdiff.cmd`.
+file, then configures `pager.diff` to start the current hdiff executable. It overwrites only
+`pager.diff`; general Git paging through `core.pager` remains unchanged.
 
-Run `git difftool` to review a change:
+Run `git diff` to review every changed file in one hdiff session:
 
 ```sh
-git difftool HEAD~3
+git diff HEAD~3
 ```
 
-Run the repository wrapper with any `git diff` arguments when a one-shot pager is more useful:
+Run the repository wrapper when a one-shot pager is more useful:
 
 ```sh
 ./git.sh diff HEAD~3
