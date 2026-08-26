@@ -1,6 +1,6 @@
 use crate::{
-    document::{DiffDocument, sanitize},
-    interaction::{DiffLayout, Interaction},
+    document::DiffFile,
+    interaction::DiffLayout,
     render::{RenderedLine, RenderedLineKind, render_file_lines},
 };
 
@@ -46,6 +46,7 @@ pub struct FileListRow {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Layout {
+    #[cfg(test)]
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<Vec<u8>>,
     pub line_kinds: Vec<RenderedLineKind>,
@@ -126,19 +127,28 @@ impl Layout {
     }
 }
 
-pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
-    let files = document
-        .files
-        .iter()
-        .enumerate()
-        .map(|(index, file)| {
-            let label = file_list_label(file);
-            FileListRow {
-                label,
-                selected: index == interaction.selected_file,
-            }
-        })
-        .collect();
+pub fn file_layout(file: &DiffFile) -> Layout {
+    let rendered_lines = render_file_lines(file);
+    let side_by_side_rows = side_by_side_rows(&rendered_lines);
+    let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
+        .into_iter()
+        .map(|line| (line.bytes, line.kind))
+        .unzip();
+    Layout {
+        #[cfg(test)]
+        files: Vec::new(),
+        diff_lines,
+        line_kinds,
+        side_by_side_rows,
+    }
+}
+
+#[cfg(test)]
+pub fn layout(
+    document: &crate::document::DiffDocument,
+    interaction: &crate::interaction::Interaction,
+) -> Layout {
+    let files = crate::prepared::test_file_rows(document, interaction.selected_file);
     let Some(file) = document.files.get(interaction.selected_file) else {
         return Layout {
             files,
@@ -147,18 +157,10 @@ pub fn layout(document: &DiffDocument, interaction: &Interaction) -> Layout {
             side_by_side_rows: Vec::new(),
         };
     };
-    let rendered_lines = render_file_lines(file);
-    let side_by_side_rows = side_by_side_rows(&rendered_lines);
-    let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
-        .into_iter()
-        .map(|line| (line.bytes, line.kind))
-        .unzip();
-    Layout {
-        files,
-        diff_lines,
-        line_kinds,
-        side_by_side_rows,
-    }
+
+    let mut layout = file_layout(file);
+    layout.files = files;
+    layout
 }
 
 fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
@@ -211,47 +213,9 @@ fn side_by_side_line(line: &RenderedLine, source_index: usize) -> SideBySideLine
     }
 }
 
-fn file_list_label(file: &crate::document::DiffFile) -> String {
-    match file {
-        crate::document::DiffFile::Metadata { lines } => lines
-            .first()
-            .map(|line| git_metadata_label(&sanitize(&line.text)))
-            .unwrap_or_default(),
-        crate::document::DiffFile::Unified(file) => match file.old_path.as_str() {
-            "/dev/null" => display_path(&file.new_path),
-            _ => display_path(&file.old_path),
-        },
-    }
-}
-
-fn git_metadata_label(header: &str) -> String {
-    let Some(paths) = header.strip_prefix("diff --git ") else {
-        return header.to_owned();
-    };
-    let Some((old_path, new_path)) = paths.split_once(" b/") else {
-        return header.to_owned();
-    };
-    let old_path = display_path(old_path);
-    let new_path = display_path(&format!("b/{new_path}"));
-
-    match old_path == new_path {
-        true => old_path,
-        false => format!("{old_path} → {new_path}"),
-    }
-}
-
-fn display_path(path: &str) -> String {
-    let sanitized = sanitize(path);
-    sanitized
-        .strip_prefix("a/")
-        .or_else(|| sanitized.strip_prefix("b/"))
-        .unwrap_or(&sanitized)
-        .to_owned()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{FileListRow, PaneLayout, SideBySideRow, layout, pane_layout};
+    use super::{PaneLayout, SideBySideRow, file_layout, layout, pane_layout};
     use crate::{
         interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
         parser::parse_unified_diff,
@@ -259,35 +223,12 @@ mod tests {
     };
 
     #[test]
-    fn derives_selected_file_rows() {
+    fn lays_out_a_selected_file() {
         let document = parse_unified_diff(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");
-        let interaction = Interaction {
-            selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
-        };
-
-        let view = layout(&document, &interaction);
-
-        assert_eq!(
-            view.files,
-            vec![
-                FileListRow {
-                    label: "first".to_owned(),
-                    selected: false,
-                },
-                FileListRow {
-                    label: "second".to_owned(),
-                    selected: true,
-                },
-            ]
-        );
+        let view = file_layout(&document.files[1]);
         assert_eq!(view.line_kinds[2], RenderedLineKind::HunkHeader);
         assert_eq!(view.line_kinds[5], RenderedLineKind::HunkHeader);
         assert_eq!(
@@ -310,18 +251,7 @@ mod tests {
         let document =
             parse_unified_diff(include_bytes!("../tests/fixtures/git-rename-only.patch"))
                 .expect("valid metadata-only Git fixture");
-        let interaction = Interaction {
-            selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
-        };
-
-        let view = layout(&document, &interaction);
-
-        assert_eq!(view.files[0].label, "old-name.txt → new-name.txt");
+        let view = file_layout(&document.files[0]);
         assert!(
             view.line_kinds
                 .iter()
@@ -370,25 +300,6 @@ mod tests {
                 after: None,
             } if before.bytes == b"-old second\n"
         ));
-    }
-
-    #[test]
-    fn labels_an_added_file_with_its_new_path() {
-        let document =
-            parse_unified_diff(b"--- /dev/null\n+++ b/added-file.txt\n@@ -0,0 +1 @@\n+new\n")
-                .expect("valid added-file diff");
-        let interaction = Interaction {
-            selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
-        };
-
-        let view = layout(&document, &interaction);
-
-        assert_eq!(view.files[0].label, "added-file.txt");
     }
 
     #[test]

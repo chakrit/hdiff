@@ -13,6 +13,9 @@ parser, cache, readiness, loading, or first-file state.
 Preparation is one optimized Rust pass. Incremental preparation is not part of this design unless
 measured preparation latency makes the eager boundary untenable.
 
+Document-wide file-list labels are derived once during preparation. Each prepared file derives
+only its own rendered rows, split pairs, syntax spans, and character-detail spans.
+
 ## Benchmark mode
 
 `hdiff --bench` accepts the normal diff input, completes the normal preparation pass, prints one

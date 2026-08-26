@@ -1,8 +1,8 @@
 use crate::{
     detail::{DetailSpan, detail_rows},
-    document::{DiffDocument, DiffFile},
-    interaction::{DiffGranularity, DiffLayout, Interaction, ViewPreferences, Viewport},
-    layout::{FileListRow, Layout, layout},
+    document::{DiffDocument, DiffFile, sanitize},
+    interaction::DiffGranularity,
+    layout::{FileListRow, Layout, file_layout},
     syntax::{SyntaxHighlighter, SyntaxSpan},
 };
 
@@ -21,14 +21,11 @@ pub struct PreparedFile {
 impl PreparedDocument {
     pub fn prepare(document: &DiffDocument) -> Self {
         let mut syntax = SyntaxHighlighter::default();
-        let file_labels = file_labels(document);
+        let file_labels = document.files.iter().map(file_list_label).collect();
         let files = document
             .files
             .iter()
-            .enumerate()
-            .map(|(selected_file, file)| {
-                PreparedFile::prepare(document, file, selected_file, &mut syntax)
-            })
+            .map(|file| PreparedFile::prepare(file, &mut syntax))
             .collect();
 
         Self { files, file_labels }
@@ -59,21 +56,8 @@ impl PreparedDocument {
 }
 
 impl PreparedFile {
-    fn prepare(
-        document: &DiffDocument,
-        file: &DiffFile,
-        selected_file: usize,
-        syntax: &mut SyntaxHighlighter,
-    ) -> Self {
-        let interaction = Interaction {
-            selected_file,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 0,
-            },
-        };
-        let layout = layout(document, &interaction);
+    fn prepare(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Self {
+        let layout = file_layout(file);
         let syntax = syntax.highlight_file(file);
         let line_details = detail_rows(&layout, DiffGranularity::Line);
         let character_details = detail_rows(&layout, DiffGranularity::Character);
@@ -106,20 +90,54 @@ impl PreparedFile {
     }
 }
 
-fn file_labels(document: &DiffDocument) -> Vec<String> {
-    let interaction = Interaction {
-        selected_file: 0,
-        preferences: ViewPreferences::line(DiffLayout::Unified),
-        viewport: Viewport {
-            offset: 0,
-            height: 0,
+fn file_list_label(file: &DiffFile) -> String {
+    match file {
+        DiffFile::Metadata { lines } => lines
+            .first()
+            .map(|line| git_metadata_label(&sanitize(&line.text)))
+            .unwrap_or_default(),
+        DiffFile::Unified(file) => match file.old_path.as_str() {
+            "/dev/null" => display_path(&file.new_path),
+            _ => display_path(&file.old_path),
         },
-    };
+    }
+}
 
-    layout(document, &interaction)
+fn git_metadata_label(header: &str) -> String {
+    let Some(paths) = header.strip_prefix("diff --git ") else {
+        return header.to_owned();
+    };
+    let Some((old_path, new_path)) = paths.split_once(" b/") else {
+        return header.to_owned();
+    };
+    let old_path = display_path(old_path);
+    let new_path = display_path(&format!("b/{new_path}"));
+
+    match old_path == new_path {
+        true => old_path,
+        false => format!("{old_path} → {new_path}"),
+    }
+}
+
+fn display_path(path: &str) -> String {
+    let sanitized = sanitize(path);
+    sanitized
+        .strip_prefix("a/")
+        .or_else(|| sanitized.strip_prefix("b/"))
+        .unwrap_or(&sanitized)
+        .to_owned()
+}
+
+#[cfg(test)]
+pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> Vec<FileListRow> {
+    document
         .files
-        .into_iter()
-        .map(|row| row.label)
+        .iter()
+        .enumerate()
+        .map(|(index, file)| FileListRow {
+            label: file_list_label(file),
+            selected: index == selected_file,
+        })
         .collect()
 }
 
@@ -162,5 +180,15 @@ mod tests {
                 .iter()
                 .any(|spans| !spans.is_empty())
         );
+    }
+
+    #[test]
+    fn labels_an_added_file_with_its_new_path() {
+        let document =
+            parse_unified_diff(b"--- /dev/null\n+++ b/added-file.txt\n@@ -0,0 +1 @@\n+new\n")
+                .expect("valid added-file diff");
+        let prepared = PreparedDocument::prepare(&document);
+
+        assert_eq!(prepared.file_rows(0)[0].label, "added-file.txt");
     }
 }
