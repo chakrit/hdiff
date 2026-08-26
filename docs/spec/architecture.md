@@ -276,10 +276,11 @@ records into separate bounded virtual source buffers, maps returned spans back t
 record payloads, and leaves unsupported languages and highlighting failures as plain text.
 Safe rendering is the single source of display rows: each rendered record row retains its hunk
 and record address plus its payload range. Layout derives geometry and navigation offsets from
-those rows without syntax state. The terminal owns the reusable highlighter and overlays its
-semantic tokens only on visible payload ranges. Additions use the new path's language and
-deletions use the old path's language; context records remain textual when the paths select
-different languages. Headers, metadata, raw records, and diff markers remain textual.
+those rows without syntax state. Preparation computes syntax and character-detail spans before
+the terminal loop begins, then the terminal renders only the prepared active viewport. Additions
+use the new path's language and deletions use the old path's language; context records remain
+textual when the paths select different languages. Headers, metadata, raw records, and diff
+markers remain textual.
 
 The first test boundary is terminal-independent: parser fixtures, state-transition tests, layout
 snapshots, and renderer output tests. End-to-end terminal checks run hdiff in fixed-size tmux
@@ -306,22 +307,16 @@ bursts coalesced. The selected layout is preserved through resize. The file-list
 before the diff view, and below minimum width or height the layout renders only the corresponding
 screen-size message. Zero-sized layouts remain valid values rather than arithmetic errors.
 
-### Cooperative prepared rendering
+### Eager prepared rendering
 
-Prepared rendering is single-threaded and cooperative. The terminal event loop owns interaction,
-terminal lifecycle, cache-driver progress, prepared-file cache, and redraw decisions. It receives
-immutable document data and prepares files in source order, beginning with the first file and
-continuing through the last.
+Preparation is one optimized Rust pass before the terminal loop begins. It produces layout-neutral
+rows, split pairs, syntax spans, and character-detail spans for every file. The terminal loop owns
+only interaction, terminal lifecycle, redraw decisions, and rendering of the prepared active
+viewport.
 
-Startup prioritizes the first visible file. After that first render, an idle turn prepares one
-whole hunk and yields before handling more work. Pending terminal input takes priority over cache
-preparation. A completed file retains its layout-neutral rows, split pairs, syntax spans, and
-character-detail spans for the session; scrolling, file rotation, and layout changes reuse that
-data and construct only the active layout's viewport rows.
-
-No async runtime, executor, channel, or task dependency is part of this boundary. Any future
-asynchronous support must be fast to compile, have a small runtime and binary footprint, and show
-a measured material improvement to startup or interaction before it is introduced.
+The terminal loop has no parser, cache, readiness, loading, or first-file state. It receives fully
+prepared data on its first draw and on every redraw. No async runtime, executor, channel, or task
+dependency is part of this boundary.
 
 ## Lossless and safe rendering
 

@@ -93,12 +93,14 @@ Each slice is incomplete until its automated checks and its human check both pas
 
 Each phase has its own specification amendment, tests, verification, audit, and commit.
 
-1. Establish the performance contract and representative multi-file measurement baseline.
+1. Establish the eager-preparation contract and benchmark mode.
 2. Build a borrow-first prepared-file representation that preserves renderer and layout output.
-3. Make syntax and character-detail preparation resumable at whole-hunk boundaries.
-4. Add the single-threaded input-first cache reactor and prepare files from first to last.
-5. Remove only measured redundant work from the active render path, including inactive layouts,
-   rows outside the viewport, allocations, cloning, palette construction, and span ordering.
+3. Prepare layout, syntax, and character detail for the complete document before terminal entry.
+4. Measure the final eighth, quarter, and half of pinned Kubernetes first-parent history through
+   `hdiff --bench`.
+5. Remove only measured redundant work from preparation and active rendering, including inactive
+   layouts, rows outside the viewport, allocations, cloning, palette construction, and span
+   ordering.
 
 ## Deferred work
 
