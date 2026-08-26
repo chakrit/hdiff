@@ -192,6 +192,8 @@ cycles unified, vertical split, and stacked split in that order.
 
 Vertical split renders each changed block as aligned before/after pairs, adding a markerless
 alignment peer with the corresponding dim addition or deletion background on the shorter side.
+Each alignment peer uses the background and dim modifier of its own pane: before peers use
+deletion styling and after peers use addition styling, regardless of the counterpart row.
 Alignment peers are layout-only counterparts for unmatched change rows, not source context lines.
 Shared context and structural rows render in both panes. A more dimmed separator divides the before
 and after panes; each pane retains the marker column and payload spacer used by unified rendering.

@@ -400,7 +400,7 @@ fn render_vertical_rows(
                 render_diff_rows(frame, vec![row], after_area);
             }
             VisibleSideBySideRow::Paired { before, after } => {
-                let Some((before, after)) = aligned_pair(before, after) else {
+                let Some((before, after)) = aligned_pair(before, after, color_count) else {
                     continue;
                 };
 
@@ -437,7 +437,7 @@ fn render_stacked_rows(
                 after_rows.push(row);
             }
             VisibleSideBySideRow::Paired { before, after } => {
-                let Some((before, after)) = aligned_pair(before, after) else {
+                let Some((before, after)) = aligned_pair(before, after, color_count) else {
                     continue;
                 };
 
@@ -482,25 +482,33 @@ struct DiffRow {
     style: Style,
 }
 
-fn aligned_pair(before: Option<DiffRow>, after: Option<DiffRow>) -> Option<(DiffRow, DiffRow)> {
+fn aligned_pair(
+    before: Option<DiffRow>,
+    after: Option<DiffRow>,
+    color_count: u16,
+) -> Option<(DiffRow, DiffRow)> {
     match (before, after) {
         (Some(before), Some(after)) => Some((before, after)),
         (Some(before), None) => {
-            let after = alignment_peer(&before);
+            let after = alignment_peer(RowKind::Addition, color_count);
             Some((before, after))
         }
         (None, Some(after)) => {
-            let before = alignment_peer(&after);
+            let before = alignment_peer(RowKind::Deletion, color_count);
             Some((before, after))
         }
         (None, None) => None,
     }
 }
 
-fn alignment_peer(row: &DiffRow) -> DiffRow {
+fn alignment_peer(row_kind: RowKind, color_count: u16) -> DiffRow {
     DiffRow {
         line: Line::raw(""),
-        style: row.style,
+        style: row_style(
+            row_kind,
+            low_contrast_palette(color_count),
+            color_count,
+        ),
     }
 }
 
@@ -1136,12 +1144,12 @@ mod tests {
         );
         assert_eq!(
             rendered[(79, 4)].bg,
-            Color::Rgb(50, 30, 30),
-            "alignment peer retains deletion background"
+            Color::Rgb(35, 73, 43),
+            "alignment peer retains addition background"
         );
         assert!(
-            rendered[(79, 4)].modifier.contains(Modifier::DIM),
-            "alignment peer retains deletion dimming"
+            !rendered[(79, 4)].modifier.contains(Modifier::DIM),
+            "alignment peer does not inherit deletion dimming"
         );
         assert_eq!(
             rendered[(53, 3)].fg,
@@ -1151,7 +1159,53 @@ mod tests {
     }
 
     #[test]
-    fn renders_stacked_alignment_peers_as_markerless_dimmed_rows() {
+    fn renders_vertical_deletion_peers_with_deletion_background() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
+        )
+        .expect("valid asymmetric diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            viewport: Viewport {
+                offset: 0,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame_with_layout(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &interaction.preferences,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+
+        assert_eq!(rendered[(27, 4)].symbol(), " ", "deletion peer has no marker");
+        assert_eq!(
+            rendered[(52, 4)].bg,
+            Color::Rgb(50, 30, 30),
+            "deletion peer reaches the before pane edge"
+        );
+        assert!(
+            rendered[(52, 4)].modifier.contains(Modifier::DIM),
+            "deletion peer retains deletion dimming"
+        );
+    }
+
+    #[test]
+    fn renders_stacked_alignment_peers_as_markerless_rows() {
         let document = parse_unified_diff(
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         )
@@ -1198,14 +1252,14 @@ mod tests {
         );
         assert_eq!(
             rendered[(79, alignment_peer_row)].bg,
-            Color::Rgb(50, 30, 30),
-            "alignment peer retains deletion background"
+            Color::Rgb(35, 73, 43),
+            "alignment peer retains addition background"
         );
         assert!(
-            rendered[(79, alignment_peer_row)]
+            !rendered[(79, alignment_peer_row)]
                 .modifier
                 .contains(Modifier::DIM),
-            "alignment peer retains deletion dimming"
+            "alignment peer does not inherit deletion dimming"
         );
     }
 
