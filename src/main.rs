@@ -7,6 +7,7 @@ pub mod input;
 pub mod interaction;
 pub mod layout;
 pub mod parser;
+pub mod prepared;
 pub mod render;
 pub mod syntax;
 pub mod terminal;
@@ -36,22 +37,22 @@ fn main() -> Result<(), String> {
             .map_err(|error| error.to_string())?;
             return Ok(());
         }
-        input::Command::View(source) => run_viewer(source)?,
+        input::Command::View { source, mode } => run_viewer(source, mode)?,
     }
 
     Ok(())
 }
 
-fn run_viewer(source: input::InputSource) -> Result<(), String> {
-    let input = match source {
+fn read_input(source: input::InputSource) -> Result<Vec<u8>, String> {
+    match source {
         input::InputSource::Stdin => {
             let mut input = Vec::new();
             std::io::Read::read_to_end(&mut std::io::stdin(), &mut input)
                 .map_err(|error| error.to_string())?;
-            input
+            Ok(input)
         }
         input::InputSource::DiffFile(path) => {
-            std::fs::read(path).map_err(|error| error.to_string())?
+            std::fs::read(path).map_err(|error| error.to_string())
         }
         input::InputSource::Operands(paths) => {
             let [before, after]: [std::path::PathBuf; 2] = paths
@@ -64,25 +65,67 @@ fn run_viewer(source: input::InputSource) -> Result<(), String> {
                 after: &after,
             }
             .run(&mut context)
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error.to_string())
         }
-    };
-    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
-    let output = render::render_unified(&document);
+    }
+}
 
-    match terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout())) {
-        terminal::OutputMode::Finite => {
+fn run_viewer(source: input::InputSource, mode: input::ViewerMode) -> Result<(), String> {
+    let input = read_input(source)?;
+    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+    let output_mode =
+        terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout()));
+    let preparation_started = match mode {
+        input::ViewerMode::Benchmark => Some(std::time::Instant::now()),
+        input::ViewerMode::Render => None,
+    };
+    let prepared = match (mode, output_mode) {
+        (input::ViewerMode::Benchmark, _)
+        | (input::ViewerMode::Render, terminal::OutputMode::Interactive) => {
+            Some(prepared::PreparedDocument::prepare(&document))
+        }
+        (input::ViewerMode::Render, terminal::OutputMode::Finite) => None,
+    };
+
+    match mode {
+        input::ViewerMode::Benchmark => {
+            let elapsed = preparation_started
+                .expect("benchmark timing starts before preparation")
+                .elapsed();
+            let prepared = prepared.expect("benchmark preparation completes before reporting");
+            let output = format!(
+                "preparation duration_ns={} files={} records={}\n",
+                elapsed.as_nanos(),
+                prepared.file_count(),
+                prepared.record_count()
+            );
             let mut stdout = std::io::stdout();
             let mut output_context = actions::write_output::OutputContext {
                 writer: &mut stdout,
             };
-            actions::write_output::WriteOutput { bytes: &output }
-                .run(&mut output_context)
-                .map_err(|error| error.to_string())?;
+            actions::write_output::WriteOutput {
+                bytes: output.as_bytes(),
+            }
+            .run(&mut output_context)
+            .map_err(|error| error.to_string())?;
         }
-        terminal::OutputMode::Interactive => {
-            terminal::run_interactive(&document).map_err(|error| error.to_string())?;
-        }
+        input::ViewerMode::Render => match output_mode {
+            terminal::OutputMode::Finite => {
+                let output = render::render_unified(&document);
+                let mut stdout = std::io::stdout();
+                let mut output_context = actions::write_output::OutputContext {
+                    writer: &mut stdout,
+                };
+                actions::write_output::WriteOutput { bytes: &output }
+                    .run(&mut output_context)
+                    .map_err(|error| error.to_string())?;
+            }
+            terminal::OutputMode::Interactive => {
+                let prepared = prepared.expect("interactive rendering needs prepared data");
+
+                terminal::run_interactive(&prepared).map_err(|error| error.to_string())?;
+            }
+        },
     }
 
     Ok(())

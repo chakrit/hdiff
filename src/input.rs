@@ -3,7 +3,16 @@ use std::{ffi::OsString, path::PathBuf};
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Install,
-    View(InputSource),
+    View {
+        source: InputSource,
+        mode: ViewerMode,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewerMode {
+    Benchmark,
+    Render,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,9 +31,23 @@ pub fn select_command(arguments: &[OsString]) -> Result<Command, InputError> {
         _ if arguments.iter().any(|argument| argument == "--install") => Err(InputError(
             "--install cannot be combined with diff input operands".to_owned(),
         )),
+        [argument] if argument == "--bench" => Ok(Command::View {
+            source: InputSource::Stdin,
+            mode: ViewerMode::Benchmark,
+        }),
+        arguments if arguments.first() == Some(&OsString::from("--bench")) => {
+            let operands = arguments[1..].iter().map(PathBuf::from).collect::<Vec<_>>();
+            select_input(&operands).map(|source| Command::View {
+                source,
+                mode: ViewerMode::Benchmark,
+            })
+        }
         _ => {
             let operands = arguments.iter().map(PathBuf::from).collect::<Vec<_>>();
-            select_input(&operands).map(Command::View)
+            select_input(&operands).map(|source| Command::View {
+                source,
+                mode: ViewerMode::Render,
+            })
         }
     }
 }
@@ -40,7 +63,7 @@ pub fn select_input(arguments: &[PathBuf]) -> Result<InputSource, InputError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, InputSource, select_command, select_input};
+    use super::{Command, InputSource, ViewerMode, select_command, select_input};
     use std::{ffi::OsString, path::PathBuf};
 
     #[test]
@@ -56,6 +79,17 @@ mod tests {
         let arguments = [OsString::from("--install"), OsString::from("change.patch")];
 
         assert!(select_command(&arguments).is_err());
+    }
+
+    #[test]
+    fn selects_benchmark_with_standard_input() {
+        assert_eq!(
+            select_command(&[OsString::from("--bench")]).expect("benchmark command"),
+            Command::View {
+                source: InputSource::Stdin,
+                mode: ViewerMode::Benchmark,
+            }
+        );
     }
 
     #[test]

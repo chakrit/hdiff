@@ -17,16 +17,19 @@ use ratatui::{
 };
 
 use crate::{
-    detail::{DetailSpan, changed_pair_detail},
-    document::{DiffDocument, DiffFile},
+    detail::DetailSpan,
     interaction::{
-        self, DiffGranularity, DiffLayout, Input, Interaction, NavigationBounds, Transition,
-        ViewPreferences, Viewport,
+        self, DiffLayout, Input, Interaction, NavigationBounds, Transition, ViewPreferences,
+        Viewport,
     },
-    layout::{Layout, PaneLayout, SideBySideLine, SideBySideRow, layout, pane_layout},
+    layout::{FileListRow, Layout, PaneLayout, SideBySideLine, SideBySideRow, pane_layout},
+    prepared::{PreparedDocument, PreparedFile},
     render::RenderedLineKind,
-    syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
+    syntax::{SyntaxClass, SyntaxSpan},
 };
+
+#[cfg(test)]
+use crate::{detail::detail_rows, document::DiffDocument, syntax::SyntaxHighlighter};
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
@@ -50,7 +53,7 @@ pub fn mode_for_output(is_terminal: bool) -> OutputMode {
     }
 }
 
-pub fn run_interactive(document: &DiffDocument) -> io::Result<()> {
+pub fn run_interactive(document: &PreparedDocument) -> io::Result<()> {
     let mut session = TerminalSession::start()?;
     let result = run_loop(&mut session, document, available_color_count());
     let cleanup_result = session.cleanup();
@@ -79,7 +82,7 @@ fn cleanup_failure(error: io::Error, cleanup_result: io::Result<()>) -> io::Erro
 
 fn run_loop(
     session: &mut TerminalSession,
-    document: &DiffDocument,
+    document: &PreparedDocument,
     color_count: u16,
 ) -> io::Result<()> {
     let (_, height) = terminal::size()?;
@@ -91,18 +94,7 @@ fn run_loop(
             height: usize::from(height),
         },
     };
-    let mut view = layout(document, &interaction);
-    let mut syntax = SyntaxHighlighter::default();
-
-    draw(
-        session.terminal_mut(),
-        document,
-        &view,
-        &interaction.viewport,
-        &interaction.preferences,
-        &mut syntax,
-        color_count,
-    )?;
+    draw(session.terminal_mut(), document, &interaction, color_count)?;
 
     let mut pending_event = None;
     loop {
@@ -115,11 +107,21 @@ fn run_loop(
 
         let transition = {
             let bounds = NavigationBounds {
-                file_count: document.files.len(),
-                unified_line_count: view
-                    .visible_unified_line_count(interaction.preferences.context_lines),
-                paired_line_count: view
-                    .visible_side_by_side_line_count(interaction.preferences.context_lines),
+                file_count: document.file_count(),
+                unified_line_count: document
+                    .file(interaction.selected_file)
+                    .map(|file| {
+                        file.layout
+                            .visible_unified_line_count(interaction.preferences.context_lines)
+                    })
+                    .unwrap_or_default(),
+                paired_line_count: document
+                    .file(interaction.selected_file)
+                    .map(|file| {
+                        file.layout
+                            .visible_side_by_side_line_count(interaction.preferences.context_lines)
+                    })
+                    .unwrap_or_default(),
             };
             interaction::transition_interaction(&interaction, input, &bounds)
         };
@@ -128,16 +130,7 @@ fn run_loop(
             Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
             Transition::RedrawInteraction(next_interaction) => {
                 interaction = next_interaction;
-                view = layout(document, &interaction);
-                draw(
-                    session.terminal_mut(),
-                    document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    &mut syntax,
-                    color_count,
-                )?;
+                draw(session.terminal_mut(), document, &interaction, color_count)?;
             }
         }
     }
@@ -194,25 +187,19 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
 
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    document: &DiffDocument,
-    layout: &Layout,
-    viewport: &Viewport,
-    preferences: &ViewPreferences,
-    syntax: &mut SyntaxHighlighter,
+    document: &PreparedDocument,
+    interaction: &Interaction,
     color_count: u16,
 ) -> io::Result<()> {
+    let Some(file) = document.file(interaction.selected_file) else {
+        return terminal
+            .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
+            .map(|_| ());
+    };
+    let files = document.file_rows(interaction.selected_file);
+
     terminal
-        .draw(|frame| {
-            render_frame_with_layout(
-                frame,
-                document,
-                layout,
-                viewport,
-                preferences,
-                syntax,
-                color_count,
-            )
-        })
+        .draw(|frame| render_prepared_frame(frame, &files, file, interaction, color_count))
         .map(|_| ())
 }
 
@@ -238,6 +225,7 @@ fn render_frame(
     );
 }
 
+#[cfg(test)]
 fn render_frame_with_layout(
     frame: &mut Frame,
     document: &DiffDocument,
@@ -251,11 +239,13 @@ fn render_frame_with_layout(
     let selected = layout.files.iter().position(|file| file.selected);
     let file = selected.and_then(|index| document.files.get(index));
     let details = detail_rows(layout, preferences.granularity);
+    let spans = file
+        .map(|file| syntax.highlight_file(file))
+        .unwrap_or_default();
     let rows = visible_diff_rows(
         layout,
         viewport,
-        file,
-        syntax,
+        &spans,
         &details,
         preferences.context_lines,
         color_count,
@@ -263,8 +253,7 @@ fn render_frame_with_layout(
     let side_by_side_rows = visible_side_by_side_rows(
         layout,
         viewport,
-        file,
-        syntax,
+        &spans,
         &details,
         preferences.context_lines,
         color_count,
@@ -285,7 +274,58 @@ fn render_frame_with_layout(
             separator_padding,
         } => render_split_panes(
             frame,
-            layout,
+            &layout.files,
+            area,
+            file_list_width,
+            separator_padding,
+            display,
+        ),
+    }
+}
+
+fn render_prepared_frame(
+    frame: &mut Frame,
+    files: &[FileListRow],
+    file: &PreparedFile,
+    interaction: &Interaction,
+    color_count: u16,
+) {
+    let area = frame.area();
+    let layout = &file.layout;
+    let details = file.details(interaction.preferences.granularity);
+    let rows = visible_diff_rows(
+        layout,
+        &interaction.viewport,
+        file.syntax(),
+        details,
+        interaction.preferences.context_lines,
+        color_count,
+    );
+    let side_by_side_rows = visible_side_by_side_rows(
+        layout,
+        &interaction.viewport,
+        file.syntax(),
+        details,
+        interaction.preferences.context_lines,
+        color_count,
+    );
+    let display = DisplayRows {
+        unified: rows,
+        side_by_side: side_by_side_rows,
+        layout: interaction.preferences.layout,
+        color_count,
+    };
+
+    match pane_layout(area.width, area.height) {
+        PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
+        PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
+        PaneLayout::DiffOnly => render_display_layout(frame, display, area),
+        PaneLayout::Split {
+            file_list_width,
+            separator_padding,
+        } => render_split_panes(
+            frame,
+            files,
             area,
             file_list_width,
             separator_padding,
@@ -296,7 +336,7 @@ fn render_frame_with_layout(
 
 fn render_split_panes(
     frame: &mut Frame,
-    layout: &Layout,
+    files: &[FileListRow],
     area: ratatui::layout::Rect,
     file_list_width: u16,
     separator_padding: u16,
@@ -321,10 +361,9 @@ fn render_split_panes(
     ])
     .split(panes[0]);
     let mut selected_file = ListState::default();
-    selected_file.select(layout.files.iter().position(|file| file.selected));
+    selected_file.select(files.iter().position(|file| file.selected));
     let chrome = chrome_palette(display.color_count);
-    let files = layout
-        .files
+    let files = files
         .iter()
         .map(|file| {
             ListItem::new(Line::styled(
@@ -504,11 +543,7 @@ fn aligned_pair(
 fn alignment_peer(row_kind: RowKind, color_count: u16) -> DiffRow {
     DiffRow {
         line: Line::raw(""),
-        style: row_style(
-            row_kind,
-            low_contrast_palette(color_count),
-            color_count,
-        ),
+        style: row_style(row_kind, low_contrast_palette(color_count), color_count),
     }
 }
 
@@ -530,15 +565,11 @@ struct DisplayRows {
 fn visible_diff_rows(
     layout: &Layout,
     viewport: &Viewport,
-    file: Option<&DiffFile>,
-    syntax: &mut SyntaxHighlighter,
+    spans: &[Vec<SyntaxSpan>],
     details: &[Vec<DetailSpan>],
     context_lines: usize,
     color_count: u16,
 ) -> Vec<DiffRow> {
-    let spans = file
-        .map(|file| syntax_rows(file, syntax))
-        .unwrap_or_default();
     layout
         .diff_lines
         .iter()
@@ -560,16 +591,11 @@ fn visible_diff_rows(
 fn visible_side_by_side_rows(
     layout: &Layout,
     viewport: &Viewport,
-    file: Option<&DiffFile>,
-    syntax: &mut SyntaxHighlighter,
+    spans: &[Vec<SyntaxSpan>],
     details: &[Vec<DetailSpan>],
     context_lines: usize,
     color_count: u16,
 ) -> Vec<VisibleSideBySideRow> {
-    let spans = file
-        .map(|file| syntax_rows(file, syntax))
-        .unwrap_or_default();
-
     layout
         .side_by_side_rows
         .iter()
@@ -577,15 +603,15 @@ fn visible_side_by_side_rows(
         .filter(|row| side_by_side_row_visible(layout, row, context_lines))
         .map(|row| match row {
             SideBySideRow::Shared(line) => {
-                VisibleSideBySideRow::Shared(diff_row_for_side(line, &spans, details, color_count))
+                VisibleSideBySideRow::Shared(diff_row_for_side(line, spans, details, color_count))
             }
             SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
                 before: before
                     .as_ref()
-                    .map(|line| diff_row_for_side(line, &spans, details, color_count)),
+                    .map(|line| diff_row_for_side(line, spans, details, color_count)),
                 after: after
                     .as_ref()
-                    .map(|line| diff_row_for_side(line, &spans, details, color_count)),
+                    .map(|line| diff_row_for_side(line, spans, details, color_count)),
             },
         })
         .collect()
@@ -633,22 +659,6 @@ fn diff_row(
     let line = styled_line(without_ending, row_kind, spans, details, color_count);
 
     DiffRow { line, style }
-}
-
-fn syntax_rows(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Vec<Vec<SyntaxSpan>> {
-    match file {
-        DiffFile::Metadata { lines } => (0..lines.len()).map(|_| Vec::new()).collect(),
-        DiffFile::Unified(file) => {
-            let mut rows = (0..file.metadata.len() + 2)
-                .map(|_| Vec::new())
-                .collect::<Vec<_>>();
-            for hunk_index in 0..file.hunks.len() {
-                rows.push(Vec::new());
-                rows.extend(syntax.highlight_hunk(file, hunk_index));
-            }
-            rows
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -746,42 +756,6 @@ fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     };
 
     Style::default().fg(color).add_modifier(Modifier::DIM)
-}
-
-fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<DetailSpan>> {
-    let mut details = (0..layout.diff_lines.len())
-        .map(|_| Vec::new())
-        .collect::<Vec<_>>();
-    if granularity == DiffGranularity::Line {
-        return details;
-    }
-
-    for row in &layout.side_by_side_rows {
-        let SideBySideRow::Paired {
-            before: Some(before),
-            after: Some(after),
-        } = row
-        else {
-            continue;
-        };
-        let before_text = record_payload(&before.bytes);
-        let after_text = record_payload(&after.bytes);
-        let pair = changed_pair_detail(before_text, after_text);
-        details[before.source_index] = pair.before;
-        details[after.source_index] = pair.after;
-    }
-
-    details
-}
-
-fn record_payload(bytes: &[u8]) -> &str {
-    let payload = bytes.get(1..).unwrap_or_default();
-    let without_ending = payload
-        .strip_suffix(b"\r\n")
-        .or_else(|| payload.strip_suffix(b"\n"))
-        .unwrap_or(payload);
-
-    std::str::from_utf8(without_ending).unwrap_or_default()
 }
 
 fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -> Style {
@@ -1192,7 +1166,11 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
 
-        assert_eq!(rendered[(27, 4)].symbol(), " ", "deletion peer has no marker");
+        assert_eq!(
+            rendered[(27, 4)].symbol(),
+            " ",
+            "deletion peer has no marker"
+        );
         assert_eq!(
             rendered[(52, 4)].bg,
             Color::Rgb(50, 30, 30),

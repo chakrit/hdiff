@@ -1,4 +1,7 @@
-use std::{fs, process::Command};
+use std::{
+    fs,
+    process::{Command, Stdio},
+};
 
 use tempfile::tempdir;
 
@@ -55,6 +58,26 @@ fn compares_two_files_for_git_diff_pager() {
     let rendered = String::from_utf8(comparison.stdout).expect("utf-8 diff output");
     assert!(rendered.contains("-fn main() {}"));
     assert!(rendered.contains("+fn main() { println!(\"new\"); }"));
+}
+
+#[test]
+fn bench_prepares_diff_without_opening_the_terminal() {
+    let input = fs::File::open("tests/fixtures/git-multiline.patch").expect("open fixture");
+    let benchmark = hdiff()
+        .arg("--bench")
+        .stdin(Stdio::from(input))
+        .output()
+        .expect("run hdiff benchmark");
+
+    assert!(
+        benchmark.status.success(),
+        "benchmark failed: {}",
+        String::from_utf8_lossy(&benchmark.stderr)
+    );
+    let output = String::from_utf8(benchmark.stdout).expect("benchmark output is UTF-8");
+
+    assert!(output.starts_with("preparation duration_ns="));
+    assert!(output.contains(" files=2 records=7\n"));
 }
 
 fn git_config(config_path: &std::path::Path, key: &str) -> String {

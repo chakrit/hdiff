@@ -17,7 +17,10 @@ measured preparation latency makes the eager boundary untenable.
 
 `hdiff --bench` accepts the normal diff input, completes the normal preparation pass, prints one
 machine-readable result line, and exits without opening the terminal. The result reports total
-preparation time and the prepared file and record counts.
+preparation time and the prepared file and record counts as
+`preparation duration_ns=<integer> files=<integer> records=<integer>`.
+Benchmark mode starts timing immediately before the shared preparation pass and exits immediately
+after reporting its result.
 
 ## Representative corpus
 

@@ -95,9 +95,11 @@ Each phase has its own specification amendment, tests, verification, audit, and 
 
 1. Establish the eager-preparation contract and benchmark mode.
 2. Build a borrow-first prepared-file representation that preserves renderer and layout output.
+   Completed: prepared files retain their layout, syntax, and line and character detail data.
 3. Prepare layout, syntax, and character detail for the complete document before terminal entry.
+   Completed: the terminal loop receives prepared data and selects only the active viewport.
 4. Measure the final eighth, quarter, and half of pinned Kubernetes first-parent history through
-   `hdiff --bench`.
+   `hdiff --bench`; the reproducible command is in `docs/guides/kubernetes-benchmark.md`.
 5. Remove only measured redundant work from preparation and active rendering, including inactive
    layouts, rows outside the viewport, allocations, cloning, palette construction, and span
    ordering.

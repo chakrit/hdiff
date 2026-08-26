@@ -1,6 +1,11 @@
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::{
+    interaction::DiffGranularity,
+    layout::{Layout, SideBySideRow},
+};
+
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -265,6 +270,40 @@ fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
         start,
         end: start + width,
     });
+}
+
+pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<DetailSpan>> {
+    let mut details = (0..layout.diff_lines.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<_>>();
+    if granularity == DiffGranularity::Line {
+        return details;
+    }
+
+    for row in &layout.side_by_side_rows {
+        let SideBySideRow::Paired {
+            before: Some(before),
+            after: Some(after),
+        } = row
+        else {
+            continue;
+        };
+        let pair = changed_pair_detail(record_payload(&before.bytes), record_payload(&after.bytes));
+        details[before.source_index] = pair.before;
+        details[after.source_index] = pair.after;
+    }
+
+    details
+}
+
+fn record_payload(bytes: &[u8]) -> &str {
+    let payload = bytes.get(1..).unwrap_or_default();
+    let without_ending = payload
+        .strip_suffix(b"\r\n")
+        .or_else(|| payload.strip_suffix(b"\n"))
+        .unwrap_or(payload);
+
+    std::str::from_utf8(without_ending).unwrap_or_default()
 }
 
 #[cfg(test)]

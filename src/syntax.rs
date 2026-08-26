@@ -1,6 +1,6 @@
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
-use crate::document::{RecordKind, UnifiedDiffFile};
+use crate::document::{DiffFile, RecordKind, UnifiedDiffFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxClass {
@@ -29,6 +29,22 @@ pub struct SyntaxHighlighter {
 }
 
 impl SyntaxHighlighter {
+    pub fn highlight_file(&mut self, file: &DiffFile) -> Vec<Vec<SyntaxSpan>> {
+        match file {
+            DiffFile::Metadata { lines } => (0..lines.len()).map(|_| Vec::new()).collect(),
+            DiffFile::Unified(file) => {
+                let mut rows = (0..file.metadata.len() + 2)
+                    .map(|_| Vec::new())
+                    .collect::<Vec<_>>();
+                for hunk_index in 0..file.hunks.len() {
+                    rows.push(Vec::new());
+                    rows.extend(self.highlight_hunk(file, hunk_index));
+                }
+                rows
+            }
+        }
+    }
+
     pub fn highlight_hunk(
         &mut self,
         file: &UnifiedDiffFile,
