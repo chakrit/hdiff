@@ -18,6 +18,18 @@ The primary reader is a developer reviewing local or generated diff output. The 
 optimizes for a single user at one terminal, fast startup, predictable keyboard interaction,
 and faithful rendering of the supplied diff.
 
+## Engineering standard
+
+Every change must make the system more correct, more elegant, and easier to understand. The
+best abstraction is also the fast path: clear ownership, direct data flow, idiomatic Rust, and
+no accidental work. A benchmark, milestone, or target never justifies a shortcut, a speculative
+micro-optimization, or a design that a future reader cannot understand in one pass.
+
+Work toward a long-term result through successive proper refactors. Each change begins by
+understanding the actual problem, then selects the cleanest structural solution; it does not
+force a local patch merely to advance a number. If a clean improvement cannot be demonstrated,
+leave the code alone.
+
 ## First-release boundary
 
 ### In scope

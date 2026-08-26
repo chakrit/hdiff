@@ -42,6 +42,22 @@ measures the complete preparation pass; it does not model an interactive termina
 
 ## Benchmark record
 
+## Optimization method
+
+The one-second Kubernetes preparation target is reached through successive proper
+refactors, never by fast-forwarding to a number. Each slice starts by understanding the
+actual data flow and cost, then chooses the most elegant structural change that makes the
+fast path the natural implementation.
+
+An optimization must improve the code as well as its runtime: clear ownership, idiomatic
+Rust, direct data flow, and no accidental allocation or repeated derivation. Prepared and
+rendered output remain correct because the design makes them correct, not because an opaque
+shortcut happens to preserve a test case.
+
+Do not trade readability, sound boundaries, or maintainability for a speculative
+micro-optimization. When no clean and measured improvement exists, leave the code alone;
+the target is the accumulated result of good engineering, not a reason to force a change.
+
 | Range | Base commit                              | Target commit                            | Duration (ns) | Files | Records |
 |-------|------------------------------------------|------------------------------------------|---------------|-------|---------|
 | 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 292509661458  | 13344 | 3995123 |
