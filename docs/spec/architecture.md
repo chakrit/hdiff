@@ -218,10 +218,11 @@ visual intensity and never changes that representation.
 
 Character detail does not use reverse video. It first preserves matching identifier/word and
 delimiter tokens, then uses grapheme spans only for similar replacement words; unrelated words
-remain whole-token changes rather than matching coincidental letters. Its changed spans use dim
-green on addition rows and dim red on deletion rows, reusing the line-change palette while leaving
-unchanged text plain. The selected file row applies one shared muted foreground/background style
-to both its compact `·` marker and file label.
+remain whole-token changes rather than matching coincidental letters. It coalesces an equal island
+of at most three graphemes bracketed by changed spans, so incidental short matches do not fragment
+a change. Its changed spans use dim green on addition rows and dim red on deletion rows, reusing
+the line-change palette while leaving unchanged text plain. The selected file row applies one
+shared muted foreground/background style to both its compact `·` marker and file label.
 
 Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
 file headers retain neutral metadata styling.

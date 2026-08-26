@@ -1,6 +1,8 @@
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
+const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetailSpan {
     pub start: usize,
@@ -66,6 +68,9 @@ pub fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
             }
         }
     }
+
+    coalesce_tiny_equal_islands(&mut detail.before, before);
+    coalesce_tiny_equal_islands(&mut detail.after, after);
 
     detail
 }
@@ -236,6 +241,25 @@ fn add_offset_spans(target: &mut Vec<DetailSpan>, spans: &[DetailSpan], offset: 
     }));
 }
 
+fn coalesce_tiny_equal_islands(spans: &mut Vec<DetailSpan>, text: &str) {
+    let mut coalesced = Vec::new();
+
+    for span in spans.drain(..) {
+        let Some(previous) = coalesced.last_mut() else {
+            coalesced.push(span);
+            continue;
+        };
+        let island = &text[previous.end..span.start];
+        if island.graphemes(true).count() <= MAX_EQUAL_ISLAND_GRAPHEMES {
+            previous.end = span.end;
+        } else {
+            coalesced.push(span);
+        }
+    }
+
+    *spans = coalesced;
+}
+
 fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
     target.push(DetailSpan {
         start,
@@ -282,6 +306,19 @@ mod tests {
             ChangedPairDetail {
                 before: vec![DetailSpan { start: 6, end: 10 }],
                 after: vec![DetailSpan { start: 6, end: 10 }],
+            }
+        );
+    }
+
+    #[test]
+    fn coalesces_tiny_equal_islands_between_changed_spans() {
+        let detail = changed_pair_detail("side-by-side", "vertical-split");
+
+        assert_eq!(
+            detail,
+            ChangedPairDetail {
+                before: vec![DetailSpan { start: 0, end: 12 }],
+                after: vec![DetailSpan { start: 0, end: 14 }],
             }
         );
     }
