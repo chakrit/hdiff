@@ -9,6 +9,8 @@ hdiff --install
 The command copies the exact global Git configuration file Git will edit to a sibling `.bak`
 file, then configures `pager.diff` to start the current hdiff executable. It overwrites only
 `pager.diff`; general Git paging through `core.pager` remains unchanged.
+Afterward, it prints the backup path when one was created, the global config path it updated, and
+the executable recorded in `pager.diff`.
 
 Run `git diff` to review every changed file in one hdiff session:
 

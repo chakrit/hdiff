@@ -150,7 +150,9 @@ changes back during a session.
 
 `hdiff --install` registers the current executable as the user-level pager for `git diff`. Git
 passes its complete unified diff to hdiff on standard input, preserving the entire file list in
-one interactive session. `core.pager` remains unchanged.
+one interactive session. `core.pager` remains unchanged. After successful writes, `--install`
+prints the backup path when one was created, the global config path it updated, and the executable
+recorded in `pager.diff`.
 
 ## Interaction model
 

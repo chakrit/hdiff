@@ -12,18 +12,31 @@ pub struct InstallGitDiffPager {
 
 pub struct InstallGitDiffPagerContext;
 
+pub struct InstallGitDiffPagerReport {
+    pub backup_path: Option<PathBuf>,
+    pub config_path: PathBuf,
+}
+
 impl InstallGitDiffPager {
-    pub fn run(self, _context: &mut InstallGitDiffPagerContext) -> io::Result<()> {
+    pub fn run(
+        self,
+        _context: &mut InstallGitDiffPagerContext,
+    ) -> io::Result<InstallGitDiffPagerReport> {
         let config_path = global_config_path()?;
 
-        BackupGlobalGitConfig { path: &config_path }.run()?;
+        let backup_path = BackupGlobalGitConfig { path: &config_path }.run()?;
 
         let command = pager_command(&self.executable)?;
         SetGlobalGitConfig {
             key: "pager.diff",
             value: &command,
         }
-        .run()
+        .run()?;
+
+        Ok(InstallGitDiffPagerReport {
+            backup_path,
+            config_path,
+        })
     }
 }
 
@@ -32,12 +45,15 @@ struct BackupGlobalGitConfig<'a> {
 }
 
 impl BackupGlobalGitConfig<'_> {
-    fn run(self) -> io::Result<()> {
-        if self.path.exists() {
-            fs::copy(self.path, self.path.with_extension("bak"))?;
+    fn run(self) -> io::Result<Option<PathBuf>> {
+        if !self.path.exists() {
+            return Ok(None);
         }
 
-        Ok(())
+        let backup_path = self.path.with_extension("bak");
+        fs::copy(self.path, &backup_path)?;
+
+        Ok(Some(backup_path))
     }
 }
 
