@@ -61,20 +61,14 @@ than revisiting a completed or ruled-out attempt.
 - **Sanitized source reuse.** The 4/8 measurement fell from 33339918416 ns to
   32797317959 ns. Rendering reuses parser-sanitized source text.
 
-### Ruled out
+### Next investigation
 
-- **Tree-sitter parse reuse through the current highlighter API.** The pinned
-  `tree-sitter-highlight` 0.26.13 implementation calls
-  `Parser::parse_with_options(..., None, ...)` for every `Highlighter::highlight` call.
-  `tree-sitter::Parser` exposes an `old_tree` parameter, but the highlighter API does not
-  accept one. `SyntaxHighlighter` already retains one `Highlighter` and configuration per
-  language, so a local change cannot reuse a syntax tree without reimplementing the
-  dependency's highlighting layer. Do not select this boundary unless Tree-sitter exposes
-  tree reuse through its highlighter API or the syntax requirement changes.
-
-The next investigation selects an application-owned boundary from a fresh sampling
-profile. It does not reopen a ruled-out boundary merely because that dependency remains
-prominent in the profile.
+- **Incremental old/new syntax-tree reuse.** `Highlighter::highlight` reparses with no
+  old tree, but the public lower-level API exposes `Parser::parse_with_options` with an
+  `old_tree` and public query cursors. Test whether applying the old/new projection edits,
+  incrementally reparsing, and querying the resulting trees preserves the current syntax
+  spans. Continue only if behavior-equivalence checks and a 4/8 benchmark show a measured
+  preparation-time improvement.
 
 ## Optimization method
 
