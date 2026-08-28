@@ -25,6 +25,8 @@ best abstraction is also the fast path: clear ownership, direct data flow, idiom
 no accidental work. A benchmark, milestone, or target never justifies a shortcut, a speculative
 micro-optimization, or a design that a future reader cannot understand in one pass.
 
+The package requires Rust 1.98.0 and uses the Rust 2024 edition.
+
 Work toward a long-term result through successive proper refactors. Each change begins by
 understanding the actual problem, then selects the cleanest structural solution; it does not
 force a local patch merely to advance a number. If a clean improvement cannot be demonstrated,
