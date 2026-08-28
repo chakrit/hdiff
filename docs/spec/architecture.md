@@ -286,6 +286,8 @@ boundary; the parser set and performance rationale are recorded in
 Syntax highlighting precedes further navigation work. It projects each hunk's old and new
 records into separate bounded virtual source buffers, maps returned spans back to sanitized
 record payloads, and leaves unsupported languages and highlighting failures as plain text.
+Projection records are ordered by virtual source range, so span mapping visits only records that
+overlap the returned source span.
 Safe rendering is the single source of display rows: each rendered record row retains its hunk
 and record address plus its payload range. Layout derives geometry and navigation offsets from
 those rows without syntax state. Preparation computes syntax and character-detail spans before
@@ -321,10 +323,10 @@ screen-size message. Zero-sized layouts remain valid values rather than arithmet
 
 ### Eager prepared rendering
 
-Preparation is one optimized Rust pass before the terminal loop begins. It produces layout-neutral
-rows, split pairs, syntax spans, and character-detail spans for every file. The terminal loop owns
-only interaction, terminal lifecycle, redraw decisions, and rendering of the prepared active
-viewport.
+Preparation is one optimized single-threaded pass before the terminal loop begins. It produces
+layout-neutral rows, split pairs, syntax spans, and character-detail spans for every file. The
+terminal loop owns only interaction, terminal lifecycle, redraw decisions, and rendering of the
+prepared active viewport.
 
 The terminal loop has no parser, cache, readiness, loading, or first-file state. It receives fully
 prepared data on its first draw and on every redraw. No async runtime, executor, channel, or task

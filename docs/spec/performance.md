@@ -10,8 +10,8 @@ status: accepted
 detail before entering the terminal loop. The loop receives fully prepared data and has no
 parser, cache, readiness, loading, or first-file state.
 
-Preparation is one optimized Rust pass. Incremental preparation is not part of this design unless
-measured preparation latency makes the eager boundary untenable.
+Preparation is one optimized single-threaded pass. Incremental preparation is not part of this
+design unless measured preparation latency makes the eager boundary untenable.
 
 Document-wide file-list labels are derived once during preparation. Each prepared file derives
 only its own rendered rows, split pairs, syntax spans, and character-detail spans.
@@ -61,8 +61,11 @@ Do not trade readability, sound boundaries, or maintainability for a speculative
 micro-optimization. When no clean and measured improvement exists, leave the code alone;
 the target is the accumulated result of good engineering, not a reason to force a change.
 
-| Range | Base commit                              | Target commit                            | Duration (ns) | Files | Records |
-|-------|------------------------------------------|------------------------------------------|---------------|-------|---------|
-| 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 292509661458  | 13344 | 3995123 |
-| 6/8   | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 280323353042  | 18264 | 5224599 |
-| 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 257964687583  | 20017 | 6219966 |
+| Slice                       | Range | Base commit                              | Target commit                            | Duration (ns) | Files | Records |
+|-----------------------------|-------|------------------------------------------|------------------------------------------|---------------|-------|---------|
+| Prepared-file layout        | 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 292509661458  | 13344 | 3995123 |
+| Prepared-file layout        | 6/8   | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 280323353042  | 18264 | 5224599 |
+| Prepared-file layout        | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 257964687583  | 20017 | 6219966 |
+| Syntax projection lookup    | 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 26225344250   | 13344 | 3995123 |
+| Syntax projection lookup    | 6/8   | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 29148720958   | 18264 | 5224599 |
+| Syntax projection lookup    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 33339918416   | 20017 | 6219966 |

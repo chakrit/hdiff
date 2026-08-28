@@ -250,7 +250,13 @@ impl Projection {
         class: SyntaxClass,
         spans: &mut [Vec<SyntaxSpan>],
     ) {
-        for (record_index, range) in &self.records {
+        let first_record = self.first_overlapping_record(start);
+        for (record_index, range) in self
+            .records
+            .iter()
+            .skip(first_record)
+            .take_while(|(_, range)| range.start < end)
+        {
             let mapped_start = start.max(range.start);
             let mapped_end = end.min(range.end);
             if mapped_start < mapped_end {
@@ -261,6 +267,11 @@ impl Projection {
                 });
             }
         }
+    }
+
+    fn first_overlapping_record(&self, start: usize) -> usize {
+        self.records
+            .partition_point(|(_, range)| range.end <= start)
     }
 }
 
@@ -286,7 +297,7 @@ impl SyntaxClass {
 
 #[cfg(test)]
 mod tests {
-    use super::{SyntaxClass, SyntaxHighlighter};
+    use super::{Projection, SyntaxClass, SyntaxHighlighter};
     use crate::{document::DiffFile, parser::parse_unified_diff};
 
     #[test]
@@ -305,5 +316,48 @@ mod tests {
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
         assert_eq!(highlights[1][0].start, 0);
         assert_eq!(highlights[1][0].end, 2);
+    }
+
+    #[test]
+    fn finds_the_first_record_overlapping_a_source_span() {
+        let projection = Projection {
+            source: Vec::new(),
+            records: vec![(0, 0..4), (1, 5..9), (2, 10..14)],
+        };
+
+        assert_eq!(projection.first_overlapping_record(0), 0);
+        assert_eq!(projection.first_overlapping_record(4), 1);
+        assert_eq!(projection.first_overlapping_record(9), 2);
+    }
+
+    #[test]
+    fn maps_only_records_overlapping_a_source_span() {
+        let projection = Projection {
+            source: Vec::new(),
+            records: vec![(0, 0..4), (1, 5..9), (2, 10..14)],
+        };
+        let mut spans = vec![Vec::new(), Vec::new(), Vec::new()];
+
+        projection.map_span(2, 12, SyntaxClass::Keyword, &mut spans);
+
+        assert_eq!(spans[0][0].start, 2);
+        assert_eq!(spans[0][0].end, 4);
+        assert_eq!(spans[1][0].start, 0);
+        assert_eq!(spans[1][0].end, 4);
+        assert_eq!(spans[2][0].start, 0);
+        assert_eq!(spans[2][0].end, 2);
+    }
+
+    #[test]
+    fn does_not_map_a_source_span_in_a_record_separator() {
+        let projection = Projection {
+            source: Vec::new(),
+            records: vec![(0, 0..4), (1, 5..9)],
+        };
+        let mut spans = vec![Vec::new(), Vec::new()];
+
+        projection.map_span(4, 5, SyntaxClass::Keyword, &mut spans);
+
+        assert!(spans.iter().all(Vec::is_empty));
     }
 }
