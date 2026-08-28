@@ -1,4 +1,4 @@
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::document::{DiffFile, RecordKind, UnifiedDiffFile};
 
@@ -58,13 +58,30 @@ impl SyntaxHighlighter {
             .collect::<Vec<_>>();
         let old_language = Language::for_path(&file.old_path);
         let new_language = Language::for_path(&file.new_path);
+        let old_projection = Projection::from_hunk(file, hunk_index, Side::Old);
+        let new_projection = Projection::from_hunk(file, hunk_index, Side::New);
 
-        if let Some(language) = old_language {
-            self.highlight_side(file, hunk_index, Side::Old, language, &mut spans);
+        match (
+            old_language,
+            new_language,
+            old_projection.as_ref(),
+            new_projection.as_ref(),
+        ) {
+            (Some(language), Some(other), Some(old), Some(new)) if language == other => {
+                self.highlight_pair(language, old, new, &mut spans);
+            }
+            _ => {
+                if let (Some(language), Some(projection)) = (old_language, old_projection.as_ref())
+                {
+                    self.highlight_projection(language, projection, &mut spans);
+                }
+                if let (Some(language), Some(projection)) = (new_language, new_projection.as_ref())
+                {
+                    self.highlight_projection(language, projection, &mut spans);
+                }
+            }
         }
-        if let Some(language) = new_language {
-            self.highlight_side(file, hunk_index, Side::New, language, &mut spans);
-        }
+
         if old_language != new_language {
             for (record, record_spans) in hunk.records.iter().zip(&mut spans) {
                 if record.kind == RecordKind::Context {
@@ -76,46 +93,41 @@ impl SyntaxHighlighter {
         spans
     }
 
-    fn highlight_side(
+    fn highlight_pair(
         &mut self,
-        file: &UnifiedDiffFile,
-        hunk_index: usize,
-        side: Side,
         language: Language,
+        old: &Projection,
+        new: &Projection,
         spans: &mut [Vec<SyntaxSpan>],
     ) {
-        let projection = Projection::from_hunk(file, hunk_index, side);
-        let Some(projection) = projection else {
-            return;
-        };
         let Some(highlighter) = self.language(language) else {
             return;
         };
-        let LanguageHighlighter {
-            configuration,
-            highlighter,
-            ..
-        } = highlighter;
-        let Ok(events) = highlighter.highlight(configuration, &projection.source, None, |_| None)
-        else {
+        let Some(mut tree) = highlighter.parse(&old.source, None) else {
             return;
         };
-        let mut classes = Vec::new();
-        for event in events.flatten() {
-            match event {
-                HighlightEvent::HighlightStart(highlight) => {
-                    classes.push(SyntaxClass::from_index(highlight.0))
-                }
-                HighlightEvent::HighlightEnd => {
-                    classes.pop();
-                }
-                HighlightEvent::Source { start, end } => {
-                    if let Some(class) = classes.last().copied() {
-                        projection.map_span(start, end, class, spans);
-                    }
-                }
-            }
-        }
+        highlighter.highlight(old, &tree, spans);
+
+        tree.edit(&old.edit_to(new));
+        let Some(tree) = highlighter.parse(&new.source, Some(&tree)) else {
+            return;
+        };
+        highlighter.highlight(new, &tree, spans);
+    }
+
+    fn highlight_projection(
+        &mut self,
+        language: Language,
+        projection: &Projection,
+        spans: &mut [Vec<SyntaxSpan>],
+    ) {
+        let Some(highlighter) = self.language(language) else {
+            return;
+        };
+        let Some(tree) = highlighter.parse(&projection.source, None) else {
+            return;
+        };
+        highlighter.highlight(projection, &tree, spans);
     }
 
     fn language(&mut self, language: Language) -> Option<&mut LanguageHighlighter> {
@@ -161,60 +173,69 @@ impl Language {
 
 struct LanguageHighlighter {
     language: Language,
-    configuration: HighlightConfiguration,
-    highlighter: Highlighter,
+    parser: Parser,
+    query: Query,
+    cursor: QueryCursor,
 }
 
 impl LanguageHighlighter {
     fn new(language: Language) -> Option<Self> {
-        let (grammar, name, highlights, injections, locals) = match language {
+        let (grammar, highlights) = match language {
             Language::Rust => (
                 tree_sitter_rust::LANGUAGE.into(),
-                "rust",
                 tree_sitter_rust::HIGHLIGHTS_QUERY,
-                tree_sitter_rust::INJECTIONS_QUERY,
-                "",
             ),
             Language::JavaScript => (
                 tree_sitter_javascript::LANGUAGE.into(),
-                "javascript",
                 tree_sitter_javascript::HIGHLIGHT_QUERY,
-                tree_sitter_javascript::INJECTIONS_QUERY,
-                tree_sitter_javascript::LOCALS_QUERY,
             ),
             Language::Python => (
                 tree_sitter_python::LANGUAGE.into(),
-                "python",
                 tree_sitter_python::HIGHLIGHTS_QUERY,
-                "",
-                "",
             ),
             Language::Go => (
                 tree_sitter_go::LANGUAGE.into(),
-                "go",
                 tree_sitter_go::HIGHLIGHTS_QUERY,
-                "",
-                "",
             ),
             Language::C => (
                 tree_sitter_c::LANGUAGE.into(),
-                "c",
                 tree_sitter_c::HIGHLIGHT_QUERY,
-                "",
-                "",
             ),
         };
-        let mut configuration =
-            HighlightConfiguration::new(grammar, name, highlights, injections, locals).ok()?;
-        configuration.configure(&[
-            "keyword", "string", "comment", "number", "function", "type", "constant", "operator",
-            "property", "variable",
-        ]);
+        let mut parser = Parser::new();
+        parser.set_language(&grammar).ok()?;
+
         Some(Self {
             language,
-            configuration,
-            highlighter: Highlighter::new(),
+            parser,
+            query: Query::new(&grammar, highlights).ok()?,
+            cursor: QueryCursor::new(),
         })
+    }
+
+    fn parse(&mut self, source: &[u8], old_tree: Option<&Tree>) -> Option<Tree> {
+        self.parser.parse(source, old_tree)
+    }
+
+    fn highlight(&mut self, projection: &Projection, tree: &Tree, spans: &mut [Vec<SyntaxSpan>]) {
+        let capture_names = self.query.capture_names();
+        let mut captures =
+            self.cursor
+                .captures(&self.query, tree.root_node(), projection.source.as_slice());
+
+        while let Some((query_match, index)) = captures.next() {
+            let capture = query_match.captures[*index];
+            let Some(class) = SyntaxClass::from_capture_name(capture_names[capture.index as usize])
+            else {
+                continue;
+            };
+            projection.map_span(
+                capture.node.start_byte(),
+                capture.node.end_byte(),
+                class,
+                spans,
+            );
+        }
     }
 }
 
@@ -269,29 +290,68 @@ impl Projection {
         }
     }
 
+    fn edit_to(&self, newer: &Self) -> InputEdit {
+        let common_prefix = self
+            .source
+            .iter()
+            .zip(&newer.source)
+            .take_while(|(old, new)| old == new)
+            .count();
+        let shared_limit = self.source.len().min(newer.source.len()) - common_prefix;
+        let common_suffix = self
+            .source
+            .iter()
+            .rev()
+            .zip(newer.source.iter().rev())
+            .take(shared_limit)
+            .take_while(|(old, new)| old == new)
+            .count();
+        let start_byte = common_prefix;
+        let old_end_byte = self.source.len() - common_suffix;
+        let new_end_byte = newer.source.len() - common_suffix;
+
+        InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position: point_at(&self.source, start_byte),
+            old_end_position: point_at(&self.source, old_end_byte),
+            new_end_position: point_at(&newer.source, new_end_byte),
+        }
+    }
+
     fn first_overlapping_record(&self, start: usize) -> usize {
         self.records
             .partition_point(|(_, range)| range.end <= start)
     }
 }
 
+fn point_at(source: &[u8], byte: usize) -> Point {
+    let prefix = &source[..byte];
+    let row = prefix.iter().filter(|byte| **byte == b'\n').count();
+    let column = prefix
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(byte, |newline| byte - newline - 1);
+
+    Point::new(row, column)
+}
+
 impl SyntaxClass {
-    fn from_index(index: usize) -> Self {
-        [
-            Self::Keyword,
-            Self::String,
-            Self::Comment,
-            Self::Number,
-            Self::Function,
-            Self::Type,
-            Self::Constant,
-            Self::Operator,
-            Self::Property,
-            Self::Variable,
-        ]
-        .get(index)
-        .copied()
-        .unwrap_or(Self::Variable)
+    fn from_capture_name(name: &str) -> Option<Self> {
+        match name.split('.').next()? {
+            "keyword" => Some(Self::Keyword),
+            "string" => Some(Self::String),
+            "comment" => Some(Self::Comment),
+            "number" => Some(Self::Number),
+            "function" => Some(Self::Function),
+            "type" => Some(Self::Type),
+            "constant" => Some(Self::Constant),
+            "operator" => Some(Self::Operator),
+            "property" => Some(Self::Property),
+            "variable" => Some(Self::Variable),
+            _ => None,
+        }
     }
 }
 
@@ -299,6 +359,31 @@ impl SyntaxClass {
 mod tests {
     use super::{Projection, SyntaxClass, SyntaxHighlighter};
     use crate::{document::DiffFile, parser::parse_unified_diff};
+    use tree_sitter::{InputEdit, Point};
+
+    #[test]
+    fn describes_the_changed_projection_range_for_incremental_parsing() {
+        let old = Projection {
+            source: b"let old = 1;\n".to_vec(),
+            records: Vec::new(),
+        };
+        let new = Projection {
+            source: b"let new = 2;\n".to_vec(),
+            records: Vec::new(),
+        };
+
+        assert_eq!(
+            old.edit_to(&new),
+            InputEdit {
+                start_byte: 4,
+                old_end_byte: 11,
+                new_end_byte: 11,
+                start_position: Point::new(0, 4),
+                old_end_position: Point::new(0, 11),
+                new_end_position: Point::new(0, 11),
+            }
+        );
+    }
 
     #[test]
     fn highlights_added_rust_keywords_in_the_new_side() {
@@ -316,6 +401,30 @@ mod tests {
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
         assert_eq!(highlights[1][0].start, 0);
         assert_eq!(highlights[1][0].end, 2);
+    }
+
+    #[test]
+    fn incremental_new_projection_matches_a_full_query_pass() {
+        let document = parse_unified_diff(
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n",
+        )
+        .expect("valid Rust diff");
+        let DiffFile::Unified(file) = &document.files[0] else {
+            panic!("fixture should contain a unified file");
+        };
+        let new_projection =
+            Projection::from_hunk(file, 0, super::Side::New).expect("new projection");
+        let mut incremental = SyntaxHighlighter::default();
+        let incremental_spans = incremental.highlight_hunk(file, 0);
+        let mut full = SyntaxHighlighter::default();
+        let mut full_spans = (0..file.hunks[0].records.len())
+            .map(|_| Vec::new())
+            .collect::<Vec<_>>();
+
+        full.highlight_projection(super::Language::Rust, &new_projection, &mut full_spans);
+
+        assert_eq!(incremental_spans[1], full_spans[1]);
+        assert_eq!(incremental_spans[1][0].class, SyntaxClass::Keyword);
     }
 
     #[test]

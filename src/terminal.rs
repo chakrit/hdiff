@@ -26,6 +26,7 @@ use crate::{
     prepared::{PreparedDocument, PreparedFile},
     render::RenderedLineKind,
     syntax::{SyntaxClass, SyntaxSpan},
+    theme::DEFAULT_SYNTAX_THEME,
 };
 
 #[cfg(test)]
@@ -737,7 +738,7 @@ fn styled_line(
         }
         let style = match detail {
             true => detail_style(row_kind, palette),
-            false => Style::default().fg(syntax_color(class, color_count)),
+            false => Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count)),
         };
         rendered.push(Span::styled(text[start..end].to_owned(), style));
         cursor = end;
@@ -867,41 +868,6 @@ fn inner_separator_color(color_count: u16) -> Color {
     }
 }
 
-fn syntax_color(class: SyntaxClass, color_count: u16) -> Color {
-    match color_count {
-        u16::MAX => match class {
-            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Rgb(86, 156, 214),
-            SyntaxClass::String => Color::Rgb(206, 145, 120),
-            SyntaxClass::Comment => Color::Rgb(106, 153, 85),
-            SyntaxClass::Number => Color::Rgb(181, 206, 168),
-            SyntaxClass::Function => Color::Rgb(220, 220, 170),
-            SyntaxClass::Type => Color::Rgb(78, 201, 176),
-            SyntaxClass::Operator => Color::Rgb(212, 212, 212),
-            SyntaxClass::Property => Color::Rgb(156, 220, 254),
-            SyntaxClass::Variable => Color::Rgb(220, 220, 220),
-        },
-        256.. => match class {
-            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Indexed(75),
-            SyntaxClass::String => Color::Indexed(180),
-            SyntaxClass::Comment => Color::Indexed(107),
-            SyntaxClass::Number => Color::Indexed(151),
-            SyntaxClass::Function => Color::Indexed(187),
-            SyntaxClass::Type => Color::Indexed(80),
-            SyntaxClass::Operator => Color::Indexed(252),
-            SyntaxClass::Property => Color::Indexed(153),
-            SyntaxClass::Variable => Color::Indexed(253),
-        },
-        _ => match class {
-            SyntaxClass::Keyword | SyntaxClass::Constant => Color::Blue,
-            SyntaxClass::String => Color::Yellow,
-            SyntaxClass::Comment | SyntaxClass::Number => Color::Green,
-            SyntaxClass::Function | SyntaxClass::Type => Color::Cyan,
-            SyntaxClass::Operator | SyntaxClass::Variable => Color::White,
-            SyntaxClass::Property => Color::Magenta,
-        },
-    }
-}
-
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     stages: Vec<SetupStage>,
@@ -973,13 +939,9 @@ mod tests {
     use super::{
         DiffLayout, Input, Interaction, OutputMode, SetupStage, ViewPreferences, Viewport,
         cleanup_order, hunk_header_color, input_for_event, low_contrast_palette, mode_for_output,
-        render_frame, render_frame_with_layout, syntax_color,
+        render_frame, render_frame_with_layout,
     };
-    use crate::{
-        layout::layout,
-        parser::parse_unified_diff,
-        syntax::{SyntaxClass, SyntaxHighlighter},
-    };
+    use crate::{layout::layout, parser::parse_unified_diff, syntax::SyntaxHighlighter};
 
     #[test]
     fn renders_compact_file_and_diff_panes_with_one_separator() {
@@ -1499,20 +1461,6 @@ mod tests {
                 "{name} color"
             );
         }
-    }
-
-    #[test]
-    fn falls_back_from_truecolor_to_256_and_basic_semantic_colors() {
-        assert_eq!(
-            syntax_color(SyntaxClass::Keyword, u16::MAX),
-            Color::Rgb(86, 156, 214)
-        );
-        assert_eq!(syntax_color(SyntaxClass::String, 256), Color::Indexed(180));
-        assert_eq!(syntax_color(SyntaxClass::Type, 8), Color::Cyan);
-        assert_ne!(
-            syntax_color(SyntaxClass::Keyword, 8),
-            syntax_color(SyntaxClass::String, 8)
-        );
     }
 
     #[test]

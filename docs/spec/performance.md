@@ -60,15 +60,9 @@ than revisiting a completed or ruled-out attempt.
   33339918416 ns. Span mapping begins at the first record overlapping each source event.
 - **Sanitized source reuse.** The 4/8 measurement fell from 33339918416 ns to
   32797317959 ns. Rendering reuses parser-sanitized source text.
-
-### Next investigation
-
-- **Incremental old/new syntax-tree reuse.** `Highlighter::highlight` reparses with no
-  old tree, but the public lower-level API exposes `Parser::parse_with_options` with an
-  `old_tree` and public query cursors. Test whether applying the old/new projection edits,
-  incrementally reparsing, and querying the resulting trees preserves the current syntax
-  spans. Continue only if behavior-equivalence checks and a 4/8 benchmark show a measured
-  preparation-time improvement.
+- **Direct syntax-query pass.** The 4/8 measurement fell from 32797317959 ns to
+  32347072792 ns. A purpose-built public Tree-sitter query pass incrementally reparses each
+  same-language old/new hunk pair and maps captures directly to hdiff syntax classes.
 
 ## Optimization method
 
@@ -98,3 +92,4 @@ recorded benchmark.
 | Syntax projection lookup    | 6/8   | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 29148720958   | 18264 | 5224599 |
 | Syntax projection lookup    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 33339918416   | 20017 | 6219966 |
 | Reuse sanitized source text | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32797317959   | 20017 | 6219966 |
+| Direct syntax-query pass    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32347072792   | 20017 | 6219966 |

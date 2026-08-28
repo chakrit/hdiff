@@ -362,7 +362,8 @@ draw errors, Ctrl-C, and broken pipes.
 - Interpret only supported SGR styling. Preserve source bytes separately, neutralize OSC/CSI/DCS
   and other unsupported control sequences, and never replay arbitrary input escapes.
 - Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when the
-  terminal supports it, falling back by capability. User-configurable themes are later scope.
+  terminal supports it, falling back by capability. `SyntaxTheme` owns the mapping from semantic
+  syntax classes to colors, so user-configurable themes can replace that built-in palette later.
 
 ## Terminal lifecycle
 

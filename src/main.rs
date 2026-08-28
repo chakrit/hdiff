@@ -11,6 +11,7 @@ pub mod prepared;
 pub mod render;
 pub mod syntax;
 pub mod terminal;
+pub mod theme;
 
 fn main() -> Result<(), String> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
