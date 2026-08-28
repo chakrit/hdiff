@@ -1,4 +1,4 @@
-use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine, sanitize};
+use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {
@@ -89,7 +89,7 @@ fn rendered_line(kind: RenderedLineKind, marker: Option<u8>, line: &SourceLine) 
     if let Some(marker) = marker {
         bytes.push(marker);
     }
-    bytes.extend_from_slice(sanitize(&line.text).as_bytes());
+    bytes.extend_from_slice(line.structural_text.as_bytes());
     if line.bytes.ends_with(b"\r\n") {
         bytes.extend_from_slice(b"\r\n");
     } else if line.bytes.ends_with(b"\n") {

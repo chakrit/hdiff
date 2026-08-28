@@ -16,6 +16,8 @@ gate. Create ACE save points at useful recovery boundaries, especially before co
 large enough to make the work less effective; do not stop merely because an intermediate step
 completed.
 
+Report the measured preparation-time saving for every optimization slice.
+
 ## Durable artifacts
 
 `docs/` holds this project's durable record.

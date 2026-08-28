@@ -61,6 +61,9 @@ Do not trade readability, sound boundaries, or maintainability for a speculative
 micro-optimization. When no clean and measured improvement exists, leave the code alone;
 the target is the accumulated result of good engineering, not a reason to force a change.
 
+Each optimization slice reports its measured preparation-time savings against the preceding
+recorded benchmark.
+
 | Slice                       | Range | Base commit                              | Target commit                            | Duration (ns) | Files | Records |
 |-----------------------------|-------|------------------------------------------|------------------------------------------|---------------|-------|---------|
 | Prepared-file layout        | 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 292509661458  | 13344 | 3995123 |
@@ -69,3 +72,4 @@ the target is the accumulated result of good engineering, not a reason to force 
 | Syntax projection lookup    | 7/8   | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 26225344250   | 13344 | 3995123 |
 | Syntax projection lookup    | 6/8   | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 29148720958   | 18264 | 5224599 |
 | Syntax projection lookup    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 33339918416   | 20017 | 6219966 |
+| Reuse sanitized source text | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32797317959   | 20017 | 6219966 |
