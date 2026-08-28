@@ -45,6 +45,37 @@ measures the complete preparation pass; it does not model an interactive termina
 
 ## Benchmark record
 
+### Optimization investigation ledger
+
+The benchmark table is the measurement record. This ledger records the boundaries that
+were investigated, so a later optimization slice begins from the remaining work rather
+than revisiting a completed or ruled-out attempt.
+
+### Completed
+
+- **Prepared-file layout.** The 4/8 measurement fell from 257964687583 ns to
+  139103250625 ns. Each prepared file derives its rows without rebuilding the
+  document-wide file list.
+- **Syntax-span projection.** The 4/8 measurement fell from 139103250625 ns to
+  33339918416 ns. Span mapping begins at the first record overlapping each source event.
+- **Sanitized source reuse.** The 4/8 measurement fell from 33339918416 ns to
+  32797317959 ns. Rendering reuses parser-sanitized source text.
+
+### Ruled out
+
+- **Tree-sitter parse reuse through the current highlighter API.** The pinned
+  `tree-sitter-highlight` 0.26.13 implementation calls
+  `Parser::parse_with_options(..., None, ...)` for every `Highlighter::highlight` call.
+  `tree-sitter::Parser` exposes an `old_tree` parameter, but the highlighter API does not
+  accept one. `SyntaxHighlighter` already retains one `Highlighter` and configuration per
+  language, so a local change cannot reuse a syntax tree without reimplementing the
+  dependency's highlighting layer. Do not select this boundary unless Tree-sitter exposes
+  tree reuse through its highlighter API or the syntax requirement changes.
+
+The next investigation selects an application-owned boundary from a fresh sampling
+profile. It does not reopen a ruled-out boundary merely because that dependency remains
+prominent in the profile.
+
 ## Optimization method
 
 The one-second Kubernetes preparation target is reached through successive proper
