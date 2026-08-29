@@ -14,7 +14,6 @@ pub struct PreparedDocument {
 pub struct PreparedFile {
     pub layout: Layout,
     syntax: Vec<Vec<SyntaxSpan>>,
-    line_details: Vec<Vec<DetailSpan>>,
     character_details: Vec<Vec<DetailSpan>>,
 }
 
@@ -59,13 +58,11 @@ impl PreparedFile {
     fn prepare(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Self {
         let layout = file_layout(file);
         let syntax = syntax.highlight_file(file);
-        let line_details = detail_rows(&layout, DiffGranularity::Line);
         let character_details = detail_rows(&layout, DiffGranularity::Character);
 
         Self {
             layout,
             syntax,
-            line_details,
             character_details,
         }
     }
@@ -76,7 +73,7 @@ impl PreparedFile {
 
     pub fn details(&self, granularity: DiffGranularity) -> &[Vec<DetailSpan>] {
         match granularity {
-            DiffGranularity::Line => &self.line_details,
+            DiffGranularity::Line => &[],
             DiffGranularity::Character => &self.character_details,
         }
     }
@@ -158,6 +155,7 @@ mod tests {
         let first = prepared.file(0).expect("first file");
 
         assert_eq!(first.syntax().len(), first.layout.diff_lines.len());
+        assert!(first.details(DiffGranularity::Line).is_empty());
         assert_eq!(
             first.details(DiffGranularity::Character).len(),
             first.layout.diff_lines.len()

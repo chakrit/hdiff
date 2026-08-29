@@ -63,6 +63,9 @@ than revisiting a completed or ruled-out attempt.
 - **Direct syntax-query pass.** The 4/8 measurement fell from 32797317959 ns to
   32347072792 ns. A purpose-built public Tree-sitter query pass incrementally reparses each
   same-language old/new hunk pair and maps captures directly to hdiff syntax classes.
+- **Line-detail omission.** The 4/8 measurement fell from 32347072792 ns to
+  32288018750 ns. Line granularity carries no character detail and does not retain a
+  row-aligned empty table.
 
 ## Optimization method
 
@@ -93,3 +96,4 @@ recorded benchmark.
 | Syntax projection lookup    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 33339918416   | 20017 | 6219966 |
 | Reuse sanitized source text | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32797317959   | 20017 | 6219966 |
 | Direct syntax-query pass    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32347072792   | 20017 | 6219966 |
+| Line-detail omission        | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32288018750   | 20017 | 6219966 |
