@@ -66,6 +66,8 @@ than revisiting a completed or ruled-out attempt.
 - **Line-detail omission.** The 4/8 measurement fell from 32347072792 ns to
   32288018750 ns. Line granularity carries no character detail and does not retain a
   row-aligned empty table.
+- **Per-file syntax projection.** The 4/8 measurement rose from 32288018750 ns to
+  35333977917 ns. Concatenating each side's hunks into one projection per file is rejected.
 
 ## Optimization method
 
@@ -97,3 +99,4 @@ recorded benchmark.
 | Reuse sanitized source text | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32797317959   | 20017 | 6219966 |
 | Direct syntax-query pass    | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32347072792   | 20017 | 6219966 |
 | Line-detail omission        | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 32288018750   | 20017 | 6219966 |
+| Per-file syntax projection  | 4/8   | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 35333977917   | 20017 | 6219966 |
