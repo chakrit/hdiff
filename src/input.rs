@@ -19,7 +19,7 @@ pub enum ViewerMode {
 pub enum InputSource {
     Stdin,
     DiffFile(PathBuf),
-    Operands(Vec<PathBuf>),
+    Operands([PathBuf; 2]),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -56,7 +56,7 @@ pub fn select_input(arguments: &[PathBuf]) -> Result<InputSource, InputError> {
     match arguments {
         [] => Ok(InputSource::Stdin),
         [path] => Ok(InputSource::DiffFile(path.clone())),
-        [first, second] => Ok(InputSource::Operands(vec![first.clone(), second.clone()])),
+        [first, second] => Ok(InputSource::Operands([first.clone(), second.clone()])),
         _ => Err(InputError("expected zero, one, or two operands".to_owned())),
     }
 }
