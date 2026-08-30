@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use crate::{
     document::DiffFile,
     interaction::DiffLayout,
-    render::{RenderedLine, RenderedLineKind, render_file_lines},
+    render::{RenderedLineKind, render_file_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -48,7 +50,7 @@ pub struct FileListRow {
 pub struct Layout {
     #[cfg(test)]
     pub files: Vec<FileListRow>,
-    pub diff_lines: Vec<Vec<u8>>,
+    pub diff_lines: Vec<Rc<Box<[u8]>>>,
     pub line_kinds: Vec<RenderedLineKind>,
     pub side_by_side_rows: Vec<SideBySideRow>,
 }
@@ -64,7 +66,7 @@ pub enum SideBySideRow {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideBySideLine {
-    pub bytes: Vec<u8>,
+    pub bytes: Rc<Box<[u8]>>,
     pub kind: RenderedLineKind,
     pub source_index: usize,
 }
@@ -128,7 +130,15 @@ impl Layout {
 }
 
 pub fn file_layout(file: &DiffFile) -> Layout {
-    let rendered_lines = render_file_lines(file);
+    let rendered_lines: Vec<_> = render_file_lines(file)
+        .into_iter()
+        .enumerate()
+        .map(|(source_index, line)| SideBySideLine {
+            bytes: Rc::new(line.bytes.into_boxed_slice()),
+            kind: line.kind,
+            source_index,
+        })
+        .collect();
     let side_by_side_rows = side_by_side_rows(&rendered_lines);
     let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
         .into_iter()
@@ -163,14 +173,14 @@ pub fn layout(
     layout
 }
 
-fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
+fn side_by_side_rows(rendered_lines: &[SideBySideLine]) -> Vec<SideBySideRow> {
     let mut rows = Vec::new();
     let mut index = 0;
 
     while index < rendered_lines.len() {
         let line = &rendered_lines[index];
         if !is_changed_line(line) {
-            rows.push(SideBySideRow::Shared(side_by_side_line(line, index)));
+            rows.push(SideBySideRow::Shared(line.clone()));
             index += 1;
             continue;
         }
@@ -179,10 +189,9 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
         let mut after = Vec::new();
         while index < rendered_lines.len() && is_changed_line(&rendered_lines[index]) {
             let line = &rendered_lines[index];
-            let side_line = side_by_side_line(line, index);
             match line.bytes.first() {
-                Some(b'-') => before.push(side_line),
-                Some(b'+') => after.push(side_line),
+                Some(b'-') => before.push(line.clone()),
+                Some(b'+') => after.push(line.clone()),
                 _ => unreachable!("changed rows have a change marker"),
             }
             index += 1;
@@ -200,17 +209,9 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     rows
 }
 
-fn is_changed_line(line: &RenderedLine) -> bool {
+fn is_changed_line(line: &SideBySideLine) -> bool {
     matches!(line.kind, RenderedLineKind::Record(_))
         && matches!(line.bytes.first(), Some(b'+') | Some(b'-'))
-}
-
-fn side_by_side_line(line: &RenderedLine, source_index: usize) -> SideBySideLine {
-    SideBySideLine {
-        bytes: line.bytes.clone(),
-        kind: line.kind,
-        source_index,
-    }
 }
 
 #[cfg(test)]
@@ -232,16 +233,19 @@ mod tests {
         assert_eq!(view.line_kinds[2], RenderedLineKind::HunkHeader);
         assert_eq!(view.line_kinds[5], RenderedLineKind::HunkHeader);
         assert_eq!(
-            view.diff_lines,
+            view.diff_lines
+                .iter()
+                .map(|line| line.as_ref().as_ref())
+                .collect::<Vec<_>>(),
             vec![
-                b"--- a/second\n".to_vec(),
-                b"+++ b/second\n".to_vec(),
-                b"@@ -1 +1 @@\n".to_vec(),
-                b"-old\n".to_vec(),
-                b"+new\n".to_vec(),
-                b"@@ -1 +1 @@\n".to_vec(),
-                b"-old-again\n".to_vec(),
-                b"+new-again\n".to_vec(),
+                &b"--- a/second\n"[..],
+                &b"+++ b/second\n"[..],
+                &b"@@ -1 +1 @@\n"[..],
+                &b"-old\n"[..],
+                &b"+new\n"[..],
+                &b"@@ -1 +1 @@\n"[..],
+                &b"-old-again\n"[..],
+                &b"+new-again\n"[..],
             ]
         );
     }
@@ -258,10 +262,12 @@ mod tests {
                 .all(|kind| matches!(kind, RenderedLineKind::Metadata))
         );
         assert_eq!(
-            view.diff_lines,
+            view.diff_lines
+                .iter()
+                .map(|line| line.as_ref().as_ref())
+                .collect::<Vec<_>>(),
             include_bytes!("../tests/fixtures/git-rename-only.patch")
                 .split_inclusive(|byte| *byte == b'\n')
-                .map(ToOwned::to_owned)
                 .collect::<Vec<_>>()
         );
     }
@@ -291,15 +297,31 @@ mod tests {
             SideBySideRow::Paired {
                 before: Some(before),
                 after: Some(after),
-            } if before.bytes == b"-old first\n" && after.bytes == b"+new first\n"
+            } if before.bytes.as_ref().as_ref() == b"-old first\n"
+                && after.bytes.as_ref().as_ref() == b"+new first\n"
         ));
         assert!(matches!(
             &view.side_by_side_rows[4],
             SideBySideRow::Paired {
                 before: Some(before),
                 after: None,
-            } if before.bytes == b"-old second\n"
+            } if before.bytes.as_ref().as_ref() == b"-old second\n"
         ));
+    }
+
+    #[test]
+    fn shares_rendered_bytes_between_unified_and_side_by_side_lines() {
+        let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
+            .expect("valid diff");
+        let view = file_layout(&document.files[0]);
+        let SideBySideRow::Shared(side_line) = &view.side_by_side_rows[0] else {
+            panic!("file header is a shared row");
+        };
+
+        assert_eq!(
+            view.diff_lines[side_line.source_index].as_ptr(),
+            side_line.bytes.as_ptr()
+        );
     }
 
     #[test]

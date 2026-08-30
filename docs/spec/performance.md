@@ -15,6 +15,8 @@ this design unless measured preparation latency makes the eager boundary untenab
 
 Document-wide file-list labels are derived once during preparation. Each prepared file
 derives only its own rendered rows, split pairs, syntax spans, and character-detail spans.
+Each rendered row has one exact-sized immutable byte buffer shared by the unified and
+side-by-side layout projections.
 
 ## Benchmark mode
 
@@ -68,6 +70,8 @@ than revisiting a completed or ruled-out attempt.
   to hdiff syntax classes.
 - **Line-detail omission.** Line granularity carries no character detail and does not
   retain a row-aligned empty table.
+- **Shared rendered buffers.** Unified and side-by-side layout projections share each
+  rendered row's exact-sized immutable byte buffer.
 - **Per-file syntax projection.** Concatenating each side's hunks into one projection per
   file regressed preparation time and is rejected.
 
@@ -107,3 +111,6 @@ they are not stored as a second fact.
 | Harness verification        | 7/8   | `9fce2ec-dirty`                            | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 25065650333   | 13344 | 3995123 |
 | Harness verification        | 6/8   | `9fce2ec-dirty`                            | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 28876855527   | 18264 | 5224599 |
 | Harness verification        | 4/8   | `9fce2ec-dirty`                            | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 31994288028   | 20017 | 6219966 |
+| Shared rendered buffers     | 7/8   | `6429c40-dirty`                            | `ee94dce5b179923e362356a62738fa1de06c62b6` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 24566397611   | 13344 | 3995123 |
+| Shared rendered buffers     | 6/8   | `6429c40-dirty`                            | `5c6d853b4434f72ac10a1d9eafe15a791cd5db31` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 27410366694   | 18264 | 5224599 |
+| Shared rendered buffers     | 4/8   | `6429c40-dirty`                            | `e111ccbe09aaa7f1854da1625eb8da1cf939210e` | `70d3cc986aa8221cd1dfb1121852688902d3bf53` | 31196953222   | 20017 | 6219966 |

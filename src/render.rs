@@ -85,16 +85,23 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
 }
 
 fn rendered_line(kind: RenderedLineKind, marker: Option<u8>, line: &SourceLine) -> RenderedLine {
-    let mut bytes = Vec::new();
+    let line_ending: &[u8] = if line.bytes.ends_with(b"\r\n") {
+        b"\r\n"
+    } else if line.bytes.ends_with(b"\n") {
+        b"\n"
+    } else {
+        b""
+    };
+    let final_length =
+        usize::from(marker.is_some()) + line.structural_text.len() + line_ending.len();
+    let mut bytes = Vec::with_capacity(final_length);
+
     if let Some(marker) = marker {
         bytes.push(marker);
     }
     bytes.extend_from_slice(line.structural_text.as_bytes());
-    if line.bytes.ends_with(b"\r\n") {
-        bytes.extend_from_slice(b"\r\n");
-    } else if line.bytes.ends_with(b"\n") {
-        bytes.push(b'\n');
-    }
+    bytes.extend_from_slice(line_ending);
+
     RenderedLine { bytes, kind }
 }
 
@@ -154,6 +161,18 @@ mod tests {
             })
         );
         assert_eq!(file.hunks.len(), 2);
+    }
+
+    #[test]
+    fn renders_lines_in_exact_sized_buffers() {
+        let input = b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+        let document = parse_unified_diff(input).expect("valid diff");
+
+        let lines = render_file_lines(&document.files[0]);
+
+        for line in lines {
+            assert_eq!(line.bytes.capacity(), line.bytes.len());
+        }
     }
 
     #[test]
