@@ -281,16 +281,21 @@ pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<Det
     }
 
     for row in &layout.side_by_side_rows {
-        let SideBySideRow::Paired {
-            before: Some(before),
-            after: Some(after),
-        } = row
-        else {
+        let SideBySideRow::Paired { before, after } = row else {
             continue;
         };
-        let pair = changed_pair_detail(record_payload(&before.bytes), record_payload(&after.bytes));
-        details[before.source_index] = pair.before;
-        details[after.source_index] = pair.after;
+        let before_line = layout
+            .rendered_line(*before)
+            .expect("side-by-side before index belongs to the layout");
+        let after_line = layout
+            .rendered_line(*after)
+            .expect("side-by-side after index belongs to the layout");
+        let pair = changed_pair_detail(
+            record_payload(&before_line.bytes),
+            record_payload(&after_line.bytes),
+        );
+        details[*before] = pair.before;
+        details[*after] = pair.after;
     }
 
     details

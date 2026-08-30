@@ -15,8 +15,8 @@ this design unless measured preparation latency makes the eager boundary untenab
 
 Document-wide file-list labels are derived once during preparation. Each prepared file
 derives only its own rendered rows, split pairs, syntax spans, and character-detail spans.
-Each rendered row has one exact-sized immutable byte buffer shared by the unified and
-side-by-side layout projections.
+The prepared layout is the sole owner of each exact-sized immutable rendered-row buffer.
+Unified and side-by-side layout projections reference those buffers.
 
 ## Benchmark mode
 
@@ -27,6 +27,39 @@ result reports total preparation time and the prepared file and record counts as
 Benchmark mode starts timing immediately before the shared preparation pass and exits
 immediately after reporting its result.
 
+## Measurement model
+
+Optimization comparisons measure the complete `hdiff` process with macOS
+`/usr/bin/time -lp`. Elapsed CPU cycles are the execution-cost measurement. Retired
+instructions are the stable-work control. Process user and system time, preparation wall
+time, maximum resident set size, peak memory footprint, page faults, and context switches
+are supporting evidence.
+
+The baseline is the current commit of the hdiff repository. The candidate is that
+repository's dirty tracked working tree. The benchmark records the baseline commit and a
+SHA-256 digest of the candidate build-input diff; Kubernetes revisions identify only the
+input corpus. Build inputs are Cargo manifests, toolchain and Cargo configuration, build
+scripts, and Rust source. The candidate may contain staged or unstaged tracked changes.
+The benchmark rejects untracked build inputs so the digest covers every file used by the
+candidate build.
+
+Each Kubernetes range warms the baseline and candidate twice, then measures three pairs
+in baseline-candidate, candidate-baseline, baseline-candidate order. A pair's saving is
+the baseline measurement minus the candidate measurement. The mean cycle saving must be
+positive and greater than the maximum absolute deviation among the three paired savings.
+Mean retired-instruction and peak-memory savings must not be negative by more than their
+own maximum absolute deviations. A comparison that does not meet every condition is
+inconclusive, never an improvement.
+
+The benchmark appends every raw sample and its order before appending the derived range
+summary. Existing raw measurements are never replaced. Baseline and candidate file and
+record counts must agree for every pair. Raw evidence includes inconclusive and regressed
+runs; only accepted candidates enter the authoritative performance record.
+
+The one-second target is user-visible preparation latency. Quiet-machine wall-clock runs
+confirm milestone progress and the final target; routine optimization acceptance does not
+depend on precise wall-clock measurement.
+
 ## Representative corpus
 
 Performance measurements use a local checkout of `kubernetes/kubernetes` at a pinned
@@ -35,11 +68,10 @@ commit.
 
 The reproducible corpus is Kubernetes v1.32.0,
 `70d3cc986aa8221cd1dfb1121852688902d3bf53`. `bench/kubernetes.sh` owns its checkout below
-`.ace/bench/kubernetes/`, builds the release binary once at low priority, and appends each
-run's three averaged measurements to `.ace/bench/kubernetes/results.txt`. Each result
-identifies the measured hdiff source revision. For each range, the harness discards two
-warm-up invocations, then averages the preparation duration from three measured
-invocations whose file and record counts must agree.
+`.ace/bench/kubernetes/`, builds the release binary once at ordinary scheduler priority,
+builds the current hdiff commit in a cached linked worktree, builds the dirty candidate,
+and appends raw samples and summaries to `.ace/bench/kubernetes/results.txt`. Benchmark
+commands are never de-prioritized. Each result identifies both measured hdiff states.
 
 Let `D` be the number of first-parent edges from the repository root to the pinned commit.
 The three base commits are at first-parent indices `floor(D * 7 / 8)`,
@@ -72,6 +104,8 @@ than revisiting a completed or ruled-out attempt.
   retain a row-aligned empty table.
 - **Shared rendered buffers.** Unified and side-by-side layout projections share each
   rendered row's exact-sized immutable byte buffer.
+- **Index-owned rendered rows.** The prepared layout owns rendered rows directly; both
+  layout projections carry indices instead of reference-counted row copies.
 - **Per-file syntax projection.** Concatenating each side's hunks into one projection per
   file regressed preparation time and is rejected.
 
@@ -91,9 +125,24 @@ Do not trade readability, sound boundaries, or maintainability for a speculative
 micro-optimization. When no clean and measured improvement exists, leave the code alone;
 the target is the accumulated result of good engineering, not a reason to force a change.
 
-Each optimization slice reports its measured preparation-time savings against the
-preceding recorded benchmark. Savings are derived from the authoritative durations below;
-they are not stored as a second fact.
+Each optimization slice reports its measured cycle saving against the preceding accepted
+hdiff commit and its preparation-time saving against the preceding quiet-machine
+wall-clock milestone. A candidate that is not accepted does not advance either record.
+Savings are derived from the authoritative measurements; they are not stored as a second
+fact.
+
+The table below is the historical wall-clock record created before paired hardware-counter
+comparisons became authoritative. It is not backfilled with hardware counters.
+
+### Paired comparison record
+
+```text
+summary range=7/8 corpus_base=ee94dce5b179923e362356a62738fa1de06c62b6 corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=e5360f9d8944e9ddcb2fe15345e3040c72585183 candidate=e5360f9d8944e9ddcb2fe15345e3040c72585183-dirty-372c99738304c98f3e4362fe8162e93f66980690ee0aaa02e595a0ac78526695 verdict=improved baseline_cycles=86007809295 candidate_cycles=85355386615 cycle_saving=652422680 cycle_dispersion=47116820 baseline_instructions=333463492937 candidate_instructions=331084816078 instruction_saving=2378676859 instruction_dispersion=100326085 baseline_peak_memory=2878621440 candidate_peak_memory=2524824490 memory_saving=353796949 memory_dispersion=5717995 baseline_maximum_rss=2978556586 candidate_maximum_rss=2624323584 baseline_duration_ns=24591934056 candidate_duration_ns=24438332638 files=13344 records=3995123
+summary range=6/8 corpus_base=5c6d853b4434f72ac10a1d9eafe15a791cd5db31 corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=e5360f9d8944e9ddcb2fe15345e3040c72585183 candidate=e5360f9d8944e9ddcb2fe15345e3040c72585183-dirty-372c99738304c98f3e4362fe8162e93f66980690ee0aaa02e595a0ac78526695 verdict=improved baseline_cycles=97511216634 candidate_cycles=96564440637 cycle_saving=946775997 cycle_dispersion=44801580 baseline_instructions=376725859612 candidate_instructions=373428100008 instruction_saving=3297759604 instruction_dispersion=142314289 baseline_peak_memory=3653662762 candidate_peak_memory=3200665920 memory_saving=452996842 memory_dispersion=16034538 baseline_maximum_rss=3750641664 candidate_maximum_rss=3288656554 baseline_duration_ns=27478403347 candidate_duration_ns=27429889819 files=18264 records=5224599
+summary range=4/8 corpus_base=e111ccbe09aaa7f1854da1625eb8da1cf939210e corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=e5360f9d8944e9ddcb2fe15345e3040c72585183 candidate=e5360f9d8944e9ddcb2fe15345e3040c72585183-dirty-372c99738304c98f3e4362fe8162e93f66980690ee0aaa02e595a0ac78526695 verdict=improved baseline_cycles=110939124085 candidate_cycles=109933454958 cycle_saving=1005669127 cycle_dispersion=97638903 baseline_instructions=431989873062 candidate_instructions=428408688074 instruction_saving=3581184988 instruction_dispersion=127394246 baseline_peak_memory=4275786240 candidate_peak_memory=3736336384 memory_saving=539449856 memory_dispersion=6072960 baseline_maximum_rss=4343234560 candidate_maximum_rss=3814315349 baseline_duration_ns=31277371069 candidate_duration_ns=31095025124 files=20017 records=6219966
+```
+
+### Historical wall-clock record
 
 | Slice                       | Range | Source                                     | Base commit                                | Target commit                              | Duration (ns) | Files | Records |
 |-----------------------------|-------|--------------------------------------------|--------------------------------------------|--------------------------------------------|---------------|-------|---------|

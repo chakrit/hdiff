@@ -17,6 +17,8 @@ large enough to make the work less effective; do not stop merely because an inte
 completed.
 
 Report the measured preparation-time saving for every optimization slice.
+Run the Kubernetes preparation benchmark at ordinary scheduler priority; never
+de-prioritize it.
 
 ## Durable artifacts
 

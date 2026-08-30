@@ -16,7 +16,7 @@ pub enum RenderedLineKind {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RenderedLine {
-    pub bytes: Vec<u8>,
+    pub bytes: Box<[u8]>,
     pub kind: RenderedLineKind,
 }
 
@@ -33,7 +33,7 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
     render_file_lines(file)
         .into_iter()
-        .flat_map(|line| line.bytes)
+        .flat_map(|line| line.bytes.into_vec())
         .collect()
 }
 
@@ -102,7 +102,10 @@ fn rendered_line(kind: RenderedLineKind, marker: Option<u8>, line: &SourceLine) 
     bytes.extend_from_slice(line.structural_text.as_bytes());
     bytes.extend_from_slice(line_ending);
 
-    RenderedLine { bytes, kind }
+    RenderedLine {
+        bytes: bytes.into_boxed_slice(),
+        kind,
+    }
 }
 
 fn marker(kind: &RecordKind) -> Option<u8> {
@@ -161,18 +164,6 @@ mod tests {
             })
         );
         assert_eq!(file.hunks.len(), 2);
-    }
-
-    #[test]
-    fn renders_lines_in_exact_sized_buffers() {
-        let input = b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
-        let document = parse_unified_diff(input).expect("valid diff");
-
-        let lines = render_file_lines(&document.files[0]);
-
-        for line in lines {
-            assert_eq!(line.bytes.capacity(), line.bytes.len());
-        }
     }
 
     #[test]

@@ -1,9 +1,7 @@
-use std::rc::Rc;
-
 use crate::{
     document::DiffFile,
     interaction::DiffLayout,
-    render::{RenderedLineKind, render_file_lines},
+    render::{RenderedLine, RenderedLineKind, render_file_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -50,28 +48,23 @@ pub struct FileListRow {
 pub struct Layout {
     #[cfg(test)]
     pub files: Vec<FileListRow>,
-    pub diff_lines: Vec<Rc<Box<[u8]>>>,
-    pub line_kinds: Vec<RenderedLineKind>,
+    pub diff_lines: Vec<RenderedLine>,
     pub side_by_side_rows: Vec<SideBySideRow>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SideBySideRow {
-    Shared(SideBySideLine),
-    Paired {
-        before: Option<SideBySideLine>,
-        after: Option<SideBySideLine>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SideBySideLine {
-    pub bytes: Rc<Box<[u8]>>,
-    pub kind: RenderedLineKind,
-    pub source_index: usize,
+    Shared(usize),
+    Paired { before: usize, after: usize },
+    BeforeOnly(usize),
+    AfterOnly(usize),
 }
 
 impl Layout {
+    pub fn rendered_line(&self, index: usize) -> Option<&RenderedLine> {
+        self.diff_lines.get(index)
+    }
+
     pub fn line_count(&self, display_layout: DiffLayout) -> usize {
         match display_layout {
             DiffLayout::Unified => self.diff_lines.len(),
@@ -80,24 +73,27 @@ impl Layout {
     }
 
     pub fn shows_unified_row(&self, index: usize, context_lines: usize) -> bool {
-        let Some(RenderedLineKind::Record(address)) = self.line_kinds.get(index) else {
+        let Some(line) = self.diff_lines.get(index) else {
             return true;
         };
-        if self.diff_lines[index].first() != Some(&b' ') {
+        let RenderedLineKind::Record(address) = line.kind else {
+            return true;
+        };
+        if line.bytes.first() != Some(&b' ') {
             return true;
         }
 
-        self.line_kinds
+        self.diff_lines
             .iter()
             .enumerate()
-            .any(|(candidate_index, kind)| {
-                let Some(RenderedLineKind::Record(candidate)) = Some(kind) else {
+            .any(|(candidate_index, line)| {
+                let RenderedLineKind::Record(candidate) = line.kind else {
                     return false;
                 };
                 candidate.hunk_index == address.hunk_index
                     && candidate.record_index.abs_diff(address.record_index) <= context_lines
                     && matches!(
-                        self.diff_lines[candidate_index].first(),
+                        self.diff_lines[candidate_index].bytes.first(),
                         Some(b'+') | Some(b'-')
                     )
             })
@@ -113,11 +109,14 @@ impl Layout {
 
     pub fn shows_side_by_side_row(&self, row: &SideBySideRow, context_lines: usize) -> bool {
         match row {
-            SideBySideRow::Shared(line) => self.shows_unified_row(line.source_index, context_lines),
-            SideBySideRow::Paired { before, after } => before
-                .iter()
-                .chain(after)
-                .any(|line| self.shows_unified_row(line.source_index, context_lines)),
+            SideBySideRow::Shared(index) => self.shows_unified_row(*index, context_lines),
+            SideBySideRow::Paired { before, after } => {
+                self.shows_unified_row(*before, context_lines)
+                    || self.shows_unified_row(*after, context_lines)
+            }
+            SideBySideRow::BeforeOnly(index) | SideBySideRow::AfterOnly(index) => {
+                self.shows_unified_row(*index, context_lines)
+            }
         }
     }
 
@@ -130,25 +129,13 @@ impl Layout {
 }
 
 pub fn file_layout(file: &DiffFile) -> Layout {
-    let rendered_lines: Vec<_> = render_file_lines(file)
-        .into_iter()
-        .enumerate()
-        .map(|(source_index, line)| SideBySideLine {
-            bytes: Rc::new(line.bytes.into_boxed_slice()),
-            kind: line.kind,
-            source_index,
-        })
-        .collect();
-    let side_by_side_rows = side_by_side_rows(&rendered_lines);
-    let (diff_lines, line_kinds): (Vec<_>, Vec<_>) = rendered_lines
-        .into_iter()
-        .map(|line| (line.bytes, line.kind))
-        .unzip();
+    let diff_lines = render_file_lines(file);
+    let side_by_side_rows = side_by_side_rows(&diff_lines);
+
     Layout {
         #[cfg(test)]
         files: Vec::new(),
         diff_lines,
-        line_kinds,
         side_by_side_rows,
     }
 }
@@ -163,7 +150,6 @@ pub fn layout(
         return Layout {
             files,
             diff_lines: Vec::new(),
-            line_kinds: Vec::new(),
             side_by_side_rows: Vec::new(),
         };
     };
@@ -173,14 +159,14 @@ pub fn layout(
     layout
 }
 
-fn side_by_side_rows(rendered_lines: &[SideBySideLine]) -> Vec<SideBySideRow> {
+fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     let mut rows = Vec::new();
     let mut index = 0;
 
     while index < rendered_lines.len() {
         let line = &rendered_lines[index];
         if !is_changed_line(line) {
-            rows.push(SideBySideRow::Shared(line.clone()));
+            rows.push(SideBySideRow::Shared(index));
             index += 1;
             continue;
         }
@@ -190,8 +176,8 @@ fn side_by_side_rows(rendered_lines: &[SideBySideLine]) -> Vec<SideBySideRow> {
         while index < rendered_lines.len() && is_changed_line(&rendered_lines[index]) {
             let line = &rendered_lines[index];
             match line.bytes.first() {
-                Some(b'-') => before.push(line.clone()),
-                Some(b'+') => after.push(line.clone()),
+                Some(b'-') => before.push(index),
+                Some(b'+') => after.push(index),
                 _ => unreachable!("changed rows have a change marker"),
             }
             index += 1;
@@ -199,17 +185,22 @@ fn side_by_side_rows(rendered_lines: &[SideBySideLine]) -> Vec<SideBySideRow> {
 
         let pair_count = before.len().max(after.len());
         for pair_index in 0..pair_count {
-            rows.push(SideBySideRow::Paired {
-                before: before.get(pair_index).cloned(),
-                after: after.get(pair_index).cloned(),
-            });
+            let before = before.get(pair_index).copied();
+            let after = after.get(pair_index).copied();
+            let row = match (before, after) {
+                (Some(before), Some(after)) => SideBySideRow::Paired { before, after },
+                (Some(before), None) => SideBySideRow::BeforeOnly(before),
+                (None, Some(after)) => SideBySideRow::AfterOnly(after),
+                (None, None) => unreachable!("pair count includes one changed row"),
+            };
+            rows.push(row);
         }
     }
 
     rows
 }
 
-fn is_changed_line(line: &SideBySideLine) -> bool {
+fn is_changed_line(line: &RenderedLine) -> bool {
     matches!(line.kind, RenderedLineKind::Record(_))
         && matches!(line.bytes.first(), Some(b'+') | Some(b'-'))
 }
@@ -230,12 +221,12 @@ mod tests {
         )
         .expect("valid multi-file diff");
         let view = file_layout(&document.files[1]);
-        assert_eq!(view.line_kinds[2], RenderedLineKind::HunkHeader);
-        assert_eq!(view.line_kinds[5], RenderedLineKind::HunkHeader);
+        assert_eq!(view.diff_lines[2].kind, RenderedLineKind::HunkHeader);
+        assert_eq!(view.diff_lines[5].kind, RenderedLineKind::HunkHeader);
         assert_eq!(
             view.diff_lines
                 .iter()
-                .map(|line| line.as_ref().as_ref())
+                .map(|line| line.bytes.as_ref())
                 .collect::<Vec<_>>(),
             vec![
                 &b"--- a/second\n"[..],
@@ -257,14 +248,14 @@ mod tests {
                 .expect("valid metadata-only Git fixture");
         let view = file_layout(&document.files[0]);
         assert!(
-            view.line_kinds
+            view.diff_lines
                 .iter()
-                .all(|kind| matches!(kind, RenderedLineKind::Metadata))
+                .all(|line| matches!(line.kind, RenderedLineKind::Metadata))
         );
         assert_eq!(
             view.diff_lines
                 .iter()
-                .map(|line| line.as_ref().as_ref())
+                .map(|line| line.bytes.as_ref())
                 .collect::<Vec<_>>(),
             include_bytes!("../tests/fixtures/git-rename-only.patch")
                 .split_inclusive(|byte| *byte == b'\n')
@@ -295,33 +286,33 @@ mod tests {
         assert!(matches!(
             &view.side_by_side_rows[3],
             SideBySideRow::Paired {
-                before: Some(before),
-                after: Some(after),
-            } if before.bytes.as_ref().as_ref() == b"-old first\n"
-                && after.bytes.as_ref().as_ref() == b"+new first\n"
+                before,
+                after,
+            } if view.diff_lines[*before].bytes.as_ref() == b"-old first\n"
+                && view.diff_lines[*after].bytes.as_ref() == b"+new first\n"
         ));
         assert!(matches!(
             &view.side_by_side_rows[4],
-            SideBySideRow::Paired {
-                before: Some(before),
-                after: None,
-            } if before.bytes.as_ref().as_ref() == b"-old second\n"
+            SideBySideRow::BeforeOnly(before)
+                if view.diff_lines[*before].bytes.as_ref() == b"-old second\n"
         ));
     }
 
     #[test]
-    fn shares_rendered_bytes_between_unified_and_side_by_side_lines() {
+    fn side_by_side_rows_reference_owned_lines() {
         let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let view = file_layout(&document.files[0]);
-        let SideBySideRow::Shared(side_line) = &view.side_by_side_rows[0] else {
+        let SideBySideRow::Shared(source_index) = &view.side_by_side_rows[0] else {
             panic!("file header is a shared row");
         };
 
-        assert_eq!(
-            view.diff_lines[side_line.source_index].as_ptr(),
-            side_line.bytes.as_ptr()
-        );
+        let line = view
+            .rendered_line(*source_index)
+            .expect("side-by-side row should resolve through the layout");
+
+        assert_eq!(line.bytes.as_ref(), b"--- a/file\n");
+        assert_eq!(line.kind, RenderedLineKind::FileHeader);
     }
 
     #[test]

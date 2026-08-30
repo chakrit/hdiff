@@ -80,9 +80,9 @@ impl PreparedFile {
 
     fn record_count(&self) -> usize {
         self.layout
-            .line_kinds
+            .diff_lines
             .iter()
-            .filter(|kind| matches!(kind, crate::render::RenderedLineKind::Record(_)))
+            .filter(|line| matches!(line.kind, crate::render::RenderedLineKind::Record(_)))
             .count()
     }
 }
