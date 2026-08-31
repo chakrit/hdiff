@@ -11,9 +11,10 @@ use ratatui::{Terminal, backend::CrosstermBackend, widgets::Paragraph};
 
 use crate::{
     interaction::{
-        self, DiffLayout, Input, Interaction, NavigationBounds, Transition, ViewPreferences,
-        Viewport,
+        self, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
+        ViewPreferences, Viewport,
     },
+    layout::{content_pane_width, maximum_horizontal_offset},
     prepared::PreparedDocument,
 };
 
@@ -72,14 +73,11 @@ fn run_loop(
     document: &PreparedDocument,
     color_count: u16,
 ) -> io::Result<()> {
-    let (_, height) = terminal::size()?;
+    let (width, height) = terminal::size()?;
     let mut interaction = Interaction {
         selected_file: 0,
         preferences: ViewPreferences::line(DiffLayout::Unified),
-        viewport: Viewport {
-            offset: 0,
-            height: usize::from(height),
-        },
+        viewport: Viewport::new(width, usize::from(height)),
     };
     draw(session.terminal_mut(), document, &interaction, color_count)?;
 
@@ -93,22 +91,42 @@ fn run_loop(
         };
 
         let transition = {
+            let display_layout = match &input {
+                Input::NextLayout => interaction.preferences.layout.next(),
+                _ => interaction.preferences.layout,
+            };
+            let file = document.file(interaction.selected_file);
+            let content_width = file
+                .map(|file| {
+                    rows::maximum_visible_row_width(
+                        &file.layout,
+                        display_layout,
+                        interaction.preferences.context_lines,
+                    )
+                })
+                .unwrap_or_default();
+            let screen_width = match &input {
+                Input::Resize { width, .. } => *width,
+                _ => interaction.viewport.width,
+            };
+            let pane_width = content_pane_width(screen_width, display_layout);
+            let maximum_horizontal_offset = maximum_horizontal_offset(content_width, pane_width);
+            let line_count = file
+                .map(|file| match display_layout {
+                    DiffLayout::Unified => file
+                        .layout
+                        .visible_unified_line_count(interaction.preferences.context_lines),
+                    DiffLayout::Vertical | DiffLayout::Stacked => file
+                        .layout
+                        .visible_side_by_side_line_count(interaction.preferences.context_lines),
+                })
+                .unwrap_or_default();
             let bounds = NavigationBounds {
                 file_count: document.file_count(),
-                unified_line_count: document
-                    .file(interaction.selected_file)
-                    .map(|file| {
-                        file.layout
-                            .visible_unified_line_count(interaction.preferences.context_lines)
-                    })
-                    .unwrap_or_default(),
-                paired_line_count: document
-                    .file(interaction.selected_file)
-                    .map(|file| {
-                        file.layout
-                            .visible_side_by_side_line_count(interaction.preferences.context_lines)
-                    })
-                    .unwrap_or_default(),
+                target_display: DisplayBounds {
+                    line_count,
+                    maximum_horizontal_offset,
+                },
             };
             interaction::transition_interaction(&interaction, input, &bounds)
         };
@@ -155,6 +173,10 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) => Some(Input::Quit),
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Input::Interrupt),
+        (KeyCode::Char('h'), _) => Some(Input::Left),
+        (KeyCode::Char('l'), _) => Some(Input::Right),
+        (KeyCode::Char('0') | KeyCode::Char('^'), _) => Some(Input::HorizontalStart),
+        (KeyCode::Char('$'), _) => Some(Input::HorizontalEnd),
         (KeyCode::Char('j') | KeyCode::Down, _) => Some(Input::Down),
         (KeyCode::Char('k') | KeyCode::Up, _) => Some(Input::Up),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Input::HalfPageDown),
@@ -270,6 +292,22 @@ mod tests {
             ))),
             Some(Input::Down)
         );
+        for (key, expected) in [
+            ('h', Input::Left),
+            ('l', Input::Right),
+            ('0', Input::HorizontalStart),
+            ('^', Input::HorizontalStart),
+            ('$', Input::HorizontalEnd),
+        ] {
+            assert_eq!(
+                input_for_event(CrosstermEvent::Key(KeyEvent::new(
+                    KeyCode::Char(key),
+                    KeyModifiers::NONE
+                ))),
+                Some(expected),
+                "{key} horizontal movement"
+            );
+        }
         assert_eq!(
             input_for_event(CrosstermEvent::Key(KeyEvent::new(
                 KeyCode::Tab,

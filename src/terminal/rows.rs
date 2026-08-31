@@ -52,6 +52,61 @@ pub(super) enum VisibleSideBySideRow {
     },
 }
 
+pub(super) fn maximum_visible_row_width(
+    layout: &Layout,
+    display_layout: crate::interaction::DiffLayout,
+    context_lines: usize,
+) -> usize {
+    match display_layout {
+        crate::interaction::DiffLayout::Unified => layout
+            .diff_lines
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
+            .map(|(_, line)| rendered_line_width(line))
+            .max()
+            .unwrap_or_default(),
+        crate::interaction::DiffLayout::Vertical | crate::interaction::DiffLayout::Stacked => {
+            layout
+                .side_by_side_rows
+                .iter()
+                .filter(|row| layout.shows_side_by_side_row(row, context_lines))
+                .map(|row| side_by_side_row_width(layout, row))
+                .max()
+                .unwrap_or_default()
+        }
+    }
+}
+
+fn side_by_side_row_width(layout: &Layout, row: &SideBySideRow) -> usize {
+    match row {
+        SideBySideRow::Shared(index)
+        | SideBySideRow::BeforeOnly(index)
+        | SideBySideRow::AfterOnly(index) => rendered_line_width(
+            layout
+                .rendered_line(*index)
+                .expect("side-by-side rows reference rendered lines"),
+        ),
+        SideBySideRow::Paired { before, after } => [before, after]
+            .into_iter()
+            .map(|index| {
+                rendered_line_width(
+                    layout
+                        .rendered_line(*index)
+                        .expect("side-by-side rows reference rendered lines"),
+                )
+            })
+            .max()
+            .expect("paired rows contain both rendered lines"),
+    }
+}
+
+fn rendered_line_width(line: &crate::render::RenderedLine) -> usize {
+    diff_row(&line.bytes, Some(&line.kind), &[], &[], 0)
+        .line
+        .width()
+}
+
 pub(super) fn visible_diff_rows(
     layout: &Layout,
     viewport: &Viewport,
@@ -64,7 +119,7 @@ pub(super) fn visible_diff_rows(
         .diff_lines
         .iter()
         .enumerate()
-        .skip(viewport.offset)
+        .skip(viewport.vertical_offset)
         .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
         .map(|(index, line)| {
             diff_row(
@@ -89,7 +144,7 @@ pub(super) fn visible_side_by_side_rows(
     layout
         .side_by_side_rows
         .iter()
-        .skip(viewport.offset)
+        .skip(viewport.vertical_offset)
         .filter(|row| layout.shows_side_by_side_row(row, context_lines))
         .map(|row| match row {
             SideBySideRow::Shared(index) => VisibleSideBySideRow::Shared(diff_row_for_side(
@@ -354,7 +409,22 @@ pub(super) fn inner_separator_color(color_count: u16) -> Color {
 mod tests {
     use ratatui::style::Color;
 
-    use super::{hunk_header_color, low_contrast_palette};
+    use super::{hunk_header_color, low_contrast_palette, maximum_visible_row_width};
+    use crate::{interaction::DiffLayout, layout::file_layout, parser::parse_unified_diff};
+
+    #[test]
+    fn measures_rendered_rows_in_terminal_cells() {
+        let document = parse_unified_diff(
+            "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+界界界界界界\n".as_bytes(),
+        )
+        .expect("valid Unicode diff");
+        let layout = file_layout(&document.files[0]);
+
+        assert_eq!(
+            maximum_visible_row_width(&layout, DiffLayout::Unified, 3),
+            14
+        );
+    }
 
     #[test]
     fn falls_back_from_truecolor_to_256_and_basic_low_contrast_colors() {

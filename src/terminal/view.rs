@@ -32,6 +32,7 @@ struct DisplayRows {
     unified: Vec<DiffRow>,
     side_by_side: Vec<VisibleSideBySideRow>,
     layout: DiffLayout,
+    horizontal_offset: u16,
     color_count: u16,
 }
 
@@ -94,6 +95,7 @@ fn render_frame_with_layout(
         unified: rows,
         side_by_side: side_by_side_rows,
         layout: preferences.layout,
+        horizontal_offset: viewport.horizontal_offset,
         color_count,
     };
 
@@ -145,6 +147,7 @@ pub(super) fn render_prepared_frame(
         unified: rows,
         side_by_side: side_by_side_rows,
         layout: interaction.preferences.layout,
+        horizontal_offset: interaction.viewport.horizontal_offset,
         color_count,
     };
 
@@ -222,23 +225,43 @@ fn render_split_panes(
     render_display_layout(frame, display, panes[4]);
 }
 
-fn render_diff_rows(frame: &mut Frame, rows: Vec<DiffRow>, area: ratatui::layout::Rect) {
+fn render_diff_rows(
+    frame: &mut Frame,
+    rows: Vec<DiffRow>,
+    area: ratatui::layout::Rect,
+    horizontal_offset: u16,
+) {
     for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
         let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
 
-        frame.render_widget(Paragraph::new(row.line).style(row.style), row_area);
+        frame.render_widget(
+            Paragraph::new(row.line)
+                .style(row.style)
+                .scroll((0, horizontal_offset)),
+            row_area,
+        );
     }
 }
 
 fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: ratatui::layout::Rect) {
     match display.layout {
-        DiffLayout::Unified => render_diff_rows(frame, display.unified, area),
-        DiffLayout::Vertical => {
-            render_vertical_rows(frame, display.side_by_side, area, display.color_count)
+        DiffLayout::Unified => {
+            render_diff_rows(frame, display.unified, area, display.horizontal_offset)
         }
-        DiffLayout::Stacked => {
-            render_stacked_rows(frame, display.side_by_side, area, display.color_count)
-        }
+        DiffLayout::Vertical => render_vertical_rows(
+            frame,
+            display.side_by_side,
+            area,
+            display.horizontal_offset,
+            display.color_count,
+        ),
+        DiffLayout::Stacked => render_stacked_rows(
+            frame,
+            display.side_by_side,
+            area,
+            display.horizontal_offset,
+            display.color_count,
+        ),
     }
 }
 
@@ -246,6 +269,7 @@ fn render_vertical_rows(
     frame: &mut Frame,
     rows: Vec<VisibleSideBySideRow>,
     area: ratatui::layout::Rect,
+    horizontal_offset: u16,
     color_count: u16,
 ) {
     let panes = RatatuiLayout::horizontal([
@@ -263,24 +287,24 @@ fn render_vertical_rows(
         let after_area = ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
         match row {
             VisibleSideBySideRow::Shared(row) => {
-                render_diff_rows(frame, vec![row.clone()], before_area);
+                render_diff_rows(frame, vec![row.clone()], before_area, horizontal_offset);
                 frame.render_widget(
                     Paragraph::new(Line::styled("│", separator_style)),
                     separator_area,
                 );
-                render_diff_rows(frame, vec![row], after_area);
+                render_diff_rows(frame, vec![row], after_area, horizontal_offset);
             }
             VisibleSideBySideRow::Paired { before, after } => {
                 let Some((before, after)) = aligned_pair(before, after, color_count) else {
                     continue;
                 };
 
-                render_diff_rows(frame, vec![before], before_area);
+                render_diff_rows(frame, vec![before], before_area, horizontal_offset);
                 frame.render_widget(
                     Paragraph::new(Line::styled("│", separator_style)),
                     separator_area,
                 );
-                render_diff_rows(frame, vec![after], after_area);
+                render_diff_rows(frame, vec![after], after_area, horizontal_offset);
             }
         }
     }
@@ -290,6 +314,7 @@ fn render_stacked_rows(
     frame: &mut Frame,
     rows: Vec<VisibleSideBySideRow>,
     area: ratatui::layout::Rect,
+    horizontal_offset: u16,
     color_count: u16,
 ) {
     let panes = RatatuiLayout::vertical([
@@ -326,8 +351,8 @@ fn render_stacked_rows(
         )),
         panes[1],
     );
-    render_diff_rows(frame, before_rows, panes[0]);
-    render_diff_rows(frame, after_rows, panes[2]);
+    render_diff_rows(frame, before_rows, panes[0], horizontal_offset);
+    render_diff_rows(frame, after_rows, panes[2], horizontal_offset);
 }
 
 fn footer_hints() -> Vec<Line<'static>> {
@@ -407,10 +432,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
@@ -462,10 +484,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(23, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
@@ -498,10 +517,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -550,6 +566,43 @@ mod tests {
     }
 
     #[test]
+    fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
+        let document = parse_unified_diff(b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef\n+ABCDEF\n")
+            .expect("valid diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            viewport: Viewport {
+                vertical_offset: 0,
+                horizontal_offset: 2,
+                width: 80,
+                height: 8,
+            },
+        };
+        let view = layout(&document, &interaction);
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut syntax = SyntaxHighlighter::default();
+
+        terminal
+            .draw(|frame| {
+                render_frame_with_layout(
+                    frame,
+                    &document,
+                    &view,
+                    &interaction.viewport,
+                    &interaction.preferences,
+                    &mut syntax,
+                    u16::MAX,
+                )
+            })
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        assert_eq!(rendered[(27, 3)].symbol(), "a", "before pane offset");
+        assert_eq!(rendered[(54, 3)].symbol(), "A", "after pane offset");
+    }
+
+    #[test]
     fn renders_vertical_deletion_peers_with_deletion_background() {
         let document = parse_unified_diff(
             b"--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
@@ -558,10 +611,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -608,10 +658,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Stacked),
-            viewport: Viewport {
-                offset: 0,
-                height: 14,
-            },
+            viewport: Viewport::new(80, 14),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
@@ -667,10 +714,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -777,10 +821,7 @@ mod tests {
                 granularity: crate::interaction::DiffGranularity::Character,
                 context_lines: 3,
             },
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -822,10 +863,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -868,10 +906,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 12,
-            },
+            viewport: Viewport::new(80, 12),
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 15)).expect("test terminal");

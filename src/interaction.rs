@@ -1,7 +1,20 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewport {
-    pub offset: usize,
+    pub vertical_offset: usize,
+    pub horizontal_offset: u16,
+    pub width: u16,
     pub height: usize,
+}
+
+impl Viewport {
+    pub const fn new(width: u16, height: usize) -> Self {
+        Self {
+            vertical_offset: 0,
+            horizontal_offset: 0,
+            width,
+            height,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -16,6 +29,16 @@ pub enum DiffLayout {
     Unified,
     Vertical,
     Stacked,
+}
+
+impl DiffLayout {
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Unified => Self::Vertical,
+            Self::Vertical => Self::Stacked,
+            Self::Stacked => Self::Unified,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -44,21 +67,21 @@ impl ViewPreferences {
 #[derive(Debug, PartialEq, Eq)]
 pub struct NavigationBounds {
     pub file_count: usize,
-    pub unified_line_count: usize,
-    pub paired_line_count: usize,
+    pub target_display: DisplayBounds,
 }
 
-impl NavigationBounds {
-    fn line_count(&self, layout: DiffLayout) -> usize {
-        match layout {
-            DiffLayout::Unified => self.unified_line_count,
-            DiffLayout::Vertical | DiffLayout::Stacked => self.paired_line_count,
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBounds {
+    pub line_count: usize,
+    pub maximum_horizontal_offset: u16,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Input {
+    Left,
+    Right,
+    HorizontalStart,
+    HorizontalEnd,
     Down,
     Up,
     HalfPageDown,
@@ -90,11 +113,8 @@ pub fn transition_interaction(
         Input::DecreaseContext => return change_context(interaction, ContextChange::Decrease),
         _ => {}
     }
-    let transition = transition(
-        &interaction.viewport,
-        input,
-        bounds.line_count(interaction.preferences.layout),
-    );
+    let display = bounds.target_display;
+    let transition = transition(&interaction.viewport, input, display);
 
     match transition {
         Transition::Exit => Transition::Exit,
@@ -112,16 +132,17 @@ pub fn transition_interaction(
 }
 
 fn select_next_layout(interaction: &Interaction, bounds: &NavigationBounds) -> Transition {
-    let layout = match interaction.preferences.layout {
-        DiffLayout::Unified => DiffLayout::Vertical,
-        DiffLayout::Vertical => DiffLayout::Stacked,
-        DiffLayout::Stacked => DiffLayout::Unified,
-    };
+    let layout = interaction.preferences.layout.next();
 
-    let maximum_offset = bounds
-        .line_count(layout)
+    let display = bounds.target_display;
+    let maximum_offset = display
+        .line_count
         .saturating_sub(interaction.viewport.height);
-    let offset = interaction.viewport.offset.min(maximum_offset);
+    let vertical_offset = interaction.viewport.vertical_offset.min(maximum_offset);
+    let horizontal_offset = interaction
+        .viewport
+        .horizontal_offset
+        .min(display.maximum_horizontal_offset);
 
     Transition::RedrawInteraction(Interaction {
         selected_file: interaction.selected_file,
@@ -131,7 +152,9 @@ fn select_next_layout(interaction: &Interaction, bounds: &NavigationBounds) -> T
             context_lines: interaction.preferences.context_lines,
         },
         viewport: Viewport {
-            offset,
+            vertical_offset,
+            horizontal_offset,
+            width: interaction.viewport.width,
             height: interaction.viewport.height,
         },
     })
@@ -167,7 +190,9 @@ fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Tran
             context_lines: interaction.preferences.context_lines,
         },
         viewport: Viewport {
-            offset: 0,
+            vertical_offset: 0,
+            horizontal_offset: 0,
+            width: interaction.viewport.width,
             height: interaction.viewport.height,
         },
     })
@@ -227,9 +252,25 @@ pub enum Transition {
     Exit,
 }
 
-pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Transition {
+fn transition(viewport: &Viewport, input: Input, bounds: DisplayBounds) -> Transition {
     match input {
         Input::Quit | Input::Interrupt => Transition::Exit,
+        Input::Left => redraw_horizontal(
+            viewport.horizontal_offset.saturating_sub(1),
+            viewport,
+            bounds.maximum_horizontal_offset,
+        ),
+        Input::Right => redraw_horizontal(
+            viewport.horizontal_offset.saturating_add(1),
+            viewport,
+            bounds.maximum_horizontal_offset,
+        ),
+        Input::HorizontalStart => redraw_horizontal(0, viewport, bounds.maximum_horizontal_offset),
+        Input::HorizontalEnd => redraw_horizontal(
+            bounds.maximum_horizontal_offset,
+            viewport,
+            bounds.maximum_horizontal_offset,
+        ),
         Input::NextFile
         | Input::PreviousFile
         | Input::NextLayout
@@ -237,89 +278,234 @@ pub fn transition(viewport: &Viewport, input: Input, line_count: usize) -> Trans
         | Input::IncreaseContext
         | Input::DecreaseContext => Transition::Redraw(viewport.clone()),
         Input::Down => redraw(
-            viewport.offset.saturating_add(1),
+            viewport.vertical_offset.saturating_add(1),
             viewport.height,
-            line_count,
+            viewport,
+            bounds,
         ),
         Input::Up => redraw(
-            viewport.offset.saturating_sub(1),
+            viewport.vertical_offset.saturating_sub(1),
             viewport.height,
-            line_count,
+            viewport,
+            bounds,
         ),
         Input::HalfPageDown => {
             let distance = viewport.height.saturating_div(2).max(1);
 
             redraw(
-                viewport.offset.saturating_add(distance),
+                viewport.vertical_offset.saturating_add(distance),
                 viewport.height,
-                line_count,
+                viewport,
+                bounds,
             )
         }
         Input::HalfPageUp => {
             let distance = viewport.height.saturating_div(2).max(1);
 
             redraw(
-                viewport.offset.saturating_sub(distance),
+                viewport.vertical_offset.saturating_sub(distance),
                 viewport.height,
-                line_count,
+                viewport,
+                bounds,
             )
         }
-        Input::Top => redraw(0, viewport.height, line_count),
-        Input::Bottom => redraw(line_count, viewport.height, line_count),
-        Input::Resize { height, .. } => redraw(viewport.offset, usize::from(height), line_count),
+        Input::Top => redraw(0, viewport.height, viewport, bounds),
+        Input::Bottom => redraw(bounds.line_count, viewport.height, viewport, bounds),
+        Input::Resize { width, height } => redraw(
+            viewport.vertical_offset,
+            usize::from(height),
+            &Viewport {
+                vertical_offset: viewport.vertical_offset,
+                horizontal_offset: viewport.horizontal_offset,
+                width,
+                height: usize::from(height),
+            },
+            bounds,
+        ),
     }
 }
 
-fn redraw(offset: usize, height: usize, line_count: usize) -> Transition {
-    let maximum_offset = line_count.saturating_sub(height);
-    let bounded_offset = offset.min(maximum_offset);
+fn redraw(
+    vertical_offset: usize,
+    height: usize,
+    viewport: &Viewport,
+    bounds: DisplayBounds,
+) -> Transition {
+    let maximum_offset = bounds.line_count.saturating_sub(height);
+    let bounded_offset = vertical_offset.min(maximum_offset);
 
     Transition::Redraw(Viewport {
-        offset: bounded_offset,
+        vertical_offset: bounded_offset,
+        horizontal_offset: viewport
+            .horizontal_offset
+            .min(bounds.maximum_horizontal_offset),
+        width: viewport.width,
         height,
+    })
+}
+
+fn redraw_horizontal(
+    horizontal_offset: u16,
+    viewport: &Viewport,
+    maximum_horizontal_offset: u16,
+) -> Transition {
+    Transition::Redraw(Viewport {
+        vertical_offset: viewport.vertical_offset,
+        horizontal_offset: horizontal_offset.min(maximum_horizontal_offset),
+        width: viewport.width,
+        height: viewport.height,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffGranularity, DiffLayout, Input, Interaction, NavigationBounds, Transition,
-        ViewPreferences, Viewport, transition, transition_interaction,
+        DiffGranularity, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds,
+        Transition, ViewPreferences, Viewport, transition, transition_interaction,
     };
 
     #[test]
     fn moves_and_clamps_the_vertical_viewport() {
         let viewport = Viewport {
-            offset: 4,
+            vertical_offset: 4,
+            horizontal_offset: 2,
+            width: 80,
             height: 3,
         };
 
-        let next = transition(&viewport, Input::Down, 10);
+        let next = transition(
+            &viewport,
+            Input::Down,
+            DisplayBounds {
+                line_count: 10,
+                maximum_horizontal_offset: 4,
+            },
+        );
 
         assert_eq!(
             next,
             Transition::Redraw(Viewport {
-                offset: 5,
+                vertical_offset: 5,
+                horizontal_offset: 2,
+                width: 80,
                 height: 3,
             })
         );
     }
 
     #[test]
+    fn moves_and_clamps_the_horizontal_viewport() {
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport {
+                vertical_offset: 4,
+                horizontal_offset: 2,
+                width: 80,
+                height: 3,
+            },
+        };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 3,
+        };
+        let bounds = NavigationBounds {
+            file_count: 1,
+            target_display: display,
+        };
+
+        let Transition::RedrawInteraction(right) =
+            transition_interaction(&interaction, Input::Right, &bounds)
+        else {
+            panic!("horizontal movement redraws interaction");
+        };
+        let Transition::RedrawInteraction(at_end) =
+            transition_interaction(&right, Input::Right, &bounds)
+        else {
+            panic!("horizontal movement redraws interaction");
+        };
+        let Transition::RedrawInteraction(clamped) =
+            transition_interaction(&at_end, Input::Right, &bounds)
+        else {
+            panic!("horizontal movement redraws interaction");
+        };
+        let Transition::RedrawInteraction(left) =
+            transition_interaction(&clamped, Input::Left, &bounds)
+        else {
+            panic!("horizontal movement redraws interaction");
+        };
+
+        assert_eq!(right.viewport.horizontal_offset, 3);
+        assert_eq!(at_end.viewport.horizontal_offset, 3);
+        assert_eq!(clamped.viewport.horizontal_offset, 3);
+        assert_eq!(left.viewport.horizontal_offset, 2);
+        assert_eq!(left.viewport.vertical_offset, 4);
+    }
+
+    #[test]
+    fn jumps_to_horizontal_boundaries() {
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport {
+                vertical_offset: 4,
+                horizontal_offset: 2,
+                width: 80,
+                height: 3,
+            },
+        };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 12,
+        };
+        let bounds = NavigationBounds {
+            file_count: 1,
+            target_display: display,
+        };
+
+        let Transition::RedrawInteraction(start) =
+            transition_interaction(&interaction, Input::HorizontalStart, &bounds)
+        else {
+            panic!("horizontal jump redraws interaction");
+        };
+        let Transition::RedrawInteraction(end) =
+            transition_interaction(&interaction, Input::HorizontalEnd, &bounds)
+        else {
+            panic!("horizontal jump redraws interaction");
+        };
+
+        assert_eq!(start.viewport.horizontal_offset, 0);
+        assert_eq!(end.viewport.horizontal_offset, 12);
+        assert_eq!(end.viewport.vertical_offset, 4);
+    }
+
+    #[test]
     fn exits_for_quit_and_interrupt() {
         let viewport = Viewport {
-            offset: 0,
+            vertical_offset: 0,
+            horizontal_offset: 0,
+            width: 80,
             height: 1,
         };
 
-        assert_eq!(transition(&viewport, Input::Quit, 1), Transition::Exit);
-        assert_eq!(transition(&viewport, Input::Interrupt, 1), Transition::Exit);
+        let bounds = DisplayBounds {
+            line_count: 1,
+            maximum_horizontal_offset: 0,
+        };
+
+        assert_eq!(transition(&viewport, Input::Quit, bounds), Transition::Exit);
+        assert_eq!(
+            transition(&viewport, Input::Interrupt, bounds),
+            Transition::Exit
+        );
     }
 
     #[test]
     fn resize_clamps_the_offset_for_the_new_height() {
         let viewport = Viewport {
-            offset: 2,
+            vertical_offset: 2,
+            horizontal_offset: 4,
+            width: 40,
             height: 3,
         };
 
@@ -329,13 +515,18 @@ mod tests {
                 width: 80,
                 height: 9,
             },
-            10,
+            DisplayBounds {
+                line_count: 10,
+                maximum_horizontal_offset: 4,
+            },
         );
 
         assert_eq!(
             next,
             Transition::Redraw(Viewport {
-                offset: 1,
+                vertical_offset: 1,
+                horizontal_offset: 4,
+                width: 80,
                 height: 9,
             })
         );
@@ -347,14 +538,19 @@ mod tests {
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
-                offset: 4,
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
                 height: 3,
             },
         };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 12,
+        };
         let bounds = NavigationBounds {
             file_count: 2,
-            unified_line_count: 10,
-            paired_line_count: 10,
+            target_display: display,
         };
 
         let next = transition_interaction(&interaction, Input::NextFile, &bounds);
@@ -365,7 +561,9 @@ mod tests {
                 selected_file: 0,
                 preferences: ViewPreferences::line(DiffLayout::Unified),
                 viewport: Viewport {
-                    offset: 0,
+                    vertical_offset: 0,
+                    horizontal_offset: 0,
+                    width: 80,
                     height: 3,
                 },
             })
@@ -378,14 +576,19 @@ mod tests {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
-                offset: 4,
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
                 height: 3,
             },
         };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 12,
+        };
         let bounds = NavigationBounds {
             file_count: 2,
-            unified_line_count: 10,
-            paired_line_count: 10,
+            target_display: display,
         };
 
         let next = transition_interaction(&interaction, Input::PreviousFile, &bounds);
@@ -396,7 +599,9 @@ mod tests {
                 selected_file: 1,
                 preferences: ViewPreferences::line(DiffLayout::Unified),
                 viewport: Viewport {
-                    offset: 0,
+                    vertical_offset: 0,
+                    horizontal_offset: 0,
+                    width: 80,
                     height: 3,
                 },
             })
@@ -409,14 +614,19 @@ mod tests {
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
-                offset: 4,
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
                 height: 3,
             },
         };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 12,
+        };
         let bounds = NavigationBounds {
             file_count: 2,
-            unified_line_count: 10,
-            paired_line_count: 10,
+            target_display: display,
         };
 
         let Transition::RedrawInteraction(vertical) =
@@ -446,14 +656,19 @@ mod tests {
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
-                offset: 4,
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
                 height: 3,
             },
         };
+        let display = DisplayBounds {
+            line_count: 10,
+            maximum_horizontal_offset: 12,
+        };
         let bounds = NavigationBounds {
             file_count: 2,
-            unified_line_count: 10,
-            paired_line_count: 10,
+            target_display: display,
         };
 
         let Transition::RedrawInteraction(character) =

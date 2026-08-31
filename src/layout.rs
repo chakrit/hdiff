@@ -38,6 +38,34 @@ pub fn pane_layout(width: u16, height: u16) -> PaneLayout {
     }
 }
 
+pub fn content_pane_width(screen_width: u16, display_layout: DiffLayout) -> u16 {
+    let diff_width = match pane_layout(screen_width, MINIMUM_SCREEN_HEIGHT) {
+        PaneLayout::TooNarrow | PaneLayout::TooShort => 0,
+        PaneLayout::DiffOnly => screen_width,
+        PaneLayout::Split {
+            file_list_width,
+            separator_padding,
+        } => screen_width.saturating_sub(
+            file_list_width + separator_padding + SEPARATOR_WIDTH + separator_padding,
+        ),
+    };
+
+    match display_layout {
+        DiffLayout::Unified | DiffLayout::Stacked => diff_width,
+        DiffLayout::Vertical => diff_width.saturating_sub(SEPARATOR_WIDTH) / 2,
+    }
+}
+
+pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
+    match pane_width {
+        0 => 0,
+        _ => content_width
+            .saturating_sub(usize::from(pane_width))
+            .try_into()
+            .unwrap_or(u16::MAX),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileListRow {
     pub label: String,
@@ -207,7 +235,10 @@ fn is_changed_line(line: &RenderedLine) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PaneLayout, SideBySideRow, file_layout, layout, pane_layout};
+    use super::{
+        PaneLayout, SideBySideRow, content_pane_width, file_layout, layout,
+        maximum_horizontal_offset, pane_layout,
+    };
     use crate::{
         interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
         parser::parse_unified_diff,
@@ -272,10 +303,7 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport {
-                offset: 0,
-                height: 8,
-            },
+            viewport: Viewport::new(80, 8),
         };
 
         let view = layout(&document, &interaction);
@@ -333,5 +361,22 @@ mod tests {
         for ((width, height), expected) in cases {
             assert_eq!(pane_layout(width, height), expected, "{width}×{height}");
         }
+    }
+
+    #[test]
+    fn derives_the_narrowest_content_pane_width_for_each_layout() {
+        assert_eq!(content_pane_width(80, DiffLayout::Unified), 53);
+        assert_eq!(content_pane_width(80, DiffLayout::Vertical), 26);
+        assert_eq!(content_pane_width(80, DiffLayout::Stacked), 53);
+        assert_eq!(content_pane_width(23, DiffLayout::Unified), 23);
+        assert_eq!(content_pane_width(23, DiffLayout::Vertical), 11);
+    }
+
+    #[test]
+    fn bounds_horizontal_movement_to_visible_content() {
+        assert_eq!(maximum_horizontal_offset(40, 20), 20);
+        assert_eq!(maximum_horizontal_offset(10, 20), 0);
+        assert_eq!(maximum_horizontal_offset(40, 0), 0);
+        assert_eq!(maximum_horizontal_offset(usize::MAX, 1), u16::MAX);
     }
 }

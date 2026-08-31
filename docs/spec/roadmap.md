@@ -45,6 +45,10 @@ Character detail now coalesces small equal islands inside changed spans, and `+`
 session-local context visibility without changing the selected file or current viewport. Unit and
 terminal checks cover the completed interaction slice.
 
+Horizontal movement now uses one synchronized viewport offset across content panes. `h` and `l`
+move by one column, `0` and `^` move to the left edge, and `$` moves to the furthest useful
+offset; movement remains bounded while the file list stays fixed.
+
 `hdiff --install` backs up the global Git configuration file Git will edit, then registers the
 current executable as the user-level `git diff` pager. Git passes the complete unified diff to
 hdiff on standard input, preserving the entire file list in one interactive session.
@@ -70,12 +74,13 @@ hdiff on standard input, preserving the entire file list in one interactive sess
     rotation, and resize.
 12. Add unified, vertical, and stacked layout cycling with paired changed-row derivation.
 13. Add user-level Git diff-pager installation with global-config backup and complete-diff input.
+14. Add synchronized, bounded horizontal movement across unified, vertical, and stacked layouts.
 
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Add wrapping and synchronized horizontal scrolling for side-by-side panes.
+1. Add wrapping for unified and side-by-side panes.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
