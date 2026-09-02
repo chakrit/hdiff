@@ -23,7 +23,7 @@ Tree-sitter queries assign semantic capture names such as `keyword`, `function`,
 version-pinned together. Adding a language is an explicit dependency and registry entry, not a
 dynamic plugin scan.
 
-The initial dependency set is `tree-sitter 0.26.13`, `tree-sitter-rust 0.24.2`,
+The current dependency set is `tree-sitter 0.27.0`, `tree-sitter-rust 0.24.2`,
 `tree-sitter-javascript 0.25.0`, `tree-sitter-python 0.25.0`, `tree-sitter-go 0.25.0`, and
 `tree-sitter-c 0.24.2`.
 
@@ -56,7 +56,28 @@ the official Tree-sitter organization projects, with stable tagged releases matc
 versions. Standard-audit verdict: **GO** for the 0.26.12 releases. Continue to pin the lockfile
 and keep the WASM/Wasmtime feature disabled unless it is separately audited.
 
+### Tree-sitter 0.27.0 triage
+
+Audit date: 2026-09-02. Triage covered the published `tree-sitter 0.27.0` crate, not its
+default-install closure or artifact-to-tag and version-to-version integrity. The downloaded crate
+matched the crates.io sparse-index SHA-256 checksum
+`2038684e0058edba0d17302619f62eabce4a8e11c6ac59506996a8d79848851d`.
+
+The published crate contains no precompiled object, shared-library, DLL, WASM, or binary blob.
+Its build script reads Cargo build variables, copies its WASM symbol list into `OUT_DIR`, and
+compiles the bundled Tree-sitter C source there through `cc`; it contains no download, shell,
+credential, or persistence path. A capability scan found no networking, process execution,
+secret-file access, dynamic loading, executable-memory allocation, or obfuscation path in the
+published Rust, C, or header sources. OSV returned zero advisories for `tree-sitter 0.27.0` at the
+audit date.
+
+Triage verdict: **GO** for `tree-sitter 0.27.0` with the default `std` feature and WASM disabled.
+The unchanged grammar crates retain the previous standard-audit evidence; this triage does not
+extend that evidence to newly resolved transitive versions.
+
 ## Sources
 
 - [Tree-sitter Rust bindings](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_rust)
 - [Tree-sitter query API](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/4-api.html)
+- [Tree-sitter 0.27.0 release](https://github.com/tree-sitter/tree-sitter/releases/tag/v0.27.0)
+- [tree-sitter 0.27.0 on crates.io](https://crates.io/crates/tree-sitter/0.27.0)
