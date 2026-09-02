@@ -1,8 +1,32 @@
 use std::{ffi::OsString, path::PathBuf};
 
+pub const HELP: &str = concat!(
+    "Usage: hdiff [OPTIONS] [FILE ...]\n",
+    "\n",
+    "Arguments:\n",
+    "  [FILE ...]  Read one patch file, compare two files, or read standard input\n",
+    "              when omitted\n",
+    "\n",
+    "Options:\n",
+    "  --bench    Prepare the diff and report benchmark measurements\n",
+    "  --install  Register hdiff as the user-level Git diff pager\n",
+    "  --help     Print help\n",
+    "  --version  Print version\n",
+);
+
+pub const VERSION: &str = concat!(
+    "hdiff ",
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("HDIFF_GIT_HASH"),
+    ")\n"
+);
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
+    Help,
     Install,
+    Version,
     View {
         source: InputSource,
         mode: ViewerMode,
@@ -27,6 +51,8 @@ pub struct InputError(pub String);
 
 pub fn select_command(arguments: &[OsString]) -> Result<Command, InputError> {
     match arguments {
+        [argument] if argument == "--help" => Ok(Command::Help),
+        [argument] if argument == "--version" => Ok(Command::Version),
         [argument] if argument == "--install" => Ok(Command::Install),
         _ if arguments.iter().any(|argument| argument == "--install") => Err(InputError(
             "--install cannot be combined with diff input operands".to_owned(),
