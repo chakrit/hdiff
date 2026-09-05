@@ -170,6 +170,10 @@ one interactive session. `core.pager` remains unchanged. After successful writes
 prints a shell-safe `cp` command when it created a backup and the `git config --global pager.diff`
 command it applied.
 
+`hdiff --help` prints the command usage, operands, and options without reading diff input.
+`hdiff --version` prints the Cargo package version followed by the short source commit
+hash in parentheses. Both commands exit successfully after printing their output.
+
 ## Interaction model
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main

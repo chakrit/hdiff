@@ -224,7 +224,7 @@ impl LanguageHighlighter {
                 .captures(&self.query, tree.root_node(), projection.source.as_slice());
 
         while let Some((query_match, index)) = captures.next() {
-            let capture = query_match.captures[*index];
+            let capture = query_match.captures()[*index];
             let Some(class) = SyntaxClass::from_capture_name(capture_names[capture.index as usize])
             else {
                 continue;

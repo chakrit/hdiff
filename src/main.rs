@@ -18,6 +18,7 @@ fn main() -> Result<(), String> {
     let command = input::select_command(&arguments).map_err(|error| error.0)?;
 
     match command {
+        input::Command::Help => write_stdout(input::HELP.as_bytes())?,
         input::Command::Install => {
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
             let mut context = actions::git_config::InstallGitDiffPagerContext;
@@ -26,18 +27,10 @@ fn main() -> Result<(), String> {
                 .run(&mut context)
                 .map_err(|error| error.to_string())?;
             let output = format!("{}\n", report.completed_commands.join("\n"));
-            let mut stdout = std::io::stdout();
-            let mut output_context = actions::write_output::OutputContext {
-                writer: &mut stdout,
-            };
-
-            actions::write_output::WriteOutput {
-                bytes: output.as_bytes(),
-            }
-            .run(&mut output_context)
-            .map_err(|error| error.to_string())?;
+            write_stdout(output.as_bytes())?;
             return Ok(());
         }
+        input::Command::Version => write_stdout(input::VERSION.as_bytes())?,
         input::Command::View { source, mode } => run_viewer(source, mode)?,
     }
 
@@ -68,6 +61,17 @@ fn read_input(source: input::InputSource) -> Result<Vec<u8>, String> {
     }
 }
 
+fn write_stdout(bytes: &[u8]) -> Result<(), String> {
+    let mut stdout = std::io::stdout();
+    let mut context = actions::write_output::OutputContext {
+        writer: &mut stdout,
+    };
+
+    actions::write_output::WriteOutput { bytes }
+        .run(&mut context)
+        .map_err(|error| error.to_string())
+}
+
 fn run_viewer(source: input::InputSource, mode: input::ViewerMode) -> Result<(), String> {
     let input = read_input(source)?;
     let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
@@ -88,16 +92,7 @@ fn run_benchmark(document: &document::DiffDocument) -> Result<(), String> {
         prepared.file_count(),
         prepared.record_count()
     );
-    let mut stdout = std::io::stdout();
-    let mut output_context = actions::write_output::OutputContext {
-        writer: &mut stdout,
-    };
-
-    actions::write_output::WriteOutput {
-        bytes: output.as_bytes(),
-    }
-    .run(&mut output_context)
-    .map_err(|error| error.to_string())
+    write_stdout(output.as_bytes())
 }
 
 fn run_render(document: &document::DiffDocument) -> Result<(), String> {
@@ -107,13 +102,7 @@ fn run_render(document: &document::DiffDocument) -> Result<(), String> {
     match output_mode {
         terminal::OutputMode::Finite => {
             let output = render::render_unified(document);
-            let mut stdout = std::io::stdout();
-            let mut output_context = actions::write_output::OutputContext {
-                writer: &mut stdout,
-            };
-            actions::write_output::WriteOutput { bytes: &output }
-                .run(&mut output_context)
-                .map_err(|error| error.to_string())?;
+            write_stdout(&output)?;
         }
         terminal::OutputMode::Interactive => {
             let prepared = prepared::PreparedDocument::prepare(document);
