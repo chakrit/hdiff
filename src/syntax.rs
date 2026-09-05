@@ -1,6 +1,9 @@
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
-use crate::document::{DiffFile, RecordKind, UnifiedDiffFile};
+use crate::{
+    document::{DiffFile, RecordKind, UnifiedDiffFile},
+    measurement::{Observer, Stage, Unobserved, Work},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxClass {
@@ -30,6 +33,14 @@ pub struct SyntaxHighlighter {
 
 impl SyntaxHighlighter {
     pub fn highlight_file(&mut self, file: &DiffFile) -> Vec<Vec<SyntaxSpan>> {
+        self.highlight_file_observed(file, &mut Unobserved)
+    }
+
+    pub fn highlight_file_observed(
+        &mut self,
+        file: &DiffFile,
+        observer: &mut impl Observer,
+    ) -> Vec<Vec<SyntaxSpan>> {
         match file {
             DiffFile::Metadata { lines } => (0..lines.len()).map(|_| Vec::new()).collect(),
             DiffFile::Unified(file) => {
@@ -38,7 +49,7 @@ impl SyntaxHighlighter {
                     .collect::<Vec<_>>();
                 for hunk_index in 0..file.hunks.len() {
                     rows.push(Vec::new());
-                    rows.extend(self.highlight_hunk(file, hunk_index));
+                    rows.extend(self.highlight_hunk_observed(file, hunk_index, observer));
                 }
                 rows
             }
@@ -50,16 +61,32 @@ impl SyntaxHighlighter {
         file: &UnifiedDiffFile,
         hunk_index: usize,
     ) -> Vec<Vec<SyntaxSpan>> {
+        self.highlight_hunk_observed(file, hunk_index, &mut Unobserved)
+    }
+
+    fn highlight_hunk_observed(
+        &mut self,
+        file: &UnifiedDiffFile,
+        hunk_index: usize,
+        observer: &mut impl Observer,
+    ) -> Vec<Vec<SyntaxSpan>> {
         let Some(hunk) = file.hunks.get(hunk_index) else {
             return Vec::new();
         };
+        observer.count(Work::Hunk);
         let mut spans = (0..hunk.records.len())
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
         let old_language = Language::for_path(&file.old_path);
         let new_language = Language::for_path(&file.new_path);
-        let old_projection = Projection::from_hunk(file, hunk_index, Side::Old);
-        let new_projection = Projection::from_hunk(file, hunk_index, Side::New);
+        let (old_projection, new_projection) = observer.measure(Stage::Projection, |observer| {
+            let old = Projection::from_hunk(file, hunk_index, Side::Old);
+            let new = Projection::from_hunk(file, hunk_index, Side::New);
+            for projection in old.iter().chain(&new) {
+                observer.count(Work::ProjectedBytes(projection.source.len()));
+            }
+            (old, new)
+        });
 
         match (
             old_language,
@@ -68,16 +95,16 @@ impl SyntaxHighlighter {
             new_projection.as_ref(),
         ) {
             (Some(language), Some(other), Some(old), Some(new)) if language == other => {
-                self.highlight_pair(language, old, new, &mut spans);
+                self.highlight_pair(language, old, new, &mut spans, observer);
             }
             _ => {
                 if let (Some(language), Some(projection)) = (old_language, old_projection.as_ref())
                 {
-                    self.highlight_projection(language, projection, &mut spans);
+                    self.highlight_projection(language, projection, &mut spans, observer);
                 }
                 if let (Some(language), Some(projection)) = (new_language, new_projection.as_ref())
                 {
-                    self.highlight_projection(language, projection, &mut spans);
+                    self.highlight_projection(language, projection, &mut spans, observer);
                 }
             }
         }
@@ -99,20 +126,32 @@ impl SyntaxHighlighter {
         old: &Projection,
         new: &Projection,
         spans: &mut [Vec<SyntaxSpan>],
+        observer: &mut impl Observer,
     ) {
-        let Some(highlighter) = self.language(language) else {
+        let Some(highlighter) = observer.measure(Stage::Language, |_| self.language(language))
+        else {
             return;
         };
-        let Some(mut tree) = highlighter.parse(&old.source, None) else {
+        let Some(mut tree) = observer.measure(Stage::Parse, |observer| {
+            observer.count(Work::Parse);
+            highlighter.parse(&old.source, None)
+        }) else {
             return;
         };
-        highlighter.highlight(old, &tree, spans);
+        observer.measure(Stage::Query, |observer| {
+            highlighter.highlight(old, &tree, spans, observer)
+        });
 
-        tree.edit(&old.edit_to(new));
-        let Some(tree) = highlighter.parse(&new.source, Some(&tree)) else {
+        let Some(tree) = observer.measure(Stage::Parse, |observer| {
+            tree.edit(&old.edit_to(new));
+            observer.count(Work::Parse);
+            highlighter.parse(&new.source, Some(&tree))
+        }) else {
             return;
         };
-        highlighter.highlight(new, &tree, spans);
+        observer.measure(Stage::Query, |observer| {
+            highlighter.highlight(new, &tree, spans, observer)
+        });
     }
 
     fn highlight_projection(
@@ -120,14 +159,21 @@ impl SyntaxHighlighter {
         language: Language,
         projection: &Projection,
         spans: &mut [Vec<SyntaxSpan>],
+        observer: &mut impl Observer,
     ) {
-        let Some(highlighter) = self.language(language) else {
+        let Some(highlighter) = observer.measure(Stage::Language, |_| self.language(language))
+        else {
             return;
         };
-        let Some(tree) = highlighter.parse(&projection.source, None) else {
+        let Some(tree) = observer.measure(Stage::Parse, |observer| {
+            observer.count(Work::Parse);
+            highlighter.parse(&projection.source, None)
+        }) else {
             return;
         };
-        highlighter.highlight(projection, &tree, spans);
+        observer.measure(Stage::Query, |observer| {
+            highlighter.highlight(projection, &tree, spans, observer)
+        });
     }
 
     fn language(&mut self, language: Language) -> Option<&mut LanguageHighlighter> {
@@ -217,13 +263,20 @@ impl LanguageHighlighter {
         self.parser.parse(source, old_tree)
     }
 
-    fn highlight(&mut self, projection: &Projection, tree: &Tree, spans: &mut [Vec<SyntaxSpan>]) {
+    fn highlight(
+        &mut self,
+        projection: &Projection,
+        tree: &Tree,
+        spans: &mut [Vec<SyntaxSpan>],
+        observer: &mut impl Observer,
+    ) {
         let capture_names = self.query.capture_names();
         let mut captures =
             self.cursor
                 .captures(&self.query, tree.root_node(), projection.source.as_slice());
 
         while let Some((query_match, index)) = captures.next() {
+            observer.count(Work::Capture);
             let capture = query_match.captures()[*index];
             let Some(class) = SyntaxClass::from_capture_name(capture_names[capture.index as usize])
             else {
@@ -421,7 +474,12 @@ mod tests {
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
 
-        full.highlight_projection(super::Language::Rust, &new_projection, &mut full_spans);
+        full.highlight_projection(
+            super::Language::Rust,
+            &new_projection,
+            &mut full_spans,
+            &mut crate::measurement::Unobserved,
+        );
 
         assert_eq!(incremental_spans[1], full_spans[1]);
         assert_eq!(incremental_spans[1][0].class, SyntaxClass::Keyword);

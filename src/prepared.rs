@@ -3,6 +3,7 @@ use crate::{
     document::{DiffDocument, DiffFile, sanitize},
     interaction::DiffGranularity,
     layout::{FileListRow, Layout, file_layout},
+    measurement::{Observer, Stage, Unobserved},
     syntax::{SyntaxHighlighter, SyntaxSpan},
 };
 
@@ -19,12 +20,18 @@ pub struct PreparedFile {
 
 impl PreparedDocument {
     pub fn prepare(document: &DiffDocument) -> Self {
+        Self::prepare_observed(document, &mut Unobserved)
+    }
+
+    pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let mut syntax = SyntaxHighlighter::default();
-        let file_labels = document.files.iter().map(file_list_label).collect();
+        let file_labels = observer.measure(Stage::Labels, |_| {
+            document.files.iter().map(file_list_label).collect()
+        });
         let files = document
             .files
             .iter()
-            .map(|file| PreparedFile::prepare(file, &mut syntax))
+            .map(|file| PreparedFile::prepare(file, &mut syntax, observer))
             .collect();
 
         Self { files, file_labels }
@@ -55,10 +62,18 @@ impl PreparedDocument {
 }
 
 impl PreparedFile {
-    fn prepare(file: &DiffFile, syntax: &mut SyntaxHighlighter) -> Self {
-        let layout = file_layout(file);
-        let syntax = syntax.highlight_file(file);
-        let character_details = detail_rows(&layout, DiffGranularity::Character);
+    fn prepare(
+        file: &DiffFile,
+        syntax: &mut SyntaxHighlighter,
+        observer: &mut impl Observer,
+    ) -> Self {
+        let layout = observer.measure(Stage::Layout, |_| file_layout(file));
+        let syntax = observer.measure(Stage::Syntax, |observer| {
+            syntax.highlight_file_observed(file, observer)
+        });
+        let character_details = observer.measure(Stage::Detail, |_| {
+            detail_rows(&layout, DiffGranularity::Character)
+        });
 
         Self {
             layout,
@@ -142,6 +157,25 @@ pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> V
 mod tests {
     use super::PreparedDocument;
     use crate::{interaction::DiffGranularity, parser::parse_unified_diff};
+
+    #[test]
+    fn diagnostic_observation_preserves_every_prepared_rendering_component() {
+        let document = parse_unified_diff(include_bytes!(
+            "../tests/fixtures/mixed-language-layout.patch"
+        ))
+        .expect("mixed language diff");
+        let ordinary = PreparedDocument::prepare(&document);
+        let mut profile = crate::measurement::Profile::default();
+        let observed = PreparedDocument::prepare_observed(&document, &mut profile);
+
+        assert_eq!(ordinary.file_rows(0), observed.file_rows(0));
+        assert_eq!(ordinary.record_count(), observed.record_count());
+        for (ordinary, observed) in ordinary.files.iter().zip(&observed.files) {
+            assert_eq!(ordinary.layout, observed.layout);
+            assert_eq!(ordinary.syntax, observed.syntax);
+            assert_eq!(ordinary.character_details, observed.character_details);
+        }
+    }
 
     #[test]
     fn prepares_layout_syntax_and_character_detail_for_every_file() {

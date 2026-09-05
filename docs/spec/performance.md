@@ -21,11 +21,48 @@ Unified and side-by-side layout projections reference those buffers.
 ## Benchmark mode
 
 `hdiff --bench` accepts the normal diff input, completes the normal preparation pass,
-prints one machine-readable result line, and exits without opening the terminal. The
-result reports total preparation time and the prepared file and record counts as
+prints machine-readable result lines, and exits without opening the terminal. The first
+result reports preparation time and the prepared file and record counts as
 `preparation duration_ns=<integer> files=<integer> records=<integer>`.
-Benchmark mode starts timing immediately before the shared preparation pass and exits
-immediately after reporting its result.
+The preparation measurement starts immediately before the shared preparation pass.
+The second line has this versioned schema, with integer nanosecond durations:
+
+```text
+startup version=1 input_ns=N parse_ns=N preparation_ns=N ready_ns=N bytes=N
+```
+
+Input time includes reading stdin or the patch file, or producing a two-operand comparison.
+Parse time covers unified-diff parsing. Ready time runs from immediately before input
+acquisition until preparation completes, including orchestration overhead. Reporting,
+terminal setup, first draw, and process teardown are excluded. Input bytes count the
+complete acquired patch. Preparation time has the same meaning in both result lines.
+Whole-process measurements remain separate. Prepared patch runs exclude upstream Git
+production latency; reading a live pipe can include waiting on its producer.
+
+### Diagnostic profiles
+
+`hdiff --profile` accepts the same input sources and executes the same preparation
+algorithm with explicit stage observation. Its first line uses `diagnostic` in place of
+`preparation`; its startup line uses the same schema. It then emits `profile version=1`,
+stage lines, and a workload line:
+
+```text
+stage name=NAME parent=preparation|syntax duration_ns=N
+work hunks=N parse_calls=N captures=N projected_bytes=N
+```
+
+Preparation children are `labels`, `layout`, `syntax`, `detail`, and `unattributed`.
+Syntax children are `language`, `projection`, `parse`, `query`, and `unattributed`.
+Parse includes incremental-tree editing; query includes capture traversal and mapping.
+Child durations partition their parent; parent and child durations are never summed
+together. Unattributed time includes orchestration, destruction, and observer bookkeeping
+outside named spans. Counts include attempted parse calls and all returned captures.
+Projected bytes count the old and new virtual source buffers, including separators.
+
+Normal rendering and benchmark comparisons have no per-hunk clock reads or counters.
+Static dispatch selects observation at preparation entry. Profiles are diagnostic runs;
+their timings never enter benchmark acceptance calculations. Reports are written only
+after successful preparation, and malformed input produces no success record.
 
 ## Measurement model
 
@@ -43,18 +80,40 @@ scripts, and Rust source. The candidate may contain staged or unstaged tracked c
 The benchmark rejects untracked build inputs so the digest covers every file used by the
 candidate build.
 
+The runner also supports `--mode measure` and `--mode profile` for a clean or dirty current
+checkout. Comparison is the default mode. Measurement repeats the current binary after two
+warmups; profiles run separately and preserve stage output and an OS stack sample. A stack
+sample reports its sampling window and completion status and never claims whole-process
+coverage when attachment or completion cuts that window short.
+
+Every run preserves a manifest and raw files beneath a unique run directory, including
+failed runs. Provenance includes UTC time, hardware and OS, Rust and Cargo versions, build
+flags and commands, source revision and build-input diff, runner digest, binary digests,
+and corpus digest and size. Both binaries use the same explicit installed toolchain and
+locked dependencies. Source and binary identity are checked across measurement. Builds
+and corpus generation happen outside the timed interval, with workloads run serially.
+
 Each Kubernetes range warms the baseline and candidate twice, then measures three pairs
 in baseline-candidate, candidate-baseline, baseline-candidate order. A pair's saving is
 the baseline measurement minus the candidate measurement. The mean cycle saving must be
 positive and greater than the maximum absolute deviation among the three paired savings.
 Mean retired-instruction and peak-memory savings must not be negative by more than their
-own maximum absolute deviations. A comparison that does not meet every condition is
-inconclusive, never an improvement.
+own maximum absolute deviations. A comparison that does not meet every condition cannot
+be accepted as improved.
+
+The paired dispersion rule is an acceptance heuristic, not a statistical confidence
+interval. Cycles, instructions, or peak memory worsening beyond their paired dispersion
+produce `regressed`; remaining comparisons are `inconclusive`. Missing or malformed
+samples fail the run. Legacy baselines with only the preparation line remain comparable
+for that metric; startup measurements are unavailable, never zero. Diagnostic records
+are rejected by the benchmark reader. Raw and summary records carry their run ID.
 
 The benchmark appends every raw sample and its order before appending the derived range
 summary. Existing raw measurements are never replaced. Baseline and candidate file and
 record counts must agree for every pair. Raw evidence includes inconclusive and regressed
-runs; only accepted candidates enter the authoritative performance record.
+runs; only accepted optimizations enter the optimization performance record.
+Instrumentation verification and diagnostic reports retain their actual verdicts in a
+separate verification record.
 
 The one-second target is user-visible preparation latency. Quiet-machine wall-clock runs
 confirm milestone progress and the final target; routine optimization acceptance does not
@@ -83,6 +142,69 @@ benchmark measures the complete preparation pass; it does not model an interacti
 terminal session.
 
 ## Benchmark record
+
+### Measurement foundation verification
+
+The instrumentation comparison baseline is `579198f550fbbe613236b75f9301c2483c29da61`.
+The preliminary candidate build-input SHA-256 is
+`c32c2241899cb05d67048607b99c0c67de38248d6c88d0dbaeb2dc4b8ece949f`.
+The machine reports `Macmini9,1`, eight CPUs, and 16 GiB memory; the compiler is
+Rust 1.98.1 for `aarch64-apple-darwin`. These are instrumentation-cost measurements,
+separate from the accepted optimization record.
+
+The initial 7/8 comparison run is
+`20260905T050955Z-579198f550fbbe613236b75f9301c2483c29da61-76472`.
+Preparation averaged 23,432,574,402 ns at baseline and 23,426,776,749 ns with
+instrumentation, a saving of 5,797,653 ns. The verdict is `regressed`: mean instructions
+increased by 443,682,581 and peak memory by 31,124,138 bytes, exceeding their paired
+dispersions. Cycles were inconclusive. This run is not an accepted optimization.
+
+The final diagnostic run is
+`20260905T054713Z-579198f550fbbe613236b75f9301c2483c29da61-37738`.
+It uses the final candidate identified below, with the same captured binary SHA-256:
+`f59ce87667e619cae3dbd7348a160fc5356d0ceea6cb0e277c06efae43b57699`.
+It covers the 4/8 corpus: 233,280,860 input bytes, 20,017 files, and 6,219,966 records.
+The full stage report is:
+
+```text
+diagnostic duration_ns=30857921917 files=20017 records=6219966
+startup version=1 input_ns=48452500 parse_ns=3076894666 preparation_ns=30857921917 ready_ns=33983269083 bytes=233280860
+profile version=1
+stage name=labels parent=preparation duration_ns=5589209
+stage name=layout parent=preparation duration_ns=383737989
+stage name=syntax parent=preparation duration_ns=29574247519
+stage name=detail parent=preparation duration_ns=891928703
+stage name=unattributed parent=preparation duration_ns=2418497
+stage name=language parent=syntax duration_ns=2873966
+stage name=projection parent=syntax duration_ns=180039995
+stage name=parse parent=syntax duration_ns=18294385760
+stage name=query parent=syntax duration_ns=10058745198
+stage name=unattributed parent=syntax duration_ns=1038202600
+work hunks=47030 parse_calls=78485 captures=21221116 projected_bytes=228017900
+```
+
+The separate stack-sampled process completed successfully; sampling also returned zero
+and preserved a nonempty stack file. Its requested window was ten seconds at one
+millisecond intervals, covering only the beginning of the process. The capture contains
+8,275 main-thread observations. Its most frequent leaf frames include `ts_parser_parse`,
+hdiff's `sanitize`, and `ts_query_cursor__advance`; their sample proportions do not
+represent whole-process stage proportions. Raw profiles, commands, binary snapshots,
+manifests, and sampling coverage live under `.ace/bench/kubernetes/runs/<run-id>/`.
+
+The final comparison run is
+`20260905T053102Z-579198f550fbbe613236b75f9301c2483c29da61-18083`.
+Its candidate build-input SHA-256 is
+`72ce6b1902f57f6d666b19834c70194e5a48357a83c5c1ef23f71b22ef05e7e0`.
+All three ranges completed with matching file and record counts, stable identities,
+and successful process exits. Each verdict is `regressed` under the unchanged
+acceptance rule, with instruction growth exceeding paired dispersion in every range.
+These records quantify the instrumentation's overhead:
+
+```text
+summary run_id=20260905T053102Z-579198f550fbbe613236b75f9301c2483c29da61-18083 range=7/8 corpus_base=ee94dce5b179923e362356a62738fa1de06c62b6 corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=579198f550fbbe613236b75f9301c2483c29da61 candidate=579198f550fbbe613236b75f9301c2483c29da61-dirty-72ce6b1902f57f6d666b19834c70194e5a48357a83c5c1ef23f71b22ef05e7e0 verdict=regressed baseline_cycles=80514650610 candidate_cycles=80558319567 cycle_saving=-43668956 cycle_dispersion=361056416 baseline_instructions=308633031055 candidate_instructions=309163155048 instruction_saving=-530123993 instruction_dispersion=199622138 baseline_peak_memory=2480969962 candidate_peak_memory=2497905557 memory_saving=-16935594 memory_dispersion=27923798 baseline_maximum_rss=2598005418 candidate_maximum_rss=2609326762 baseline_duration_ns=23574814305 candidate_duration_ns=23573314986 preparation_saving_ns=1499319 ready_saving_ns=unavailable baseline_schema=legacy candidate_schema=startup-v1 files=13344 records=3995123
+summary run_id=20260905T053102Z-579198f550fbbe613236b75f9301c2483c29da61-18083 range=6/8 corpus_base=5c6d853b4434f72ac10a1d9eafe15a791cd5db31 corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=579198f550fbbe613236b75f9301c2483c29da61 candidate=579198f550fbbe613236b75f9301c2483c29da61-dirty-72ce6b1902f57f6d666b19834c70194e5a48357a83c5c1ef23f71b22ef05e7e0 verdict=regressed baseline_cycles=92918936850 candidate_cycles=93124260197 cycle_saving=-205323347 cycle_dispersion=191436817 baseline_instructions=355949484604 candidate_instructions=356746233667 instruction_saving=-796749063 instruction_dispersion=46529196 baseline_peak_memory=3154888896 candidate_peak_memory=3157160853 memory_saving=-2271957 memory_dispersion=469717 baseline_maximum_rss=3272152405 candidate_maximum_rss=3273457664 baseline_duration_ns=26869184667 candidate_duration_ns=26939908986 preparation_saving_ns=-70724319 ready_saving_ns=unavailable baseline_schema=legacy candidate_schema=startup-v1 files=18264 records=5224599
+summary run_id=20260905T053102Z-579198f550fbbe613236b75f9301c2483c29da61-18083 range=4/8 corpus_base=e111ccbe09aaa7f1854da1625eb8da1cf939210e corpus_target=70d3cc986aa8221cd1dfb1121852688902d3bf53 baseline=579198f550fbbe613236b75f9301c2483c29da61 candidate=579198f550fbbe613236b75f9301c2483c29da61-dirty-72ce6b1902f57f6d666b19834c70194e5a48357a83c5c1ef23f71b22ef05e7e0 verdict=regressed baseline_cycles=107525893519 candidate_cycles=107365611386 cycle_saving=160282133 cycle_dispersion=681745847 baseline_instructions=413148697806 candidate_instructions=413778072470 instruction_saving=-629374664 instruction_dispersion=601780331 baseline_peak_memory=3760398954 candidate_peak_memory=3751305834 memory_saving=9093120 memory_dispersion=16465920 baseline_maximum_rss=3719938048 candidate_maximum_rss=3769772714 baseline_duration_ns=30924767208 candidate_duration_ns=31036053014 preparation_saving_ns=-111285806 ready_saving_ns=unavailable baseline_schema=legacy candidate_schema=startup-v1 files=20017 records=6219966
+```
 
 ### Optimization investigation ledger
 

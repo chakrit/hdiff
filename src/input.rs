@@ -9,6 +9,7 @@ pub const HELP: &str = concat!(
     "\n",
     "Options:\n",
     "  --bench    Prepare the diff and report benchmark measurements\n",
+    "  --profile  Prepare the diff and report diagnostic stage measurements\n",
     "  --install  Register hdiff as the user-level Git diff pager\n",
     "  --help     Print help\n",
     "  --version  Print version\n",
@@ -36,6 +37,7 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewerMode {
     Benchmark,
+    Profile,
     Render,
 }
 
@@ -50,13 +52,29 @@ pub enum InputSource {
 pub struct InputError(pub String);
 
 pub fn select_command(arguments: &[OsString]) -> Result<Command, InputError> {
+    if arguments.iter().any(|argument| argument == "--install") {
+        return match arguments {
+            [_] => Ok(Command::Install),
+            _ => Err(InputError(
+                "--install cannot be combined with diff input operands".to_owned(),
+            )),
+        };
+    }
+
     match arguments {
+        arguments
+            if arguments
+                .first()
+                .is_some_and(|argument| argument == "--profile") =>
+        {
+            let operands = arguments[1..].iter().map(PathBuf::from).collect::<Vec<_>>();
+            select_input(&operands).map(|source| Command::View {
+                source,
+                mode: ViewerMode::Profile,
+            })
+        }
         [argument] if argument == "--help" => Ok(Command::Help),
         [argument] if argument == "--version" => Ok(Command::Version),
-        [argument] if argument == "--install" => Ok(Command::Install),
-        _ if arguments.iter().any(|argument| argument == "--install") => Err(InputError(
-            "--install cannot be combined with diff input operands".to_owned(),
-        )),
         [argument] if argument == "--bench" => Ok(Command::View {
             source: InputSource::Stdin,
             mode: ViewerMode::Benchmark,

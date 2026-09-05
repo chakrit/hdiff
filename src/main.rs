@@ -6,6 +6,7 @@ pub mod document;
 pub mod input;
 pub mod interaction;
 pub mod layout;
+pub mod measurement;
 pub mod parser;
 pub mod prepared;
 pub mod render;
@@ -73,26 +74,60 @@ fn write_stdout(bytes: &[u8]) -> Result<(), String> {
 }
 
 fn run_viewer(source: input::InputSource, mode: input::ViewerMode) -> Result<(), String> {
-    let input = read_input(source)?;
-    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
-
     match mode {
-        input::ViewerMode::Benchmark => run_benchmark(&document),
-        input::ViewerMode::Render => run_render(&document),
+        input::ViewerMode::Benchmark => {
+            let (startup, prepared) = measure_startup(source, &mut measurement::Unobserved)?;
+            write_stdout(measurement_report("preparation", &startup, &prepared).as_bytes())
+        }
+        input::ViewerMode::Profile => {
+            let mut profile = measurement::Profile::default();
+            let (startup, prepared) = measure_startup(source, &mut profile)?;
+            let mut output = measurement_report("diagnostic", &startup, &prepared);
+            output.push_str(&profile.report(startup.preparation));
+            write_stdout(output.as_bytes())
+        }
+        input::ViewerMode::Render => {
+            let input = read_input(source)?;
+            let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+            run_render(&document)
+        }
     }
 }
 
-fn run_benchmark(document: &document::DiffDocument) -> Result<(), String> {
-    let preparation_started = std::time::Instant::now();
-    let prepared = prepared::PreparedDocument::prepare(document);
-    let elapsed = preparation_started.elapsed();
-    let output = format!(
-        "preparation duration_ns={} files={} records={}\n",
-        elapsed.as_nanos(),
+fn measure_startup(
+    source: input::InputSource,
+    observer: &mut impl measurement::Observer,
+) -> Result<(measurement::Startup, prepared::PreparedDocument), String> {
+    let started = std::time::Instant::now();
+    let input = read_input(source)?;
+    let input_finished = std::time::Instant::now();
+    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+    let parse_finished = std::time::Instant::now();
+    let prepared = prepared::PreparedDocument::prepare_observed(&document, observer);
+    let ready = std::time::Instant::now();
+    let startup = measurement::Startup {
+        input: input_finished.duration_since(started),
+        parse: parse_finished.duration_since(input_finished),
+        preparation: ready.duration_since(parse_finished),
+        ready: ready.duration_since(started),
+        bytes: input.len(),
+    };
+    Ok((startup, prepared))
+}
+
+fn measurement_report(
+    label: &str,
+    startup: &measurement::Startup,
+    prepared: &prepared::PreparedDocument,
+) -> String {
+    let mut output = format!(
+        "{label} duration_ns={} files={} records={}\n",
+        startup.preparation.as_nanos(),
         prepared.file_count(),
         prepared.record_count()
     );
-    write_stdout(output.as_bytes())
+    output.push_str(&startup.report());
+    output
 }
 
 fn run_render(document: &document::DiffDocument) -> Result<(), String> {

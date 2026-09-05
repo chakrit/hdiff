@@ -113,10 +113,9 @@ fn bench_prepares_diff_without_opening_the_terminal() {
         String::from_utf8_lossy(&benchmark.stderr)
     );
     let output = String::from_utf8(benchmark.stdout).expect("benchmark output is UTF-8");
-    let line = output
-        .strip_suffix('\n')
-        .expect("benchmark output ends with one newline");
-    assert!(!line.contains('\n'), "benchmark output contains one line");
+    let lines = output.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2, "preparation and startup records");
+    let line = lines[0];
 
     let fields = line.split(' ').collect::<Vec<_>>();
     assert_eq!(fields.len(), 4, "benchmark output has four fields");

@@ -83,6 +83,13 @@ hdiff on standard input, preserving the entire file list in one interactive sess
     benchmarks save 2.157 seconds for 7/8, 1.681 seconds for 6/8, and 1.579 seconds for
     4/8; full measurements and provenance are in [performance.md](performance.md).
 
+## Completed: profiling and benchmarking
+
+- [x] Account for input acquisition, diff parsing, and input-to-ready latency.
+- [x] Add separate preparation-stage and stack profiles.
+- [x] Preserve reproducible provenance and validate benchmark comparison behavior.
+- [x] Measure instrumentation overhead on the pinned Kubernetes corpus.
+
 ## Next: restore responsive movement
 
 Movement is noticeably slow after the interactive layout and detail work. Restore

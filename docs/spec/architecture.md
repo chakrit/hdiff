@@ -340,6 +340,11 @@ The terminal loop has no parser, cache, readiness, loading, or first-file state.
 prepared data on its first draw and on every redraw. No async runtime, executor, channel, or task
 dependency is part of this boundary.
 
+Preparation accepts a statically dispatched measurement policy. Rendering and benchmark
+comparisons perform the same algorithm without per-hunk observation; diagnostic profiles
+collect stage timings and work counters through that boundary. Startup measurements include
+input acquisition and unified-diff parsing before preparation.
+
 ## Lossless and safe rendering
 
 Each record retains exact source bytes, decoded text, classification, and sanitized style
