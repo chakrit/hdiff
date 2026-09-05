@@ -11,6 +11,9 @@ when ready. Run `ace config` or `ace paths` to debug configuration issues.
 
 ## ACE workflow
 
+Track tasks in repository Markdown at `docs/spec/roadmap.md`. Do not use Outline as
+this project's task tracker.
+
 Continue automatically through ACE workflow steps unless the workflow names an explicit confirm
 gate. Create ACE save points at useful recovery boundaries, especially before context becomes
 large enough to make the work less effective; do not stop merely because an intermediate step

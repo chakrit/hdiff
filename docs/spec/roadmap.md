@@ -4,6 +4,8 @@ status: accepted
 
 # hdiff roadmap
 
+Track project tasks in this repository's Markdown. This roadmap owns the backlog.
+
 ## Current position
 
 The strict, loss-preserving Git/unified-diff parser and finite-output boundary are complete.
@@ -75,6 +77,27 @@ hdiff on standard input, preserving the entire file list in one interactive sess
 12. Add unified, vertical, and stacked layout cycling with paired changed-row derivation.
 13. Add user-level Git diff-pager installation with global-config backup and complete-diff input.
 14. Add synchronized, bounded horizontal movement across unified, vertical, and stacked layouts.
+15. Add `--help` and `--version`, including the package version and short source commit hash
+    (`e3ba805`).
+16. Reduce syntax preparation cost with Tree-sitter 0.27 (`4192938`). The recorded paired
+    benchmarks save 2.157 seconds for 7/8, 1.681 seconds for 6/8, and 1.579 seconds for
+    4/8; full measurements and provenance are in [performance.md](performance.md).
+
+## Next: restore responsive movement
+
+Movement is noticeably slow after the interactive layout and detail work. Restore
+responsive navigation without raising time budgets or weakening rendering behavior.
+Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
+
+- [ ] Measure movement and redraw cost with a representative multi-file diff.
+- [ ] Measure `h` / `l` input-to-frame latency and remove avoidable horizontal-bound or
+  redraw work.
+- [ ] Identify and remove redundant work from the interaction, layout, or terminal
+  rendering hot path.
+- [ ] Add a focused regression check that protects the resulting performance boundary.
+
+Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
+`src/terminal/view.rs`, and `src/terminal/rows.rs`.
 
 ## Remaining interactive delivery sequence
 
@@ -96,6 +119,10 @@ Each slice is incomplete until its automated checks and its human check both pas
 
 ## Performance delivery plan
 
+Further preparation optimization is parked. Resumption requires considering a more
+drastic refactor or a multi-threaded parsing architecture; the accepted architecture
+remains single-threaded.
+
 Each phase has its own specification amendment, tests, verification, audit, and commit.
 
 1. Establish the eager-preparation contract and benchmark mode.
@@ -115,6 +142,22 @@ Each phase has its own specification amendment, tests, verification, audit, and 
 Git integrations beyond user-level Git diff-pager installation remain deferred.
 
 ## Later slices
+
+### Install: support git show
+
+`hdiff --install` configures Git diff paging but does not make `git show` open the
+same interactive hdiff view. Installation should support both commands.
+
+- [ ] Determine the Git configuration boundary that routes both `git diff` and
+  `git show` to hdiff.
+- [ ] Add isolated configuration and invocation tests for `hdiff --install` and
+  `git show`.
+- [ ] Record the settled Git integration contract in `docs/spec/architecture.md`.
+
+Relevant boundaries: `src/actions/install_git_pager.rs`, `tests/git_difftool.rs`, and
+`docs/spec/architecture.md`.
+
+### Product slices
 
 1. Add implicit Tree-sitter semantic strategies with textual fallback.
 
