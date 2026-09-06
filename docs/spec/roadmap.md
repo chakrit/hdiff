@@ -299,7 +299,7 @@ behavior and surrounding-text support as coherent verified slices.
 
 ### Investigate apparent duplicated source tokens
 
-- [ ] Reproduce and test the reported display of `excluded_mcp` appearing twice in
+- [x] Reproduce and test the reported display of `excluded_mcp` appearing twice in
   a changed Rust line; establish whether duplication occurs in the input or is
   introduced by hdiff before diagnosing a rendering bug.
 
@@ -319,8 +319,17 @@ A related terminal reproduction during Git-show verification displayed
 `fn value() -> i32` as `fnfn valuevalue() -> i32i32`, while finite output preserved
 the source. The syntax capture and span-rendering code producing this repetition was
 unchanged by the surrounding-text slice. Captures are in `.ace/qol-show-unified.txt`,
-`.ace/qol-show-vertical.txt`, and `.ace/qol-show-stacked.txt`; the reported
-`excluded_mcp` case still needs its focused reproduction test.
+`.ace/qol-show-vertical.txt`, and `.ace/qol-show-stacked.txt`.
+
+The single-call `excluded_mcp` fixture reproduces duplication in all three layouts
+at `c9ec015`; finite output matches the input exactly. Overlapping method captures
+and captures accumulated from both context projections reach a row renderer that
+emits source text once per capture. Commit `334ff3c` adds an intentionally failing
+shared-row test covering both causes through real parsing and preparation.
+
+- [ ] Repair the syntax-to-rendering boundary so duplicate source rendering is
+  impossible by construction. Implementation is not yet authorized; the current
+  test-first checkpoint intentionally leaves the regression test failing.
 
 ### Investigate live reload from git diff
 

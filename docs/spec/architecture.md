@@ -393,6 +393,9 @@ input acquisition and unified-diff parsing before preparation.
 
 ## Lossless and safe rendering
 
+Layout or span construction must make rendering duplicate source text impossible
+by construction.
+
 Each record retains exact source bytes, decoded text, classification, and sanitized style
 spans. Parsing uses ANSI-free text. Rendering interprets supported SGR styling only and never
 replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal. The authoritative
