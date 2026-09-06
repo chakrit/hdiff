@@ -412,8 +412,52 @@ pub(super) fn inner_separator_color(color_count: u16) -> Color {
 mod tests {
     use ratatui::style::Color;
 
-    use super::{hunk_header_color, low_contrast_palette, maximum_visible_row_width};
-    use crate::{interaction::DiffLayout, layout::file_layout, parser::parse_unified_diff};
+    use super::{
+        hunk_header_color, low_contrast_palette, maximum_visible_row_width, visible_diff_rows,
+    };
+    use crate::{
+        interaction::{DiffGranularity, DiffLayout, Viewport},
+        layout::file_layout,
+        parser::parse_unified_diff,
+        prepared::PreparedDocument,
+    };
+
+    #[test]
+    fn syntax_highlighting_preserves_source_text() {
+        let document = parse_unified_diff(
+            b"--- a/example.rs\n+++ b/example.rs\n@@ -1,3 +1,3 @@\n fn example() {\n-    let excluded = ace.excluded_mcp();\n+    let excluded = ace.excluded_mcp()?;\n }\n",
+        )
+        .expect("valid Rust method-call diff");
+        let prepared = PreparedDocument::prepare(&document);
+        let file = prepared.file(0).expect("prepared example file");
+
+        let rows = visible_diff_rows(
+            &file.layout,
+            &Viewport::new(120, 12),
+            file.syntax(),
+            file.details(DiffGranularity::Line),
+            3,
+            u16::MAX,
+        );
+        let text = rows
+            .iter()
+            .map(|row| row.line.to_string())
+            .collect::<Vec<_>>();
+
+        // architecture.md: lossless rendering preserves source text through styling.
+        assert_eq!(
+            text,
+            [
+                "  --- a/example.rs",
+                "  +++ b/example.rs",
+                "  @@ -1,3 +1,3 @@",
+                "  fn example() {",
+                "-     let excluded = ace.excluded_mcp();",
+                "+     let excluded = ace.excluded_mcp()?;",
+                "  }",
+            ]
+        );
+    }
 
     #[test]
     fn measures_rendered_rows_in_terminal_cells() {
