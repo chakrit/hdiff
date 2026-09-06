@@ -132,13 +132,21 @@ The implementation should land in slices that each leave a usable surface:
 
 ## Input contract
 
-The command follows the POSIX `diff` operand model where practical. Two file operands compare
-files; two directory operands compare corresponding entries; `-r` enables recursive directory
-comparison; and `-` denotes standard input. hdiff adds viewer modes for one existing patch or
-diff file and for a unified diff supplied on standard input. It accepts unified diffs from any
-producer. `--install` is the sole Git integration: it backs up the exact global config file Git
-will write to a sibling `.bak` file, then overwrites `pager.diff` through `git config --global`;
-hdiff never parses or rewrites Git config text.
+The intended command follows the POSIX `diff` operand model where practical. Two file
+operands compare files; two directory operands compare corresponding entries; `-r` enables
+recursive directory comparison; and `-` denotes standard input. hdiff adds viewer modes
+for one existing patch or diff file and for a unified diff supplied on standard input.
+It accepts unified diffs from any producer. `--install` is the sole Git integration: it
+backs up the exact global config file Git will write to a sibling `.bak` file, then
+overwrites `pager.diff` through `git config --global`; hdiff never parses or rewrites Git
+config text.
+
+The current input selector reads stdin with zero operands, reads a patch file with one,
+and invokes `diff -u` with two; more than two operands produce
+`expected zero, one, or two operands`. hdiff does not yet recognize `-r` as an option or
+translate `-` into a stdin source. A lone `-` is opened as a literal filename; in a
+two-operand comparison, both paths are passed directly to the external `diff` command.
+The recursive-comparison and stdin-operand requirements above remain intended behavior.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached
 unambiguously, but malformed or truncated input is rejected with a contextual non-zero error
@@ -173,6 +181,21 @@ command it applied.
 `hdiff --help` prints the command usage, operands, and options without reading diff input.
 `hdiff --version` prints the Cargo package version followed by the short source commit
 hash in parentheses. Both commands exit successfully after printing their output.
+
+### Current argument selection
+
+`--help` and `--version` select their commands only when supplied alone. `--bench` and
+`--profile` select measurement modes only as the first argument; the remaining zero, one,
+or two arguments select input as described above. Their output contracts are in
+[`performance.md`](performance.md).
+
+`--install` is recognized anywhere in the argument list and must be the sole argument.
+Any accompanying argument, including another option, produces
+`--install cannot be combined with diff input operands` before input is read.
+
+Other argument combinations fall through to operand selection. hdiff has no general
+unknown-option rejection or `--` option terminator; unrecognized arguments are treated
+as paths, subject to the operand-count limit.
 
 ## Interaction model
 
@@ -313,7 +336,9 @@ with SMOKE. The tmux script owns and removes its uniquely named session on every
 
 The first release reads the complete input before entering raw mode. Input selection distinguishes
 standard input, one existing patch file, and two comparison operands; combining piped standard
-input with file arguments is an explicit usage error. Interactive mode requires a controlling
+input with file arguments must produce an explicit usage error. The current implementation
+does not enforce that requirement: file operands select the file or external comparison
+path without checking for piped stdin. Interactive mode requires a controlling
 terminal independent of the data source, so `stdin` supplies diff bytes while the controlling
 terminal supplies events and output. If no controlling terminal is available, hdiff produces
 finite non-interactive output. hdiff is the pager and must not launch or depend on an external
