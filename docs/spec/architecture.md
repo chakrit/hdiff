@@ -348,6 +348,11 @@ use the new path's language and deletions use the old path's language; context r
 textual when the paths select different languages. Headers, metadata, raw records, and diff
 markers remain textual.
 
+When both paths select the same language, only the new projection supplies context
+styling. Both projections retain context text for parsing. Overlapping syntax captures
+use the shortest covering capture; later capture encounter order breaks equal-length
+ties. Capture length is measured before row clipping.
+
 The first test boundary is terminal-independent: parser fixtures, state-transition tests, layout
 snapshots, and renderer output tests. End-to-end terminal checks run hdiff in fixed-size tmux
 sessions, drive pager inputs with `send-keys`, capture ANSI-styled panes, and lock those captures
@@ -395,6 +400,12 @@ input acquisition and unified-diff parsing before preparation.
 
 Layout or span construction must make rendering duplicate source text impossible
 by construction.
+
+Preparation partitions each retained row's payload into adjacent styled portions.
+The partition and its source row are accessed together through the prepared file;
+rendering consumes the source once, and annotations select styles only. Syntax and
+character-detail presentation share this boundary. Rows with character-detail spans
+use detail styling with plain gaps; rows without them retain syntax styling.
 
 Each record retains exact source bytes, decoded text, classification, and sanitized style
 spans. Parsing uses ANSI-free text. Rendering interprets supported SGR styling only and never

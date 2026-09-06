@@ -327,9 +327,24 @@ and captures accumulated from both context projections reach a row renderer that
 emits source text once per capture. Commit `334ff3c` adds an intentionally failing
 shared-row test covering both causes through real parsing and preparation.
 
-- [ ] Repair the syntax-to-rendering boundary so duplicate source rendering is
-  impossible by construction. Implementation is not yet authorized; the current
-  test-first checkpoint intentionally leaves the regression test failing.
+- [x] Repair the syntax-to-rendering boundary so duplicate source rendering is
+  impossible by construction. Prepared rows bind retained text to private style
+  partitions; all layouts consume those partitions through the shared row builder.
+  Overlap precedence, context ownership, detail suppression, Unicode, CRLF, and raw
+  records are covered by focused tests. Verification passes 91 unit and 18 integration
+  tests; the original regression now passes.
+
+`src/styling.rs` owns the prepared partition and its matching layout; `PreparedFile`
+provides borrowed row access. `src/terminal/rows.rs` applies terminal colors and
+markers to the partition's source portions without sorting or emitting capture ranges.
+`src/syntax.rs` retains original capture lengths for overlap precedence and gives
+context styling one projection owner. The styling rules are specified in
+[architecture.md](architecture.md#lossless-and-safe-rendering).
+
+The original regression and focused residual-behavior tests earned meaningful failures
+before their repairs. Existing frame tests cover layout presentation through the
+shared row builder. Formatting, Clippy across all targets and features, and diff
+hygiene pass. No preparation optimization or Kubernetes benchmark is part of this repair.
 
 ### Investigate live reload from git diff
 

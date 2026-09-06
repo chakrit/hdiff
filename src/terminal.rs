@@ -99,7 +99,7 @@ fn run_loop(
             let content_width = file
                 .map(|file| {
                     rows::maximum_visible_row_width(
-                        &file.layout,
+                        file.layout(),
                         display_layout,
                         interaction.preferences.context_lines,
                     )
@@ -114,10 +114,10 @@ fn run_loop(
             let line_count = file
                 .map(|file| match display_layout {
                     DiffLayout::Unified => file
-                        .layout
+                        .layout()
                         .visible_unified_line_count(interaction.preferences.context_lines),
                     DiffLayout::Vertical | DiffLayout::Stacked => file
-                        .layout
+                        .layout()
                         .visible_side_by_side_line_count(interaction.preferences.context_lines),
                 })
                 .unwrap_or_default();

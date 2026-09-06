@@ -10,6 +10,7 @@ pub mod measurement;
 pub mod parser;
 pub mod prepared;
 pub mod render;
+pub mod styling;
 pub mod syntax;
 pub mod terminal;
 pub mod theme;

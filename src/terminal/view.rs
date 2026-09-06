@@ -85,21 +85,17 @@ pub(super) fn render_prepared_frame(
     color_count: u16,
 ) {
     let area = frame.area();
-    let layout = &file.layout;
-    let details = file.details(interaction.preferences.granularity);
     let rows = visible_diff_rows(
-        layout,
+        file,
         &interaction.viewport,
-        file.syntax(),
-        details,
+        interaction.preferences.granularity,
         interaction.preferences.context_lines,
         color_count,
     );
     let side_by_side_rows = visible_side_by_side_rows(
-        layout,
+        file,
         &interaction.viewport,
-        file.syntax(),
-        details,
+        interaction.preferences.granularity,
         interaction.preferences.context_lines,
         color_count,
     );

@@ -4,11 +4,10 @@ use ratatui::{
 };
 
 use crate::{
-    detail::DetailSpan,
-    interaction::Viewport,
+    interaction::{DiffGranularity, Viewport},
     layout::{Layout, SideBySideRow},
-    render::RenderedLineKind,
-    syntax::{SyntaxClass, SyntaxSpan},
+    prepared::PreparedFile,
+    styling::{RowKind, StyledRow, TextStyle, payload},
     theme::DEFAULT_SYNTAX_THEME,
 };
 
@@ -102,233 +101,107 @@ fn side_by_side_row_width(layout: &Layout, row: &SideBySideRow) -> usize {
 }
 
 fn rendered_line_width(line: &crate::render::RenderedLine) -> usize {
-    diff_row(&line.bytes, Some(&line.kind), &[], &[], 0)
-        .line
-        .width()
+    Line::raw(payload(line)).width() + 2
 }
 
 pub(super) fn visible_diff_rows(
-    layout: &Layout,
+    file: &PreparedFile,
     viewport: &Viewport,
-    spans: &[Vec<SyntaxSpan>],
-    details: &[Vec<DetailSpan>],
+    granularity: DiffGranularity,
     context_lines: usize,
     color_count: u16,
 ) -> Vec<DiffRow> {
+    let layout = file.layout();
+
     layout
         .diff_lines
         .iter()
         .enumerate()
         .skip(viewport.vertical_offset)
         .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
-        .map(|(index, line)| {
-            diff_row(
-                &line.bytes,
-                Some(&line.kind),
-                spans.get(index).map(Vec::as_slice).unwrap_or_default(),
-                details.get(index).map(Vec::as_slice).unwrap_or_default(),
-                color_count,
-            )
-        })
+        .map(|(index, _)| diff_row(file.row(index, granularity), color_count))
         .collect()
 }
 
 pub(super) fn visible_side_by_side_rows(
-    layout: &Layout,
+    file: &PreparedFile,
     viewport: &Viewport,
-    spans: &[Vec<SyntaxSpan>],
-    details: &[Vec<DetailSpan>],
+    granularity: DiffGranularity,
     context_lines: usize,
     color_count: u16,
 ) -> Vec<VisibleSideBySideRow> {
+    let layout = file.layout();
+
     layout
         .side_by_side_rows
         .iter()
         .skip(viewport.vertical_offset)
         .filter(|row| layout.shows_side_by_side_row(row, context_lines))
         .map(|row| match row {
-            SideBySideRow::Shared(index) => VisibleSideBySideRow::Shared(diff_row_for_side(
-                layout,
-                *index,
-                spans,
-                details,
-                color_count,
-            )),
+            SideBySideRow::Shared(index) => {
+                VisibleSideBySideRow::Shared(diff_row(file.row(*index, granularity), color_count))
+            }
             SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
-                before: Some(diff_row_for_side(
-                    layout,
-                    *before,
-                    spans,
-                    details,
-                    color_count,
-                )),
-                after: Some(diff_row_for_side(
-                    layout,
-                    *after,
-                    spans,
-                    details,
-                    color_count,
-                )),
+                before: Some(diff_row(file.row(*before, granularity), color_count)),
+                after: Some(diff_row(file.row(*after, granularity), color_count)),
             },
             SideBySideRow::BeforeOnly(index) => VisibleSideBySideRow::Paired {
-                before: Some(diff_row_for_side(
-                    layout,
-                    *index,
-                    spans,
-                    details,
-                    color_count,
-                )),
+                before: Some(diff_row(file.row(*index, granularity), color_count)),
                 after: None,
             },
             SideBySideRow::AfterOnly(index) => VisibleSideBySideRow::Paired {
                 before: None,
-                after: Some(diff_row_for_side(
-                    layout,
-                    *index,
-                    spans,
-                    details,
-                    color_count,
-                )),
+                after: Some(diff_row(file.row(*index, granularity), color_count)),
             },
         })
         .collect()
 }
 
-fn diff_row_for_side(
-    layout: &Layout,
-    index: usize,
-    spans: &[Vec<SyntaxSpan>],
-    details: &[Vec<DetailSpan>],
-    color_count: u16,
-) -> DiffRow {
-    let line = layout
-        .rendered_line(index)
-        .expect("side-by-side rows reference rendered lines");
-
-    diff_row(
-        &line.bytes,
-        Some(&line.kind),
-        spans.get(index).map(Vec::as_slice).unwrap_or_default(),
-        details.get(index).map(Vec::as_slice).unwrap_or_default(),
-        color_count,
-    )
-}
-
-fn diff_row(
-    line: &[u8],
-    kind: Option<&RenderedLineKind>,
-    spans: &[SyntaxSpan],
-    details: &[DetailSpan],
-    color_count: u16,
-) -> DiffRow {
-    let without_ending = line
-        .strip_suffix(b"\r\n")
-        .or_else(|| line.strip_suffix(b"\n"))
-        .unwrap_or(line);
-    let row_kind = row_kind(kind, line.first());
+fn diff_row(row: StyledRow<'_>, color_count: u16) -> DiffRow {
     let palette = low_contrast_palette(color_count);
-    let style = row_style(row_kind, palette, color_count);
-    let line = styled_line(without_ending, row_kind, spans, details, color_count);
+    let style = row_style(row.kind, palette, color_count);
+    let line = styled_line(row, color_count);
 
     DiffRow { line, style }
 }
 
-#[derive(Clone, Copy)]
-enum RowKind {
-    Metadata,
-    HunkHeader,
-    Context,
-    Addition,
-    Deletion,
-}
-
-fn row_kind(kind: Option<&RenderedLineKind>, marker: Option<&u8>) -> RowKind {
-    match kind {
-        Some(RenderedLineKind::HunkHeader) => RowKind::HunkHeader,
-        Some(RenderedLineKind::Record(_)) => match marker {
-            Some(b'+') => RowKind::Addition,
-            Some(b'-') => RowKind::Deletion,
-            _ => RowKind::Context,
-        },
-        Some(
-            RenderedLineKind::Text | RenderedLineKind::Metadata | RenderedLineKind::FileHeader,
-        )
-        | None => RowKind::Metadata,
-    }
-}
-
-fn styled_line(
-    bytes: &[u8],
-    row_kind: RowKind,
-    syntax: &[SyntaxSpan],
-    details: &[DetailSpan],
-    color_count: u16,
-) -> Line<'static> {
-    let text = String::from_utf8_lossy(bytes).into_owned();
+fn styled_line(row: StyledRow<'_>, color_count: u16) -> Line<'static> {
     let palette = low_contrast_palette(color_count);
-    let mut rendered = Vec::new();
-    let mut cursor = match row_kind {
-        RowKind::Addition => {
-            rendered.push(Span::styled(
-                text[..1].to_owned(),
-                Style::default().fg(palette.addition_marker),
-            ));
-            rendered.push(Span::raw(" "));
-            1
-        }
-        RowKind::Deletion => {
-            rendered.push(Span::styled(
-                text[..1].to_owned(),
-                Style::default().fg(palette.deletion_marker),
-            ));
-            rendered.push(Span::raw(" "));
-            1
-        }
-        RowKind::Context | RowKind::Metadata | RowKind::HunkHeader => {
-            rendered.push(Span::raw("  "));
-            usize::from(matches!(row_kind, RowKind::Context))
+    let mut rendered = match row.kind {
+        RowKind::Addition => vec![
+            Span::styled("+", Style::default().fg(palette.addition_marker)),
+            Span::raw(" "),
+        ],
+        RowKind::Deletion => vec![
+            Span::styled("-", Style::default().fg(palette.deletion_marker)),
+            Span::raw(" "),
+        ],
+        RowKind::Context | RowKind::Raw | RowKind::Metadata | RowKind::HunkHeader => {
+            vec![Span::raw("  ")]
         }
     };
-    let mut spans = match details.is_empty() {
-        true => syntax
-            .iter()
-            .map(|span| (span.start, span.end, false, span.class))
-            .collect::<Vec<_>>(),
-        false => details
-            .iter()
-            .map(|span| (span.start, span.end, true, SyntaxClass::Variable))
-            .collect::<Vec<_>>(),
-    };
-    spans.sort_by_key(|(start, _, _, _)| *start);
-    for (span_start, span_end, detail, class) in spans {
-        let source_offset = usize::from(matches!(
-            row_kind,
-            RowKind::Context | RowKind::Addition | RowKind::Deletion
-        ));
-        let start = span_start + source_offset;
-        let end = span_end + source_offset;
-        if start > cursor {
-            rendered.push(Span::raw(text[cursor..start].to_owned()));
-        }
-        let style = match detail {
-            true => detail_style(row_kind, palette),
-            false => Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count)),
-        };
-        rendered.push(Span::styled(text[start..end].to_owned(), style));
-        cursor = end;
-    }
-    if cursor < text.len() {
-        rendered.push(Span::raw(text[cursor..].to_owned()));
-    }
 
-    Line::from(rendered).style(row_style(row_kind, palette, color_count))
+    rendered.extend(row.segments().map(|(text, style)| {
+        let style = match style {
+            TextStyle::Plain => Style::default(),
+            TextStyle::Syntax(class) => {
+                Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count))
+            }
+            TextStyle::Detail => detail_style(row.kind, palette),
+        };
+        Span::styled(text.to_owned(), style)
+    }));
+
+    Line::from(rendered).style(row_style(row.kind, palette, color_count))
 }
 
 fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     let color = match row_kind {
         RowKind::Addition => palette.addition_marker,
         RowKind::Deletion => palette.deletion_marker,
-        RowKind::Context | RowKind::HunkHeader | RowKind::Metadata => palette.context_body,
+        RowKind::Context | RowKind::Raw | RowKind::HunkHeader | RowKind::Metadata => {
+            palette.context_body
+        }
     };
 
     Style::default().fg(color).add_modifier(Modifier::DIM)
@@ -343,7 +216,7 @@ fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -
             .bg(palette.deletion_background)
             .fg(palette.deletion_body)
             .add_modifier(Modifier::DIM),
-        RowKind::Context => Style::default().fg(palette.context_body),
+        RowKind::Context | RowKind::Raw => Style::default().fg(palette.context_body),
         RowKind::HunkHeader => Style::default().fg(hunk_header_color(color_count)),
         RowKind::Metadata => Style::default(),
     }
@@ -432,10 +305,9 @@ mod tests {
         let file = prepared.file(0).expect("prepared example file");
 
         let rows = visible_diff_rows(
-            &file.layout,
+            file,
             &Viewport::new(120, 12),
-            file.syntax(),
-            file.details(DiffGranularity::Line),
+            DiffGranularity::Line,
             3,
             u16::MAX,
         );
@@ -455,6 +327,43 @@ mod tests {
                 "-     let excluded = ace.excluded_mcp();",
                 "+     let excluded = ace.excluded_mcp()?;",
                 "  }",
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_unicode_crlf_and_unmarked_records() {
+        let document = parse_unified_diff(
+            "--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-旧\r\n\\ No newline at end of file\r\n\r\n界\r\n+新\r\n\\ No newline at end of file".as_bytes(),
+        )
+        .expect("valid diff with Unicode and raw records");
+        let prepared = PreparedDocument::prepare(&document);
+        let file = prepared.file(0).expect("prepared file");
+
+        let rows = visible_diff_rows(
+            file,
+            &Viewport::new(120, 12),
+            DiffGranularity::Line,
+            3,
+            u16::MAX,
+        );
+        let text = rows
+            .iter()
+            .map(|row| row.line.to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            text,
+            [
+                "  --- a/file",
+                "  +++ b/file",
+                "  @@ -1 +1 @@",
+                "- 旧",
+                "  \\ No newline at end of file",
+                "  ",
+                "  界",
+                "+ 新",
+                "  \\ No newline at end of file",
             ]
         );
     }

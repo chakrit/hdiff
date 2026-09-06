@@ -1,9 +1,10 @@
 use crate::{
-    detail::{DetailSpan, detail_rows},
+    detail::detail_rows,
     document::{DiffDocument, DiffFile, FileView, sanitize},
     interaction::DiffGranularity,
     layout::{FileListRow, Layout, file_layout},
     measurement::{Observer, Stage, Unobserved},
+    styling::{StyledLayout, StyledRow},
     syntax::{SyntaxHighlighter, SyntaxSpan},
 };
 
@@ -13,9 +14,7 @@ pub struct PreparedDocument {
 }
 
 pub struct PreparedFile {
-    pub layout: Layout,
-    syntax: Vec<Vec<SyntaxSpan>>,
-    character_details: Vec<Vec<DetailSpan>>,
+    rows: StyledLayout,
 }
 
 impl PreparedDocument {
@@ -67,7 +66,7 @@ impl PreparedFile {
         observer: &mut impl Observer,
     ) -> Self {
         let layout = observer.measure(Stage::Layout, |_| file_layout(&file));
-        let syntax = observer.measure(Stage::Syntax, |observer| {
+        let syntax: Vec<Vec<SyntaxSpan>> = observer.measure(Stage::Syntax, |observer| {
             let leading = std::iter::repeat_with(Vec::new).take(file.leading.len());
             let highlighted = syntax.highlight_file_observed(file.file, observer);
             let trailing = std::iter::repeat_with(Vec::new).take(file.trailing.len());
@@ -79,25 +78,20 @@ impl PreparedFile {
         });
 
         Self {
-            layout,
-            syntax,
-            character_details,
+            rows: StyledLayout::new(layout, &syntax, &character_details),
         }
     }
 
-    pub fn syntax(&self) -> &[Vec<SyntaxSpan>] {
-        &self.syntax
+    pub fn layout(&self) -> &Layout {
+        self.rows.layout()
     }
 
-    pub fn details(&self, granularity: DiffGranularity) -> &[Vec<DetailSpan>] {
-        match granularity {
-            DiffGranularity::Line => &[],
-            DiffGranularity::Character => &self.character_details,
-        }
+    pub fn row(&self, index: usize, granularity: DiffGranularity) -> StyledRow<'_> {
+        self.rows.row(index, granularity)
     }
 
     fn record_count(&self) -> usize {
-        self.layout
+        self.layout()
             .diff_lines
             .iter()
             .filter(|line| matches!(line.kind, crate::render::RenderedLineKind::Record(_)))
@@ -158,7 +152,7 @@ pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> V
 #[cfg(test)]
 mod tests {
     use super::PreparedDocument;
-    use crate::{interaction::DiffGranularity, parser::parse_unified_diff};
+    use crate::{interaction::DiffGranularity, parser::parse_unified_diff, styling::TextStyle};
 
     #[test]
     fn retains_surrounding_text_with_separate_repeated_file_views() {
@@ -178,19 +172,23 @@ mod tests {
         {
             let file = prepared.file(index).expect("separate file occurrence");
             let rendered: Vec<u8> = file
-                .layout
+                .layout()
                 .diff_lines
                 .iter()
                 .flat_map(|line| line.bytes.iter().copied())
                 .collect();
             assert_eq!(rendered, expected.as_bytes());
-            assert!(file.syntax()[0].is_empty(), "message is not source code");
-            assert!(file.syntax()[4..].iter().any(|spans| !spans.is_empty()));
-            assert_eq!(file.syntax().len(), file.layout.diff_lines.len());
-            assert_eq!(
-                file.details(DiffGranularity::Character).len(),
-                file.layout.diff_lines.len()
+            assert!(
+                file.row(0, DiffGranularity::Line)
+                    .segments()
+                    .all(|(_, style)| style == TextStyle::Plain),
+                "message is not source code"
             );
+            assert!((4..file.layout().diff_lines.len()).any(|row| {
+                file.row(row, DiffGranularity::Line)
+                    .segments()
+                    .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))
+            }));
         }
     }
 
@@ -207,14 +205,12 @@ mod tests {
         assert_eq!(ordinary.file_rows(0), observed.file_rows(0));
         assert_eq!(ordinary.record_count(), observed.record_count());
         for (ordinary, observed) in ordinary.files.iter().zip(&observed.files) {
-            assert_eq!(ordinary.layout, observed.layout);
-            assert_eq!(ordinary.syntax, observed.syntax);
-            assert_eq!(ordinary.character_details, observed.character_details);
+            assert_eq!(ordinary.rows, observed.rows);
         }
     }
 
     #[test]
-    fn prepares_layout_syntax_and_character_detail_for_every_file() {
+    fn prepares_every_file_and_record() {
         let document = parse_unified_diff(include_bytes!("../tests/fixtures/git-multiline.patch"))
             .expect("valid fixture");
 
@@ -222,14 +218,6 @@ mod tests {
 
         assert_eq!(prepared.file_count(), 2);
         assert_eq!(prepared.record_count(), 7);
-        let first = prepared.file(0).expect("first file");
-
-        assert_eq!(first.syntax().len(), first.layout.diff_lines.len());
-        assert!(first.details(DiffGranularity::Line).is_empty());
-        assert_eq!(
-            first.details(DiffGranularity::Character).len(),
-            first.layout.diff_lines.len()
-        );
     }
 
     #[test]
@@ -240,14 +228,12 @@ mod tests {
 
         let prepared = PreparedDocument::prepare(&document);
 
-        assert!(
-            prepared
-                .file(0)
-                .expect("prepared file")
-                .details(DiffGranularity::Character)
-                .iter()
-                .any(|spans| !spans.is_empty())
-        );
+        let file = prepared.file(0).expect("prepared file");
+        assert!((0..file.layout().diff_lines.len()).any(|row| {
+            file.row(row, DiffGranularity::Character)
+                .segments()
+                .any(|(_, style)| style == TextStyle::Detail)
+        }));
     }
 
     #[test]

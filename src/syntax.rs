@@ -23,6 +23,7 @@ pub enum SyntaxClass {
 pub struct SyntaxSpan {
     pub start: usize,
     pub end: usize,
+    pub capture_length: usize,
     pub class: SyntaxClass,
 }
 
@@ -310,7 +311,13 @@ impl Projection {
             if belongs {
                 let start = source.len();
                 source.extend_from_slice(record.payload.structural_text.as_bytes());
-                records.push((record_index, start..source.len()));
+                let owns_styling = match side {
+                    Side::Old => record.kind == RecordKind::Deletion,
+                    Side::New => true,
+                };
+                if owns_styling {
+                    records.push((record_index, start..source.len()));
+                }
                 source.push(b'\n');
             }
         }
@@ -337,6 +344,7 @@ impl Projection {
                 spans[*record_index].push(SyntaxSpan {
                     start: mapped_start - range.start,
                     end: mapped_end - range.start,
+                    capture_length: end - start,
                     class,
                 });
             }
@@ -454,6 +462,42 @@ mod tests {
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
         assert_eq!(highlights[1][0].start, 0);
         assert_eq!(highlights[1][0].end, 2);
+    }
+
+    #[test]
+    fn context_uses_new_projection_syntax_when_old_context_is_a_comment() {
+        let document = parse_unified_diff(
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
+        )
+        .expect("valid Rust diff with changing comment context");
+        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+            panic!("fixture should contain a unified file");
+        };
+        let mut highlighter = SyntaxHighlighter::default();
+
+        let highlights = highlighter.highlight_hunk(file, 0);
+
+        // architecture.md: matching languages use the new projection for context styling.
+        assert!(
+            highlights[2]
+                .iter()
+                .any(|span| span.class == SyntaxClass::Keyword)
+        );
+        assert!(
+            highlights[2]
+                .iter()
+                .all(|span| span.class != SyntaxClass::Comment)
+        );
+        assert!(
+            highlights[0]
+                .iter()
+                .any(|span| span.class == SyntaxClass::Comment)
+        );
+        assert!(
+            highlights[3]
+                .iter()
+                .any(|span| span.class == SyntaxClass::Comment)
+        );
     }
 
     #[test]
