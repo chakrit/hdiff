@@ -175,6 +175,96 @@ same interactive hdiff view. Installation should support both commands.
 Relevant boundaries: `src/actions/git_config.rs`, `src/parser.rs`, `src/document.rs`,
 `src/terminal/`, `tests/git_difftool.rs`, and `docs/spec/architecture.md`.
 
+### QoL delivery plan: empty input and Git paging
+
+Planning requested by the user: "those 3 qol tasks, plan for them now please".
+The following behavior and implementation approach are proposed, pending review;
+this request authorizes planning, not implementation or changes to Git configuration.
+Amend `architecture.md` with approved behavior before implementing each slice.
+
+#### First: empty input
+
+Current source behavior: zero bytes parse into an empty document; finite rendering
+produces no output, while terminal output still starts an interactive session.
+
+Proposed behavior: zero-byte input exits successfully without output, preparation,
+terminal acquisition, raw mode, or alternate-screen entry. Apply the same behavior
+to stdin, an empty patch file, and identical file operands. Preserve measurement
+reports for `--bench` and `--profile`. Nonempty metadata-only input remains content;
+malformed input remains an error rather than being treated as empty.
+
+Implement the empty-input outcome at normal viewer dispatch, before terminal setup,
+using the existing input and output boundaries in `src/main.rs`; introduce no new
+module for this branch. Check the existing CLI tests before extending their coverage.
+
+Acceptance checks: CLI exit status and empty stdout/stderr for each empty source;
+a pseudo-terminal invocation that exits without a keypress or terminal-control output;
+metadata-only input still rendered; malformed nonempty input still rejected; empty
+measurement input still emits valid zero-count reports.
+
+#### Second: git show
+
+Reuse the existing Git configuration writer, shell quoting, backup operation, safe
+source-line representation, and finite/interactive rendering boundaries. The existing
+document owns only files; commit text must have an explicit document-level owner
+rather than being attached to an arbitrary file or discarded.
+
+Proposed scope: preserve ordered commit headers, messages, and associated file groups
+for ordinary and multiple-commit output, including commits with no patch. Preserve
+combined merge diffs and non-patch object output in a safe textual representation
+until a structured renderer supports them; do not interpret them as two-sided hunks.
+This textual representation must be explicit in the Git-show input boundary, not a
+catch-all that turns malformed ordinary unified diffs into successful output.
+
+Resolve that input boundary and its invocation through `pager.show` during design,
+including how it distinguishes Git-show text from strict unified-diff input. Extend
+the retained document, preparation, and rendering around ordered review content;
+retain eager, single-threaded preparation and existing file navigation semantics.
+Define how commit text is displayed when selecting a file and when no files exist.
+
+Only after those input/display checks pass, extend `--install` to configure
+`pager.show` alongside `pager.diff`, with one backup before either write and an
+accurate report of applied commands. Define partial-write failure reporting and
+verify quoted executable paths; keep `core.pager` and unrelated settings unchanged.
+
+Acceptance checks: isolated Git configuration and actual pager invocation; ordinary,
+multiple, empty, and merge commits; tags, trees, and blobs; colored metadata and
+terminal-control sanitization; finite output and broken pipes; commit association
+while navigating files in all three layouts. Review the terminal display manually.
+No test may modify the user's Git configuration.
+
+#### Third: additional Git subcommands
+
+Produce a compatibility assessment before adding registrations. Start with
+`git log -p`, then examine ordinary `git log`, `git reflog`, `git stash show -p`,
+and `git range-diff`: record output shape, applicable pager setting, parser/display
+coverage, and whether enabling the setting affects non-patch invocations.
+
+Use official Git documentation and isolated invocation checks. Recommend commands
+only when hdiff preserves all their review content and handles their ordinary
+non-patch invocations. The output is a supported/deferred recommendation with
+evidence; additional implementation and registrations require scope approval.
+
+Initial recommendation: assess opt-in `git log -p` and `git stash show -p` first;
+defer automatic registration. Git's [`pager.<cmd>` setting](https://git-scm.com/docs/git-config)
+applies to a subcommand, not only its patch-producing invocations, and
+[`stash show`](https://git-scm.com/docs/git-stash) defaults to a diffstat.
+[`range-diff`](https://git-scm.com/docs/git-range-diff) uses a distinct, unstable
+human-readable output format and needs a separate compatibility decision.
+For `log -p`, check repeated paths across commits, graph prefixes, custom formatting,
+and entries without patches before claiming compatibility.
+
+#### Verification and delivery
+
+Implement approved behavior with meaningful failing behavior tests first, then
+formatting, Rust tests, and Clippy using the installed working toolchain. Run terminal
+checks for changed output and review any snapshot drift before accepting it; the
+recorded JavaScript highlighting drift must not be mistaken for a new regression.
+Obtain approval for resource-intensive work; no preparation benchmark is planned
+for these QoL slices unless implementation introduces a preparation performance claim.
+Audit each complete slice against the approved spec and commit locally after its
+checks pass. Installing into the user's environment and pushing are separate actions.
+
 ### Product slices
 
 1. Add implicit Tree-sitter semantic strategies with textual fallback.
