@@ -100,3 +100,51 @@ fn profile_rejects_install_even_when_that_patch_filename_exists() {
             .contains("--install cannot be combined with diff input operands")
     );
 }
+
+#[test]
+fn empty_sources_exit_silently() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let patch = directory.path().join("empty.patch");
+    let before = directory.path().join("before.txt");
+    let after = directory.path().join("after.txt");
+    std::fs::write(&patch, "").expect("empty patch");
+    std::fs::write(&before, "unchanged\n").expect("before source");
+    std::fs::write(&after, "unchanged\n").expect("after source");
+
+    for operands in [vec![], vec![&patch], vec![&before, &after]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+            .args(&operands)
+            .env_clear()
+            .env("PATH", TEST_PATH)
+            .output()
+            .expect("run empty viewer input");
+
+        assert!(output.status.success(), "{operands:?}: {output:?}");
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn metadata_only_input_remains_visible() {
+    let output = hdiff("tests/fixtures/git-rename-only.patch");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        output.stdout,
+        include_bytes!("fixtures/git-rename-only.patch")
+    );
+}
+
+#[test]
+fn truncated_patch_is_an_error() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let patch = directory.path().join("truncated.patch");
+    std::fs::write(&patch, "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n").expect("truncated patch");
+    let output = hdiff(patch.to_str().expect("fixture path is UTF-8"));
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!output.stderr.is_empty());
+}

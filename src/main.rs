@@ -88,6 +88,10 @@ fn run_viewer(source: input::InputSource, mode: input::ViewerMode) -> Result<(),
         }
         input::ViewerMode::Render => {
             let input = read_input(source)?;
+            if input.is_empty() {
+                return Ok(());
+            }
+
             let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
             run_render(&document)
         }

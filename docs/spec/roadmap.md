@@ -166,7 +166,7 @@ same interactive hdiff view. Installation should support both commands.
   the current parser rejects the preamble from ordinary `git show` output.
 - [ ] Verify generic surrounding-text handling for multiple commits, tags, trees,
   and file contents; combined merge-diff support remains deferred.
-- [ ] Define behavior for zero-byte diff input in interactive and finite-output modes,
+- [x] Define behavior for zero-byte diff input in interactive and finite-output modes,
   including Git commands with no changes to display.
 - [ ] Assess which additional Git subcommands should use hdiff, including `git log -p`;
   distinguish patch-producing invocations from ordinary non-diff output before
@@ -184,13 +184,12 @@ Relevant boundaries: `src/actions/git_config.rs`, `src/parser.rs`, `src/document
 The empty-input and producer-independent surrounding-text contracts are settled in
 `architecture.md`. This plan covers their implementation, `git show` pager routing,
 and a broader Git-subcommand compatibility assessment. Combined merge-diff support
-is deferred. Implementation and changes to the user's Git configuration are not
-part of the current planning task.
+is deferred. Changes to the user's Git configuration require separate authorization.
 
 #### First: empty input
 
-Current source behavior: zero bytes parse into an empty document; finite rendering
-produces no output, while terminal output still starts an interactive session.
+Completed: normal viewer dispatch returns successfully on zero bytes before parsing,
+preparation, output selection, or terminal setup.
 
 Required behavior: zero-byte input exits successfully without output, preparation,
 terminal acquisition, raw mode, or alternate-screen entry. Apply the same behavior
@@ -206,6 +205,10 @@ Acceptance checks: CLI exit status and empty stdout/stderr for each empty source
 a pseudo-terminal invocation that exits without a keypress or terminal-control output;
 existing Git metadata-only sections still rendered; malformed nonempty input still rejected; empty
 measurement input still emits valid zero-count reports.
+
+Verification passed: 75 unit tests and 15 integration tests, formatting, Clippy, and
+pseudo-terminal invocations for empty stdin, an empty patch file, and identical operands.
+Each empty pseudo-terminal invocation exited with status 0 and emitted no bytes.
 
 #### Second: generic surrounding text and git show installation
 

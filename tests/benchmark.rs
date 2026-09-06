@@ -98,6 +98,29 @@ fn malformed_input_never_emits_success_measurements() {
 }
 
 #[test]
+fn empty_input_still_emits_zero_count_measurements() {
+    for mode in ["--bench", "--profile"] {
+        let output = run(mode, "");
+        assert!(output.status.success(), "{mode}: {output:?}");
+        assert!(output.stderr.is_empty());
+        let text = String::from_utf8(output.stdout).expect("UTF-8 report");
+        let lines = text.lines().collect::<Vec<_>>();
+        let preparation = fields(lines[0]);
+        let startup = fields(lines[1]);
+
+        assert_eq!(preparation["files"], 0);
+        assert_eq!(preparation["records"], 0);
+        assert_eq!(startup["bytes"], 0);
+        assert_eq!(startup["version"], 1);
+        if mode == "--profile" {
+            assert_eq!(lines[2], "profile version=1");
+            let work = fields(lines.last().expect("work counters"));
+            assert!(work.values().all(|count| *count == 0));
+        }
+    }
+}
+
+#[test]
 fn unsupported_language_has_no_syntax_parser_work() {
     let output = run("--profile", &PATCH.replace("a.rs", "a.txt"));
     assert!(output.status.success());
