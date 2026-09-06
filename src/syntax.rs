@@ -444,7 +444,7 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n",
         )
         .expect("valid Rust diff");
-        let DiffFile::Unified(file) = &document.files[0] else {
+        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
             panic!("fixture should contain a unified file");
         };
         let mut highlighter = SyntaxHighlighter::default();
@@ -462,7 +462,7 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n",
         )
         .expect("valid Rust diff");
-        let DiffFile::Unified(file) = &document.files[0] else {
+        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
             panic!("fixture should contain a unified file");
         };
         let new_projection =

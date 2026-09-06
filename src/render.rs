@@ -1,4 +1,4 @@
-use crate::document::{DiffDocument, DiffFile, RecordKind, SourceLine};
+use crate::document::{DiffDocument, DiffFile, RecordKind, Section, SourceLine};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {
@@ -8,6 +8,7 @@ pub struct RecordAddress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderedLineKind {
+    Text,
     Metadata,
     FileHeader,
     HunkHeader,
@@ -23,11 +24,25 @@ pub struct RenderedLine {
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
     let mut output = Vec::new();
 
-    for file in &document.files {
-        output.extend_from_slice(&render_file(file));
+    for section in &document.sections {
+        match section {
+            Section::File(file) => output.extend_from_slice(&render_file(file)),
+            Section::Text(lines) => {
+                for line in render_text_lines(lines) {
+                    output.extend_from_slice(&line.bytes);
+                }
+            }
+        }
     }
 
     output
+}
+
+pub fn render_text_lines(lines: &[SourceLine]) -> Vec<RenderedLine> {
+    lines
+        .iter()
+        .map(|line| rendered_line(RenderedLineKind::Text, None, line))
+        .collect()
 }
 
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
@@ -123,6 +138,19 @@ mod tests {
     use crate::{document::DiffFile, parser::parse_unified_diff};
 
     #[test]
+    fn sanitizes_surrounding_text_and_preserves_line_endings() {
+        let input = b"\x1b[31mmessage\x1b[0m\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\x1b]8;;https://bad\x07footer\xff";
+        let document = parse_unified_diff(input).expect("diff with surrounding text");
+
+        let rendered = render_unified(&document);
+
+        assert_eq!(
+            rendered,
+            "message\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\nfooter\u{fffd}".as_bytes()
+        );
+    }
+
+    #[test]
     fn renders_unified_structure_in_source_order() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
         let document = parse_unified_diff(input).expect("valid diff");
@@ -136,11 +164,11 @@ mod tests {
     fn classifies_metadata_file_headers_hunks_and_records() {
         let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
         let document = parse_unified_diff(input).expect("valid Git diff with two hunks");
-        let DiffFile::Unified(file) = &document.files[0] else {
+        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
             panic!("expected unified file");
         };
 
-        let lines = render_file_lines(&document.files[0]);
+        let lines = render_file_lines(document.file(0).expect("first file"));
         let kinds = lines.iter().map(|line| line.kind).collect::<Vec<_>>();
 
         assert_eq!(kinds[0], RenderedLineKind::Metadata);
@@ -253,7 +281,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n";
         let document = parse_unified_diff(input).expect("valid diff");
 
-        let rendered = render_file(&document.files[0]);
+        let rendered = render_file(document.file(0).expect("first file"));
 
         assert_eq!(rendered, render_unified(&document));
         assert!(!rendered.contains(&b'\x1b'));

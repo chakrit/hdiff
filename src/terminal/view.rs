@@ -14,11 +14,10 @@ use crate::{
 
 #[cfg(test)]
 use crate::{
-    detail::detail_rows,
     document::DiffDocument,
     interaction::{ViewPreferences, Viewport},
     layout::Layout,
-    syntax::SyntaxHighlighter,
+    prepared::PreparedDocument,
 };
 
 use super::rows::{
@@ -42,20 +41,11 @@ fn render_frame(
     document: &DiffDocument,
     layout: &Layout,
     viewport: &Viewport,
-    syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) {
     let preferences = ViewPreferences::line(DiffLayout::Unified);
 
-    render_frame_with_layout(
-        frame,
-        document,
-        layout,
-        viewport,
-        &preferences,
-        syntax,
-        color_count,
-    );
+    render_frame_with_layout(frame, document, layout, viewport, &preferences, color_count);
 }
 
 #[cfg(test)]
@@ -65,56 +55,26 @@ fn render_frame_with_layout(
     layout: &Layout,
     viewport: &Viewport,
     preferences: &ViewPreferences,
-    syntax: &mut SyntaxHighlighter,
     color_count: u16,
 ) {
-    let area = frame.area();
-    let selected = layout.files.iter().position(|file| file.selected);
-    let file = selected.and_then(|index| document.files.get(index));
-    let details = detail_rows(layout, preferences.granularity);
-    let spans = file
-        .map(|file| syntax.highlight_file(file))
-        .unwrap_or_default();
-    let rows = visible_diff_rows(
-        layout,
-        viewport,
-        &spans,
-        &details,
-        preferences.context_lines,
-        color_count,
-    );
-    let side_by_side_rows = visible_side_by_side_rows(
-        layout,
-        viewport,
-        &spans,
-        &details,
-        preferences.context_lines,
-        color_count,
-    );
-    let display = DisplayRows {
-        unified: rows,
-        side_by_side: side_by_side_rows,
-        layout: preferences.layout,
-        horizontal_offset: viewport.horizontal_offset,
-        color_count,
+    let selected = layout
+        .files
+        .iter()
+        .position(|file| file.selected)
+        .expect("rendering fixture selects a file");
+    let prepared = PreparedDocument::prepare(document);
+    let file = prepared.file(selected).expect("selected prepared file");
+    let interaction = Interaction {
+        selected_file: selected,
+        preferences: ViewPreferences {
+            layout: preferences.layout,
+            granularity: preferences.granularity,
+            context_lines: preferences.context_lines,
+        },
+        viewport: viewport.clone(),
     };
 
-    match pane_layout(area.width, area.height) {
-        PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
-        PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
-        PaneLayout::DiffOnly => render_display_layout(frame, display, area),
-        PaneLayout::Split {
-            file_list_width,
-            separator_padding,
-        } => render_split_panes(
-            frame,
-            &layout.files,
-            area,
-            file_list_width,
-            separator_padding,
-            display,
-        ),
-    }
+    render_prepared_frame(frame, &layout.files, file, &interaction, color_count);
 }
 
 pub(super) fn render_prepared_frame(
@@ -420,7 +380,6 @@ mod tests {
         interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
         layout::layout,
         parser::parse_unified_diff,
-        syntax::SyntaxHighlighter,
     };
 
     #[test]
@@ -436,19 +395,9 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| {
-                render_frame(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &mut syntax,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -488,19 +437,9 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| {
-                render_frame(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &mut syntax,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -521,7 +460,6 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
             .draw(|frame| {
@@ -531,7 +469,6 @@ mod tests {
                     &view,
                     &interaction.viewport,
                     &interaction.preferences,
-                    &mut syntax,
                     u16::MAX,
                 )
             })
@@ -581,7 +518,6 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
             .draw(|frame| {
@@ -591,7 +527,6 @@ mod tests {
                     &view,
                     &interaction.viewport,
                     &interaction.preferences,
-                    &mut syntax,
                     u16::MAX,
                 )
             })
@@ -615,7 +550,6 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
             .draw(|frame| {
@@ -625,7 +559,6 @@ mod tests {
                     &view,
                     &interaction.viewport,
                     &interaction.preferences,
-                    &mut syntax,
                     u16::MAX,
                 )
             })
@@ -662,7 +595,6 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
             .draw(|frame| {
@@ -672,7 +604,6 @@ mod tests {
                     &view,
                     &interaction.viewport,
                     &interaction.preferences,
-                    &mut syntax,
                     u16::MAX,
                 )
             })
@@ -718,19 +649,9 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| {
-                render_frame(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &mut syntax,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -825,7 +746,6 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
             .draw(|frame| {
@@ -835,7 +755,6 @@ mod tests {
                     &view,
                     &interaction.viewport,
                     &interaction.preferences,
-                    &mut syntax,
                     u16::MAX,
                 )
             })
@@ -867,19 +786,9 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| {
-                render_frame(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &mut syntax,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -910,19 +819,9 @@ mod tests {
         };
         let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 15)).expect("test terminal");
-        let mut syntax = SyntaxHighlighter::default();
 
         terminal
-            .draw(|frame| {
-                render_frame(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &mut syntax,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();

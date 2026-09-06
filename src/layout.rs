@@ -1,7 +1,7 @@
 use crate::{
-    document::DiffFile,
+    document::FileView,
     interaction::DiffLayout,
-    render::{RenderedLine, RenderedLineKind, render_file_lines},
+    render::{RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -156,8 +156,12 @@ impl Layout {
     }
 }
 
-pub fn file_layout(file: &DiffFile) -> Layout {
-    let diff_lines = render_file_lines(file);
+pub fn file_layout(view: &FileView<'_>) -> Layout {
+    let diff_lines = render_text_lines(view.leading)
+        .into_iter()
+        .chain(render_file_lines(view.file))
+        .chain(render_text_lines(view.trailing))
+        .collect::<Vec<_>>();
     let side_by_side_rows = side_by_side_rows(&diff_lines);
 
     Layout {
@@ -174,7 +178,7 @@ pub fn layout(
     interaction: &crate::interaction::Interaction,
 ) -> Layout {
     let files = crate::prepared::test_file_rows(document, interaction.selected_file);
-    let Some(file) = document.files.get(interaction.selected_file) else {
+    let Some(file) = document.file_views().nth(interaction.selected_file) else {
         return Layout {
             files,
             diff_lines: Vec::new(),
@@ -182,7 +186,7 @@ pub fn layout(
         };
     };
 
-    let mut layout = file_layout(file);
+    let mut layout = file_layout(&file);
     layout.files = files;
     layout
 }
@@ -251,7 +255,7 @@ mod tests {
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");
-        let view = file_layout(&document.files[1]);
+        let view = file_layout(&document.file_views().nth(1).expect("second file"));
         assert_eq!(view.diff_lines[2].kind, RenderedLineKind::HunkHeader);
         assert_eq!(view.diff_lines[5].kind, RenderedLineKind::HunkHeader);
         assert_eq!(
@@ -277,7 +281,7 @@ mod tests {
         let document =
             parse_unified_diff(include_bytes!("../tests/fixtures/git-rename-only.patch"))
                 .expect("valid metadata-only Git fixture");
-        let view = file_layout(&document.files[0]);
+        let view = file_layout(&document.file_views().next().expect("first file"));
         assert!(
             view.diff_lines
                 .iter()
@@ -330,7 +334,7 @@ mod tests {
     fn side_by_side_rows_reference_owned_lines() {
         let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
-        let view = file_layout(&document.files[0]);
+        let view = file_layout(&document.file_views().next().expect("first file"));
         let SideBySideRow::Shared(source_index) = &view.side_by_side_rows[0] else {
             panic!("file header is a shared row");
         };

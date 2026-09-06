@@ -278,6 +278,61 @@ mod tests {
     use super::{Input, OutputMode, SetupStage, cleanup_order, input_for_event, mode_for_output};
 
     #[test]
+    fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
+        use crate::{
+            interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
+            parser::parse_unified_diff,
+            prepared::PreparedDocument,
+        };
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
+        let input = format!("first message\n{patch}second message\n{patch}trailer\n");
+        let document = parse_unified_diff(input.as_bytes()).expect("diffs with messages");
+        let prepared = PreparedDocument::prepare(&document);
+
+        for (layout, copies) in [
+            (DiffLayout::Unified, 1),
+            (DiffLayout::Vertical, 2),
+            (DiffLayout::Stacked, 2),
+        ] {
+            for (selected_file, message, absent, trailers) in [
+                (0, "first message", "second message", 0),
+                (1, "second message", "first message", copies),
+            ] {
+                let interaction = Interaction {
+                    selected_file,
+                    preferences: ViewPreferences::line(layout),
+                    viewport: Viewport::new(120, 30),
+                };
+                let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
+                terminal
+                    .draw(|frame| {
+                        super::view::render_prepared_frame(
+                            frame,
+                            &prepared.file_rows(selected_file),
+                            prepared.file(selected_file).expect("file occurrence"),
+                            &interaction,
+                            u16::MAX,
+                        )
+                    })
+                    .expect("render prepared frame");
+                let text: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+
+                assert_eq!(text.matches(message).count(), copies, "{layout:?}");
+                assert!(!text.contains(absent), "{layout:?}");
+                assert_eq!(text.matches("trailer").count(), trailers, "{layout:?}");
+            }
+        }
+    }
+
+    #[test]
     fn requests_interactive_mode_only_for_terminal_output() {
         assert_eq!(mode_for_output(false), OutputMode::Finite);
         assert_eq!(mode_for_output(true), OutputMode::Interactive);

@@ -160,17 +160,16 @@ Support diffs and surrounding commit text from explicit `git show <commit> | hdi
 invocations. General text-only paging and automatic `pager.show` registration are
 outside this scope.
 
-- [ ] Preserve and display commit headers and messages with their associated diffs;
-  the current parser rejects the preamble from ordinary `git show` output.
-- [ ] Verify producer-independent surrounding-text handling for multiple commits
+- [x] Preserve and display commit headers and messages with their associated diffs.
+- [x] Verify producer-independent surrounding-text handling for multiple commits
   containing diffs and rejection of nonempty text-only input; combined merge-diff
   support remains deferred.
 - [x] Define behavior for zero-byte diff input in interactive and finite-output modes,
   including Git commands with no changes to display.
-- [ ] Assess which additional Git subcommands should use hdiff, including `git log -p`;
+- [x] Assess which additional Git subcommands should use hdiff, including `git log -p`;
   distinguish patch-producing invocations from ordinary non-diff output before
   recommending additional pager registrations.
-- [ ] Add isolated invocation tests for explicit `git show <commit> | hdiff`, including
+- [x] Add isolated invocation tests for explicit `git show <commit> | hdiff`, including
   commit metadata and empty input, plus a terminal check of the actual invocation.
 - [x] Record the settled Git integration contract in `docs/spec/architecture.md`.
 
@@ -210,9 +209,8 @@ Each empty pseudo-terminal invocation exited with status 0 and emitted no bytes.
 
 #### Second: generic surrounding text with diffs
 
-Reuse the existing safe source-line representation and finite/interactive rendering
-boundaries. The existing document owns only files; commit text must have an explicit
-document-level owner rather than being attached to an arbitrary file or discarded.
+Completed: ordered document sections retain surrounding text separately from files.
+Finite and prepared rendering reuse the existing safe source-line representation.
 
 Represent the input as ordered text sections and file-diff sections, preserving
 source order without interpreting commit headers or identifying the producing command.
@@ -224,10 +222,9 @@ Reject nonempty input containing no diff; metadata-only Git diff sections remain
 Prepare each text section once using the existing sanitization and row-rendering
 capabilities. In unified view render each section once; in vertical and stacked
 layouts project the same section into both panes. Preserve eager, single-threaded
-preparation. Proposed navigation placement: text preceding a file group appears above
-its first file and trailing text remains after the last file. This placement remains
-proposed. Keep repeated paths in separate source positions so multiple commits cannot
-be collapsed into one file entry.
+preparation. Text preceding a file group appears above its first file and trailing
+text remains after the last file. Keep repeated paths in separate source positions so
+multiple commits cannot be collapsed into one file entry.
 
 Reuse existing layout and navigation representations where they support these ordered
 sections; adapt their ownership where they assume every visible item is a file.
@@ -243,7 +240,19 @@ layouts. Review the terminal display manually.
 Also test text before, between, and after file diffs, rejection of text-only input, and
 malformed recognized patches. No test may modify the user's Git configuration.
 
+Verification passed: 85 unit and 18 integration tests, formatting, and Clippy.
+Actual `git show` piping displayed commit text correctly in all three layouts;
+terminal navigation preserved repeated file occurrences and their distinct messages.
+Terminal source rendering also exposed duplicated syntax tokens, recorded under the
+separate duplication investigation below.
+
 #### Third: additional Git subcommands
+
+Assessment complete: [Git command compatibility](../vendor/git-command-output.md)
+records 21 isolated invocation checks, supported finite-output shapes, and deferred
+variants. Seven inputs preserve finite output exactly; fourteen reject unsupported
+content, including the ambiguous `format-patch` signature immediately after a hunk.
+No additional pager registration is recommended.
 
 Produce a broad compatibility assessment before adding registrations. Examine
 `git log` and `git log -p`, `git reflog`, `git stash show` and `git stash show -p`,
@@ -305,6 +314,13 @@ Use a minimal source pair with a single `excluded_mcp()` call and only an added 
 to check that displayed payloads preserve the source exactly. Exercise unified,
 vertical, and stacked layouts and retain a regression test if the duplication is
 reproduced. The report alone does not establish the original source contents.
+
+A related terminal reproduction during Git-show verification displayed
+`fn value() -> i32` as `fnfn valuevalue() -> i32i32`, while finite output preserved
+the source. The syntax capture and span-rendering code producing this repetition was
+unchanged by the surrounding-text slice. Captures are in `.ace/qol-show-unified.txt`,
+`.ace/qol-show-vertical.txt`, and `.ace/qol-show-stacked.txt`; the reported
+`excluded_mcp` case still needs its focused reproduction test.
 
 ### Investigate live reload from git diff
 

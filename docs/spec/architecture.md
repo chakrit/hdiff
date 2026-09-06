@@ -90,7 +90,10 @@ not parse diff text, and input handling must not mutate parsed records in place.
 The document is the source of truth and retains enough original content to render unknown but
 valid diff lines without data loss.
 
-- `DiffDocument`: ordered files and document-level metadata.
+- `DiffDocument`: ordered text sections and file-diff sections.
+- `FileView`: a borrowed navigation projection of a file and its surrounding text.
+  Leading text appears above the following file; final trailing text appears after
+  the last file. Repeated paths remain separate file occurrences.
 - `DiffFile`: file identity, headers, and ordered hunks.
 - File-list labels use the new header path when the old header path is `/dev/null`; labels
   omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff headers preserve
@@ -151,6 +154,13 @@ diff sections remain strictly validated.
 Support diffs and their surrounding text through explicit `git show <commit> | hdiff`
 invocations. Do not provide general text-only paging; reject nonempty input containing
 no diff. Automatic `pager.show` registration is outside this scope.
+
+Surrounding text has document-level ownership. Prepared layouts render each text line
+once and share its row index across split panes. Text receives no source syntax or
+character-detail spans.
+
+An immediate record-looking continuation after a hunk's declared counts is an error.
+Surrounding text does not provide recovery from malformed recognized diff sections.
 
 The current input selector reads stdin with zero operands, reads a patch file with one,
 and invokes `diff -u` with two; more than two operands produce

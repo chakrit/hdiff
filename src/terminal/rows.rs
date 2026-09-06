@@ -250,7 +250,10 @@ fn row_kind(kind: Option<&RenderedLineKind>, marker: Option<&u8>) -> RowKind {
             Some(b'-') => RowKind::Deletion,
             _ => RowKind::Context,
         },
-        Some(RenderedLineKind::Metadata | RenderedLineKind::FileHeader) | None => RowKind::Metadata,
+        Some(
+            RenderedLineKind::Text | RenderedLineKind::Metadata | RenderedLineKind::FileHeader,
+        )
+        | None => RowKind::Metadata,
     }
 }
 
@@ -418,7 +421,7 @@ mod tests {
             "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+界界界界界界\n".as_bytes(),
         )
         .expect("valid Unicode diff");
-        let layout = file_layout(&document.files[0]);
+        let layout = file_layout(&document.file_views().next().expect("first file"));
 
         assert_eq!(
             maximum_visible_row_width(&layout, DiffLayout::Unified, 3),

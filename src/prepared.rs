@@ -1,6 +1,6 @@
 use crate::{
     detail::{DetailSpan, detail_rows},
-    document::{DiffDocument, DiffFile, sanitize},
+    document::{DiffDocument, DiffFile, FileView, sanitize},
     interaction::DiffGranularity,
     layout::{FileListRow, Layout, file_layout},
     measurement::{Observer, Stage, Unobserved},
@@ -26,11 +26,10 @@ impl PreparedDocument {
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let mut syntax = SyntaxHighlighter::default();
         let file_labels = observer.measure(Stage::Labels, |_| {
-            document.files.iter().map(file_list_label).collect()
+            document.files().map(file_list_label).collect()
         });
         let files = document
-            .files
-            .iter()
+            .file_views()
             .map(|file| PreparedFile::prepare(file, &mut syntax, observer))
             .collect();
 
@@ -63,13 +62,17 @@ impl PreparedDocument {
 
 impl PreparedFile {
     fn prepare(
-        file: &DiffFile,
+        file: FileView<'_>,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
-        let layout = observer.measure(Stage::Layout, |_| file_layout(file));
+        let layout = observer.measure(Stage::Layout, |_| file_layout(&file));
         let syntax = observer.measure(Stage::Syntax, |observer| {
-            syntax.highlight_file_observed(file, observer)
+            let leading = std::iter::repeat_with(Vec::new).take(file.leading.len());
+            let highlighted = syntax.highlight_file_observed(file.file, observer);
+            let trailing = std::iter::repeat_with(Vec::new).take(file.trailing.len());
+
+            leading.chain(highlighted).chain(trailing).collect()
         });
         let character_details = observer.measure(Stage::Detail, |_| {
             detail_rows(&layout, DiffGranularity::Character)
@@ -143,8 +146,7 @@ fn display_path(path: &str) -> String {
 #[cfg(test)]
 pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> Vec<FileListRow> {
     document
-        .files
-        .iter()
+        .files()
         .enumerate()
         .map(|(index, file)| FileListRow {
             label: file_list_label(file),
@@ -157,6 +159,40 @@ pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> V
 mod tests {
     use super::PreparedDocument;
     use crate::{interaction::DiffGranularity, parser::parse_unified_diff};
+
+    #[test]
+    fn retains_surrounding_text_with_separate_repeated_file_views() {
+        let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+        let input = format!("first message\n{patch}second message\n{patch}trailer\n");
+        let document = parse_unified_diff(input.as_bytes()).expect("diffs with messages");
+        let prepared = PreparedDocument::prepare(&document);
+
+        assert_eq!(prepared.file_count(), 2);
+        assert_eq!(prepared.record_count(), 4);
+        for (index, expected) in [
+            format!("first message\n{patch}"),
+            format!("second message\n{patch}trailer\n"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let file = prepared.file(index).expect("separate file occurrence");
+            let rendered: Vec<u8> = file
+                .layout
+                .diff_lines
+                .iter()
+                .flat_map(|line| line.bytes.iter().copied())
+                .collect();
+            assert_eq!(rendered, expected.as_bytes());
+            assert!(file.syntax()[0].is_empty(), "message is not source code");
+            assert!(file.syntax()[4..].iter().any(|spans| !spans.is_empty()));
+            assert_eq!(file.syntax().len(), file.layout.diff_lines.len());
+            assert_eq!(
+                file.details(DiffGranularity::Character).len(),
+                file.layout.diff_lines.len()
+            );
+        }
+    }
 
     #[test]
     fn diagnostic_observation_preserves_every_prepared_rendering_component() {

@@ -1,6 +1,61 @@
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
-    pub files: Vec<DiffFile>,
+    pub sections: Vec<Section>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Section {
+    Text(Box<[SourceLine]>),
+    File(DiffFile),
+}
+
+pub struct FileView<'a> {
+    pub file: &'a DiffFile,
+    pub leading: &'a [SourceLine],
+    pub trailing: &'a [SourceLine],
+}
+
+impl DiffDocument {
+    pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
+        self.sections.iter().filter_map(|section| match section {
+            Section::File(file) => Some(file),
+            Section::Text(_) => None,
+        })
+    }
+
+    pub fn file(&self, index: usize) -> Option<&DiffFile> {
+        self.files().nth(index)
+    }
+
+    pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
+        self.sections
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| {
+                let Section::File(file) = section else {
+                    return None;
+                };
+                let leading = match index
+                    .checked_sub(1)
+                    .and_then(|previous| self.sections.get(previous))
+                {
+                    Some(Section::Text(lines)) => lines.as_ref(),
+                    _ => &[],
+                };
+                let trailing = match self.sections.get(index + 1) {
+                    Some(Section::Text(lines)) if index + 2 == self.sections.len() => {
+                        lines.as_ref()
+                    }
+                    _ => &[],
+                };
+
+                Some(FileView {
+                    file,
+                    leading,
+                    trailing,
+                })
+            })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
