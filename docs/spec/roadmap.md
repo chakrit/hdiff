@@ -154,35 +154,33 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
 
 ## Later slices
 
-### Install: support git show
+### Support diff-producing git show invocations
 
-`hdiff --install` configures Git diff paging but does not make `git show` open the
-same interactive hdiff view. Installation should support both commands.
+Support diffs and surrounding commit text from explicit `git show <commit> | hdiff`
+invocations. General text-only paging and automatic `pager.show` registration are
+outside this scope.
 
-- [ ] Determine the Git configuration boundary that routes both `git diff` and
-  `git show` to hdiff, reusing the installer backup and configuration operations
-  to register `pager.show` alongside `pager.diff`.
 - [ ] Preserve and display commit headers and messages with their associated diffs;
   the current parser rejects the preamble from ordinary `git show` output.
-- [ ] Verify generic surrounding-text handling for multiple commits, tags, trees,
-  and file contents; combined merge-diff support remains deferred.
+- [ ] Verify producer-independent surrounding-text handling for multiple commits
+  containing diffs and rejection of nonempty text-only input; combined merge-diff
+  support remains deferred.
 - [x] Define behavior for zero-byte diff input in interactive and finite-output modes,
   including Git commands with no changes to display.
 - [ ] Assess which additional Git subcommands should use hdiff, including `git log -p`;
   distinguish patch-producing invocations from ordinary non-diff output before
   recommending additional pager registrations.
-- [ ] Add isolated configuration and invocation tests for `hdiff --install` and
-  `git show`, including commit metadata and empty input, plus a terminal check of
-  the actual Git-to-hdiff invocation.
-- [ ] Record the settled Git integration contract in `docs/spec/architecture.md`.
+- [ ] Add isolated invocation tests for explicit `git show <commit> | hdiff`, including
+  commit metadata and empty input, plus a terminal check of the actual invocation.
+- [x] Record the settled Git integration contract in `docs/spec/architecture.md`.
 
-Relevant boundaries: `src/actions/git_config.rs`, `src/parser.rs`, `src/document.rs`,
+Relevant boundaries: `src/parser.rs`, `src/document.rs`,
 `src/terminal/`, `tests/git_difftool.rs`, and `docs/spec/architecture.md`.
 
 ### QoL delivery plan: empty input and Git paging
 
 The empty-input and producer-independent surrounding-text contracts are settled in
-`architecture.md`. This plan covers their implementation, `git show` pager routing,
+`architecture.md`. This plan covers their implementation, explicit `git show` piping,
 and a broader Git-subcommand compatibility assessment. Combined merge-diff support
 is deferred. Changes to the user's Git configuration require separate authorization.
 
@@ -210,43 +208,39 @@ Verification passed: 75 unit tests and 15 integration tests, formatting, Clippy,
 pseudo-terminal invocations for empty stdin, an empty patch file, and identical operands.
 Each empty pseudo-terminal invocation exited with status 0 and emitted no bytes.
 
-#### Second: generic surrounding text and git show installation
+#### Second: generic surrounding text with diffs
 
-Reuse the existing Git configuration writer, shell quoting, backup operation, safe
-source-line representation, and finite/interactive rendering boundaries. The existing
-document owns only files; commit text must have an explicit document-level owner
-rather than being attached to an arbitrary file or discarded.
+Reuse the existing safe source-line representation and finite/interactive rendering
+boundaries. The existing document owns only files; commit text must have an explicit
+document-level owner rather than being attached to an arbitrary file or discarded.
 
 Represent the input as ordered text sections and file-diff sections, preserving
 source order without interpreting commit headers or identifying the producing command.
 Collect surrounding text at the document boundary; recognized file headers enter
 the existing strict diff parser. A failure inside a recognized diff remains an error.
 Do not fall back to text after a malformed hunk or add a Git-show input mode.
+Reject nonempty input containing no diff; metadata-only Git diff sections remain valid.
 
 Prepare each text section once using the existing sanitization and row-rendering
 capabilities. In unified view render each section once; in vertical and stacked
 layouts project the same section into both panes. Preserve eager, single-threaded
 preparation. Proposed navigation placement: text preceding a file group appears above
-its first file, trailing text remains after the last file, and text-only documents
-remain viewable without inventing a file path. Keep repeated paths in separate source
-positions so multiple commits cannot be collapsed into one file entry.
+its first file and trailing text remains after the last file. This placement remains
+proposed. Keep repeated paths in separate source positions so multiple commits cannot
+be collapsed into one file entry.
 
 Reuse existing layout and navigation representations where they support these ordered
 sections; adapt their ownership where they assume every visible item is a file.
 Do not introduce a parallel renderer for `show`, `log`, or individual text formats.
 Combined merge-diff parsing and rendering are outside this slice; record the current
-limitation without treating its resolution as an installation prerequisite.
+limitation without treating its resolution as a prerequisite for explicit piping.
 
-Only after those input/display checks pass, extend `--install` to configure
-`pager.show` alongside `pager.diff`, with one backup before either write and an
-accurate report of applied commands. Define partial-write failure reporting and
-verify quoted executable paths; keep `core.pager` and unrelated settings unchanged.
-
-Acceptance checks: isolated Git configuration and actual pager invocation; ordinary,
-multiple, and patchless commits; tags, trees, and blobs; colored metadata and
-terminal-control sanitization; finite output and broken pipes; commit association
-while navigating files in all three layouts. Review the terminal display manually.
-Also test text before, between, and after file diffs, text-only documents, and
+Acceptance checks: isolated actual `git show <commit> | hdiff` invocations; ordinary
+and multiple commits with diffs; rejection of nonempty patchless commit, tag, tree,
+and blob output containing no diff; colored metadata and terminal-control sanitization;
+finite output and broken pipes; commit association while navigating files in all three
+layouts. Review the terminal display manually.
+Also test text before, between, and after file diffs, rejection of text-only input, and
 malformed recognized patches. No test may modify the user's Git configuration.
 
 #### Third: additional Git subcommands
@@ -258,10 +252,12 @@ existing `git diff` variants such as `--cached` and `--stat`. Record output shap
 applicable pager setting or explicit pipe, parser/display coverage, practical review
 value, and whether registration affects non-patch invocations.
 
-Use official Git documentation and isolated invocation checks. Recommend commands
-only when hdiff preserves all their review content and handles their ordinary
-non-patch invocations. The output is a supported/deferred recommendation with
-evidence; additional implementation and registrations require scope approval.
+Use official Git documentation and isolated invocation checks. Recommend explicit
+patch-producing invocations only when hdiff preserves all their review content.
+Recommend automatic registration only when hdiff also handles the subcommand's
+ordinary non-patch invocations within its diff-viewer scope. The output is a
+supported/deferred recommendation with evidence; additional implementation and
+registrations require scope approval.
 
 Investigate `git log -p` and `git stash show -p` as likely reusable patch producers,
 without limiting the assessment to those commands or preselecting registrations.
@@ -289,8 +285,37 @@ for these QoL slices unless implementation introduces a preparation performance 
 Audit each complete slice against the approved spec and commit locally after its
 checks pass. Installing into the user's environment and pushing are separate actions.
 The compatibility research can run independently of the empty-input implementation;
-invocation verification depends on the generic-content slice. Commit empty-input
-behavior, generic-content support, and installer routing as coherent verified slices.
+invocation verification depends on the surrounding-text slice. Commit empty-input
+behavior and surrounding-text support as coherent verified slices.
+
+### Investigate apparent duplicated source tokens
+
+- [ ] Reproduce and test the reported display of `excluded_mcp` appearing twice in
+  a changed Rust line; establish whether duplication occurs in the input or is
+  introduced by hdiff before diagnosing a rendering bug.
+
+Reported content, with the unrelated filename column omitted:
+
+```diff
+-         let excluded = ace.excluded_mcpexcluded_mcp();
++         let excluded = ace.excluded_mcpexcluded_mcp()?;
+```
+
+Use a minimal source pair with a single `excluded_mcp()` call and only an added `?`
+to check that displayed payloads preserve the source exactly. Exercise unified,
+vertical, and stacked layouts and retain a regression test if the duplication is
+reproduced. The report alone does not establish the original source contents.
+
+### Investigate live reload from git diff
+
+- [ ] Investigate whether hdiff can reliably identify invocation through `git diff`
+  and retain enough producer context to rerun the comparison when files change.
+
+Assess what invocation and repository information reaches the pager, whether diff
+arguments and revision/index/worktree choices can be recovered, and how stdin-only
+input limits a faithful re-diff. Report feasibility and constraints for watching
+changes and reloading the diff. This task authorizes investigation only; live-watch
+implementation remains unapproved.
 
 ### Product slices
 

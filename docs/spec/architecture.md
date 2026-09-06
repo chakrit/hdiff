@@ -148,6 +148,10 @@ render it in both split panes and once in unified view, and use the same parsing
 rendering path for all producers. Do not introduce `git show` exceptions. Recognized
 diff sections remain strictly validated.
 
+Support diffs and their surrounding text through explicit `git show <commit> | hdiff`
+invocations. Do not provide general text-only paging; reject nonempty input containing
+no diff. Automatic `pager.show` registration is outside this scope.
+
 The current input selector reads stdin with zero operands, reads a patch file with one,
 and invokes `diff -u` with two; more than two operands produce
 `expected zero, one, or two operands`. hdiff does not yet recognize `-r` as an option or
