@@ -1,4 +1,42 @@
-# 
+# hdiff
+
+hdiff is an interactive terminal diff viewer written in Rust 2024 (Rust 1.98.0).
+It reads unified diffs from stdin or a patch file and compares file/directory operands.
+It uses Crossterm and Ratatui for the terminal, similar for comparisons, and Tree-sitter
+for syntax and semantic processing.
+
+## Project orientation
+
+`src/main.rs` owns command dispatch. Input flows through parsing and the retained document
+into preparation, interaction/layout, and rendering; `src/actions/` owns effectful work.
+`tests/` holds integration tests, fixtures, and terminal smoke captures; `bench/` holds
+the Kubernetes preparation benchmark.
+
+Read `docs/spec/architecture.md` for product and engineering contracts,
+`docs/spec/performance.md` for measurement contracts, and `docs/spec/roadmap.md` for tasks.
+
+## Commands and skills
+
+- Format check: `cargo fmt --check`.
+- Rust tests: `cargo test --locked`.
+- Lint: `cargo clippy --all-targets --locked -- -D warnings`.
+- Terminal checks: follow `docs/guides/testing-terminal-ui.md`.
+- Benchmark harness checks: `sh tests/benchmark-runner.sh`.
+- Preparation comparisons and profiling: follow `docs/guides/kubernetes-benchmark.md`.
+
+Obtain explicit approval before resource-intensive runs and use `nice -n 19` for approved
+heavy work, except the Kubernetes preparation benchmark, which runs at ordinary priority.
+
+Load `architect`, `code`, and `rust-coding` for coding work, and `smoke` for terminal
+snapshot work. The shared skill selection is in `ace.toml`; personal additions remain
+layered through ACE. Skill availability does not mean the skill has been loaded.
+
+## Git checkpoints
+
+Commit coherent, completed slices autonomously after completing the checks required for
+that work. Do not ask for permission to make a local commit. A local commit does not
+authorize pushing, publishing, merging, releasing, deploying, or any other change to
+shared or external state; each requires separate user authorization.
 
 This project's AI coding environment is managed by
 [ACE](https://github.com/ace-rs/ace). Run `ace` to start a coding session.

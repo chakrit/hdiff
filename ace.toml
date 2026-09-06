@@ -1,1 +1,4 @@
 school = "prod9/school"
+skills = [
+  "ace", "ace-*", "architect", "code", "rust-coding", "safety-audit", "smoke",
+]
