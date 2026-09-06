@@ -106,6 +106,75 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
 
+## Planned QoL fix: unmatched lines in character mode
+
+Status: proposed implementation plan; code changes have not started.
+
+When character detail is enabled with `c`, additions and deletions without a
+corresponding source line retain regular syntax colors. `detail_rows` currently
+processes only `SideBySideRow::Paired`; unmatched rows receive no detail spans, so
+`StyledLayout::row` selects their syntax partition.
+
+### Proposed behavior
+
+Treat the entire payload of an unmatched addition or deletion as changed in
+character mode. Use the existing dim green addition and dim red deletion detail
+colors, overriding syntax colors throughout that payload. An unmatched source line
+has no unchanged characters to distinguish.
+
+Apply this rule in unified, vertical-split, and stacked-split layouts, including
+files containing only additions or only deletions and excess lines in unequal
+replacement blocks. Empty changed lines retain their marker and row background.
+Alignment peers retain their existing markerless, pane-specific styling.
+
+Paired lines retain the existing token/grapheme comparison. Context, metadata,
+source text, and layout remain unchanged. Toggling back to line mode restores the
+existing syntax presentation from prepared data.
+
+### Implementation sequence
+
+- [ ] Amend the character-detail contract in `architecture.md` with the approved
+  unmatched-line behavior.
+- [ ] Extend the existing preparation and terminal rendering tests to demonstrate
+  the missing full-payload styling, and establish meaningful assertion failures
+  before changing behavior.
+- [ ] Replace the paired-only loop in `src/detail.rs::detail_rows` with an exhaustive
+  match on `SideBySideRow`: paired rows use the existing comparison; before-only and
+  after-only rows receive a span covering their nonempty payload; shared rows receive
+  no detail spans.
+- [ ] Reuse the existing payload extraction and byte-offset conventions, excluding
+  the diff marker and line ending. Reuse `DetailSpan`, prepared style partitions in
+  `src/styling.rs`, and the detail palette in `src/terminal/rows.rs`; no new renderer,
+  module, dependency, or interaction-time comparison is needed.
+- [ ] Complete the checks below, audit the complete diff, update this roadmap, and
+  commit the coherent fix locally.
+
+The preparation boundary owns whether source text is changed. Explicitly handling
+every alignment variant prevents unmatched rows from being omitted by the current
+paired-only filter; terminal styling consumes the resulting detail spans uniformly.
+
+### Acceptance and verification
+
+- Preparation coverage: addition-only and deletion-only blocks, excess additions
+  and excess deletions in unequal blocks, and preserved partial detail for paired
+  lines. Include Unicode byte boundaries, CRLF exclusion, and empty payloads where
+  those cases exercise full-payload span construction.
+- Terminal coverage: use syntax-highlightable source so fallback to syntax colors
+  would visibly fail; assert uniform dim addition/deletion foregrounds across each
+  unmatched payload in all three layouts, with source text emitted exactly once.
+- Toggle coverage: reuse the same prepared file through line → character → line
+  and verify that syntax colors return without changing file selection or viewport;
+  do not rebuild preparation between renders.
+- Inspect the terminal display with unmatched rows next to a paired replacement;
+  verify existing backgrounds, markers, alignment peers, and horizontal clipping.
+- Run `cargo fmt --check`, `cargo test --locked`, and
+  `cargo clippy --all-targets --all-features --locked -- -D warnings`, then inspect
+  the complete diff and run `git diff --check`. Report test compilation time.
+
+This is a rendering-correctness slice, with no preparation optimization claim or
+Kubernetes benchmark requirement. Resource-intensive verification still requires
+explicit approval under the repository's machine-resource rules.
+
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
