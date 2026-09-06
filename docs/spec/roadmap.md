@@ -156,13 +156,24 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
 same interactive hdiff view. Installation should support both commands.
 
 - [ ] Determine the Git configuration boundary that routes both `git diff` and
-  `git show` to hdiff.
+  `git show` to hdiff, reusing the installer backup and configuration operations
+  to register `pager.show` alongside `pager.diff`.
+- [ ] Preserve and display commit headers and messages with their associated diffs;
+  the current parser rejects the preamble from ordinary `git show` output.
+- [ ] Define supported behavior for merge diffs, multiple commits, tags, trees, and
+  file contents before enabling `git show` paging globally.
+- [ ] Define behavior for zero-byte diff input in interactive and finite-output modes,
+  including Git commands with no changes to display.
+- [ ] Assess which additional Git subcommands should use hdiff, including `git log -p`;
+  distinguish patch-producing invocations from ordinary non-diff output before
+  recommending additional pager registrations.
 - [ ] Add isolated configuration and invocation tests for `hdiff --install` and
-  `git show`.
+  `git show`, including commit metadata and empty input, plus a terminal check of
+  the actual Git-to-hdiff invocation.
 - [ ] Record the settled Git integration contract in `docs/spec/architecture.md`.
 
-Relevant boundaries: `src/actions/install_git_pager.rs`, `tests/git_difftool.rs`, and
-`docs/spec/architecture.md`.
+Relevant boundaries: `src/actions/git_config.rs`, `src/parser.rs`, `src/document.rs`,
+`src/terminal/`, `tests/git_difftool.rs`, and `docs/spec/architecture.md`.
 
 ### Product slices
 
