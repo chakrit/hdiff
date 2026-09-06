@@ -141,6 +141,13 @@ backs up the exact global config file Git will write to a sibling `.bak` file, t
 overwrites `pager.diff` through `git config --global`; hdiff never parses or rewrites Git
 config text.
 
+Zero-byte viewer input exits silently with status 0 without opening the TUI.
+
+Preserve text outside file diffs independently of its producer. Retain that text once,
+render it in both split panes and once in unified view, and use the same parsing and
+rendering path for all producers. Do not introduce `git show` exceptions. Recognized
+diff sections remain strictly validated.
+
 The current input selector reads stdin with zero operands, reads a patch file with one,
 and invokes `diff -u` with two; more than two operands produce
 `expected zero, one, or two operands`. hdiff does not yet recognize `-r` as an option or

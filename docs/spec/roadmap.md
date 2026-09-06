@@ -148,6 +148,10 @@ Each phase has its own specification amendment, tests, verification, audit, and 
 
 Git integrations beyond user-level Git diff-pager installation remain deferred.
 
+- [ ] Combined merge diffs: assess Git's multi-parent patch format and an appropriate
+  display model in a later task. Deferred by the user; support is not an acceptance
+  requirement or prerequisite for the empty-input and Git-paging QoL work.
+
 ## Later slices
 
 ### Install: support git show
@@ -160,8 +164,8 @@ same interactive hdiff view. Installation should support both commands.
   to register `pager.show` alongside `pager.diff`.
 - [ ] Preserve and display commit headers and messages with their associated diffs;
   the current parser rejects the preamble from ordinary `git show` output.
-- [ ] Define supported behavior for merge diffs, multiple commits, tags, trees, and
-  file contents before enabling `git show` paging globally.
+- [ ] Verify generic surrounding-text handling for multiple commits, tags, trees,
+  and file contents; combined merge-diff support remains deferred.
 - [ ] Define behavior for zero-byte diff input in interactive and finite-output modes,
   including Git commands with no changes to display.
 - [ ] Assess which additional Git subcommands should use hdiff, including `git log -p`;
@@ -177,20 +181,21 @@ Relevant boundaries: `src/actions/git_config.rs`, `src/parser.rs`, `src/document
 
 ### QoL delivery plan: empty input and Git paging
 
-Planning requested by the user: "those 3 qol tasks, plan for them now please".
-The following behavior and implementation approach are proposed, pending review;
-this request authorizes planning, not implementation or changes to Git configuration.
-Amend `architecture.md` with approved behavior before implementing each slice.
+The empty-input and producer-independent surrounding-text contracts are settled in
+`architecture.md`. This plan covers their implementation, `git show` pager routing,
+and a broader Git-subcommand compatibility assessment. Combined merge-diff support
+is deferred. Implementation and changes to the user's Git configuration are not
+part of the current planning task.
 
 #### First: empty input
 
 Current source behavior: zero bytes parse into an empty document; finite rendering
 produces no output, while terminal output still starts an interactive session.
 
-Proposed behavior: zero-byte input exits successfully without output, preparation,
+Required behavior: zero-byte input exits successfully without output, preparation,
 terminal acquisition, raw mode, or alternate-screen entry. Apply the same behavior
 to stdin, an empty patch file, and identical file operands. Preserve measurement
-reports for `--bench` and `--profile`. Nonempty metadata-only input remains content;
+reports for `--bench` and `--profile`. Existing Git metadata-only sections remain content;
 malformed input remains an error rather than being treated as empty.
 
 Implement the empty-input outcome at normal viewer dispatch, before terminal setup,
@@ -199,28 +204,35 @@ module for this branch. Check the existing CLI tests before extending their cove
 
 Acceptance checks: CLI exit status and empty stdout/stderr for each empty source;
 a pseudo-terminal invocation that exits without a keypress or terminal-control output;
-metadata-only input still rendered; malformed nonempty input still rejected; empty
+existing Git metadata-only sections still rendered; malformed nonempty input still rejected; empty
 measurement input still emits valid zero-count reports.
 
-#### Second: git show
+#### Second: generic surrounding text and git show installation
 
 Reuse the existing Git configuration writer, shell quoting, backup operation, safe
 source-line representation, and finite/interactive rendering boundaries. The existing
 document owns only files; commit text must have an explicit document-level owner
 rather than being attached to an arbitrary file or discarded.
 
-Proposed scope: preserve ordered commit headers, messages, and associated file groups
-for ordinary and multiple-commit output, including commits with no patch. Preserve
-combined merge diffs and non-patch object output in a safe textual representation
-until a structured renderer supports them; do not interpret them as two-sided hunks.
-This textual representation must be explicit in the Git-show input boundary, not a
-catch-all that turns malformed ordinary unified diffs into successful output.
+Represent the input as ordered text sections and file-diff sections, preserving
+source order without interpreting commit headers or identifying the producing command.
+Collect surrounding text at the document boundary; recognized file headers enter
+the existing strict diff parser. A failure inside a recognized diff remains an error.
+Do not fall back to text after a malformed hunk or add a Git-show input mode.
 
-Resolve that input boundary and its invocation through `pager.show` during design,
-including how it distinguishes Git-show text from strict unified-diff input. Extend
-the retained document, preparation, and rendering around ordered review content;
-retain eager, single-threaded preparation and existing file navigation semantics.
-Define how commit text is displayed when selecting a file and when no files exist.
+Prepare each text section once using the existing sanitization and row-rendering
+capabilities. In unified view render each section once; in vertical and stacked
+layouts project the same section into both panes. Preserve eager, single-threaded
+preparation. Proposed navigation placement: text preceding a file group appears above
+its first file, trailing text remains after the last file, and text-only documents
+remain viewable without inventing a file path. Keep repeated paths in separate source
+positions so multiple commits cannot be collapsed into one file entry.
+
+Reuse existing layout and navigation representations where they support these ordered
+sections; adapt their ownership where they assume every visible item is a file.
+Do not introduce a parallel renderer for `show`, `log`, or individual text formats.
+Combined merge-diff parsing and rendering are outside this slice; record the current
+limitation without treating its resolution as an installation prerequisite.
 
 Only after those input/display checks pass, extend `--install` to configure
 `pager.show` alongside `pager.diff`, with one backup before either write and an
@@ -228,31 +240,40 @@ accurate report of applied commands. Define partial-write failure reporting and
 verify quoted executable paths; keep `core.pager` and unrelated settings unchanged.
 
 Acceptance checks: isolated Git configuration and actual pager invocation; ordinary,
-multiple, empty, and merge commits; tags, trees, and blobs; colored metadata and
+multiple, and patchless commits; tags, trees, and blobs; colored metadata and
 terminal-control sanitization; finite output and broken pipes; commit association
 while navigating files in all three layouts. Review the terminal display manually.
-No test may modify the user's Git configuration.
+Also test text before, between, and after file diffs, text-only documents, and
+malformed recognized patches. No test may modify the user's Git configuration.
 
 #### Third: additional Git subcommands
 
-Produce a compatibility assessment before adding registrations. Start with
-`git log -p`, then examine ordinary `git log`, `git reflog`, `git stash show -p`,
-and `git range-diff`: record output shape, applicable pager setting, parser/display
-coverage, and whether enabling the setting affects non-patch invocations.
+Produce a broad compatibility assessment before adding registrations. Examine
+`git log` and `git log -p`, `git reflog`, `git stash show` and `git stash show -p`,
+`git range-diff`, `git format-patch --stdout`, `git blame`, and `git status`, including
+existing `git diff` variants such as `--cached` and `--stat`. Record output shape,
+applicable pager setting or explicit pipe, parser/display coverage, practical review
+value, and whether registration affects non-patch invocations.
 
 Use official Git documentation and isolated invocation checks. Recommend commands
 only when hdiff preserves all their review content and handles their ordinary
 non-patch invocations. The output is a supported/deferred recommendation with
 evidence; additional implementation and registrations require scope approval.
 
-Initial recommendation: assess opt-in `git log -p` and `git stash show -p` first;
-defer automatic registration. Git's [`pager.<cmd>` setting](https://git-scm.com/docs/git-config)
+Investigate `git log -p` and `git stash show -p` as likely reusable patch producers,
+without limiting the assessment to those commands or preselecting registrations.
+Git's [`pager.<cmd>` setting](https://git-scm.com/docs/git-config)
 applies to a subcommand, not only its patch-producing invocations, and
 [`stash show`](https://git-scm.com/docs/git-stash) defaults to a diffstat.
 [`range-diff`](https://git-scm.com/docs/git-range-diff) uses a distinct, unstable
 human-readable output format and needs a separate compatibility decision.
 For `log -p`, check repeated paths across commits, graph prefixes, custom formatting,
 and entries without patches before claiming compatibility.
+
+Deliver a compatibility table with verified invocation examples and a recommendation
+for each candidate: ready for installation, usable by explicit pipe, or deferred with
+its concrete limitation. Keep raw findings in the repository's vendor-documentation
+convention and settled support contracts in `architecture.md`; the roadmap owns tasks.
 
 #### Verification and delivery
 
@@ -264,6 +285,9 @@ Obtain approval for resource-intensive work; no preparation benchmark is planned
 for these QoL slices unless implementation introduces a preparation performance claim.
 Audit each complete slice against the approved spec and commit locally after its
 checks pass. Installing into the user's environment and pushing are separate actions.
+The compatibility research can run independently of the empty-input implementation;
+invocation verification depends on the generic-content slice. Commit empty-input
+behavior, generic-content support, and installer routing as coherent verified slices.
 
 ### Product slices
 
