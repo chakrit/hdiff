@@ -368,14 +368,19 @@ mod tests {
     use ratatui::{
         Terminal,
         backend::TestBackend,
+        buffer::{Buffer, Cell},
         style::{Color, Modifier},
     };
 
-    use super::{render_frame, render_frame_with_layout};
+    use super::{render_frame, render_frame_with_layout, render_prepared_frame};
     use crate::{
-        interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
+        interaction::{
+            DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
+            ViewPreferences, Viewport, transition_interaction,
+        },
         layout::layout,
         parser::parse_unified_diff,
+        prepared::PreparedDocument,
     };
 
     #[test]
@@ -767,6 +772,107 @@ mod tests {
         assert_eq!(rendered[(30, 4)].fg, Color::Rgb(112, 195, 115));
         assert!(rendered[(30, 3)].modifier.contains(Modifier::DIM));
         assert!(rendered[(30, 4)].modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn toggles_unmatched_payload_colors_in_unified_layout() {
+        assert_unmatched_payload_toggle(DiffLayout::Unified);
+    }
+
+    #[test]
+    fn toggles_unmatched_payload_colors_in_vertical_layout() {
+        assert_unmatched_payload_toggle(DiffLayout::Vertical);
+    }
+
+    #[test]
+    fn toggles_unmatched_payload_colors_in_stacked_layout() {
+        assert_unmatched_payload_toggle(DiffLayout::Stacked);
+    }
+
+    fn assert_unmatched_payload_toggle(diff_layout: DiffLayout) {
+        let document = parse_unified_diff(
+            b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
+              --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
+              @@ -2,0 +2 @@\n+fn added() {}\n",
+        )
+        .expect("valid unmatched Rust changes");
+        let prepared = PreparedDocument::prepare(&document);
+        let file = prepared.file(1).expect("second prepared file");
+        let file_rows = prepared.file_rows(1);
+        let interaction = Interaction {
+            selected_file: 1,
+            preferences: ViewPreferences::line(diff_layout),
+            viewport: Viewport {
+                vertical_offset: 1,
+                horizontal_offset: 1,
+                width: 160,
+                height: 30,
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: prepared.file_count(),
+            target_display: DisplayBounds {
+                line_count: file.layout().diff_lines.len(),
+                maximum_horizontal_offset: 1,
+            },
+        };
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
+        terminal
+            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &interaction, u16::MAX))
+            .expect("render line mode");
+        let line_rendered = terminal.backend().buffer().clone();
+        let payloads = [
+            ("fn removed() {}", Color::Rgb(206, 74, 74)),
+            ("fn added() {}", Color::Rgb(112, 195, 115)),
+        ];
+        for (payload, _) in payloads {
+            let cells = unique_payload_cells(&line_rendered, payload);
+            assert_eq!(cells[0].fg, Color::Rgb(86, 156, 214), "Rust keyword");
+        }
+
+        let Transition::RedrawInteraction(character) =
+            transition_interaction(&interaction, Input::ToggleGranularity, &bounds)
+        else {
+            panic!("character toggle redraws interaction");
+        };
+        assert_eq!(character.selected_file, interaction.selected_file);
+        assert_eq!(character.viewport, interaction.viewport);
+        terminal
+            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &character, u16::MAX))
+            .expect("render character mode");
+
+        // architecture.md: unmatched source payloads contain no unchanged characters.
+        for (payload, color) in payloads {
+            let cells = unique_payload_cells(terminal.backend().buffer(), payload);
+            for cell in cells {
+                assert_eq!(cell.fg, color, "{diff_layout:?}: {payload}");
+                assert!(cell.modifier.contains(Modifier::DIM), "{payload}");
+            }
+        }
+        let Transition::RedrawInteraction(line) =
+            transition_interaction(&character, Input::ToggleGranularity, &bounds)
+        else {
+            panic!("line toggle redraws interaction");
+        };
+        terminal
+            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &line, u16::MAX))
+            .expect("restore line mode from the same prepared file");
+
+        assert_eq!(line, interaction, "toggle preserves the reader position");
+        assert_eq!(terminal.backend().buffer(), &line_rendered);
+    }
+
+    fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
+        let mut occurrences = buffer.content.windows(payload.len()).filter(|cells| {
+            cells
+                .iter()
+                .map(Cell::symbol)
+                .eq(payload.split("").filter(|symbol| !symbol.is_empty()))
+        });
+        let cells = occurrences.next().expect("full source payload is visible");
+
+        assert!(occurrences.next().is_none(), "source payload appears once");
+        cells
     }
 
     #[test]

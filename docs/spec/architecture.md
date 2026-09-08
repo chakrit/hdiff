@@ -299,6 +299,13 @@ a change. Its changed spans use dim green on addition rows and dim red on deleti
 the line-change palette while leaving unchanged text plain. The selected file row applies one
 shared muted foreground/background style to both its compact `·` marker and file label.
 
+In character mode, unmatched additions and deletions use their dim green or dim red
+detail foreground across the entire payload in every layout, overriding syntax colors.
+The payload excludes its diff marker and line ending; empty changed lines retain their
+marker and row background, and alignment peers retain their markerless pane styling.
+Paired lines retain token/grapheme comparison, and returning to line mode restores syntax
+presentation from the same prepared data.
+
 Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
 file headers retain neutral metadata styling.
 

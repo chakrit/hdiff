@@ -281,21 +281,32 @@ pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<Det
     }
 
     for row in &layout.side_by_side_rows {
-        let SideBySideRow::Paired { before, after } = row else {
-            continue;
-        };
-        let before_line = layout
-            .rendered_line(*before)
-            .expect("side-by-side before index belongs to the layout");
-        let after_line = layout
-            .rendered_line(*after)
-            .expect("side-by-side after index belongs to the layout");
-        let pair = changed_pair_detail(
-            record_payload(&before_line.bytes),
-            record_payload(&after_line.bytes),
-        );
-        details[*before] = pair.before;
-        details[*after] = pair.after;
+        match row {
+            SideBySideRow::Paired { before, after } => {
+                let before_line = layout
+                    .rendered_line(*before)
+                    .expect("side-by-side before index belongs to the layout");
+                let after_line = layout
+                    .rendered_line(*after)
+                    .expect("side-by-side after index belongs to the layout");
+                let pair = changed_pair_detail(
+                    record_payload(&before_line.bytes),
+                    record_payload(&after_line.bytes),
+                );
+                details[*before] = pair.before;
+                details[*after] = pair.after;
+            }
+            SideBySideRow::BeforeOnly(index) | SideBySideRow::AfterOnly(index) => {
+                let line = layout
+                    .rendered_line(*index)
+                    .expect("unmatched row index belongs to the layout");
+                let payload = record_payload(&line.bytes);
+                if !payload.is_empty() {
+                    add_span(&mut details[*index], 0, payload.len());
+                }
+            }
+            SideBySideRow::Shared(_) => {}
+        }
     }
 
     details
@@ -313,7 +324,60 @@ fn record_payload(bytes: &[u8]) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangedPairDetail, DetailSpan, changed_pair_detail};
+    use super::{ChangedPairDetail, DetailSpan, changed_pair_detail, detail_rows};
+    use crate::{interaction::DiffGranularity, layout::file_layout, parser::parse_unified_diff};
+
+    #[test]
+    fn unmatched_payloads_are_fully_changed_in_character_mode() {
+        for (hunk, records, expected) in [
+            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café\r\n", 0, 5)]),
+            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café\r\n", 0, 5)]),
+            (
+                "-1 +1,2",
+                "-let café = old;\n+let café = new;\n+café\n",
+                vec![
+                    ("-let café = old;\n", 12, 15),
+                    ("+let café = new;\n", 12, 15),
+                    ("+café\n", 0, 5),
+                ],
+            ),
+            (
+                "-1,2 +1",
+                "-let café = old;\n-café\n+let café = new;\n",
+                vec![
+                    ("-let café = old;\n", 12, 15),
+                    ("-café\n", 0, 5),
+                    ("+let café = new;\n", 12, 15),
+                ],
+            ),
+        ] {
+            let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
+            let document = parse_unified_diff(patch.as_bytes()).expect("valid unmatched diff");
+            let layout = file_layout(&document.file_views().next().expect("first file"));
+            let details = detail_rows(&layout, DiffGranularity::Character);
+
+            for (line, spans) in layout.diff_lines.iter().zip(details) {
+                let wanted = expected
+                    .iter()
+                    .find(|(text, _, _)| text.as_bytes() == line.bytes.as_ref());
+                let wanted = wanted.map(|(_, start, end)| DetailSpan {
+                    start: *start,
+                    end: *end,
+                });
+                assert_eq!(
+                    spans,
+                    wanted.into_iter().collect::<Vec<_>>(),
+                    "{hunk}: {:?}",
+                    line.bytes
+                );
+            }
+            assert!(
+                detail_rows(&layout, DiffGranularity::Line)
+                    .iter()
+                    .all(Vec::is_empty)
+            );
+        }
+    }
 
     #[test]
     fn marks_only_the_replaced_graphemes_in_a_changed_pair() {

@@ -106,16 +106,15 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
 
-## Planned QoL fix: unmatched lines in character mode
+## Completed QoL fix: unmatched lines in character mode
 
-Status: proposed implementation plan; code changes have not started.
+Status: implemented and verified.
 
 When character detail is enabled with `c`, additions and deletions without a
-corresponding source line retain regular syntax colors. `detail_rows` currently
-processes only `SideBySideRow::Paired`; unmatched rows receive no detail spans, so
-`StyledLayout::row` selects their syntax partition.
+corresponding source line receive full-payload detail styling. `detail_rows` handles
+every alignment variant, and `StyledLayout::row` selects the prepared detail partition.
 
-### Proposed behavior
+### Behavior
 
 Treat the entire payload of an unmatched addition or deletion as changed in
 character mode. Use the existing dim green addition and dim red deletion detail
@@ -133,24 +132,24 @@ existing syntax presentation from prepared data.
 
 ### Implementation sequence
 
-- [ ] Amend the character-detail contract in `architecture.md` with the approved
+- [x] Amend the character-detail contract in `architecture.md` with the approved
   unmatched-line behavior.
-- [ ] Extend the existing preparation and terminal rendering tests to demonstrate
+- [x] Extend the existing preparation and terminal rendering tests to demonstrate
   the missing full-payload styling, and establish meaningful assertion failures
   before changing behavior.
-- [ ] Replace the paired-only loop in `src/detail.rs::detail_rows` with an exhaustive
+- [x] Replace the paired-only loop in `src/detail.rs::detail_rows` with an exhaustive
   match on `SideBySideRow`: paired rows use the existing comparison; before-only and
   after-only rows receive a span covering their nonempty payload; shared rows receive
   no detail spans.
-- [ ] Reuse the existing payload extraction and byte-offset conventions, excluding
+- [x] Reuse the existing payload extraction and byte-offset conventions, excluding
   the diff marker and line ending. Reuse `DetailSpan`, prepared style partitions in
   `src/styling.rs`, and the detail palette in `src/terminal/rows.rs`; no new renderer,
   module, dependency, or interaction-time comparison is needed.
-- [ ] Complete the checks below, audit the complete diff, update this roadmap, and
+- [x] Complete the checks below, audit the complete diff, update this roadmap, and
   commit the coherent fix locally.
 
 The preparation boundary owns whether source text is changed. Explicitly handling
-every alignment variant prevents unmatched rows from being omitted by the current
+every alignment variant prevents unmatched rows from being omitted by a
 paired-only filter; terminal styling consumes the resulting detail spans uniformly.
 
 ### Acceptance and verification
@@ -174,6 +173,13 @@ paired-only filter; terminal styling consumes the resulting detail spans uniform
 This is a rendering-correctness slice, with no preparation optimization claim or
 Kubernetes benchmark requirement. Resource-intensive verification still requires
 explicit approval under the repository's machine-resource rules.
+
+Verification passed 95 unit and 18 integration tests, formatting, Clippy across all
+targets and features with warnings denied, and diff hygiene. Test compilation took
+0.59 seconds; Clippy took 1.02 seconds. Preparation and all three layout regressions
+failed on missing detail styling before implementation. Direct tmux inspection covered
+unmatched Unicode payloads beside paired replacements in all layouts, markerless peers,
+backgrounds, and horizontal clipping. Evidence is in `.ace/unmatched-*.txt`.
 
 ## Remaining interactive delivery sequence
 
