@@ -106,6 +106,43 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
 
+### Movement measurement checkpoint
+
+The user authorized starting the movement task with "start" on September 11, 2026.
+The synthetic in-process baseline is complete and recorded in
+[performance.md](performance.md#initial-movement-baseline). The 1,024-hunk-per-file
+workload takes 54–55 ms per movement frame across all layouts and detail modes.
+Actual terminal keypress latency and a representative user diff remain unmeasured;
+the diagnostic excludes event reads, PTY transport, and terminal-emulator painting.
+
+### Proposed first movement refactor
+
+Status: plan awaiting approval; no performance repair has been implemented.
+
+Prepare each row's context visibility metadata once, within its hunk, so testing the
+session's context bound does not search the file. Keep metadata owned by the prepared
+layout and support arbitrary context counts without adding a terminal-loop cache.
+Use the existing rendered rows and style partitions as the source of display content.
+
+Construct rows only for the selected layout and only until its content panes are full.
+Resolve pane geometry before styling; a screen-size message needs no styled content.
+The stacked layout's row bound follows its actual pane heights. Keep source text,
+alignment peers, colors, horizontal clipping, and selected-file behavior intact.
+Do not introduce new rendering or parsing dependencies.
+
+Before implementation, resolve viewport offsets consistently with filtered context
+rows, since the current row iteration skips unfiltered indices while navigation bounds
+count filtered rows. Document the resulting coordinate contract in `architecture.md`.
+Use the existing layout and terminal tests for context filtering, scrolling, boundaries,
+Unicode text, layout cycling, and line/character toggling; add only missing behavioral
+coverage and establish meaningful failures before repairs.
+
+Repeat the movement diagnostic against its recorded baseline, then measure actual
+terminal input-to-frame behavior on a multi-file diff. Run formatting, the Rust suite,
+Clippy, and terminal inspection; review the complete diff before a local commit.
+Report preparation-time impact as well as movement savings. Kubernetes comparison
+requires separate authorization for its resource-intensive run at ordinary priority.
+
 ## Completed QoL fix: unmatched lines in character mode
 
 Status: implemented and verified.

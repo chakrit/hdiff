@@ -21,6 +21,9 @@ use crate::{
 mod rows;
 mod view;
 
+#[cfg(test)]
+mod movement_measurement;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupStage {
     RawMode,
@@ -90,46 +93,8 @@ fn run_loop(
             continue;
         };
 
-        let transition = {
-            let display_layout = match &input {
-                Input::NextLayout => interaction.preferences.layout.next(),
-                _ => interaction.preferences.layout,
-            };
-            let file = document.file(interaction.selected_file);
-            let content_width = file
-                .map(|file| {
-                    rows::maximum_visible_row_width(
-                        file.layout(),
-                        display_layout,
-                        interaction.preferences.context_lines,
-                    )
-                })
-                .unwrap_or_default();
-            let screen_width = match &input {
-                Input::Resize { width, .. } => *width,
-                _ => interaction.viewport.width,
-            };
-            let pane_width = content_pane_width(screen_width, display_layout);
-            let maximum_horizontal_offset = maximum_horizontal_offset(content_width, pane_width);
-            let line_count = file
-                .map(|file| match display_layout {
-                    DiffLayout::Unified => file
-                        .layout()
-                        .visible_unified_line_count(interaction.preferences.context_lines),
-                    DiffLayout::Vertical | DiffLayout::Stacked => file
-                        .layout()
-                        .visible_side_by_side_line_count(interaction.preferences.context_lines),
-                })
-                .unwrap_or_default();
-            let bounds = NavigationBounds {
-                file_count: document.file_count(),
-                target_display: DisplayBounds {
-                    line_count,
-                    maximum_horizontal_offset,
-                },
-            };
-            interaction::transition_interaction(&interaction, input, &bounds)
-        };
+        let bounds = navigation_bounds(document, &interaction, &input);
+        let transition = interaction::transition_interaction(&interaction, input, &bounds);
         match transition {
             Transition::Exit => return Ok(()),
             Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
@@ -138,6 +103,51 @@ fn run_loop(
                 draw(session.terminal_mut(), document, &interaction, color_count)?;
             }
         }
+    }
+}
+
+fn navigation_bounds(
+    document: &PreparedDocument,
+    interaction: &Interaction,
+    input: &Input,
+) -> NavigationBounds {
+    let display_layout = match input {
+        Input::NextLayout => interaction.preferences.layout.next(),
+        _ => interaction.preferences.layout,
+    };
+    let file = document.file(interaction.selected_file);
+    let content_width = file
+        .map(|file| {
+            rows::maximum_visible_row_width(
+                file.layout(),
+                display_layout,
+                interaction.preferences.context_lines,
+            )
+        })
+        .unwrap_or_default();
+    let screen_width = match input {
+        Input::Resize { width, .. } => *width,
+        _ => interaction.viewport.width,
+    };
+    let pane_width = content_pane_width(screen_width, display_layout);
+    let maximum_horizontal_offset = maximum_horizontal_offset(content_width, pane_width);
+    let line_count = file
+        .map(|file| match display_layout {
+            DiffLayout::Unified => file
+                .layout()
+                .visible_unified_line_count(interaction.preferences.context_lines),
+            DiffLayout::Vertical | DiffLayout::Stacked => file
+                .layout()
+                .visible_side_by_side_line_count(interaction.preferences.context_lines),
+        })
+        .unwrap_or_default();
+
+    NavigationBounds {
+        file_count: document.file_count(),
+        target_display: DisplayBounds {
+            line_count,
+            maximum_horizontal_offset,
+        },
     }
 }
 

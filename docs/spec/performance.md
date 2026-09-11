@@ -66,6 +66,73 @@ after successful preparation, and malformed input produces no success record.
 
 ## Measurement model
 
+### Movement diagnostics
+
+The ignored `terminal::movement_measurement::measures_prepared_movement` test measures
+the production navigation-bounds calculation and prepared frame renderer independently.
+Run it with:
+
+```sh
+nice -n 19 cargo test --release --locked -j 1 measures_prepared_movement -- --ignored --nocapture
+```
+
+It uses a 120-by-36 Ratatui test backend and three generated Rust files,
+with 16, 64, 256, or 1,024 seven-line hunks per file, six context records per hunk, and long
+replacement strings that exercise horizontal clipping. This is a synthetic scaling
+workload, not a recorded user diff.
+
+Preparation runs once per workload and is shared by all six layout/detail combinations.
+Each combination draws an initial frame, warms one `l/h/j/k` sequence, and records three
+further sequences. Bounds, redraw, and combined input-to-frame durations use nanoseconds.
+Redraw includes file-list derivation
+and the test backend's buffer update. These measurements exclude terminal event reads,
+PTY transport, terminal-emulator painting, and preparation; they are not end-to-end
+keypress latency. Preparation is reported separately as one diagnostic observation.
+No timing assertion or optimization acceptance verdict is derived from this diagnostic.
+
+#### Initial movement baseline
+
+The September 11, 2026 diagnostic uses `ed9f827` plus a behavior-preserving extraction
+of the production bounds calculation and the measurement module. It ran on macOS arm64
+with Rust 1.98.1, release optimization, one build job, and scheduler priority 19.
+The retained raw output is `.ace/movement-baseline-final.txt`.
+
+Median durations across twelve measured `l/h/j/k` inputs, in milliseconds:
+
+| Hunks per file | Layout   | Detail    | Bounds | Redraw | Combined |
+|----------------|----------|-----------|--------|--------|----------|
+| 16             | Unified  | Line      | 0.049  | 0.494  | 0.542    |
+| 64             | Unified  | Line      | 0.178  | 0.505  | 0.684    |
+| 256            | Unified  | Line      | 1.850  | 2.436  | 4.285    |
+| 1,024          | Unified  | Line      | 25.847 | 28.140 | 54.062   |
+| 1,024          | Unified  | Character | 25.835 | 28.499 | 54.300   |
+| 1,024          | Vertical | Line      | 25.892 | 28.109 | 54.005   |
+| 1,024          | Vertical | Character | 25.892 | 28.538 | 54.422   |
+| 1,024          | Stacked  | Line      | 25.868 | 28.667 | 54.551   |
+| 1,024          | Stacked  | Character | 25.867 | 29.023 | 54.903   |
+
+Bounds and redraw medians are independent and need not sum to the combined median.
+The largest workload has 24,576 source records across three files; navigation stays
+near the top of the second file. These results establish synthetic scaling, not a
+latency guarantee for a real user diff or terminal. No optimization or preparation-time
+saving is claimed.
+
+Source inspection identifies the repeated work: `Layout::shows_unified_row` scans all
+rendered rows for each context row; bounds scan the selected file for both visible
+count and maximum width; the frame renderer constructs both complete remaining layout
+projections before clipping to the active pane. The bounds scan's roughly fourteenfold
+growth from 256 to 1,024 hunks is consistent with that quadratic context lookup.
+
+Verification passed 95 unit tests, 18 integration tests, the explicit diagnostic,
+formatting, and Clippy across all targets and features with warnings denied. The final
+diagnostic compilation took 9.87 seconds; the subsequent suite compiled in 0.09 seconds
+and Clippy completed in 10.37 seconds. Raw verification is in `.ace/movement-tests.txt`
+and `.ace/movement-clippy.txt`. Earlier diagnostic captures remain separate; the first
+capture included record counting in its preparation timer and is superseded by the
+final capture.
+
+### Preparation comparisons
+
 Optimization comparisons measure the complete `hdiff` process with macOS
 `/usr/bin/time -lp`. Elapsed CPU cycles are the execution-cost measurement. Retired
 instructions are the stable-work control. Process user and system time, preparation wall
