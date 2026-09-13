@@ -2,10 +2,14 @@
 status: accepted
 ---
 
-# hdiff initial architecture
+# hdiff architecture
 
 This document records the accepted first-release architecture for `hdiff`. Statements under
 “Open decisions” remain intentionally unresolved.
+
+[performance.md](performance.md) is authoritative for preparation and performance
+optimization. [roadmap.md](roadmap.md) owns delivery status and pending work.
+Commit provenance belongs in raw evidence, not these durable documents.
 
 ## Product intent
 
@@ -28,11 +32,6 @@ micro-optimization, or a design that a future reader cannot understand in one pa
 The package requires Rust 1.98.0 and uses the Rust 2024 edition.
 
 Shell script filenames use dashes between words.
-
-Work toward a long-term result through successive proper refactors. Each change begins by
-understanding the actual problem, then selects the cleanest structural solution; it does not
-force a local patch merely to advance a number. If a clean improvement cannot be demonstrated,
-leave the code alone.
 
 ## First-release boundary
 
@@ -63,7 +62,7 @@ leave the code alone.
 - A plugin system or user scripting API.
 - Reproducing every feature of an existing pager before the core navigation is reliable.
 
-## Proposed shape
+## Program structure
 
 The program is a pipeline with one directional dependency flow:
 
@@ -71,16 +70,18 @@ The program is a pipeline with one directional dependency flow:
 input bytes
   -> diff parser
   -> immutable diff document
-  -> interaction state
-  -> layout and view model
+  -> prepared document
+  -> visible layout from interaction state and terminal dimensions
   -> terminal renderer
 ```
 
 The parser owns interpretation of unified diff syntax. The document owns the loss-preserving
-representation of what was received. Interaction state owns selection, scroll position, and
-view mode. Layout converts document plus state plus terminal size into renderable rows. The
-terminal adapter owns raw-mode setup, input events, drawing, resize events, and restoration on
-exit.
+representation of what was received. Preparation owns retained display rows, split pairs,
+and style partitions. Interaction state owns selection, scroll position, and view mode.
+Visible layout derives pane geometry and visibility from prepared content, interaction
+state, and terminal size. The terminal adapter owns raw-mode setup, input events,
+drawing, resize events, and restoration on exit. Finite output renders the document
+directly without entering the interactive preparation and terminal path.
 
 No layer should inspect another layer’s internal representation. In particular, rendering must
 not parse diff text, and input handling must not mutate parsed records in place.
@@ -98,40 +99,22 @@ valid diff lines without data loss.
 - File-list labels use the new header path when the old header path is `/dev/null`; labels
   omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff headers preserve
   their original protocol text.
-- `Hunk`: old/new ranges, header text, and ordered records.
+- `Hunk`: header text containing the old/new ranges, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `Selection`: the active file-list selection; the viewport offset is the reader's current
   cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
-  and other session-local display choices. Character granularity compares corresponding
-  changed-line pairs as identifier/word and delimiter tokens, then compares only sufficiently
-  similar replacement words by grapheme cluster; unrelated replacements remain whole-token spans.
-  Unchanged text retains line-level presentation.
+  and other session-local display choices. Character presentation follows the
+  [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
 - `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
-- `Layout`: derived panes, rows, effective visibility, and footer hints.
+- `Layout`: retained rendered rows, split pairs, and source addresses.
+- Visible layout: derived panes, effective visibility, and footer hints.
 
 The interaction state is a value that transitions in response to an input event. A transition
 returns a new state and a rendering request; it does not reach into the terminal or document.
 Selection, viewport position, and preferences are authoritative interaction state. Wrapping,
 row numbers, pane geometry, and rendered rows are derived. This makes navigation testable
 without a real terminal and keeps invalid positions out of the renderer.
-
-## User-facing feature sequence
-
-The implementation should land in slices that each leave a usable surface:
-
-1. Parse valid unified diffs and render a static, faithful unified diff.
-2. Add terminal lifecycle handling, quit, vertical scrolling, and resize redraw.
-3. Add Tree-sitter syntax highlighting with textual fallback.
-4. Add asymmetric low-contrast addition and deletion styling before the compact layout.
-5. Add a compact two-column surface: a Tab-switchable file list with muted bottom hints on the
-   left, a diff view on the right, and one vertical separator padded by one space on each side,
-   with no pane borders or labels.
-6. Add file navigation and the interactive file list with synchronized selection.
-7. Add vertical and stacked split rendering, character detail, and synchronized horizontal
-   scrolling.
-8. Add implicit Tree-sitter semantic strategies with textual fallback.
-9. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
 ## Input contract
 
@@ -144,7 +127,10 @@ backs up the exact global config file Git will write to a sibling `.bak` file, t
 overwrites `pager.diff` through `git config --global`; hdiff never parses or rewrites Git
 config text.
 
-Zero-byte viewer input exits silently with status 0 without opening the TUI.
+Zero-byte viewer input exits silently with status 0 before parsing, preparation,
+or terminal acquisition. This applies to stdin, an empty patch file, and identical
+file operands. Measurement modes retain their
+[zero-count reports](performance.md#benchmark-mode).
 
 Preserve text outside file diffs independently of its producer. Retain that text once,
 render it in both split panes and once in unified view, and use the same parsing and
@@ -225,6 +211,9 @@ viewport, and the file-list column ends with muted shortcut hints. The hints are
 aid, not a second control plane; every setting has one keyboard path, and changing it produces a
 new interaction state and immediate redraw.
 
+The compact surface has a file list on the left, a diff view on the right, and one
+vertical separator padded by one space on each side, with no pane borders or labels.
+
 The left file list is the primary navigation pane. As width decreases it collapses before the
 diff view; a compact footer hint remains when possible. If the terminal is too narrow or too
 short for the minimum layout, the only rendered content is `screen too narrow` or
@@ -234,8 +223,9 @@ The file-list hints expose shortcuts relevant to the current context. A help vie
 complete keymap when the compact hints cannot fit. The pager-first model and live
 shortcut-driven settings are settled product requirements.
 
-Unselected file-list labels use a medium-muted neutral tone, one level brighter than the separator
-and footer hints. The selected file remains visually distinct through the reversed selection style.
+Unselected file-list labels use a medium-muted neutral tone, one level brighter than the
+separator and footer hints. The selected file row applies one shared muted
+foreground/background style to both its compact `·` marker and file label.
 
 ## View model
 
@@ -248,11 +238,15 @@ View choices are orthogonal rather than one growing mode enum:
 - display preferences: wrapping, context-line count, diff contrast, highlighting, and color
   capability.
 
-`EffectiveView` derives the renderable combination from these preferences, document
+The intended `EffectiveView` derives the renderable combination from these preferences, document
 capabilities, language support, and terminal dimensions. Tree-sitter semantic diff is used when
 the language and parser are available, with textual fallback otherwise. The user-selected
 layout is preserved through resizes; hdiff does not automatically switch between layouts. `v`
-cycles unified, vertical split, and stacked split in that order.
+cycles unified, vertical split, and stacked split in that order, preserving the
+selected file and viewport.
+
+Semantic diff strategies and wrapping remain pending delivery; contrast selection is
+also unimplemented. The current viewer uses textual comparisons and the `low` palette.
 
 Vertical split renders each changed block as aligned before/after pairs, adding a markerless
 alignment peer with the corresponding dim addition or deletion background on the shorter side.
@@ -296,8 +290,8 @@ delimiter tokens, then uses grapheme spans only for similar replacement words; u
 remain whole-token changes rather than matching coincidental letters. It coalesces an equal island
 of at most three graphemes bracketed by changed spans, so incidental short matches do not fragment
 a change. Its changed spans use dim green on addition rows and dim red on deletion rows, reusing
-the line-change palette while leaving unchanged text plain. The selected file row applies one
-shared muted foreground/background style to both its compact `·` marker and file label.
+the line-change palette while leaving unchanged text plain on rows with detail spans.
+Rows without detail spans retain syntax styling.
 
 In character mode, unmatched additions and deletions use their dim green or dim red
 detail foreground across the entire payload in every layout, overriding syntax colors.
@@ -312,26 +306,40 @@ file headers retain neutral metadata styling.
 Addition and deletion backgrounds extend through the right edge of the active diff pane, including
 cells after the final source character.
 
-The initial keymap is pager-like: `j/k` vertical movement, `h/l` horizontal movement,
-`Ctrl-D/Ctrl-U` smooth half-page movement, `g/G` top/bottom, `Tab` file rotation with wraparound,
-`w` wrapping, `c` line/character detail, `v` cycles unified/vertical split/stacked split,
-`+/-` context lines, `q` quit, and `:` command entry. Help/footer text exposes active
-bindings. File rotation selects the next file and moves the viewport to its top. There is no
-separate diff editing cursor; movement changes the viewport.
+### Keyboard bindings
 
-A dedicated shortcut-audit slice makes shifted shortcuts perform meaningful inverse actions.
-`Shift-Tab` rotates to the previous file, the inverse of `Tab`; when a key's meaning is
-ambiguous, follow Vim semantics.
+The current keymap is pager-like:
 
-The left file-list pane will show shortcut hints at its bottom.
+| Keys                      | Action                                        |
+| ------------------------- | --------------------------------------------- |
+| `j` / Down, `k` / Up      | Move the viewport down or up                  |
+| `h`, `l`                  | Move left or right by one terminal cell       |
+| `0`, `^`                  | Return to the left edge                       |
+| `$`                       | Move to the furthest useful horizontal offset |
+| `Ctrl-D`, `Ctrl-U`        | Move down or up by half a page                |
+| `g`, `G`                  | Move to the top or bottom                     |
+| `Tab`, `Shift-Tab`        | Rotate to the next or previous file           |
+| `v`                       | Cycle unified, vertical, and stacked layouts  |
+| `c`                       | Toggle line and character detail              |
+| `+`, `-`                  | Increase or decrease visible context          |
+| `q`, `Ctrl-C`             | Exit                                          |
 
-The file-list footer is a compact multi-row reference for every currently implemented key: vertical
-movement, page movement, top/bottom, layout cycling, file rotation, and exit. It uses only the
-available footer rows and never advertises a deferred shortcut.
+Horizontal movement uses one bounded offset across content panes in every layout;
+the file list stays fixed. File rotation wraps around and moves the viewport to the
+selected file's top. There is no separate diff editing cursor; movement changes the
+viewport. Shifted shortcuts perform meaningful inverse actions; ambiguous keys follow
+Vim semantics. Planned bindings are `w` for wrapping and `:` for command entry.
+Hunk jumps remain absent until a visible hunk focus makes their destination legible.
+Half-page movement is smooth.
+
+The file-list footer is a compact multi-row reference for navigation, layout cycling,
+character detail, context adjustment, and exit. It uses only the available footer
+rows and never advertises a deferred shortcut.
 
 The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
 and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
-middots: `g·G` top/bottom, `v` cycle layout, `(⇧)Tab` next/previous file, and `q` exit.
+middots: `g·G` top/bottom, `v` cycle layout, `c` character detail, `+/-` context,
+`(⇧)Tab` next/previous file, and `q` exit.
 
 ## Technology direction
 
@@ -342,7 +350,7 @@ The backend must support event reads from an explicit controlling-terminal handl
 contains diff data. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned
 boundary; the parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
-Syntax highlighting precedes further navigation work. It projects each hunk's old and new
+Syntax highlighting projects each hunk's old and new
 records into separate bounded virtual source buffers, maps returned spans back to sanitized
 record payloads, and leaves unsupported languages and highlighting failures as plain text.
 Projection records are ordered by virtual source range, so span mapping visits only records that
@@ -379,29 +387,21 @@ pager. The output contract decides whether interactive mode is attempted before 
 terminal is opened. The terminal backend must read events from an explicit controlling-terminal
 handle rather than rebinding standard input.
 
+The current implementation selects interactive mode when stdout is a terminal and
+uses stdout for drawing. Terminal setup errors propagate; fallback to finite output
+when no controlling terminal can be acquired remains unimplemented.
+
 ## Interaction and layout state
 
-Interaction state is split into selection, viewport, preferences, and derived layout. Resize is
-an event; layout is recomputed from retained content and the latest dimensions, with resize
-bursts coalesced. The selected layout is preserved through resize. The file-list pane collapses
-before the diff view, and below minimum width or height the layout renders only the corresponding
-screen-size message. Zero-sized layouts remain valid values rather than arithmetic errors.
+Interaction state is split into selection, viewport, preferences, and derived layout.
+Resize is an event; visible layout is recomputed from retained content and the latest
+dimensions, following the [interaction model](#interaction-model). Zero-sized layouts
+remain valid values rather than arithmetic errors.
 
 ### Eager prepared rendering
 
-Preparation is one optimized single-threaded pass before the terminal loop begins. It produces
-layout-neutral rows, split pairs, syntax spans, and character-detail spans for every file. The
-terminal loop owns only interaction, terminal lifecycle, redraw decisions, and rendering of the
-prepared active viewport.
-
-The terminal loop has no parser, cache, readiness, loading, or first-file state. It receives fully
-prepared data on its first draw and on every redraw. No async runtime, executor, channel, or task
-dependency is part of this boundary.
-
-Preparation accepts a statically dispatched measurement policy. Rendering and benchmark
-comparisons perform the same algorithm without per-hunk observation; diagnostic profiles
-collect stage timings and work counters through that boundary. Startup measurements include
-input acquisition and unified-diff parsing before preparation.
+The preparation boundary, ownership, observation policy, and performance requirements
+are defined in [performance.md](performance.md#preparation-boundary).
 
 ## Lossless and safe rendering
 
@@ -414,15 +414,12 @@ rendering consumes the source once, and annotations select styles only. Syntax a
 character-detail presentation share this boundary. Rows with character-detail spans
 use detail styling with plain gaps; rows without them retain syntax styling.
 
-Each record retains exact source bytes, decoded text, classification, and sanitized style
-spans. Parsing uses ANSI-free text. Rendering interprets supported SGR styling only and never
-replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal. The authoritative
-document is never truncated; only decoding, highlighting, wrapping, and visible-row work may
-be bounded.
-
-Terminal setup is staged and idempotent. After terminal acquisition, every return path restores
-raw mode, the alternate screen, cursor state, and controlling-terminal attributes. Broken pipes
-are quiet success only for finite non-interactive output.
+Each record retains exact source bytes, decoded and sanitized text, and classification.
+Prepared partitions own display styling. Parsing uses ANSI-free text; rendering strips
+input control sequences, including SGR colors, and applies hdiff's own styling.
+It never replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal.
+The authoritative document is never truncated; only decoding, highlighting, wrapping,
+and visible-row work may be bounded.
 
 The terminal-independent test boundary must cover invalid UTF-8, CRLF, embedded SGR/OSC/CSI,
 combining marks, double-width graphemes, tabs, zero- and one-row terminals, long lines,
@@ -433,12 +430,7 @@ draw errors, Ctrl-C, and broken pipes.
 
 - Never modify the input files.
 - Preserve unknown diff lines rather than silently dropping them.
-- Restore terminal state on every exit path after raw mode is entered.
-- Treat a resize as a new layout calculation over the same document and interaction state.
 - Reject malformed or truncated input with context before entering the interactive TUI.
-- Make non-terminal output finite and script-friendly rather than entering an interactive loop.
-- Interpret only supported SGR styling. Preserve source bytes separately, neutralize OSC/CSI/DCS
-  and other unsupported control sequences, and never replay arbitrary input escapes.
 - Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when the
   terminal supports it, falling back by capability. `SyntaxTheme` owns the mapping from semantic
   syntax classes to colors, so user-configurable themes can replace that built-in palette later.
@@ -447,7 +439,9 @@ draw errors, Ctrl-C, and broken pipes.
 
 Interactive mode is decided from the output contract before a controlling terminal is opened.
 Terminal setup is staged and idempotent, with ownership unwound in reverse order. Quit and
-Ctrl-C restore terminal state cleanly. Resize events coalesce to the latest dimensions and
+Ctrl-C restore terminal state cleanly. Every return path after acquisition restores raw
+mode, the alternate screen, cursor state, and controlling-terminal attributes.
+Resize events coalesce to the latest dimensions and
 trigger a redraw. Draw and read failures report diagnostics after cleanup. Broken pipes are
 quiet success only for finite non-interactive output. Suspend/resume is supported only through
 a safe public backend transaction; otherwise it remains deferred. A cleanup guard or panic hook
@@ -456,13 +450,7 @@ is best effort; SIGKILL and abort-style termination cannot be restored.
 ## Open decisions for review
 
 - What exact option names and rc-file location should the input and display contract use?
-- Which character-diff and Tree-sitter semantic-diff algorithms should implement the strategy
-  boundaries?
-
-## Next design work
+- Which Tree-sitter semantic-diff algorithm should implement the semantic strategy?
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
-`docs/vendor/terminal-diff-viewers.md`. Terminal lifecycle is complete. Tree-sitter syntax
-highlighting is complete. Low-contrast addition/deletion styling and compact layout are
-implemented and await their terminal human checks. Navigation, side-by-side, character, and
-semantic strategies follow in the feature sequence above.
+`docs/vendor/terminal-diff-viewers.md`.

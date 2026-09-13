@@ -15,8 +15,8 @@ Audit date: 2026-08-22.
 The audited package is `crossterm` 0.29.0 with its default features plus
 `use-dev-tty`. Its resolved normal dependency closure contains 40 packages.
 
-The registry package records commit `36d95b26a26e64b0f8c12edfe11f410a6d56a812`, matching
-the signed 0.29 release. Package-source differences are packaging metadata and line endings.
+The registry package matches the signed 0.29 release. Package-source differences are
+packaging metadata and line endings.
 The downloaded crate has SHA-256
 `d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b`.
 

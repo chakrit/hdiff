@@ -5,90 +5,41 @@ status: accepted
 # hdiff roadmap
 
 Track project tasks in this repository's Markdown. This roadmap owns the backlog.
+[Architecture](architecture.md) owns product and engineering contracts;
+[performance](performance.md) owns preparation and measurement contracts.
 
-## Current position
+## Completed delivery
 
-The strict, loss-preserving Git/unified-diff parser and finite-output boundary are complete.
-They accept multi-line hunks, extended Git metadata, ANSI-colored Git output, and metadata-only
-Git sections. Finite rendering preserves review content while neutralizing terminal controls and
-treats broken pipes as quiet success.
+- Strict, loss-preserving unified-diff parsing, safe finite output, quiet broken-pipe
+  handling, Git metadata-only sections, and ANSI-colored input.
+- Ratatui rendering with CROSSTERM terminal lifecycle, compact file-list and diff panes,
+  low-contrast styling, full-width change backgrounds, and muted shortcut hints.
+- Vertical movement, file rotation and its shifted inverse, resize redraw, unified /
+  vertical / stacked layout cycling, aligned change rows, character detail, adjustable
+  context, and synchronized bounded horizontal movement.
+- Tree-sitter syntax highlighting with textual fallback and eager preparation for the
+  complete document; preparation measurement, profiling, and reproducible comparisons.
+  Raw optimization results and provenance are in `.ace/bench/kubernetes/`.
+- User-level Git diff-pager installation with configuration backup, `--help`, and
+  `--version`.
+- Silent zero-byte viewer input and producer-independent surrounding text, including
+  explicit `git show` piping; [Git command compatibility](../vendor/git-command-output.md)
+  records the completed compatibility assessment and its supported/deferred findings.
+  No additional pager registration is recommended.
+- Source-preserving style partitions and full-payload character detail for unmatched
+  additions/deletions in every layout, as specified in
+  [lossless rendering](architecture.md#lossless-and-safe-rendering) and the
+  [view model](architecture.md#view-model).
 
-The first interactive Ratatui rendering boundary is implemented: the unified view has distinct
-file-list and diff panes, while CROSSTERM retains terminal lifecycle and event ownership. The
-interaction slice adds vertical viewport movement, file rotation, and resize redraw; its automated
-and human checks passed. The viewport is the reader's cursor, and hunk jumps are absent until a
-visible hunk focus makes their destination legible.
-
-Low-contrast styling reserves aligned marker and payload columns on every row. Context is quiet
-neutral text; deletions use muted text over a dim red background; additions retain the strongest
-green emphasis and syntax colors. Its automated and mixed-language terminal checks pass.
-
-The compact two-column layout has no pane borders, labels, or titles; it renders one separator
-with one space on each side between the file list and diff, keeps muted file-navigation hints at
-the bottom of the list, and collapses the list before the diff. Its automated and multi-file
-terminal checks pass.
-
-Addition and deletion rows extend their backgrounds through the right edge of the active diff
-pane while retaining marker and syntax colors. Its automated and mixed-language terminal checks
-pass.
-
-The terminal smoke suite uses one fixed-size tmux session and a multi-file Rust, JavaScript,
-Python, Go, and C fixture. It captures unified, vertical, and stacked ANSI-styled panes, then
-each Tab-selected file, before exiting with `q`; SMOKE locks this observable terminal surface for
-drift review.
-
-The `v` layout cycle now preserves the selected file and viewport through unified, vertical, and
-stacked displays. Vertical display aligns changed rows with a dimmer inner separator and retains
-each pane's marker and spacer columns; both split displays render markerless, dimmed alignment
-peers for unmatched additions and deletions. Unit and terminal-smoke checks cover the three
-layouts.
-
-Character detail now coalesces small equal islands inside changed spans, and `+` and `-` adjust
-session-local context visibility without changing the selected file or current viewport. Unit and
-terminal checks cover the completed interaction slice.
-
-Horizontal movement now uses one synchronized viewport offset across content panes. `h` and `l`
-move by one column, `0` and `^` move to the left edge, and `$` moves to the furthest useful
-offset; movement remains bounded while the file list stays fixed.
-
-`hdiff --install` backs up the global Git configuration file Git will edit, then registers the
-current executable as the user-level `git diff` pager. Git passes the complete unified diff to
-hdiff on standard input, preserving the entire file list in one interactive session.
-
-## Completed slices
-
-1. Establish the Rust CLI direction, architecture, testing boundary, and durable project records.
-2. Record terminal-diff-viewer prior art and the Tree-sitter dependency decision and audit.
-3. Implement strict parsing, loss-preserving document types, patch/stdin input selection, and
-   malformed-input rejection.
-4. Implement safe finite unified rendering and quiet broken-pipe handling, including Git
-   metadata, multi-line hunks, colored input, and metadata-only Git sections.
-5. Establish the Ratatui application boundary and render a unified view with distinct file-list
-   and diff panes.
-6. Audit the shortcut map so `Shift-Tab` rotates to the previous file, the inverse of `Tab`.
-7. Add Tree-sitter syntax highlighting with textual fallback.
-8. Add asymmetric low-contrast addition and deletion styling with aligned marker and payload
-   columns.
-9. Add the compact two-column layout, including the multi-row file-list footer and hunk-header
-   styling.
-10. Extend addition and deletion backgrounds through the active diff pane's right edge.
-11. Connect Ratatui rendering to authoritative interaction state for viewport movement, file
-    rotation, and resize.
-12. Add unified, vertical, and stacked layout cycling with paired changed-row derivation.
-13. Add user-level Git diff-pager installation with global-config backup and complete-diff input.
-14. Add synchronized, bounded horizontal movement across unified, vertical, and stacked layouts.
-15. Add `--help` and `--version`, including the package version and short source commit hash
-    (`e3ba805`).
-16. Reduce syntax preparation cost with Tree-sitter 0.27 (`4192938`). The recorded paired
-    benchmarks save 2.157 seconds for 7/8, 1.681 seconds for 6/8, and 1.579 seconds for
-    4/8; full measurements and provenance are in [performance.md](performance.md).
-
-## Completed: profiling and benchmarking
-
-- [x] Account for input acquisition, diff parsing, and input-to-ready latency.
-- [x] Add separate preparation-stage and stack profiles.
-- [x] Preserve reproducible provenance and validate benchmark comparison behavior.
-- [x] Measure instrumentation overhead on the pinned Kubernetes corpus.
+Automated and human terminal checks passed for the delivered interaction and rendering
+slices. The terminal smoke suite captures all three layouts and Tab-selected files using
+one fixed-size tmux session and a mixed-language fixture; SMOKE records observable drift.
+The latest unmatched-line fix passed 95 unit and 18 integration tests, formatting,
+Clippy across all targets and features, and diff hygiene, with terminal inspection of
+all layouts, Unicode, alignment peers, backgrounds, and horizontal clipping.
+Its detailed evidence is in `.ace/unmatched-*.txt`.
+Historical delivery plans and verification records are preserved in
+`.ace/spec-cleanup-roadmap-before.md`.
 
 ## Next: restore responsive movement
 
@@ -105,81 +56,6 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
-
-## Completed QoL fix: unmatched lines in character mode
-
-Status: implemented and verified.
-
-When character detail is enabled with `c`, additions and deletions without a
-corresponding source line receive full-payload detail styling. `detail_rows` handles
-every alignment variant, and `StyledLayout::row` selects the prepared detail partition.
-
-### Behavior
-
-Treat the entire payload of an unmatched addition or deletion as changed in
-character mode. Use the existing dim green addition and dim red deletion detail
-colors, overriding syntax colors throughout that payload. An unmatched source line
-has no unchanged characters to distinguish.
-
-Apply this rule in unified, vertical-split, and stacked-split layouts, including
-files containing only additions or only deletions and excess lines in unequal
-replacement blocks. Empty changed lines retain their marker and row background.
-Alignment peers retain their existing markerless, pane-specific styling.
-
-Paired lines retain the existing token/grapheme comparison. Context, metadata,
-source text, and layout remain unchanged. Toggling back to line mode restores the
-existing syntax presentation from prepared data.
-
-### Implementation sequence
-
-- [x] Amend the character-detail contract in `architecture.md` with the approved
-  unmatched-line behavior.
-- [x] Extend the existing preparation and terminal rendering tests to demonstrate
-  the missing full-payload styling, and establish meaningful assertion failures
-  before changing behavior.
-- [x] Replace the paired-only loop in `src/detail.rs::detail_rows` with an exhaustive
-  match on `SideBySideRow`: paired rows use the existing comparison; before-only and
-  after-only rows receive a span covering their nonempty payload; shared rows receive
-  no detail spans.
-- [x] Reuse the existing payload extraction and byte-offset conventions, excluding
-  the diff marker and line ending. Reuse `DetailSpan`, prepared style partitions in
-  `src/styling.rs`, and the detail palette in `src/terminal/rows.rs`; no new renderer,
-  module, dependency, or interaction-time comparison is needed.
-- [x] Complete the checks below, audit the complete diff, update this roadmap, and
-  commit the coherent fix locally.
-
-The preparation boundary owns whether source text is changed. Explicitly handling
-every alignment variant prevents unmatched rows from being omitted by a
-paired-only filter; terminal styling consumes the resulting detail spans uniformly.
-
-### Acceptance and verification
-
-- Preparation coverage: addition-only and deletion-only blocks, excess additions
-  and excess deletions in unequal blocks, and preserved partial detail for paired
-  lines. Include Unicode byte boundaries, CRLF exclusion, and empty payloads where
-  those cases exercise full-payload span construction.
-- Terminal coverage: use syntax-highlightable source so fallback to syntax colors
-  would visibly fail; assert uniform dim addition/deletion foregrounds across each
-  unmatched payload in all three layouts, with source text emitted exactly once.
-- Toggle coverage: reuse the same prepared file through line → character → line
-  and verify that syntax colors return without changing file selection or viewport;
-  do not rebuild preparation between renders.
-- Inspect the terminal display with unmatched rows next to a paired replacement;
-  verify existing backgrounds, markers, alignment peers, and horizontal clipping.
-- Run `cargo fmt --check`, `cargo test --locked`, and
-  `cargo clippy --all-targets --all-features --locked -- -D warnings`, then inspect
-  the complete diff and run `git diff --check`. Report test compilation time.
-
-This is a rendering-correctness slice, with no preparation optimization claim or
-Kubernetes benchmark requirement. Resource-intensive verification still requires
-explicit approval under the repository's machine-resource rules.
-
-Verification passed 95 unit and 18 integration tests, formatting, Clippy across all
-targets and features with warnings denied, and diff hygiene. Test compilation took
-0.59 seconds; Clippy took 1.02 seconds. Preparation and all three layout regressions
-failed on missing detail styling before implementation. Direct tmux inspection covered
-unmatched Unicode payloads beside paired replacements in all layouts, markerless peers,
-backgrounds, and horizontal clipping. Evidence is in `.ace/unmatched-*.txt`.
 
 ## Remaining interactive delivery sequence
 
@@ -199,25 +75,34 @@ Each slice is incomplete until its automated checks and its human check both pas
    marker appears only while content continues past its corresponding edge, disappears at that
    edge's boundary, and does not obscure diff content or pane layout.
 
-## Performance delivery plan
+## Accepted requirements awaiting implementation
+
+These existing architecture obligations have no implementation slice yet; listing them
+here does not authorize implementation or settle additional behavior.
+
+- [ ] Implement recursive `-r` comparison and stdin `-` operands under the existing
+  [input contract](architecture.md#input-contract).
+- [ ] Reject piped standard input combined with file arguments under the existing
+  [input and terminal boundary](architecture.md#input-and-terminal-boundary).
+- [ ] Complete the existing controlling-terminal output and finite-fallback requirements
+  in the [input and terminal boundary](architecture.md#input-and-terminal-boundary).
+- [ ] Implement the specified session-local contrast levels and `:` command entry under
+  the existing [view model](architecture.md#view-model); unresolved interface details
+  remain design work.
+
+## Parked preparation optimization
 
 Further preparation optimization is parked. Resumption requires considering a more
 drastic refactor or a multi-threaded parsing architecture; the accepted architecture
 remains single-threaded.
 
-Each phase has its own specification amendment, tests, verification, audit, and commit.
-
-1. Establish the eager-preparation contract and benchmark mode.
-2. Build a borrow-first prepared-file representation that preserves renderer and layout output.
-   Completed: prepared files retain their layout, syntax, and line and character detail data.
-3. Prepare layout, syntax, and character detail for the complete document before terminal entry.
-   Completed: the terminal loop receives prepared data and selects only the active viewport.
-4. Measure the final eighth, quarter, and half of pinned Kubernetes first-parent history through
-   `hdiff --bench`; the reproducible command is in `docs/guides/kubernetes-benchmark.md`.
-   Completed: the resolved measurements are recorded in `docs/spec/performance.md`.
-5. Remove only measured redundant work from preparation and active rendering, including inactive
-   layouts, rows outside the viewport, allocations, cloning, palette construction, and span
-   ordering.
+The eager-preparation contract, benchmark mode, retained prepared-file representation,
+whole-document preparation, and pinned-corpus measurements are complete.
+Remaining preparation work is to remove only measured redundant work, including inactive
+layouts, rows outside the viewport, allocations, cloning, palette construction, and span
+ordering. Active-rendering work belongs to the responsive-movement task above.
+Each resumed slice requires its specification amendment, tests, verification, audit,
+and commit under the [performance contract](performance.md).
 
 ## Deferred work
 
@@ -227,199 +112,7 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
   display model in a later task. Deferred by the user; support is not an acceptance
   requirement or prerequisite for the empty-input and Git-paging QoL work.
 
-## Later slices
-
-### Support diff-producing git show invocations
-
-Support diffs and surrounding commit text from explicit `git show <commit> | hdiff`
-invocations. General text-only paging and automatic `pager.show` registration are
-outside this scope.
-
-- [x] Preserve and display commit headers and messages with their associated diffs.
-- [x] Verify producer-independent surrounding-text handling for multiple commits
-  containing diffs and rejection of nonempty text-only input; combined merge-diff
-  support remains deferred.
-- [x] Define behavior for zero-byte diff input in interactive and finite-output modes,
-  including Git commands with no changes to display.
-- [x] Assess which additional Git subcommands should use hdiff, including `git log -p`;
-  distinguish patch-producing invocations from ordinary non-diff output before
-  recommending additional pager registrations.
-- [x] Add isolated invocation tests for explicit `git show <commit> | hdiff`, including
-  commit metadata and empty input, plus a terminal check of the actual invocation.
-- [x] Record the settled Git integration contract in `docs/spec/architecture.md`.
-
-Relevant boundaries: `src/parser.rs`, `src/document.rs`,
-`src/terminal/`, `tests/git_difftool.rs`, and `docs/spec/architecture.md`.
-
-### QoL delivery plan: empty input and Git paging
-
-The empty-input and producer-independent surrounding-text contracts are settled in
-`architecture.md`. This plan covers their implementation, explicit `git show` piping,
-and a broader Git-subcommand compatibility assessment. Combined merge-diff support
-is deferred. Changes to the user's Git configuration require separate authorization.
-
-#### First: empty input
-
-Completed: normal viewer dispatch returns successfully on zero bytes before parsing,
-preparation, output selection, or terminal setup.
-
-Required behavior: zero-byte input exits successfully without output, preparation,
-terminal acquisition, raw mode, or alternate-screen entry. Apply the same behavior
-to stdin, an empty patch file, and identical file operands. Preserve measurement
-reports for `--bench` and `--profile`. Existing Git metadata-only sections remain content;
-malformed input remains an error rather than being treated as empty.
-
-Implement the empty-input outcome at normal viewer dispatch, before terminal setup,
-using the existing input and output boundaries in `src/main.rs`; introduce no new
-module for this branch. Check the existing CLI tests before extending their coverage.
-
-Acceptance checks: CLI exit status and empty stdout/stderr for each empty source;
-a pseudo-terminal invocation that exits without a keypress or terminal-control output;
-existing Git metadata-only sections still rendered; malformed nonempty input still rejected; empty
-measurement input still emits valid zero-count reports.
-
-Verification passed: 75 unit tests and 15 integration tests, formatting, Clippy, and
-pseudo-terminal invocations for empty stdin, an empty patch file, and identical operands.
-Each empty pseudo-terminal invocation exited with status 0 and emitted no bytes.
-
-#### Second: generic surrounding text with diffs
-
-Completed: ordered document sections retain surrounding text separately from files.
-Finite and prepared rendering reuse the existing safe source-line representation.
-
-Represent the input as ordered text sections and file-diff sections, preserving
-source order without interpreting commit headers or identifying the producing command.
-Collect surrounding text at the document boundary; recognized file headers enter
-the existing strict diff parser. A failure inside a recognized diff remains an error.
-Do not fall back to text after a malformed hunk or add a Git-show input mode.
-Reject nonempty input containing no diff; metadata-only Git diff sections remain valid.
-
-Prepare each text section once using the existing sanitization and row-rendering
-capabilities. In unified view render each section once; in vertical and stacked
-layouts project the same section into both panes. Preserve eager, single-threaded
-preparation. Text preceding a file group appears above its first file and trailing
-text remains after the last file. Keep repeated paths in separate source positions so
-multiple commits cannot be collapsed into one file entry.
-
-Reuse existing layout and navigation representations where they support these ordered
-sections; adapt their ownership where they assume every visible item is a file.
-Do not introduce a parallel renderer for `show`, `log`, or individual text formats.
-Combined merge-diff parsing and rendering are outside this slice; record the current
-limitation without treating its resolution as a prerequisite for explicit piping.
-
-Acceptance checks: isolated actual `git show <commit> | hdiff` invocations; ordinary
-and multiple commits with diffs; rejection of nonempty patchless commit, tag, tree,
-and blob output containing no diff; colored metadata and terminal-control sanitization;
-finite output and broken pipes; commit association while navigating files in all three
-layouts. Review the terminal display manually.
-Also test text before, between, and after file diffs, rejection of text-only input, and
-malformed recognized patches. No test may modify the user's Git configuration.
-
-Verification passed: 85 unit and 18 integration tests, formatting, and Clippy.
-Actual `git show` piping displayed commit text correctly in all three layouts;
-terminal navigation preserved repeated file occurrences and their distinct messages.
-Terminal source rendering also exposed duplicated syntax tokens, recorded under the
-separate duplication investigation below.
-
-#### Third: additional Git subcommands
-
-Assessment complete: [Git command compatibility](../vendor/git-command-output.md)
-records 21 isolated invocation checks, supported finite-output shapes, and deferred
-variants. Seven inputs preserve finite output exactly; fourteen reject unsupported
-content, including the ambiguous `format-patch` signature immediately after a hunk.
-No additional pager registration is recommended.
-
-Produce a broad compatibility assessment before adding registrations. Examine
-`git log` and `git log -p`, `git reflog`, `git stash show` and `git stash show -p`,
-`git range-diff`, `git format-patch --stdout`, `git blame`, and `git status`, including
-existing `git diff` variants such as `--cached` and `--stat`. Record output shape,
-applicable pager setting or explicit pipe, parser/display coverage, practical review
-value, and whether registration affects non-patch invocations.
-
-Use official Git documentation and isolated invocation checks. Recommend explicit
-patch-producing invocations only when hdiff preserves all their review content.
-Recommend automatic registration only when hdiff also handles the subcommand's
-ordinary non-patch invocations within its diff-viewer scope. The output is a
-supported/deferred recommendation with evidence; additional implementation and
-registrations require scope approval.
-
-Investigate `git log -p` and `git stash show -p` as likely reusable patch producers,
-without limiting the assessment to those commands or preselecting registrations.
-Git's [`pager.<cmd>` setting](https://git-scm.com/docs/git-config)
-applies to a subcommand, not only its patch-producing invocations, and
-[`stash show`](https://git-scm.com/docs/git-stash) defaults to a diffstat.
-[`range-diff`](https://git-scm.com/docs/git-range-diff) uses a distinct, unstable
-human-readable output format and needs a separate compatibility decision.
-For `log -p`, check repeated paths across commits, graph prefixes, custom formatting,
-and entries without patches before claiming compatibility.
-
-Deliver a compatibility table with verified invocation examples and a recommendation
-for each candidate: ready for installation, usable by explicit pipe, or deferred with
-its concrete limitation. Keep raw findings in the repository's vendor-documentation
-convention and settled support contracts in `architecture.md`; the roadmap owns tasks.
-
-#### Verification and delivery
-
-Implement approved behavior with meaningful failing behavior tests first, then
-formatting, Rust tests, and Clippy using the installed working toolchain. Run terminal
-checks for changed output and review any snapshot drift before accepting it; the
-recorded JavaScript highlighting drift must not be mistaken for a new regression.
-Obtain approval for resource-intensive work; no preparation benchmark is planned
-for these QoL slices unless implementation introduces a preparation performance claim.
-Audit each complete slice against the approved spec and commit locally after its
-checks pass. Installing into the user's environment and pushing are separate actions.
-The compatibility research can run independently of the empty-input implementation;
-invocation verification depends on the surrounding-text slice. Commit empty-input
-behavior and surrounding-text support as coherent verified slices.
-
-### Investigate apparent duplicated source tokens
-
-- [x] Reproduce and test the reported display of `excluded_mcp` appearing twice in
-  a changed Rust line; establish whether duplication occurs in the input or is
-  introduced by hdiff before diagnosing a rendering bug.
-
-Reported content, with the unrelated filename column omitted:
-
-```diff
--         let excluded = ace.excluded_mcpexcluded_mcp();
-+         let excluded = ace.excluded_mcpexcluded_mcp()?;
-```
-
-Use a minimal source pair with a single `excluded_mcp()` call and only an added `?`
-to check that displayed payloads preserve the source exactly. Exercise unified,
-vertical, and stacked layouts and retain a regression test if the duplication is
-reproduced. The report alone does not establish the original source contents.
-
-A related terminal reproduction during Git-show verification displayed
-`fn value() -> i32` as `fnfn valuevalue() -> i32i32`, while finite output preserved
-the source. The syntax capture and span-rendering code producing this repetition was
-unchanged by the surrounding-text slice. Captures are in `.ace/qol-show-unified.txt`,
-`.ace/qol-show-vertical.txt`, and `.ace/qol-show-stacked.txt`.
-
-The single-call `excluded_mcp` fixture reproduces duplication in all three layouts
-at `c9ec015`; finite output matches the input exactly. Overlapping method captures
-and captures accumulated from both context projections reach a row renderer that
-emits source text once per capture. Commit `334ff3c` adds an intentionally failing
-shared-row test covering both causes through real parsing and preparation.
-
-- [x] Repair the syntax-to-rendering boundary so duplicate source rendering is
-  impossible by construction. Prepared rows bind retained text to private style
-  partitions; all layouts consume those partitions through the shared row builder.
-  Overlap precedence, context ownership, detail suppression, Unicode, CRLF, and raw
-  records are covered by focused tests. Verification passes 91 unit and 18 integration
-  tests; the original regression now passes.
-
-`src/styling.rs` owns the prepared partition and its matching layout; `PreparedFile`
-provides borrowed row access. `src/terminal/rows.rs` applies terminal colors and
-markers to the partition's source portions without sorting or emitting capture ranges.
-`src/syntax.rs` retains original capture lengths for overlap precedence and gives
-context styling one projection owner. The styling rules are specified in
-[architecture.md](architecture.md#lossless-and-safe-rendering).
-
-The original regression and focused residual-behavior tests earned meaningful failures
-before their repairs. Existing frame tests cover layout presentation through the
-shared row builder. Formatting, Clippy across all targets and features, and diff
-hygiene pass. No preparation optimization or Kubernetes benchmark is part of this repair.
+## Later work
 
 ### Investigate live reload from git diff
 
@@ -466,7 +159,7 @@ implementation remains unapproved.
 
 ## Working rule
 
-get docs uptodate before implement always
+Get docs up to date before implementation.
 
 ## Explicit non-goals for this phase
 

@@ -31,7 +31,9 @@ by this assessment; existing `pager.diff` installation remains governed by the s
 
 Every example below ran successfully as a Git producer. “Pipe candidate” means that
 the captured output passed hdiff finite-output preservation. Interactive source fidelity
-remains limited by the duplicated-token defect described below. Every deferred text-only
+in the inspected binary was limited by the duplicated-token defect described below.
+The subsequent repair is recorded in
+[completed delivery](../spec/roadmap.md#completed-delivery). Every deferred text-only
 example is nonempty, so the successful zero-byte input rule does not apply.
 
 | Invocation                                             | Observed shape and review value                                       | Routing surface                   | Preliminary recommendation                                                |
@@ -123,16 +125,15 @@ separately. Exact outcomes and working-tree provenance are retained in
 
 The checked binary was `target/debug/hdiff`, SHA-256
 `8cd9d0d7c8f4366c3ad1fcac05cd81bb873fa775bd4d3c4832847f69d0e708ca`,
-from the working tree at `ee0897a040ddb56f1973fdf830d605062f3b7f6e` with the surrounding-text
-implementation uncommitted. This identifies the measured artifact without claiming
-that the commit alone reproduces it.
+from the working tree with the surrounding-text implementation uncommitted.
+The verification record above retains source provenance for that measured artifact.
 
 The actual `git show` pipe displayed surrounding commit text correctly in unified,
 vertical, and stacked layouts, but Rust source rendering duplicated tokens:
 `fn value() -> i32` appeared as `fnfn valuevalue() -> i32i32`. The finite-output checks
 above preserve that same source correctly. The terminal captures include
 `.ace/qol-show-vertical.txt` and `.ace/qol-show-stacked.txt`. This is evidence for the
-separately lodged token-duplication task, not verified interactive source fidelity.
+token-duplication defect before its repair, not verified interactive source fidelity.
 Recommendations remain limited to verified finite preservation and the inspected
 surrounding-text display. Repeated-file navigation preserved two `sample.rs` entries
 and their distinct messages, including leading patchless-commit text; captures are
