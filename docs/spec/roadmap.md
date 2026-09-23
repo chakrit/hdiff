@@ -119,6 +119,15 @@ Status: plan awaiting approval; no performance repair has been implemented.
   `nice -n 19 cargo test --release --locked -j 1 measures_prepared_movement -- --ignored --nocapture`.
 - Measure preparation-time impact to ensure no regression on startup budgets.
 
+## Investigate broken leading indentation
+
+Leading tabs and spaces on code lines appear to render incorrectly. Recent changes may
+be the cause; this is unconfirmed.
+
+- [ ] Reproduce with tab- and space-indented lines in every layout and detail mode.
+- [ ] Determine whether a recent change introduced it.
+- [ ] Fix it and add a regression check.
+
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
