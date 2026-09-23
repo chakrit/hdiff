@@ -57,6 +57,68 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
 
+### Movement measurement checkpoint
+
+The synthetic in-process baseline is complete and recorded in
+[performance.md](performance.md#initial-movement-baseline). The 1,024-hunk-per-file
+workload takes 54–55 ms per movement frame across all layouts and detail modes.
+Actual terminal keypress latency and a representative user diff remain unmeasured;
+the diagnostic excludes event reads, PTY transport, and terminal-emulator painting.
+
+### Proposed first movement refactor
+
+Status: plan awaiting approval; no performance repair has been implemented.
+
+#### Problem analysis
+
+1. **Quadratic bounds search ($O(N^2)$)**: `shows_unified_row` scans the entire file for
+   every context line to determine distance to changes within its hunk, resulting in
+   ~49M checks on a 1,024-hunk file on every `h/j/k/l` keypress (~26 ms).
+2. **Unnecessary heap allocations / `.to_owned()` string cloning**: `DiffRow` is typed as
+   `Line<'static>`, forcing `styled_line` to call `Span::styled(text.to_owned(), style)`.
+   Every substring chunk is cloned into a heap `String` on every frame redraw.
+3. **Whole-file row collection**: `visible_diff_rows` and `visible_side_by_side_rows`
+   construct styled rows for all remaining lines to EOF, and construct both layouts on
+   every frame before `render_diff_rows` truncates them to pane height (~28 ms).
+4. **Unbuffered terminal I/O**: `CrosstermBackend` uses unbuffered `io::stdout()`,
+   increasing system call overhead during escape-sequence writes.
+
+#### Detailed implementation stages
+
+1. **Stage 1: Zero-copy borrowing without cloning (`DiffRow<'a>`)**
+   - Thread the lifetime `'a` from `PreparedFile` into `DiffRow<'a>` and `DisplayRows<'a>`.
+   - Use `Line<'a>` and `Span<'a>` wrapping `Cow::Borrowed(&'a str)` in `styled_line`.
+   - Eliminate `text.to_owned()`, enabling rows to directly reference immutable source text
+     slices from the prepared file with zero heap string allocations during rendering.
+
+2. **Stage 2: Pre-compute hunk-local context distance ($O(1)$ visibility)**
+   - Pre-calculate each context row's distance to the nearest change (`+` or `-`) within its
+     hunk during preparation and store it in row metadata.
+   - Replace linear file scans in `shows_unified_row` and `shows_side_by_side_row` with a
+     constant-time threshold check (`distance <= context_lines`).
+   - Keep metadata owned by the prepared layout and support arbitrary context counts
+     without a terminal-loop cache.
+
+3. **Stage 3: Viewport bounding and active layout dispatch**
+   - Resolve pane height $H$ from layout geometry before constructing diff rows.
+   - Bound row evaluation to `H` rows for the active layout only (`Unified` or `SideBySide`).
+   - Avoid constructing inactive layout projections during frame draw.
+   - Resolve viewport offsets consistently with filtered context rows and document the
+     coordinate contract in `architecture.md`.
+
+4. **Stage 4: Output buffering**
+   - Wrap `io::stdout()` in `io::BufWriter::with_capacity(64 * 1024, io::stdout())` inside
+     `TerminalSession::start` to batch terminal escape sequences into a single `write(2)`.
+
+#### Verification & measurement
+
+- Verify zero-copy lifetime invariants and test coordinate consistency across layouts,
+  context adjustments (`+`/`-`), horizontal offsets, and resize events.
+- Run `cargo fmt --check`, `cargo test --locked`, and `cargo clippy --all-targets --locked -- -D warnings`.
+- Measure latency reduction against the baseline in `performance.md` using
+  `nice -n 19 cargo test --release --locked -j 1 measures_prepared_movement -- --ignored --nocapture`.
+- Measure preparation-time impact to ensure no regression on startup budgets.
+
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
