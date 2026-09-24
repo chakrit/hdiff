@@ -41,6 +41,30 @@ Its detailed evidence is in `.ace/unmatched-*.txt`.
 Historical delivery plans and verification records are preserved in
 `.ace/spec-cleanup-roadmap-before.md`.
 
+## Next: test suite and benchmark drivers
+
+Precedes the movement work. Contracts are in
+[architecture](architecture.md#interactive-loop) and
+[performance](performance.md#benchmark-drivers).
+
+- [ ] Extract `Tui` with `load`, `run`, and `step` over Ratatui's `Terminal<B>` and an
+  event iterator; move terminal setup to `ratatui::init` / `ratatui::restore`, confirming
+  they cover cursor hiding and staged cleanup; add `TtyEvents` with resize coalescing.
+- [ ] Add `src/lib.rs` so test targets can reach `Tui`; keep `main.rs` a thin binary.
+- [ ] Add the `live` test target: `TestBackend` scenarios for movement, `Tab` /
+  Shift-Tab, `v`, detail, context, resize, quit, the former SMOKE frames, and leading
+  tabs and spaces, run across layouts and detail modes by a `macro_rules!` matrix.
+- [ ] Delete `tests/terminal-ui/`.
+- [ ] Replace `--bench` / `--profile` with `--bench <driver>` (`prepare`, `stages`,
+  `movement`) behind a `bench::Driver` enum; remove `--profile`; update `--help` and
+  `tests/benchmark.rs`.
+- [ ] Delete the ignored `measures_prepared_movement` test; generate its workload as a
+  fixture for the `movement` driver.
+- [ ] Switch `bench/kubernetes.sh` to `--bench stages` and update its runner test.
+- [ ] Add `bench/fixtures.sh`, writing to `.ace/bench/fixtures/`.
+- [ ] Replace `docs/guides/testing-terminal-ui.md` with a testing guide; update
+  `docs/guides/kubernetes-benchmark.md` and the `AGENTS.md` command list.
+
 ## Next: restore responsive movement
 
 Movement is noticeably slow after the interactive layout and detail work. Restore
@@ -52,7 +76,7 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
   redraw work.
 - [ ] Identify and remove redundant work from the interaction, layout, or terminal
   rendering hot path.
-- [ ] Add a focused regression check that protects the resulting performance boundary.
+- [ ] Meet the [movement target](performance.md#targets) in `bench/fixtures.sh` output.
 
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.

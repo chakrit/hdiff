@@ -83,6 +83,28 @@ state, and terminal size. The terminal adapter owns raw-mode setup, input events
 drawing, resize events, and restoration on exit. Finite output renders the document
 directly without entering the interactive preparation and terminal path.
 
+### Interactive loop
+
+`Tui` is the interactive loop. It holds interaction state and the current prepared
+document; it owns neither the terminal nor the input source.
+
+```text
+tui.load(document)            replaces the current document
+tui.run(&mut terminal, events) draws, then steps each event until Exit
+tui.step(&mut terminal, event) event -> Input -> Interaction transition -> draw -> Continue | Exit
+```
+
+Output is Ratatui's `Terminal<B: Backend>`. Input is any
+`Iterator<Item = io::Result<Event>>`.
+
+| Caller     | Terminal                                    | Events                         | Drives       |
+|------------|---------------------------------------------|--------------------------------|--------------|
+| `main`     | `CrosstermBackend<Stdout>`, `ratatui::init` | `TtyEvents` (coalesces resize) | `tui.run`    |
+| live tests | `TestBackend`                               | one key per call               | `tui.step`   |
+| `movement` | `CrosstermBackend<io::Sink>`                | fixed key sequence             | timed `step` |
+
+`main` restores the terminal with `ratatui::restore` after `run` returns.
+
 No layer should inspect another layer’s internal representation. In particular, rendering must
 not parse diff text, and input handling must not mutate parsed records in place.
 
@@ -191,9 +213,9 @@ hash in parentheses. Both commands exit successfully after printing their output
 
 ### Current argument selection
 
-`--help` and `--version` select their commands only when supplied alone. `--bench` and
-`--profile` select measurement modes only as the first argument; the remaining zero, one,
-or two arguments select input as described above. Their output contracts are in
+`--help` and `--version` select their commands only when supplied alone. `--bench <driver>`
+selects measurement only as the first argument; the remaining zero, one, or two arguments
+select input as described above. Their output contracts are in
 [`performance.md`](performance.md).
 
 `--install` is recognized anywhere in the argument list and must be the sole argument.
@@ -369,9 +391,11 @@ use the shortest covering capture; later capture encounter order breaks equal-le
 ties. Capture length is measured before row clipping.
 
 The first test boundary is terminal-independent: parser fixtures, state-transition tests, layout
-snapshots, and renderer output tests. End-to-end terminal checks run hdiff in fixed-size tmux
-sessions, drive pager inputs with `send-keys`, capture ANSI-styled panes, and lock those captures
-with SMOKE. The tmux script owns and removes its uniquely named session on every exit path.
+snapshots, and renderer output tests. Live interaction tests run the `Tui` in-process in a
+`live` test target under plain `cargo test`: each test loads a fixture document into a `Tui`,
+drives it with `tui.step` one key at a time against a 120-by-36 `Terminal<TestBackend>`, and
+asserts on the backend buffer after each step. A `macro_rules!` matrix runs scenarios across
+layouts and detail modes. Tests never assert timing and never start the `hdiff` executable.
 
 ## Input and terminal boundary
 

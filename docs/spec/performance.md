@@ -5,7 +5,6 @@ status: accepted
 # Performance contract
 
 This file is authoritative for preparation, measurement, and performance optimization.
-The existing `--bench` and `--profile` measurement contract defines the preparation target.
 
 ## Preparation boundary
 
@@ -24,13 +23,20 @@ derives only its own rendered rows, split pairs, syntax spans, and character-det
 The prepared layout is the sole owner of each exact-sized immutable rendered-row buffer.
 Unified and side-by-side layout projections reference those buffers.
 
-## Benchmark mode
+## Benchmark drivers
 
-Zero-byte input still emits valid zero-count reports in `--bench` and `--profile`.
+`hdiff --bench <driver>` accepts the normal diff input after the driver name, completes
+the normal preparation pass, runs the named driver, prints machine-readable result lines,
+and exits without opening the terminal. `--profile` does not exist. Zero-byte input still
+emits valid zero-count reports. Reports are written only after successful preparation,
+and malformed input produces no success record.
 
-`hdiff --bench` accepts the normal diff input, completes the normal preparation pass,
-prints machine-readable result lines, and exits without opening the terminal. The first
-result reports preparation time and the prepared file and record counts as
+Drivers are variants of one `bench::Driver` enum behind a single entry point: read, parse,
+prepare, run the driver, report. The drivers are `prepare`, `stages`, and `movement`.
+
+### `prepare`
+
+The first result reports preparation time and the prepared file and record counts as
 `preparation duration_ns=<integer> files=<integer> records=<integer>`.
 The preparation measurement starts immediately before the shared preparation pass.
 The second line has this versioned schema, with integer nanosecond durations:
@@ -47,12 +53,11 @@ complete acquired patch. Preparation time has the same meaning in both result li
 Whole-process measurements remain separate. Prepared patch runs exclude upstream Git
 production latency; reading a live pipe can include waiting on its producer.
 
-### Diagnostic profiles
+### `stages`
 
-`hdiff --profile` accepts the same input sources and executes the same preparation
-algorithm with explicit stage observation. Its first line uses `diagnostic` in place of
-`preparation`; its startup line uses the same schema. It then emits `profile version=1`,
-stage lines, and a workload line:
+`stages` executes the same preparation algorithm with explicit stage observation. Its
+first line uses `diagnostic` in place of `preparation`; its startup line uses the same
+schema. It then emits `profile version=1`, stage lines, and a workload line:
 
 ```text
 stage name=NAME parent=preparation|syntax duration_ns=N
@@ -67,41 +72,59 @@ together. Unattributed time includes orchestration, destruction, and observer bo
 outside named spans. Counts include attempted parse calls and all returned captures.
 Projected bytes count the old and new virtual source buffers, including separators.
 
-Normal rendering and benchmark comparisons have no per-hunk clock reads or counters.
-Static dispatch selects observation at preparation entry. Profiles are diagnostic runs;
-their timings never enter benchmark acceptance calculations. Reports are written only
-after successful preparation, and malformed input produces no success record.
+Normal rendering, `prepare`, and `movement` have no per-hunk clock reads or counters.
+Static dispatch selects observation at preparation entry. `stages` runs are diagnostic;
+their timings never enter benchmark acceptance calculations.
+
+### `movement`
+
+`movement` loads the prepared document into a `Tui` drawing to a 120-by-36
+`Terminal<CrosstermBackend<io::Sink>>` and times each `tui.step` over a fixed `l/h/j/k`
+key sequence in every layout and detail mode. It emits one line per key:
+
+```text
+movement version=1 layout=NAME detail=NAME key=KEY step_ns=N
+```
+
+Step time covers input mapping, interaction transition, frame rendering, and escape
+encoding into the sink. It excludes terminal event reads, PTY transport, and
+terminal-emulator painting.
+
+## Targets
+
+Targets are recorded here and reviewed from script output. Tests never assert timing.
+
+| Measurement                       | Target                                   |
+|-----------------------------------|------------------------------------------|
+| Kubernetes preparation            | 1 second                                 |
+| `movement` step, worst case       | 3 ms; the aim is sub-millisecond         |
+
+The reference machine is `gz44`, an M1 Mac.
+
+## Measurement scripts
+
+Scripts build the release binary and drive `--bench` from outside.
+
+- `bench/kubernetes.sh` measures and compares preparation on the Kubernetes corpus and
+  writes to `.ace/bench/kubernetes/`.
+- `bench/fixtures.sh` runs every driver over the repository fixtures and the generated
+  1,024-hunk movement workload and writes raw output and a summary to
+  `.ace/bench/fixtures/`.
 
 ## Measurement model
 
-### Movement diagnostics
+### Movement workload
 
-The ignored `terminal::movement_measurement::measures_prepared_movement` test measures
-the production navigation-bounds calculation and prepared frame renderer independently.
-Run it with:
-
-```sh
-nice -n 19 cargo test --release --locked -j 1 measures_prepared_movement -- --ignored --nocapture
-```
-
-It uses a 120-by-36 Ratatui test backend and three generated Rust files,
-with 16, 64, 256, or 1,024 seven-line hunks per file, six context records per hunk, and long
-replacement strings that exercise horizontal clipping. This is a synthetic scaling
-workload, not a recorded user diff.
-
-Preparation runs once per workload and is shared by all six layout/detail combinations.
-Each combination draws an initial frame, warms one `l/h/j/k` sequence, and records three
-further sequences. Bounds, redraw, and combined input-to-frame durations use nanoseconds.
-Redraw includes file-list derivation
-and the test backend's buffer update. These measurements exclude terminal event reads,
-PTY transport, terminal-emulator painting, and preparation; they are not end-to-end
-keypress latency. Preparation is reported separately as one diagnostic observation.
-No timing assertion or optimization acceptance verdict is derived from this diagnostic.
+The movement workload is three generated Rust files with 16, 64, 256, or 1,024
+seven-line hunks per file, six context records per hunk, and long replacement strings
+that exercise horizontal clipping. This is a synthetic scaling workload, not a recorded
+user diff.
 
 #### Initial movement baseline
 
-The September 11, 2026 diagnostic measures the extracted production bounds calculation
-and the prepared frame renderer. It ran on macOS arm64
+The September 11, 2026 baseline was taken by the former ignored
+`measures_prepared_movement` test, which timed the bounds calculation and a 120-by-36
+Ratatui test-backend redraw separately. It ran on macOS arm64
 with Rust 1.98.1, release optimization, one build job, and scheduler priority 19.
 The original record names `.ace/movement-baseline-final.txt` as its raw output;
 that file is not available in this checkout. The imported baseline and its source
@@ -157,9 +180,9 @@ scripts, and Rust source. The candidate may contain staged or unstaged tracked c
 The benchmark rejects untracked build inputs so the digest covers every file used by the
 candidate build.
 
-The runner also supports `--mode measure` and `--mode profile` for a clean or dirty current
-checkout. Comparison is the default mode. Measurement repeats the current binary three
-times after two warmups and does not produce an improvement verdict. Profiles run
+The runner also supports `--mode measure` and `--mode profile` (`--bench stages`) for a
+clean or dirty current checkout. Comparison is the default mode. Measurement repeats the
+current binary three times after two warmups and does not produce an improvement verdict. Profiles run
 separately and preserve stage output and an OS stack sample. A stack sample reports its
 sampling window and completion status and never claims whole-process coverage when
 attachment or completion cuts that window short. Sampling records distinguish captured,
