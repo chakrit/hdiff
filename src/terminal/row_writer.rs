@@ -166,7 +166,7 @@ mod tests {
 
     use super::write_row;
     use crate::{
-        interaction::{DiffGranularity, Viewport},
+        interaction::{DiffGranularity, DiffLayout, Viewport},
         parser::parse_unified_diff,
         prepared::PreparedDocument,
         terminal::rows::{PaneRow, visible_diff_rows},
@@ -283,11 +283,12 @@ mod tests {
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
         let file = prepared.file(0).expect("prepared file");
+        let extent = file.layout().scroll_extent(DiffLayout::Unified, 3);
         let rows = visible_diff_rows(
             file,
+            &extent,
             &Viewport::new(width, 12),
             DiffGranularity::Line,
-            3,
             usize::MAX,
         );
 

@@ -170,14 +170,6 @@ impl Layout {
         }
     }
 
-    pub fn visible_unified_line_count(&self, context_lines: usize) -> usize {
-        self.diff_lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| self.shows_unified_row(*index, context_lines))
-            .count()
-    }
-
     pub fn shows_side_by_side_row(&self, row: &SideBySideRow, context_lines: usize) -> bool {
         match row {
             SideBySideRow::Shared(index) => self.shows_unified_row(*index, context_lines),
@@ -191,39 +183,88 @@ impl Layout {
         }
     }
 
-    pub fn visible_side_by_side_line_count(&self, context_lines: usize) -> usize {
-        self.side_by_side_rows
-            .iter()
-            .filter(|row| self.shows_side_by_side_row(row, context_lines))
-            .count()
+    /// The rows `display_layout` shows at `context_lines`, indexing `diff_lines` (unified)
+    /// or `side_by_side_rows` (vertical and stacked).
+    pub fn scroll_extent(&self, display_layout: DiffLayout, context_lines: usize) -> ScrollExtent {
+        match display_layout {
+            DiffLayout::Unified => ScrollExtent::from_rows(
+                (0..self.diff_lines.len())
+                    .filter(|index| self.shows_unified_row(*index, context_lines))
+                    .map(|index| (index, self.line_width(index))),
+            ),
+            DiffLayout::Vertical | DiffLayout::Stacked => ScrollExtent::from_rows(
+                self.side_by_side_rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, row)| self.shows_side_by_side_row(row, context_lines))
+                    .map(|(index, row)| (index, self.side_by_side_width(row))),
+            ),
+        }
     }
 
-    /// The widest visible row in terminal cells, including the two-cell marker gutter.
-    pub fn maximum_visible_width(&self, display_layout: DiffLayout, context_lines: usize) -> usize {
-        match display_layout {
-            DiffLayout::Unified => (0..self.diff_lines.len())
-                .filter(|index| self.shows_unified_row(*index, context_lines))
-                .map(|index| self.line_width(index))
-                .max(),
-            DiffLayout::Vertical | DiffLayout::Stacked => self
-                .side_by_side_rows
-                .iter()
-                .filter(|row| self.shows_side_by_side_row(row, context_lines))
-                .map(|row| match row {
-                    SideBySideRow::Shared(index)
-                    | SideBySideRow::BeforeOnly(index)
-                    | SideBySideRow::AfterOnly(index) => self.line_width(*index),
-                    SideBySideRow::Paired { before, after } => {
-                        self.line_width(*before).max(self.line_width(*after))
-                    }
-                })
-                .max(),
+    fn side_by_side_width(&self, row: &SideBySideRow) -> usize {
+        match row {
+            SideBySideRow::Shared(index)
+            | SideBySideRow::BeforeOnly(index)
+            | SideBySideRow::AfterOnly(index) => self.line_width(*index),
+            SideBySideRow::Paired { before, after } => {
+                self.line_width(*before).max(self.line_width(*after))
+            }
         }
-        .unwrap_or_default()
     }
 
     fn line_width(&self, index: usize) -> usize {
         usize::try_from(self.line_metrics[index].width).expect("u32 widths fit in usize")
+    }
+}
+
+/// The rows one layout shows at one context count, and the widest of them. A viewport's
+/// vertical offset indexes these visible rows. Contract: `docs/spec/architecture.md`
+/// (Viewport coordinates).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ScrollExtent {
+    /// Visible rows in display order, as indices into the layout's row list.
+    rows: Box<[u32]>,
+    /// Terminal cells of the widest visible row, including the marker gutter.
+    width: usize,
+}
+
+impl ScrollExtent {
+    fn from_rows(rows: impl Iterator<Item = (usize, usize)>) -> Self {
+        let mut indices = Vec::new();
+        let mut width = 0;
+
+        for (index, row_width) in rows {
+            indices.push(u32::try_from(index).expect("row indices fit in u32"));
+            width = width.max(row_width);
+        }
+        Self {
+            rows: indices.into_boxed_slice(),
+            width,
+        }
+    }
+
+    pub fn row_count(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Row-list indices of up to `limit` visible rows from visible row `offset`.
+    pub fn rows(&self, offset: usize, limit: usize) -> impl Iterator<Item = usize> + '_ {
+        self.rows
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .map(|index| usize::try_from(*index).expect("u32 row indices fit in usize"))
+    }
+
+    /// The visible offset of row-list index `index`, or of the first visible row after it.
+    pub fn offset_of(&self, index: usize) -> usize {
+        self.rows
+            .partition_point(|visible| usize::try_from(*visible).is_ok_and(|row| row < index))
     }
 }
 
@@ -454,8 +495,8 @@ mod tests {
         .expect("valid diff");
         let view = file_layout(&document.file_views().next().expect("first file"));
         let shown = |context_lines| {
-            (0..view.diff_lines.len())
-                .filter(|index| view.shows_unified_row(*index, context_lines))
+            view.scroll_extent(DiffLayout::Unified, context_lines)
+                .rows(0, usize::MAX)
                 .map(|index| String::from_utf8_lossy(&view.diff_lines[index].bytes).into_owned())
                 .collect::<String>()
         };
@@ -483,9 +524,32 @@ mod tests {
         .expect("valid Unicode diff");
         let view = file_layout(&document.file_views().next().expect("first file"));
 
-        assert_eq!(view.maximum_visible_width(DiffLayout::Unified, 1), 24);
-        assert_eq!(view.maximum_visible_width(DiffLayout::Vertical, 1), 24);
-        assert_eq!(view.maximum_visible_width(DiffLayout::Unified, 2), 40);
+        let width = |display_layout, context_lines| {
+            view.scroll_extent(display_layout, context_lines).width()
+        };
+
+        assert_eq!(width(DiffLayout::Unified, 1), 24);
+        assert_eq!(width(DiffLayout::Vertical, 1), 24);
+        assert_eq!(width(DiffLayout::Unified, 2), 40);
+    }
+
+    #[test]
+    fn maps_a_row_to_its_visible_offset_or_the_next_visible_row() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n",
+        )
+        .expect("valid diff");
+        let view = file_layout(&document.file_views().next().expect("first file"));
+        let extent = view.scroll_extent(DiffLayout::Unified, 1);
+
+        // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
+        assert_eq!(extent.offset_of(5), 3);
+        assert_eq!(
+            extent.offset_of(3),
+            3,
+            "hidden c0 maps to the next visible row"
+        );
+        assert_eq!(extent.offset_of(9), 7, "past the end maps to the row count");
     }
 
     #[test]

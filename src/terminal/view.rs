@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{
     interaction::{DiffLayout, Interaction},
-    layout::{FileListRow, PaneLayout, content_pane_height, pane_layout},
+    layout::{FileListRow, PaneLayout, ScrollExtent, content_pane_height, pane_layout},
     prepared::PreparedFile,
 };
 
@@ -73,6 +73,9 @@ fn render_frame_with_layout(
         .expect("rendering fixture selects a file");
     let prepared = PreparedDocument::prepare(document);
     let file = prepared.file(selected).expect("selected prepared file");
+    let extent = file
+        .layout()
+        .scroll_extent(preferences.layout, preferences.context_lines);
     let interaction = Interaction {
         selected_file: selected,
         preferences: ViewPreferences {
@@ -83,29 +86,38 @@ fn render_frame_with_layout(
         viewport: viewport.clone(),
     };
 
-    render_prepared_frame(frame, &layout.files, file, &interaction, color_count);
+    render_prepared_frame(
+        frame,
+        &layout.files,
+        file,
+        &extent,
+        &interaction,
+        color_count,
+    );
 }
 
+/// Draws `file` through `extent`, the scroll extent of the interaction's layout and
+/// context count.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
     files: &[FileListRow],
     file: &PreparedFile,
+    extent: &ScrollExtent,
     interaction: &Interaction,
     color_count: u16,
 ) {
     let area = frame.area();
     let row_limit = usize::from(area.height);
     let granularity = interaction.preferences.granularity;
-    let context_lines = interaction.preferences.context_lines;
     let viewport = &interaction.viewport;
     let side_by_side_rows =
-        || visible_side_by_side_rows(file, viewport, granularity, context_lines, row_limit);
+        || visible_side_by_side_rows(file, extent, viewport, granularity, row_limit);
     let rows = match interaction.preferences.layout {
         DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
             file,
+            extent,
             viewport,
             granularity,
-            context_lines,
             row_limit,
         )),
         DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
@@ -806,6 +818,7 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
         let file = prepared.file(1).expect("second prepared file");
         let file_rows = prepared.file_rows(1);
+        let extent = file.layout().scroll_extent(diff_layout, 3);
         let interaction = Interaction {
             selected_file: 1,
             preferences: ViewPreferences::line(diff_layout),
@@ -822,10 +835,13 @@ mod tests {
                 maximum_vertical_offset: file.layout().diff_lines.len().saturating_sub(30),
                 maximum_horizontal_offset: 1,
             },
+            anchored_vertical_offset: 1,
         };
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
         terminal
-            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &interaction, u16::MAX))
+            .draw(|frame| {
+                render_prepared_frame(frame, &file_rows, file, &extent, &interaction, u16::MAX)
+            })
             .expect("render line mode");
         let line_rendered = terminal.backend().buffer().clone();
         let payloads = [
@@ -845,7 +861,9 @@ mod tests {
         assert_eq!(character.selected_file, interaction.selected_file);
         assert_eq!(character.viewport, interaction.viewport);
         terminal
-            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &character, u16::MAX))
+            .draw(|frame| {
+                render_prepared_frame(frame, &file_rows, file, &extent, &character, u16::MAX)
+            })
             .expect("render character mode");
 
         // architecture.md: unmatched source payloads contain no unchanged characters.
@@ -862,7 +880,7 @@ mod tests {
             panic!("line toggle redraws interaction");
         };
         terminal
-            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &line, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &extent, &line, u16::MAX))
             .expect("restore line mode from the same prepared file");
 
         assert_eq!(line, interaction, "toggle preserves the reader position");

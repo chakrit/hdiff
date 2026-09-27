@@ -8,7 +8,7 @@ use crate::{
         self, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
         ViewPreferences, Viewport,
     },
-    layout::{content_pane_height, content_pane_width, maximum_horizontal_offset},
+    layout::{ScrollExtent, content_pane_height, content_pane_width, maximum_horizontal_offset},
     prepared::PreparedDocument,
 };
 
@@ -39,18 +39,23 @@ pub enum Step {
 pub struct Tui {
     document: PreparedDocument,
     interaction: Interaction,
+    extent: KeyedExtent,
     color_count: u16,
 }
 
 impl Tui {
     pub fn new(document: PreparedDocument, area: Size, color_count: u16) -> Self {
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport::new(area.width, usize::from(area.height)),
+        };
+        let extent = KeyedExtent::build(&document, ExtentKey::of(&interaction));
+
         Self {
             document,
-            interaction: Interaction {
-                selected_file: 0,
-                preferences: ViewPreferences::line(DiffLayout::Unified),
-                viewport: Viewport::new(area.width, usize::from(area.height)),
-            },
+            interaction,
+            extent,
             color_count,
         }
     }
@@ -64,6 +69,7 @@ impl Tui {
             viewport: Viewport::new(viewport.width, viewport.height),
         };
         self.document = document;
+        self.extent = KeyedExtent::build(&self.document, ExtentKey::of(&self.interaction));
     }
 
     pub fn preferences(&self) -> ViewPreferences {
@@ -94,12 +100,31 @@ impl Tui {
             return Ok(Step::Continue);
         };
 
-        let bounds = navigation_bounds(&self.document, &self.interaction, &input);
+        let top_row = self
+            .extent
+            .extent
+            .rows(self.interaction.viewport.vertical_offset, 1)
+            .next();
+        let target = ExtentKey::new(
+            self.interaction.selected_file,
+            self.interaction.preferences.after(&input),
+        );
+        let target_extent = self.extent.select(&self.document, target);
+        let bounds = navigation_bounds(
+            self.document.file_count(),
+            &self.interaction,
+            &input,
+            target_extent,
+            top_row,
+        );
+
         match interaction::transition_interaction(&self.interaction, input, &bounds) {
             Transition::Exit => Ok(Step::Exit),
             Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
             Transition::RedrawInteraction(next) => {
                 self.interaction = next;
+                self.extent
+                    .select(&self.document, ExtentKey::of(&self.interaction));
                 self.draw(terminal)?;
                 Ok(Step::Continue)
             }
@@ -120,11 +145,59 @@ impl Tui {
                     frame,
                     &files,
                     file,
+                    &self.extent.extent,
                     &self.interaction,
                     self.color_count,
                 )
             })
             .map(|_| ())
+    }
+}
+
+/// The scroll extent of one file, layout, and context count, rebuilt only when that key
+/// changes.
+struct KeyedExtent {
+    key: ExtentKey,
+    extent: ScrollExtent,
+}
+
+impl KeyedExtent {
+    fn build(document: &PreparedDocument, key: ExtentKey) -> Self {
+        // A document without files shows no rows.
+        let extent = document
+            .file(key.file)
+            .map(|file| file.layout().scroll_extent(key.layout, key.context_lines))
+            .unwrap_or_default();
+
+        Self { key, extent }
+    }
+
+    fn select(&mut self, document: &PreparedDocument, key: ExtentKey) -> &ScrollExtent {
+        if self.key != key {
+            *self = Self::build(document, key);
+        }
+        &self.extent
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ExtentKey {
+    file: usize,
+    layout: DiffLayout,
+    context_lines: usize,
+}
+
+impl ExtentKey {
+    fn new(file: usize, preferences: ViewPreferences) -> Self {
+        Self {
+            file,
+            layout: preferences.layout,
+            context_lines: preferences.context_lines,
+        }
+    }
+
+    fn of(interaction: &Interaction) -> Self {
+        Self::new(interaction.selected_file, interaction.preferences)
     }
 }
 
@@ -168,46 +241,30 @@ impl TtyEvents {
     }
 }
 
+/// Bounds of the display `input` leads to, whose rows are `target_extent`. `top_row` is
+/// the row-list index of the current top row, if any.
 fn navigation_bounds(
-    document: &PreparedDocument,
+    file_count: usize,
     interaction: &Interaction,
     input: &Input,
+    target_extent: &ScrollExtent,
+    top_row: Option<usize>,
 ) -> NavigationBounds {
-    let display_layout = match input {
-        Input::NextLayout => interaction.preferences.layout.next(),
-        _ => interaction.preferences.layout,
-    };
-    let file = document.file(interaction.selected_file);
-    let content_width = file
-        .map(|file| {
-            file.layout()
-                .maximum_visible_width(display_layout, interaction.preferences.context_lines)
-        })
-        .unwrap_or_default();
+    let display_layout = interaction.preferences.after(input).layout;
     let (screen_width, screen_height) = match input {
         Input::Resize { width, height } => (*width, usize::from(*height)),
         _ => (interaction.viewport.width, interaction.viewport.height),
     };
     let pane_width = content_pane_width(screen_width, display_layout);
-    let maximum_horizontal_offset = maximum_horizontal_offset(content_width, pane_width);
-    let line_count = file
-        .map(|file| match display_layout {
-            DiffLayout::Unified => file
-                .layout()
-                .visible_unified_line_count(interaction.preferences.context_lines),
-            DiffLayout::Vertical | DiffLayout::Stacked => file
-                .layout()
-                .visible_side_by_side_line_count(interaction.preferences.context_lines),
-        })
-        .unwrap_or_default();
+    let pane_height = content_pane_height(screen_height, display_layout);
 
     NavigationBounds {
-        file_count: document.file_count(),
+        file_count,
         target_display: DisplayBounds {
-            maximum_vertical_offset: line_count
-                .saturating_sub(content_pane_height(screen_height, display_layout)),
-            maximum_horizontal_offset,
+            maximum_vertical_offset: target_extent.row_count().saturating_sub(pane_height),
+            maximum_horizontal_offset: maximum_horizontal_offset(target_extent.width(), pane_width),
         },
+        anchored_vertical_offset: top_row.map_or(0, |row| target_extent.offset_of(row)),
     }
 }
 
@@ -284,6 +341,11 @@ mod tests {
                             frame,
                             &prepared.file_rows(selected_file),
                             prepared.file(selected_file).expect("file occurrence"),
+                            &prepared
+                                .file(selected_file)
+                                .expect("file occurrence")
+                                .layout()
+                                .scroll_extent(layout, 3),
                             &interaction,
                             u16::MAX,
                         )

@@ -232,6 +232,29 @@ The mean saving is 59.3 million retired instructions per run (paired savings 64.
 |----------------------------------|--------------------------|------------|
 | `20260927T142701Z-8c4d462-88695` | `8c4d462` + row writer   | 0.234 ms   |
 
+#### Stored scroll extents
+
+The interactive loop keeps the visible rows and widest row of the selected file, layout,
+and context count, and rebuilds them only when one of those changes. Movement bounds read
+the stored extent instead of rescanning the file. Same measurement as
+[Cached layout splits](#cached-layout-splits):
+
+| Binary          | Retired instructions (three runs)             | Mean          |
+|-----------------|-----------------------------------------------|---------------|
+| `4b8eeab`       | 2,968,316,164 · 2,967,673,289 · 2,971,913,966 | 2,969,301,140 |
+| + extents       | 2,929,017,955 · 2,928,051,315 · 2,929,909,546 | 2,928,992,939 |
+
+The mean saving is 40.3 million retired instructions per run (paired savings 39.3, 39.6,
+and 42.0 million), about 0.42 million per step. `bench/fixtures.sh` at scheduler
+priority 19, worst `movement` step on the 1,024-hunk workload, from 0.234 ms:
+
+| Run                              | Revision                 | Worst step |
+|----------------------------------|--------------------------|------------|
+| `20260927T143503Z-4b8eeab-97473` | `4b8eeab` + extents      | 0.214 ms   |
+
+Workload preparation read 158.7 ms in this run against 146–148 ms in the two before
+it; the `prepare` driver does not build extents.
+
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS

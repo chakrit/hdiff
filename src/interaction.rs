@@ -79,12 +79,47 @@ impl ViewPreferences {
             context_lines: 3,
         }
     }
+
+    /// The preferences `input` selects; every other input keeps them.
+    pub fn after(self, input: &Input) -> Self {
+        match input {
+            Input::NextLayout => Self {
+                layout: self.layout.next(),
+                ..self
+            },
+            Input::ToggleGranularity => Self {
+                granularity: self.granularity.toggled(),
+                ..self
+            },
+            Input::IncreaseContext => Self {
+                context_lines: self.context_lines.saturating_add(1),
+                ..self
+            },
+            Input::DecreaseContext => Self {
+                context_lines: self.context_lines.saturating_sub(1),
+                ..self
+            },
+            _ => self,
+        }
+    }
+}
+
+impl DiffGranularity {
+    const fn toggled(self) -> Self {
+        match self {
+            Self::Line => Self::Character,
+            Self::Character => Self::Line,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct NavigationBounds {
     pub file_count: usize,
     pub target_display: DisplayBounds,
+    /// The target display's vertical offset of the current top row; context changes keep
+    /// that row at the top.
+    pub anchored_vertical_offset: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,60 +156,34 @@ pub fn transition_interaction(
     input: Input,
     bounds: &NavigationBounds,
 ) -> Transition {
+    let viewport = &interaction.viewport;
+    let display = bounds.target_display;
+    let preferences = interaction.preferences.after(&input);
+
     match input {
         Input::NextFile => return select_next_file(interaction, bounds.file_count),
         Input::PreviousFile => return select_previous_file(interaction, bounds.file_count),
-        Input::NextLayout => return select_next_layout(interaction, bounds),
-        Input::ToggleGranularity => return toggle_granularity(interaction),
-        Input::IncreaseContext => return change_context(interaction, ContextChange::Increase),
-        Input::DecreaseContext => return change_context(interaction, ContextChange::Decrease),
+        Input::NextLayout => {
+            let viewport =
+                bounded_viewport(viewport.vertical_offset, viewport.height, viewport, display);
+            return redraw_preferences(interaction, preferences, viewport);
+        }
+        Input::ToggleGranularity => {
+            return redraw_preferences(interaction, preferences, viewport.clone());
+        }
+        Input::IncreaseContext | Input::DecreaseContext => {
+            let anchored = bounds.anchored_vertical_offset;
+            let viewport = bounded_viewport(anchored, viewport.height, viewport, display);
+            return redraw_preferences(interaction, preferences, viewport);
+        }
         _ => {}
     }
-    let display = bounds.target_display;
-    let transition = transition(&interaction.viewport, input, display);
 
-    match transition {
+    match transition(viewport, input, display) {
         Transition::Exit => Transition::Exit,
-        Transition::Redraw(viewport) => Transition::RedrawInteraction(Interaction {
-            selected_file: interaction.selected_file,
-            preferences: ViewPreferences {
-                layout: interaction.preferences.layout,
-                granularity: interaction.preferences.granularity,
-                context_lines: interaction.preferences.context_lines,
-            },
-            viewport,
-        }),
+        Transition::Redraw(viewport) => redraw_preferences(interaction, preferences, viewport),
         Transition::RedrawInteraction(_) => unreachable!("viewport transition cannot nest"),
     }
-}
-
-fn select_next_layout(interaction: &Interaction, bounds: &NavigationBounds) -> Transition {
-    let layout = interaction.preferences.layout.next();
-
-    let display = bounds.target_display;
-    let vertical_offset = interaction
-        .viewport
-        .vertical_offset
-        .min(display.maximum_vertical_offset);
-    let horizontal_offset = interaction
-        .viewport
-        .horizontal_offset
-        .min(display.maximum_horizontal_offset);
-
-    Transition::RedrawInteraction(Interaction {
-        selected_file: interaction.selected_file,
-        preferences: ViewPreferences {
-            layout,
-            granularity: interaction.preferences.granularity,
-            context_lines: interaction.preferences.context_lines,
-        },
-        viewport: Viewport {
-            vertical_offset,
-            horizontal_offset,
-            width: interaction.viewport.width,
-            height: interaction.viewport.height,
-        },
-    })
 }
 
 fn select_next_file(interaction: &Interaction, file_count: usize) -> Transition {
@@ -201,64 +210,20 @@ fn select_previous_file(interaction: &Interaction, file_count: usize) -> Transit
 fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Transition {
     Transition::RedrawInteraction(Interaction {
         selected_file,
-        preferences: ViewPreferences {
-            layout: interaction.preferences.layout,
-            granularity: interaction.preferences.granularity,
-            context_lines: interaction.preferences.context_lines,
-        },
-        viewport: Viewport {
-            vertical_offset: 0,
-            horizontal_offset: 0,
-            width: interaction.viewport.width,
-            height: interaction.viewport.height,
-        },
+        preferences: interaction.preferences,
+        viewport: Viewport::new(interaction.viewport.width, interaction.viewport.height),
     })
-}
-
-enum ContextChange {
-    Increase,
-    Decrease,
-}
-
-fn toggle_granularity(interaction: &Interaction) -> Transition {
-    let granularity = match interaction.preferences.granularity {
-        DiffGranularity::Line => DiffGranularity::Character,
-        DiffGranularity::Character => DiffGranularity::Line,
-    };
-
-    redraw_preferences(
-        interaction,
-        granularity,
-        interaction.preferences.context_lines,
-    )
-}
-
-fn change_context(interaction: &Interaction, change: ContextChange) -> Transition {
-    let context_lines = match change {
-        ContextChange::Increase => interaction.preferences.context_lines.saturating_add(1),
-        ContextChange::Decrease => interaction.preferences.context_lines.saturating_sub(1),
-    };
-
-    redraw_preferences(
-        interaction,
-        interaction.preferences.granularity,
-        context_lines,
-    )
 }
 
 fn redraw_preferences(
     interaction: &Interaction,
-    granularity: DiffGranularity,
-    context_lines: usize,
+    preferences: ViewPreferences,
+    viewport: Viewport,
 ) -> Transition {
     Transition::RedrawInteraction(Interaction {
         selected_file: interaction.selected_file,
-        preferences: ViewPreferences {
-            layout: interaction.preferences.layout,
-            granularity,
-            context_lines,
-        },
-        viewport: interaction.viewport.clone(),
+        preferences,
+        viewport,
     })
 }
 
@@ -353,16 +318,24 @@ fn redraw(
     viewport: &Viewport,
     bounds: DisplayBounds,
 ) -> Transition {
-    let bounded_offset = vertical_offset.min(bounds.maximum_vertical_offset);
+    Transition::Redraw(bounded_viewport(vertical_offset, height, viewport, bounds))
+}
 
-    Transition::Redraw(Viewport {
-        vertical_offset: bounded_offset,
+/// `viewport` at `vertical_offset` and `height`, with both offsets clamped to `bounds`.
+fn bounded_viewport(
+    vertical_offset: usize,
+    height: usize,
+    viewport: &Viewport,
+    bounds: DisplayBounds,
+) -> Viewport {
+    Viewport {
+        vertical_offset: vertical_offset.min(bounds.maximum_vertical_offset),
         horizontal_offset: viewport
             .horizontal_offset
             .min(bounds.maximum_horizontal_offset),
         width: viewport.width,
         height,
-    })
+    }
 }
 
 fn redraw_horizontal(
@@ -433,6 +406,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 1,
             target_display: display,
+            anchored_vertical_offset: 0,
         };
 
         let Transition::RedrawInteraction(right) =
@@ -482,6 +456,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 1,
             target_display: display,
+            anchored_vertical_offset: 0,
         };
 
         let Transition::RedrawInteraction(start) =
@@ -572,6 +547,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             target_display: display,
+            anchored_vertical_offset: 0,
         };
 
         let next = transition_interaction(&interaction, Input::NextFile, &bounds);
@@ -610,6 +586,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             target_display: display,
+            anchored_vertical_offset: 0,
         };
 
         let next = transition_interaction(&interaction, Input::PreviousFile, &bounds);
@@ -648,6 +625,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             target_display: display,
+            anchored_vertical_offset: 0,
         };
 
         let Transition::RedrawInteraction(vertical) =
@@ -690,6 +668,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: 2,
             target_display: display,
+            anchored_vertical_offset: 4,
         };
 
         let Transition::RedrawInteraction(character) =

@@ -2,7 +2,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::{
     interaction::{DiffGranularity, Viewport},
-    layout::SideBySideRow,
+    layout::{ScrollExtent, SideBySideRow},
     prepared::PreparedFile,
     styling::{RowKind, StyledRow, TextStyle},
     theme::DEFAULT_SYNTAX_THEME,
@@ -52,40 +52,29 @@ pub(super) enum VisibleSideBySideRow<'a> {
 
 pub(super) fn visible_diff_rows<'a>(
     file: &'a PreparedFile,
+    extent: &ScrollExtent,
     viewport: &Viewport,
     granularity: DiffGranularity,
-    context_lines: usize,
     row_limit: usize,
 ) -> Vec<StyledRow<'a>> {
-    let layout = file.layout();
-
-    layout
-        .diff_lines
-        .iter()
-        .enumerate()
-        .skip(viewport.vertical_offset)
-        .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
-        .take(row_limit)
-        .map(|(index, _)| file.row(index, granularity))
+    extent
+        .rows(viewport.vertical_offset, row_limit)
+        .map(|index| file.row(index, granularity))
         .collect()
 }
 
 pub(super) fn visible_side_by_side_rows<'a>(
     file: &'a PreparedFile,
+    extent: &ScrollExtent,
     viewport: &Viewport,
     granularity: DiffGranularity,
-    context_lines: usize,
     row_limit: usize,
 ) -> Vec<VisibleSideBySideRow<'a>> {
-    let layout = file.layout();
+    let side_by_side_rows = &file.layout().side_by_side_rows;
 
-    layout
-        .side_by_side_rows
-        .iter()
-        .skip(viewport.vertical_offset)
-        .filter(|row| layout.shows_side_by_side_row(row, context_lines))
-        .take(row_limit)
-        .map(|row| match row {
+    extent
+        .rows(viewport.vertical_offset, row_limit)
+        .map(|index| match &side_by_side_rows[index] {
             SideBySideRow::Shared(index) => {
                 VisibleSideBySideRow::Shared(file.row(*index, granularity))
             }

@@ -422,6 +422,13 @@ Resize is an event; visible layout is recomputed from retained content and the l
 dimensions, following the [interaction model](#interaction-model). Zero-sized layouts
 remain valid values rather than arithmetic errors.
 
+### Viewport coordinates
+
+The viewport's vertical offset indexes the visible rows of the active layout at the
+current context count. The frame shows the visible rows from that offset, and scroll
+limits count visible rows. The visible rows and their widest row are derived once per
+selected file, layout, and context count, and not on movement.
+
 ### Eager prepared rendering
 
 The preparation boundary, ownership, observation policy, and performance requirements

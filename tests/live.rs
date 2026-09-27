@@ -155,6 +155,7 @@ matrix!(
     quit,
     leading_spaces,
     leading_tabs,
+    bottom_past_hidden_context,
 );
 
 fn vertical_movement(mode: Mode) {
@@ -320,6 +321,16 @@ fn leading_tabs(mode: Mode) {
     );
 }
 
+fn bottom_past_hidden_context(mode: Mode) {
+    let mut live = Live::load(&hidden_context_patch(), mode);
+
+    live.press('G');
+    assert!(
+        live.shows("new_39"),
+        "G shows the last row when hidden context precedes it"
+    );
+}
+
 const INDENTED: &str = "--- a/indent.rs\n+++ b/indent.rs\n@@ -1 +1,3 @@\n-removed\n\
                         +added_flush\n+    added_spaces\n+\tadded_tab\n";
 
@@ -340,6 +351,41 @@ fn context_patch() -> String {
         .map(|row| format!(" context_{row}\n"))
         .collect::<String>();
     format!("--- a/ctx.rs\n+++ b/ctx.rs\n@@ -1,7 +1,7 @@\n-changed_old\n+changed_new\n{context}")
+}
+
+/// Forty hunks, each with eight leading context records, five of them hidden at the
+/// default context count.
+fn hidden_context_patch() -> String {
+    let hunks = (0..40)
+        .map(|hunk| {
+            let start = hunk * 20 + 1;
+            let context = (1..=8)
+                .map(|row| format!(" context_{hunk}_{row}\n"))
+                .collect::<String>();
+            format!("@@ -{start},9 +{start},9 @@\n{context}-old_{hunk}\n+new_{hunk}\n")
+        })
+        .collect::<String>();
+    format!("--- a/hidden.rs\n+++ b/hidden.rs\n{hunks}")
+}
+
+#[test]
+fn context_changes_keep_the_top_row() {
+    let mut live = Live::load(
+        &hidden_context_patch(),
+        Mode {
+            layout: DiffLayout::Unified,
+            detail: DiffGranularity::Line,
+        },
+    );
+    for _ in 0..14 {
+        live.press('j');
+    }
+    let top = live.rows()[0].clone();
+
+    live.press('+');
+    assert_eq!(live.rows()[0], top, "+ keeps the top row");
+    live.press('-');
+    assert_eq!(live.rows()[0], top, "- keeps a top row that stays visible");
 }
 
 #[test]
