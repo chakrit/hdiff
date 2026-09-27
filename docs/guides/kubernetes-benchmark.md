@@ -58,10 +58,11 @@ Find generated patches, worktrees, source diffs, raw timings, result lines, and 
 in `.ace/bench/kubernetes/`. Use run IDs to connect summaries to raw files, including
 evidence retained from failed runs.
 
-Keep the machine free of competing heavy work while measuring. Start with `7/8` to check
-the setup, then run all ranges. Inspect raw paired measurements and memory/instruction
-controls before accepting a timing difference. Profiles identify candidates for an
-optimization pass; only an unprofiled comparison can establish its benefit.
+Benchmarks run on a shared work machine, so read retired instructions first; wall-clock
+time and cycles are not fully reliable. Start with `7/8` to check the setup, then run all
+ranges. Inspect raw paired measurements and memory/instruction controls before accepting
+a timing difference. Profiles identify candidates for an optimization pass; only an
+unprofiled comparison can establish its benefit.
 
 Check the runner without building hdiff or loading Kubernetes:
 
@@ -73,7 +74,7 @@ The isolated fixtures exercise measurement arithmetic, output validation, proven
 input mutation, failed work, and sampling outcomes.
 
 Keep optimization summaries in `.ace/bench/kubernetes/results.txt` with their raw
-measurements and provenance. Report measured cycle and preparation-time savings from
-those records. Instrumentation overhead and diagnostic profiles retain their actual
+measurements and provenance. Report the measured retired-instruction saving first, then
+cycle and preparation-time savings, from those records. Instrumentation overhead and diagnostic profiles retain their actual
 verdicts separately from accepted optimizations. Update the completed or rejected
 investigation boundaries in `docs/spec/performance.md` when a slice settles one.

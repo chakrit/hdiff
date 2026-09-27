@@ -189,10 +189,10 @@ preparation benchmark was not run for these slices.
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS
-`/usr/bin/time -lp`. Elapsed CPU cycles are the execution-cost measurement. Retired
-instructions are the stable-work control. Process user and system time, preparation wall
-time, maximum resident set size, peak memory footprint, page faults, and context switches
-are supporting evidence.
+`/usr/bin/time -lp`. Retired instructions are the primary measurement. Wall-clock time is
+not fully reliable: benchmarks run on a shared work machine. Elapsed CPU cycles, process
+user and system time, preparation wall time, maximum resident set size, peak memory
+footprint, page faults, and context switches are supporting evidence.
 
 The baseline is the current commit of the hdiff repository. The candidate is that
 repository's dirty tracked working tree. The benchmark records the baseline commit and a
@@ -306,7 +306,7 @@ An optimization must improve the code as well as its runtime. Prepared and rende
 output remain correct because the design makes them correct. When no clean and measured
 improvement exists, leave the code alone.
 
-Each optimization slice reports its measured cycle saving and preparation-time saving
-from the benchmark comparison. Savings are derived from the authoritative measurements;
+Each optimization slice reports its measured retired-instruction saving first, then its
+cycle and preparation-time savings, from the benchmark comparison. Savings are derived from the authoritative measurements;
 they are not stored as a second fact. A candidate that is not accepted does not advance
 the optimization record.

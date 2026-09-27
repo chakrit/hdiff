@@ -58,7 +58,9 @@ gate. Create ACE save points at useful recovery boundaries, especially before co
 large enough to make the work less effective; do not stop merely because an intermediate step
 completed.
 
-Report the measured preparation-time saving for every optimization slice.
+Report the measured retired-instruction saving for every optimization slice; measure
+instruction count primarily. Wall-clock time is not fully reliable because benchmarks run
+on a shared work machine.
 Run the Kubernetes preparation benchmark at ordinary scheduler priority; never
 de-prioritize it.
 
