@@ -442,6 +442,8 @@ Each record retains exact source bytes, decoded and sanitized text, and classifi
 Prepared partitions own display styling. Parsing uses ANSI-free text; rendering strips
 input control sequences, including SGR colors, and applies hdiff's own styling.
 It never replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal.
+Interactive rows expand each tab to the next 2-column tab stop, counted from the start
+of the payload.
 The authoritative document is never truncated; only decoding, highlighting, wrapping,
 and visible-row work may be bounded.
 

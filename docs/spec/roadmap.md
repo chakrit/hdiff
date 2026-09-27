@@ -206,6 +206,7 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
 - [ ] Combined merge diffs: assess Git's multi-parent patch format and an appropriate
   display model in a later task. Deferred by the user; support is not an acceptance
   requirement or prerequisite for the empty-input and Git-paging QoL work.
+- [ ] Make the tab-stop width configurable; it is fixed at 2 columns.
 
 ## Later work
 

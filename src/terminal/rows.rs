@@ -101,7 +101,9 @@ fn side_by_side_row_width(layout: &Layout, row: &SideBySideRow) -> usize {
 }
 
 fn rendered_line_width(line: &crate::render::RenderedLine) -> usize {
-    Line::raw(payload(line)).width() + 2
+    let mut tab_stops = TabStops::default();
+    tab_stops.expand(payload(line));
+    tab_stops.column + 2
 }
 
 pub(super) fn visible_diff_rows(
@@ -181,7 +183,9 @@ fn styled_line(row: StyledRow<'_>, color_count: u16) -> Line<'static> {
         }
     };
 
+    let mut tab_stops = TabStops::default();
     rendered.extend(row.segments().map(|(text, style)| {
+        let text = tab_stops.expand(text);
         let style = match style {
             TextStyle::Plain => Style::default(),
             TextStyle::Syntax(class) => {
@@ -189,10 +193,36 @@ fn styled_line(row: StyledRow<'_>, color_count: u16) -> Line<'static> {
             }
             TextStyle::Detail => detail_style(row.kind, palette),
         };
-        Span::styled(text.to_owned(), style)
+        Span::styled(text, style)
     }));
 
     Line::from(rendered).style(row_style(row.kind, palette, color_count))
+}
+
+const TAB_WIDTH: usize = 2;
+
+/// Expands tabs to the next multiple of `TAB_WIDTH` cells from the start of the payload,
+/// across consecutive segments of one row.
+#[derive(Default)]
+struct TabStops {
+    column: usize,
+}
+
+impl TabStops {
+    fn expand(&mut self, text: &str) -> String {
+        let mut expanded = String::with_capacity(text.len());
+
+        for (index, chunk) in text.split('\t').enumerate() {
+            if index > 0 {
+                let padding = TAB_WIDTH - self.column % TAB_WIDTH;
+                expanded.extend(std::iter::repeat_n(' ', padding));
+                self.column += padding;
+            }
+            expanded.push_str(chunk);
+            self.column += Span::raw(chunk).width();
+        }
+        expanded
+    }
 }
 
 fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
