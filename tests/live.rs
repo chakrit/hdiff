@@ -14,6 +14,7 @@ use ratatui::{
     backend::TestBackend,
     buffer::Buffer,
     layout::{Position, Size},
+    style::Color,
 };
 
 const WIDTH: u16 = 120;
@@ -195,14 +196,17 @@ fn horizontal_movement(mode: Mode) {
 
 fn file_rotation(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
-    assert!(live.shows("pub fn greeting()"));
+    assert!(
+        live.shows("func greeting() string"),
+        "cmd/sample.go sorts first"
+    );
 
     for expected in [
-        "export const greeting",
-        "def greeting()",
-        "func greeting() string",
         "const char *greeting(void)",
         "pub fn greeting()",
+        "def greeting()",
+        "export const greeting",
+        "func greeting() string",
     ] {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert!(
@@ -213,12 +217,12 @@ fn file_rotation(mode: Mode) {
 
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     assert!(
-        live.shows("const char *greeting(void)"),
+        live.shows("export const greeting"),
         "Shift-Tab wraps to the last file"
     );
     live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT));
     assert!(
-        live.shows("func greeting() string"),
+        live.shows("def greeting()"),
         "Shift-Tab selects the previous file"
     );
 }
@@ -226,8 +230,8 @@ fn file_rotation(mode: Mode) {
 fn layout_cycle(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     let start = live.buffer();
-    let old = "pub fn greeting() -> &'static str {";
-    let new = "pub fn greeting(name: &str) -> String {";
+    let old = "func greeting() string {";
+    let new = "func greeting(name string) string {";
 
     let side_by_side = live.find(old).y == live.find(new).y;
     assert_eq!(side_by_side, mode.layout == DiffLayout::Vertical);
@@ -284,7 +288,7 @@ fn resize(mode: Mode) {
     assert_eq!(live.resize(80, 20), Step::Continue);
     assert_eq!(live.rows().len(), 20);
     assert!(live.rows().iter().all(|row| row.chars().count() == 80));
-    assert!(live.shows("pub fn greeting("));
+    assert!(live.shows("func greeting("));
 
     live.resize(WIDTH, HEIGHT);
     assert_eq!(
@@ -408,11 +412,145 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
     for _ in 0..30 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
-    assert!(live.shows("· file_30.rs"), "the selected file stays listed");
+    assert!(live.shows("~ file_30.rs"), "the selected file stays listed");
     assert!(
         !live.shows("file_00.rs"),
         "the list scrolls past the first file"
     );
+}
+
+const TREE_PATCH: &str = "\
+diff --git a/src/terminal/view.rs b/src/terminal/view.rs
+index 1111111..2222222 100644
+--- a/src/terminal/view.rs
++++ b/src/terminal/view.rs
+@@ -1 +1 @@
+-view_old
++view_new
+diff --git a/README.md b/README.md
+deleted file mode 100644
+--- a/README.md
++++ /dev/null
+@@ -1 +0,0 @@
+-readme_gone
+diff --git a/src/new.rs b/src/new.rs
+new file mode 100644
+--- /dev/null
++++ b/src/new.rs
+@@ -0,0 +1 @@
++added_file
+diff --git a/old.sh b/bin/run.sh
+similarity index 100%
+rename from old.sh
+rename to bin/run.sh
+diff --git a/src/lib.rs b/src/lib.rs
+old mode 100644
+new mode 100755
+";
+
+fn unified_line() -> Mode {
+    Mode {
+        layout: DiffLayout::Unified,
+        detail: DiffGranularity::Line,
+    }
+}
+
+/// Selected file-list rows carry the shared selection background; headings never do.
+const SELECTED_BACKGROUND: Color = Color::Rgb(65, 65, 65);
+
+#[test]
+fn lists_files_under_directory_headings_in_git_order() {
+    let live = Live::load(TREE_PATCH, unified_line());
+    let listed = [
+        "- README.md",
+        "bin/",
+        "* run.sh",
+        "src/",
+        "~ lib.rs",
+        "+ new.rs",
+        "src/terminal/",
+        "~ view.rs",
+    ];
+
+    for (y, expected) in listed.iter().enumerate() {
+        assert!(
+            live.rows()[y].starts_with(expected),
+            "row {y} lists {expected:?}:\n{}",
+            live.rows().join("\n")
+        );
+    }
+}
+
+#[test]
+fn tab_moves_between_files_and_skips_headings() {
+    let mut live = Live::load(TREE_PATCH, unified_line());
+    assert!(
+        live.shows("readme_gone"),
+        "the first sorted file is selected"
+    );
+
+    for (expected_diff, expected_row) in [
+        ("rename to bin/run.sh", "* run.sh"),
+        ("new mode 100755", "~ lib.rs"),
+        ("added_file", "+ new.rs"),
+        ("view_new", "~ view.rs"),
+        ("readme_gone", "- README.md"),
+    ] {
+        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert!(live.shows(expected_diff), "Tab shows {expected_diff}");
+        let row = live.find(expected_row);
+        assert_eq!(
+            live.buffer()[(row.x, row.y)].bg,
+            SELECTED_BACKGROUND,
+            "{expected_row} is highlighted"
+        );
+    }
+    let heading = live.find("src/terminal/");
+    assert_ne!(
+        live.buffer()[(heading.x, heading.y)].bg,
+        SELECTED_BACKGROUND
+    );
+
+    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    assert!(live.shows("view_new"), "Shift-Tab wraps to the last file");
+}
+
+#[test]
+fn groups_files_by_commit_under_commit_headings() {
+    let file = |path: &str, marker: &str| {
+        format!(
+            "diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+{marker}\n"
+        )
+    };
+    let patch = format!(
+        "commit 0123456789abcdef0123456789abcdef01234567\nAuthor: A <a@example.com>\n\n    Newer change\n\n{}{}\
+         commit fedcba9876543210fedcba9876543210fedcba98\nAuthor: A <a@example.com>\n\n    Older change\n\n{}",
+        file("src/z.rs", "newer_z"),
+        file("src/a.rs", "newer_a"),
+        file("src/m.rs", "older_m"),
+    );
+    let mut live = Live::load(&patch, unified_line());
+    let listed = [
+        "0123456 Newer change",
+        "src/",
+        "~ a.rs",
+        "~ z.rs",
+        "fedcba9 Older change",
+        "src/",
+        "~ m.rs",
+    ];
+
+    for (y, expected) in listed.iter().enumerate() {
+        assert!(
+            live.rows()[y].starts_with(expected),
+            "row {y} lists {expected:?}:\n{}",
+            live.rows().join("\n")
+        );
+    }
+    for expected in ["newer_a", "newer_z", "older_m"] {
+        assert!(live.shows(expected), "{expected} in commit order");
+        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
 }
 
 #[test]

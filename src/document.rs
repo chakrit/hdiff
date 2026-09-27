@@ -9,6 +9,7 @@ pub enum Section {
     File(DiffFile),
 }
 
+#[derive(Clone, Copy)]
 pub struct FileView<'a> {
     pub file: &'a DiffFile,
     pub leading: &'a [SourceLine],
@@ -83,7 +84,12 @@ impl SourceLine {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DiffFile {
-    Metadata { lines: Vec<SourceLine> },
+    /// A Git section without unified headers: its `diff --git` line and the metadata
+    /// lines that follow it.
+    Metadata {
+        header: SourceLine,
+        lines: Vec<SourceLine>,
+    },
     Unified(Box<UnifiedDiffFile>),
 }
 

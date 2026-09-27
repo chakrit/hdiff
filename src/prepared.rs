@@ -1,6 +1,7 @@
 use crate::{
     detail::detail_rows,
-    document::{DiffDocument, DiffFile, FileView, sanitize},
+    document::{DiffDocument, FileView},
+    file_tree::FileTree,
     interaction::DiffGranularity,
     layout::{Layout, file_layout},
     measurement::{Observer, Stage, Unobserved},
@@ -10,7 +11,7 @@ use crate::{
 
 pub struct PreparedDocument {
     files: Vec<PreparedFile>,
-    file_labels: Vec<String>,
+    file_tree: FileTree,
 }
 
 pub struct PreparedFile {
@@ -24,15 +25,15 @@ impl PreparedDocument {
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let mut syntax = SyntaxHighlighter::default();
-        let file_labels = observer.measure(Stage::Labels, |_| {
-            document.files().map(file_list_label).collect()
-        });
-        let files = document
-            .file_views()
-            .map(|file| PreparedFile::prepare(file, &mut syntax, observer))
+        let file_tree = observer.measure(Stage::Labels, |_| FileTree::build(document));
+        let views = document.file_views().collect::<Vec<_>>();
+        let files = file_tree
+            .input_order()
+            .iter()
+            .map(|&input| PreparedFile::prepare(views[input], &mut syntax, observer))
             .collect();
 
-        Self { files, file_labels }
+        Self { files, file_tree }
     }
 
     pub fn file(&self, index: usize) -> Option<&PreparedFile> {
@@ -47,8 +48,8 @@ impl PreparedDocument {
         self.files.iter().map(PreparedFile::record_count).sum()
     }
 
-    pub fn file_labels(&self) -> &[String] {
-        &self.file_labels
+    pub fn file_tree(&self) -> &FileTree {
+        &self.file_tree
     }
 }
 
@@ -90,59 +91,6 @@ impl PreparedFile {
             .filter(|line| matches!(line.kind, crate::render::RenderedLineKind::Record(_)))
             .count()
     }
-}
-
-fn file_list_label(file: &DiffFile) -> String {
-    match file {
-        DiffFile::Metadata { lines } => lines
-            .first()
-            .map(|line| git_metadata_label(&sanitize(&line.text)))
-            .unwrap_or_default(),
-        DiffFile::Unified(file) => match file.old_path.as_str() {
-            "/dev/null" => display_path(&file.new_path),
-            _ => display_path(&file.old_path),
-        },
-    }
-}
-
-fn git_metadata_label(header: &str) -> String {
-    let Some(paths) = header.strip_prefix("diff --git ") else {
-        return header.to_owned();
-    };
-    let Some((old_path, new_path)) = paths.split_once(" b/") else {
-        return header.to_owned();
-    };
-    let old_path = display_path(old_path);
-    let new_path = display_path(&format!("b/{new_path}"));
-
-    match old_path == new_path {
-        true => old_path,
-        false => format!("{old_path} → {new_path}"),
-    }
-}
-
-fn display_path(path: &str) -> String {
-    let sanitized = sanitize(path);
-    sanitized
-        .strip_prefix("a/")
-        .or_else(|| sanitized.strip_prefix("b/"))
-        .unwrap_or(&sanitized)
-        .to_owned()
-}
-
-#[cfg(test)]
-pub(crate) fn test_file_rows(
-    document: &DiffDocument,
-    selected_file: usize,
-) -> Vec<crate::layout::FileListRow> {
-    document
-        .files()
-        .enumerate()
-        .map(|(index, file)| crate::layout::FileListRow {
-            label: file_list_label(file),
-            selected: index == selected_file,
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -198,7 +146,7 @@ mod tests {
         let mut profile = crate::measurement::Profile::default();
         let observed = PreparedDocument::prepare_observed(&document, &mut profile);
 
-        assert_eq!(ordinary.file_labels(), observed.file_labels());
+        assert_eq!(ordinary.file_tree(), observed.file_tree());
         assert_eq!(ordinary.record_count(), observed.record_count());
         for (ordinary, observed) in ordinary.files.iter().zip(&observed.files) {
             assert_eq!(ordinary.rows, observed.rows);
@@ -230,15 +178,5 @@ mod tests {
                 .segments()
                 .any(|(_, style)| style == TextStyle::Detail)
         }));
-    }
-
-    #[test]
-    fn labels_an_added_file_with_its_new_path() {
-        let document =
-            parse_unified_diff(b"--- /dev/null\n+++ b/added-file.txt\n@@ -0,0 +1 @@\n+new\n")
-                .expect("valid added-file diff");
-        let prepared = PreparedDocument::prepare(&document);
-
-        assert_eq!(prepared.file_labels()[0], "added-file.txt");
     }
 }

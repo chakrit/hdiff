@@ -4,6 +4,7 @@ pub mod actions;
 pub mod bench;
 pub mod detail;
 pub mod document;
+pub mod file_tree;
 pub mod input;
 pub mod interaction;
 pub mod layout;

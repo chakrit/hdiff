@@ -5,6 +5,7 @@ use ratatui::{
 };
 
 use crate::{
+    file_tree::FileTree,
     interaction::{DiffLayout, Interaction},
     layout::{PaneLayout, ScrollExtent, content_pane_height, pane_layout},
     prepared::PreparedFile,
@@ -12,12 +13,7 @@ use crate::{
 };
 
 #[cfg(test)]
-use crate::{
-    document::DiffDocument,
-    interaction::{ViewPreferences, Viewport},
-    layout::Layout,
-    prepared::PreparedDocument,
-};
+use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
     chrome::{draw_inner_separator, draw_outer_separator, render_file_column},
@@ -40,59 +36,38 @@ enum LayoutRows<'a> {
     Stacked(Vec<VisibleSideBySideRow<'a>>),
 }
 
+/// Prepares `document` and draws the interaction's selected file.
 #[cfg(test)]
-fn render_frame(
+fn render_document(
     frame: &mut Frame,
     document: &DiffDocument,
-    layout: &Layout,
-    viewport: &Viewport,
+    interaction: &Interaction,
     color_count: u16,
 ) {
-    let preferences = ViewPreferences::line(DiffLayout::Unified);
-
-    render_frame_with_layout(frame, document, layout, viewport, &preferences, color_count);
-}
-
-#[cfg(test)]
-fn render_frame_with_layout(
-    frame: &mut Frame,
-    document: &DiffDocument,
-    layout: &Layout,
-    viewport: &Viewport,
-    preferences: &ViewPreferences,
-    color_count: u16,
-) {
-    let selected = layout
-        .files
-        .iter()
-        .position(|file| file.selected)
-        .expect("rendering fixture selects a file");
     let prepared = PreparedDocument::prepare(document);
-    let file = prepared.file(selected).expect("selected prepared file");
+    let file = prepared
+        .file(interaction.selected_file)
+        .expect("selected prepared file");
+    let preferences = interaction.preferences;
     let extent = file
         .layout()
         .scroll_extent(preferences.layout, preferences.context_lines);
-    let interaction = Interaction {
-        selected_file: selected,
-        preferences: *preferences,
-        viewport: viewport.clone(),
-    };
 
     render_prepared_frame(
         frame,
-        prepared.file_labels(),
+        prepared.file_tree(),
         file,
         &extent,
-        &interaction,
+        interaction,
         color_count,
     );
 }
 
 /// Draws `file` through `extent`, the scroll extent of the interaction's layout and
-/// context count, beside the file list of `labels`.
+/// context count, beside the file list of `tree`.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
-    labels: &[String],
+    tree: &FileTree,
     file: &PreparedFile,
     extent: &ScrollExtent,
     interaction: &Interaction,
@@ -141,7 +116,7 @@ pub(super) fn render_prepared_frame(
             render_file_column(
                 frame,
                 file_column,
-                labels,
+                tree,
                 interaction.selected_file,
                 color_count,
             );
@@ -276,13 +251,12 @@ mod tests {
         style::{Color, Modifier},
     };
 
-    use super::{render_frame, render_frame_with_layout, render_prepared_frame};
+    use super::{render_document, render_prepared_frame};
     use crate::{
         interaction::{
             DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
             ViewPreferences, Viewport, transition_interaction,
         },
-        layout::layout,
         parser::parse_unified_diff,
         prepared::PreparedDocument,
     };
@@ -298,11 +272,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -314,7 +287,7 @@ mod tests {
             ((27, 0), " ", "metadata marker column"),
             ((28, 0), " ", "metadata marker spacing"),
             ((29, 0), "-", "metadata content"),
-            ((0, 1), "·", "selection marker"),
+            ((0, 1), "~", "selected file's state marker"),
             ((27, 3), "-", "deletion marker"),
             ((27, 4), "+", "addition marker"),
             ((3, 3), "k", "footer hint"),
@@ -340,11 +313,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(23, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -363,20 +335,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| {
-                render_frame_with_layout(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -421,20 +383,10 @@ mod tests {
                 height: 8,
             },
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| {
-                render_frame_with_layout(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -453,20 +405,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| {
-                render_frame_with_layout(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -498,20 +440,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Stacked),
             viewport: Viewport::new(80, 14),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
 
         terminal
-            .draw(|frame| {
-                render_frame_with_layout(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -552,11 +484,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -649,29 +580,25 @@ mod tests {
             },
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| {
-                render_frame_with_layout(
-                    frame,
-                    &document,
-                    &view,
-                    &interaction.viewport,
-                    &interaction.preferences,
-                    u16::MAX,
-                )
-            })
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
         let selected_marker = &rendered[(0, 0)];
         let selected_label = &rendered[(2, 0)];
 
-        assert_eq!(selected_marker.symbol(), "·");
+        let selected_row_end = &rendered[(23, 0)];
+
+        assert_eq!(selected_marker.symbol(), "~");
         assert_eq!(selected_marker.fg, selected_label.fg);
         assert_eq!(selected_marker.bg, selected_label.bg);
+        assert_eq!(
+            selected_row_end.bg, selected_label.bg,
+            "the highlight spans the whole row"
+        );
         assert_eq!(rendered[(30, 3)].fg, Color::Rgb(206, 74, 74));
         assert_eq!(rendered[(30, 4)].fg, Color::Rgb(112, 195, 115));
         assert!(rendered[(30, 3)].modifier.contains(Modifier::DIM));
@@ -702,7 +629,7 @@ mod tests {
         .expect("valid unmatched Rust changes");
         let prepared = PreparedDocument::prepare(&document);
         let file = prepared.file(1).expect("second prepared file");
-        let labels = prepared.file_labels();
+        let tree = prepared.file_tree();
         let extent = file.layout().scroll_extent(diff_layout, 3);
         let interaction = Interaction {
             selected_file: 1,
@@ -724,9 +651,7 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
         terminal
-            .draw(|frame| {
-                render_prepared_frame(frame, labels, file, &extent, &interaction, u16::MAX)
-            })
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &interaction, u16::MAX))
             .expect("render line mode");
         let line_rendered = terminal.backend().buffer().clone();
         let payloads = [
@@ -746,7 +671,7 @@ mod tests {
         assert_eq!(character.selected_file, interaction.selected_file);
         assert_eq!(character.viewport, interaction.viewport);
         terminal
-            .draw(|frame| render_prepared_frame(frame, labels, file, &extent, &character, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &character, u16::MAX))
             .expect("render character mode");
 
         // architecture.md: unmatched source payloads contain no unchanged characters.
@@ -763,7 +688,7 @@ mod tests {
             panic!("line toggle redraws interaction");
         };
         terminal
-            .draw(|frame| render_prepared_frame(frame, labels, file, &extent, &line, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &line, u16::MAX))
             .expect("restore line mode from the same prepared file");
 
         assert_eq!(line, interaction, "toggle preserves the reader position");
@@ -794,11 +719,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -827,11 +751,10 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 12),
         };
-        let view = layout(&document, &interaction);
         let mut terminal = Terminal::new(TestBackend::new(80, 15)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_frame(frame, &document, &view, &interaction.viewport, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();

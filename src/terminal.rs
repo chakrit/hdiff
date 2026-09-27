@@ -134,13 +134,13 @@ impl Tui {
                 .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
                 .map(|_| ());
         };
-        let labels = self.document.file_labels();
+        let tree = self.document.file_tree();
 
         terminal
             .draw(|frame| {
                 view::render_prepared_frame(
                     frame,
-                    labels,
+                    tree,
                     file,
                     &self.extent.extent,
                     &self.interaction,
@@ -362,7 +362,7 @@ mod tests {
                     .draw(|frame| {
                         super::view::render_prepared_frame(
                             frame,
-                            prepared.file_labels(),
+                            prepared.file_tree(),
                             prepared.file(selected_file).expect("file occurrence"),
                             &prepared
                                 .file(selected_file)

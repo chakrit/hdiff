@@ -43,7 +43,7 @@ impl SyntaxHighlighter {
         observer: &mut impl Observer,
     ) -> Vec<Vec<SyntaxSpan>> {
         match file {
-            DiffFile::Metadata { lines } => (0..lines.len()).map(|_| Vec::new()).collect(),
+            DiffFile::Metadata { lines, .. } => (0..lines.len() + 1).map(|_| Vec::new()).collect(),
             DiffFile::Unified(file) => {
                 let mut rows = (0..file.metadata.len() + 2)
                     .map(|_| Vec::new())

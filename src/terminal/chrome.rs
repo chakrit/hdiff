@@ -4,10 +4,12 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{Constraint, Layout as RatatuiLayout, Rect},
-    style::{Color, Style},
-    text::Line,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{List, ListItem, ListState},
 };
+
+use crate::file_tree::{FileTree, TreeRow};
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
@@ -30,7 +32,7 @@ const FOOTER_HINTS: [&str; 12] = [
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
-    labels: &[String],
+    tree: &FileTree,
     selected_file: usize,
     color_count: u16,
 ) {
@@ -45,7 +47,7 @@ pub(super) fn render_file_column(
     ])
     .areas(area);
 
-    render_file_list(frame, list_area, labels, selected_file, palette);
+    render_file_list(frame, list_area, tree, selected_file, palette);
     render_footer(frame.buffer_mut(), footer_area, palette);
 }
 
@@ -68,32 +70,55 @@ pub(super) fn draw_inner_separator(
     fill(buffer, area, symbol, style);
 }
 
-/// Lists only the labels that fit: a fresh `ListState` scrolls just far enough to keep
-/// the selection on the last row, so listing that window draws the same frame.
+/// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
+/// the selected file's row on the last row, so listing that window draws the same frame.
 fn render_file_list(
     frame: &mut Frame,
     area: Rect,
-    labels: &[String],
+    tree: &FileTree,
     selected_file: usize,
     palette: ChromePalette,
 ) {
     let height = usize::from(area.height);
-    let first = (selected_file + 1).saturating_sub(height);
-    let label_style = Style::default().fg(palette.file_list);
-    let items = labels
+    let selected_row = tree.file_row(selected_file);
+    let first = selected_row.map_or(0, |row| (row + 1).saturating_sub(height));
+
+    let items = tree
+        .rows()
         .iter()
         .skip(first)
         .take(height)
-        .map(|label| ListItem::new(Line::styled(label.as_str(), label_style)));
-    let file_list = List::new(items).highlight_symbol("· ").highlight_style(
+        .map(|row| tree_item(row, palette));
+    let file_list = List::new(items).highlight_style(
         Style::default()
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let selected = labels.get(selected_file).map(|_| selected_file - first);
-    let mut state = ListState::default().with_selected(selected);
+    let mut state = ListState::default().with_selected(selected_row.map(|row| row - first));
 
     frame.render_stateful_widget(file_list, area, &mut state);
+}
+
+fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
+    let line = match row {
+        TreeRow::Commit(heading) => {
+            Line::styled(heading.as_str(), Style::default().fg(palette.footer))
+        }
+        TreeRow::Directory(heading) => Line::styled(
+            heading.as_str(),
+            Style::default()
+                .fg(palette.footer)
+                .add_modifier(Modifier::DIM),
+        ),
+        TreeRow::File { marker, name } => Line::from(vec![
+            Span::raw(*marker),
+            Span::raw(" "),
+            Span::raw(name.as_str()),
+        ])
+        .style(Style::default().fg(palette.file_list)),
+    };
+
+    ListItem::new(line)
 }
 
 fn render_footer(buffer: &mut Buffer, area: Rect, palette: ChromePalette) {

@@ -80,17 +80,8 @@ pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
     }
 }
 
-#[cfg(test)]
-#[derive(Debug, PartialEq, Eq)]
-pub struct FileListRow {
-    pub label: String,
-    pub selected: bool,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Layout {
-    #[cfg(test)]
-    pub files: Vec<FileListRow>,
     pub diff_lines: Vec<RenderedLine>,
     pub side_by_side_rows: Vec<SideBySideRow>,
     line_metrics: Box<[LineMetrics]>,
@@ -136,8 +127,6 @@ impl Layout {
             .collect();
 
         Layout {
-            #[cfg(test)]
-            files: Vec::new(),
             diff_lines,
             side_by_side_rows,
             line_metrics,
@@ -279,24 +268,6 @@ pub fn file_layout(view: &FileView<'_>) -> Layout {
     Layout::new(diff_lines)
 }
 
-#[cfg(test)]
-pub fn layout(
-    document: &crate::document::DiffDocument,
-    interaction: &crate::interaction::Interaction,
-) -> Layout {
-    let files = crate::prepared::test_file_rows(document, interaction.selected_file);
-    let Some(file) = document.file_views().nth(interaction.selected_file) else {
-        return Layout {
-            files,
-            ..Layout::new(Vec::new())
-        };
-    };
-
-    let mut layout = file_layout(&file);
-    layout.files = files;
-    layout
-}
-
 fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     let mut rows = Vec::new();
     let mut index = 0;
@@ -398,14 +369,10 @@ fn is_changed_line(line: &RenderedLine) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        PaneLayout, SideBySideRow, content_pane_width, file_layout, layout,
-        maximum_horizontal_offset, pane_layout,
+        PaneLayout, SideBySideRow, content_pane_width, file_layout, maximum_horizontal_offset,
+        pane_layout,
     };
-    use crate::{
-        interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
-        parser::parse_unified_diff,
-        render::RenderedLineKind,
-    };
+    use crate::{interaction::DiffLayout, parser::parse_unified_diff, render::RenderedLineKind};
 
     #[test]
     fn lays_out_a_selected_file() {
@@ -462,13 +429,7 @@ mod tests {
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         )
         .expect("valid asymmetric diff");
-        let interaction = Interaction {
-            selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 8),
-        };
-
-        let view = layout(&document, &interaction);
+        let view = file_layout(&document.file_views().next().expect("first file"));
 
         assert_eq!(view.side_by_side_rows.len(), 6);
         assert_eq!(view.line_count(DiffLayout::Unified), 7);

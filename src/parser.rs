@@ -34,22 +34,28 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
 
         let mut metadata = Vec::new();
         if line.starts_with("diff --git ") {
-            metadata.push(source_line(lines[index]));
+            let header = source_line(lines[index]);
             index += 1;
+            let mut git_lines = Vec::new();
             while index < lines.len() && is_git_metadata(&decoded_line(lines[index])) {
-                metadata.push(source_line(lines[index]));
+                git_lines.push(source_line(lines[index]));
                 index += 1;
             }
             if index < lines.len() && decoded_line(lines[index]) == "GIT binary patch" {
-                metadata.push(source_line(lines[index]));
+                git_lines.push(source_line(lines[index]));
                 index += 1;
-                parse_binary_blocks(&lines, &mut index, &mut metadata)?;
+                parse_binary_blocks(&lines, &mut index, &mut git_lines)?;
             }
-        }
 
-        if index == lines.len() || !decoded_line(lines[index]).starts_with("--- ") {
-            sections.push(Section::File(DiffFile::Metadata { lines: metadata }));
-            continue;
+            if index == lines.len() || !decoded_line(lines[index]).starts_with("--- ") {
+                sections.push(Section::File(DiffFile::Metadata {
+                    header,
+                    lines: git_lines,
+                }));
+                continue;
+            }
+            metadata.push(header);
+            metadata.extend(git_lines);
         }
 
         let Some(old_header_bytes) = lines.get(index) else {
@@ -368,12 +374,12 @@ mod tests {
             b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
         let document = parse_unified_diff(input).expect("mode-only diff with text");
         let views = document.file_views().collect::<Vec<_>>();
-        let DiffFile::Metadata { lines } = views[0].file else {
+        let DiffFile::Metadata { lines, .. } = views[0].file else {
             panic!("mode-only diff is metadata");
         };
 
         assert_eq!(views.len(), 1);
-        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.len(), 2);
         assert_eq!(views[0].leading[0].text, "message");
         assert_eq!(views[0].trailing[0].text, "footer");
         assert_eq!(crate::render::render_unified(&document), input);
@@ -384,7 +390,7 @@ mod tests {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
         let document = parse_unified_diff(input).expect("binary diff with text");
         let view = document.file_views().next().expect("binary file");
-        let DiffFile::Metadata { lines } = view.file else {
+        let DiffFile::Metadata { lines, .. } = view.file else {
             panic!("binary diff is metadata");
         };
 

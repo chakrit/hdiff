@@ -56,8 +56,8 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     let mut rendered_lines = Vec::new();
 
     match file {
-        DiffFile::Metadata { lines } => {
-            for line in lines {
+        DiffFile::Metadata { header, lines } => {
+            for line in std::iter::once(header).chain(lines) {
                 rendered_lines.push(rendered_line(RenderedLineKind::Metadata, None, line));
             }
         }
