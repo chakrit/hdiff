@@ -12,6 +12,7 @@ use crate::{
     prepared::PreparedDocument,
 };
 
+mod chrome;
 mod row_writer;
 mod rows;
 mod view;
@@ -137,13 +138,13 @@ impl Tui {
                 .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
                 .map(|_| ());
         };
-        let files = self.document.file_rows(self.interaction.selected_file);
+        let labels = self.document.file_labels();
 
         terminal
             .draw(|frame| {
                 view::render_prepared_frame(
                     frame,
-                    &files,
+                    labels,
                     file,
                     &self.extent.extent,
                     &self.interaction,
@@ -339,7 +340,7 @@ mod tests {
                     .draw(|frame| {
                         super::view::render_prepared_frame(
                             frame,
-                            &prepared.file_rows(selected_file),
+                            prepared.file_labels(),
                             prepared.file(selected_file).expect("file occurrence"),
                             &prepared
                                 .file(selected_file)

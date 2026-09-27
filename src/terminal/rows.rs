@@ -198,14 +198,6 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
     }
 }
 
-pub(super) fn inner_separator_color(color_count: u16) -> Color {
-    match color_count {
-        u16::MAX => Color::Rgb(95, 95, 95),
-        256.. => Color::Indexed(238),
-        _ => Color::DarkGray,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;

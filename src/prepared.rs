@@ -2,7 +2,7 @@ use crate::{
     detail::detail_rows,
     document::{DiffDocument, DiffFile, FileView, sanitize},
     interaction::DiffGranularity,
-    layout::{FileListRow, Layout, file_layout},
+    layout::{Layout, file_layout},
     measurement::{Observer, Stage, Unobserved},
     styling::{StyledLayout, StyledRow},
     syntax::{SyntaxHighlighter, SyntaxSpan},
@@ -47,15 +47,8 @@ impl PreparedDocument {
         self.files.iter().map(PreparedFile::record_count).sum()
     }
 
-    pub fn file_rows(&self, selected_file: usize) -> Vec<FileListRow> {
-        self.file_labels
-            .iter()
-            .enumerate()
-            .map(|(index, label)| FileListRow {
-                label: label.clone(),
-                selected: index == selected_file,
-            })
-            .collect()
+    pub fn file_labels(&self) -> &[String] {
+        &self.file_labels
     }
 }
 
@@ -138,11 +131,14 @@ fn display_path(path: &str) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn test_file_rows(document: &DiffDocument, selected_file: usize) -> Vec<FileListRow> {
+pub(crate) fn test_file_rows(
+    document: &DiffDocument,
+    selected_file: usize,
+) -> Vec<crate::layout::FileListRow> {
     document
         .files()
         .enumerate()
-        .map(|(index, file)| FileListRow {
+        .map(|(index, file)| crate::layout::FileListRow {
             label: file_list_label(file),
             selected: index == selected_file,
         })
@@ -202,7 +198,7 @@ mod tests {
         let mut profile = crate::measurement::Profile::default();
         let observed = PreparedDocument::prepare_observed(&document, &mut profile);
 
-        assert_eq!(ordinary.file_rows(0), observed.file_rows(0));
+        assert_eq!(ordinary.file_labels(), observed.file_labels());
         assert_eq!(ordinary.record_count(), observed.record_count());
         for (ordinary, observed) in ordinary.files.iter().zip(&observed.files) {
             assert_eq!(ordinary.rows, observed.rows);
@@ -243,6 +239,6 @@ mod tests {
                 .expect("valid added-file diff");
         let prepared = PreparedDocument::prepare(&document);
 
-        assert_eq!(prepared.file_rows(0)[0].label, "added-file.txt");
+        assert_eq!(prepared.file_labels()[0], "added-file.txt");
     }
 }

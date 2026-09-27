@@ -255,6 +255,26 @@ priority 19, worst `movement` step on the 1,024-hunk workload, from 0.234 ms:
 Workload preparation read 158.7 ms in this run against 146–148 ms in the two before
 it; the `prepare` driver does not build extents.
 
+#### Static frame chrome
+
+The file list renders borrowed labels, and only the window that fits around the
+selection; footer hints are static strings; separators fill buffer cells. Same
+measurement as [Cached layout splits](#cached-layout-splits):
+
+| Binary          | Retired instructions (three runs)             | Mean          |
+|-----------------|-----------------------------------------------|---------------|
+| `7136b58`       | 2,929,023,090 · 2,929,609,157 · 2,929,803,546 | 2,929,478,598 |
+| + chrome        | 2,915,201,921 · 2,915,378,890 · 2,911,096,224 | 2,913,892,345 |
+
+The mean saving is 15.6 million retired instructions per run (paired savings 13.8,
+14.2, and 18.7 million), about 0.16 million per step. The workload has three files, so
+this does not measure the per-label saving on large corpora. `bench/fixtures.sh` at
+scheduler priority 19, worst `movement` step on the 1,024-hunk workload, from 0.214 ms:
+
+| Run                              | Revision                 | Worst step |
+|----------------------------------|--------------------------|------------|
+| `20260927T143809Z-7136b58-3764`  | `7136b58` + chrome       | 0.187 ms   |
+
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS

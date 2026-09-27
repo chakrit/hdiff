@@ -80,6 +80,7 @@ pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileListRow {
     pub label: String,

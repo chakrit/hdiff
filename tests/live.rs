@@ -389,6 +389,31 @@ fn context_changes_keep_the_top_row() {
 }
 
 #[test]
+fn keeps_a_selection_beyond_the_file_list_height_visible() {
+    let patch = (0..40)
+        .map(|file| {
+            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
+        })
+        .collect::<String>();
+    let mut live = Live::load(
+        &patch,
+        Mode {
+            layout: DiffLayout::Unified,
+            detail: DiffGranularity::Line,
+        },
+    );
+
+    for _ in 0..30 {
+        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
+    assert!(live.shows("· file_30.rs"), "the selected file stays listed");
+    assert!(
+        !live.shows("file_00.rs"),
+        "the list scrolls past the first file"
+    );
+}
+
+#[test]
 fn preferences_start_in_unified_line_mode() {
     let live = Live::load(
         MIXED_LANGUAGES,

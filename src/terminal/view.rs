@@ -1,15 +1,14 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout as RatatuiLayout},
-    style::{Color, Style},
-    text::{Line, Text},
-    widgets::{List, ListItem, ListState, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::{
     interaction::{DiffLayout, Interaction},
-    layout::{FileListRow, PaneLayout, ScrollExtent, content_pane_height, pane_layout},
+    layout::{PaneLayout, ScrollExtent, content_pane_height, pane_layout},
     prepared::PreparedFile,
+    styling::StyledRow,
 };
 
 #[cfg(test)]
@@ -21,15 +20,12 @@ use crate::{
 };
 
 use super::{
+    chrome::{draw_inner_separator, draw_outer_separator, render_file_column},
     row_writer::write_row,
     rows::{
-        PaneRow, VisibleSideBySideRow, aligned_pair, inner_separator_color, visible_diff_rows,
-        visible_side_by_side_rows,
+        PaneRow, VisibleSideBySideRow, aligned_pair, visible_diff_rows, visible_side_by_side_rows,
     },
 };
-use crate::styling::StyledRow;
-
-const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
 struct DisplayRows<'a> {
     rows: LayoutRows<'a>,
@@ -78,17 +74,13 @@ fn render_frame_with_layout(
         .scroll_extent(preferences.layout, preferences.context_lines);
     let interaction = Interaction {
         selected_file: selected,
-        preferences: ViewPreferences {
-            layout: preferences.layout,
-            granularity: preferences.granularity,
-            context_lines: preferences.context_lines,
-        },
+        preferences: *preferences,
         viewport: viewport.clone(),
     };
 
     render_prepared_frame(
         frame,
-        &layout.files,
+        prepared.file_labels(),
         file,
         &extent,
         &interaction,
@@ -97,10 +89,10 @@ fn render_frame_with_layout(
 }
 
 /// Draws `file` through `extent`, the scroll extent of the interaction's layout and
-/// context count.
+/// context count, beside the file list of `labels`.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
-    files: &[FileListRow],
+    labels: &[String],
     file: &PreparedFile,
     extent: &ScrollExtent,
     interaction: &Interaction,
@@ -136,71 +128,27 @@ pub(super) fn render_prepared_frame(
         PaneLayout::Split {
             file_list_width,
             separator_padding,
-        } => render_split_panes(
-            frame,
-            files,
-            area,
-            file_list_width,
-            separator_padding,
-            display,
-        ),
+        } => {
+            let [file_column, _, separator, _, diff] = RatatuiLayout::horizontal([
+                Constraint::Length(file_list_width),
+                Constraint::Length(separator_padding),
+                Constraint::Length(1),
+                Constraint::Length(separator_padding),
+                Constraint::Min(1),
+            ])
+            .areas(area);
+
+            render_file_column(
+                frame,
+                file_column,
+                labels,
+                interaction.selected_file,
+                color_count,
+            );
+            draw_outer_separator(frame.buffer_mut(), separator, color_count);
+            render_display_layout(frame, display, diff);
+        }
     }
-}
-
-fn render_split_panes(
-    frame: &mut Frame,
-    files: &[FileListRow],
-    area: ratatui::layout::Rect,
-    file_list_width: u16,
-    separator_padding: u16,
-    display: DisplayRows,
-) {
-    let panes = RatatuiLayout::horizontal([
-        Constraint::Length(file_list_width),
-        Constraint::Length(separator_padding),
-        Constraint::Length(1),
-        Constraint::Length(separator_padding),
-        Constraint::Min(1),
-    ])
-    .split(area);
-    let hints = footer_hints();
-    let footer_height = area
-        .height
-        .saturating_sub(MINIMUM_FILE_LIST_HEIGHT)
-        .min(hints.len() as u16);
-    let file_list_areas = RatatuiLayout::vertical([
-        Constraint::Min(MINIMUM_FILE_LIST_HEIGHT),
-        Constraint::Length(footer_height),
-    ])
-    .split(panes[0]);
-    let mut selected_file = ListState::default();
-    selected_file.select(files.iter().position(|file| file.selected));
-    let chrome = chrome_palette(display.color_count);
-    let files = files
-        .iter()
-        .map(|file| {
-            ListItem::new(Line::styled(
-                file.label.as_str(),
-                Style::default().fg(chrome.file_list),
-            ))
-        })
-        .collect::<Vec<_>>();
-    let file_list = List::new(files).highlight_symbol("· ").highlight_style(
-        Style::default()
-            .fg(chrome.selected_file)
-            .bg(chrome.selected_file_background),
-    );
-    let separator = Text::from(
-        (0..area.height)
-            .map(|_| Line::styled("│", Style::default().fg(chrome.separator)))
-            .collect::<Vec<_>>(),
-    );
-    let hints = Paragraph::new(hints).style(Style::default().fg(chrome.footer));
-
-    frame.render_stateful_widget(file_list, file_list_areas[0], &mut selected_file);
-    frame.render_widget(hints, file_list_areas[1]);
-    frame.render_widget(Paragraph::new(separator), panes[2]);
-    render_display_layout(frame, display, panes[4]);
 }
 
 fn render_diff_rows<'a>(
@@ -257,7 +205,6 @@ fn render_vertical_rows(
         Constraint::Percentage(50),
     ])
     .split(area);
-    let separator_style = Style::default().fg(inner_separator_color(color_count));
 
     for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
         let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
@@ -275,10 +222,7 @@ fn render_vertical_rows(
         let buffer = frame.buffer_mut();
         write_row(buffer, before_area, before, horizontal_offset, color_count);
         write_row(buffer, after_area, after, horizontal_offset, color_count);
-        frame.render_widget(
-            Paragraph::new(Line::styled("│", separator_style)),
-            separator_area,
-        );
+        draw_inner_separator(buffer, separator_area, "│", color_count);
     }
 }
 
@@ -318,68 +262,9 @@ fn render_stacked_rows(
         }
     }
 
-    let separator = "─".repeat(usize::from(area.width));
-    frame.render_widget(
-        Paragraph::new(Line::styled(
-            separator,
-            Style::default().fg(inner_separator_color(color_count)),
-        )),
-        panes[1],
-    );
+    draw_inner_separator(frame.buffer_mut(), panes[1], "─", color_count);
     render_diff_rows(frame, before_rows, panes[0], horizontal_offset, color_count);
     render_diff_rows(frame, after_rows, panes[2], horizontal_offset, color_count);
-}
-
-fn footer_hints() -> Vec<Line<'static>> {
-    vec![
-        Line::raw("   k"),
-        Line::raw(" h · l  movement"),
-        Line::raw("   j"),
-        Line::raw(""),
-        Line::raw("  ^U    page up"),
-        Line::raw("  ^D    page down"),
-        Line::raw("  g·G   top/bottom"),
-        Line::raw("  v    cycle layout"),
-        Line::raw("  c    character detail"),
-        Line::raw(" +/-   context"),
-        Line::raw("(⇧)Tab  next/prev file"),
-        Line::raw("   q    exit"),
-    ]
-}
-
-#[derive(Clone, Copy)]
-struct ChromePalette {
-    file_list: Color,
-    selected_file: Color,
-    selected_file_background: Color,
-    separator: Color,
-    footer: Color,
-}
-
-fn chrome_palette(color_count: u16) -> ChromePalette {
-    match color_count {
-        u16::MAX => ChromePalette {
-            file_list: Color::Rgb(160, 160, 160),
-            selected_file: Color::Rgb(220, 220, 220),
-            selected_file_background: Color::Rgb(65, 65, 65),
-            separator: Color::Rgb(125, 125, 125),
-            footer: Color::Rgb(110, 110, 110),
-        },
-        256.. => ChromePalette {
-            file_list: Color::Indexed(246),
-            selected_file: Color::Indexed(255),
-            selected_file_background: Color::Indexed(238),
-            separator: Color::Indexed(243),
-            footer: Color::Indexed(240),
-        },
-        _ => ChromePalette {
-            file_list: Color::Gray,
-            selected_file: Color::White,
-            selected_file_background: Color::DarkGray,
-            separator: Color::DarkGray,
-            footer: Color::DarkGray,
-        },
-    }
 }
 
 #[cfg(test)]
@@ -817,7 +702,7 @@ mod tests {
         .expect("valid unmatched Rust changes");
         let prepared = PreparedDocument::prepare(&document);
         let file = prepared.file(1).expect("second prepared file");
-        let file_rows = prepared.file_rows(1);
+        let labels = prepared.file_labels();
         let extent = file.layout().scroll_extent(diff_layout, 3);
         let interaction = Interaction {
             selected_file: 1,
@@ -840,7 +725,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
         terminal
             .draw(|frame| {
-                render_prepared_frame(frame, &file_rows, file, &extent, &interaction, u16::MAX)
+                render_prepared_frame(frame, labels, file, &extent, &interaction, u16::MAX)
             })
             .expect("render line mode");
         let line_rendered = terminal.backend().buffer().clone();
@@ -861,9 +746,7 @@ mod tests {
         assert_eq!(character.selected_file, interaction.selected_file);
         assert_eq!(character.viewport, interaction.viewport);
         terminal
-            .draw(|frame| {
-                render_prepared_frame(frame, &file_rows, file, &extent, &character, u16::MAX)
-            })
+            .draw(|frame| render_prepared_frame(frame, labels, file, &extent, &character, u16::MAX))
             .expect("render character mode");
 
         // architecture.md: unmatched source payloads contain no unchanged characters.
@@ -880,7 +763,7 @@ mod tests {
             panic!("line toggle redraws interaction");
         };
         terminal
-            .draw(|frame| render_prepared_frame(frame, &file_rows, file, &extent, &line, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, labels, file, &extent, &line, u16::MAX))
             .expect("restore line mode from the same prepared file");
 
         assert_eq!(line, interaction, "toggle preserves the reader position");

@@ -204,7 +204,10 @@ Context changes keep the current top row (`anchored_vertical_offset`); the plan'
 - Tests first: a live test with hidden context rows where `G` shows the last row; a
   unit test that the extent matches the visibility and width queries it replaces.
 
-### Slice 4: static frame chrome and the file list
+### Slice 4: static frame chrome and the file list (complete)
+
+See [performance.md](performance.md#static-frame-chrome). The worst 1,024-hunk movement
+step fell from 0.21 ms to 0.19 ms. Chrome lives in `src/terminal/chrome.rs`.
 
 - `PreparedDocument::file_rows` clones every file label into a new `Vec` on every frame;
   with the Kubernetes corpus that is 20,017 allocations per keypress. Render the file
