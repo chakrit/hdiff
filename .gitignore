@@ -29,3 +29,4 @@ ace.local.toml
 # Added by cargo
 
 /target
+/tmp
