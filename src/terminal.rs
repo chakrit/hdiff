@@ -1,13 +1,7 @@
 use std::{io, time::Duration};
 
-use crossterm::{
-    cursor::{Hide, Show},
-    event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    execute,
-    style::available_color_count,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{Terminal, backend::CrosstermBackend, widgets::Paragraph};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::{Terminal, backend::Backend, layout::Size, widgets::Paragraph};
 
 use crate::{
     interaction::{
@@ -25,13 +19,6 @@ mod view;
 mod movement_measurement;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SetupStage {
-    RawMode,
-    AlternateScreen,
-    HiddenCursor,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Finite,
     Interactive,
@@ -44,65 +31,138 @@ pub fn mode_for_output(is_terminal: bool) -> OutputMode {
     }
 }
 
-pub fn run_interactive(document: &PreparedDocument) -> io::Result<()> {
-    let mut session = TerminalSession::start()?;
-    let result = run_loop(&mut session, document, available_color_count());
-    let cleanup_result = session.cleanup();
-
-    combine_results(result, cleanup_result)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Continue,
+    Exit,
 }
 
-fn combine_results(result: io::Result<()>, cleanup_result: io::Result<()>) -> io::Result<()> {
-    match (result, cleanup_result) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
-        (Err(error), Err(cleanup_error)) => Err(io::Error::other(format!(
-            "interactive session failed: {error}; cleanup failed: {cleanup_error}"
-        ))),
-    }
-}
-
-fn cleanup_failure(error: io::Error, cleanup_result: io::Result<()>) -> io::Error {
-    match cleanup_result {
-        Ok(()) => error,
-        Err(cleanup_error) => io::Error::other(format!(
-            "interactive session failed: {error}; cleanup failed: {cleanup_error}"
-        )),
-    }
-}
-
-fn run_loop(
-    session: &mut TerminalSession,
-    document: &PreparedDocument,
+/// The interactive loop. Contract: docs/spec/architecture.md#interactive-loop.
+pub struct Tui {
+    document: PreparedDocument,
+    interaction: Interaction,
     color_count: u16,
-) -> io::Result<()> {
-    let (width, height) = terminal::size()?;
-    let mut interaction = Interaction {
-        selected_file: 0,
-        preferences: ViewPreferences::line(DiffLayout::Unified),
-        viewport: Viewport::new(width, usize::from(height)),
-    };
-    draw(session.terminal_mut(), document, &interaction, color_count)?;
+}
 
-    let mut pending_event = None;
-    loop {
-        let event = pending_event.take().unwrap_or(event::read()?);
-        let (event, next_pending_event) = coalesce_resize_event(event)?;
-        pending_event = next_pending_event;
-        let Some(input) = input_for_event(event) else {
-            continue;
+impl Tui {
+    pub fn new(document: PreparedDocument, area: Size, color_count: u16) -> Self {
+        Self {
+            document,
+            interaction: Interaction {
+                selected_file: 0,
+                preferences: ViewPreferences::line(DiffLayout::Unified),
+                viewport: Viewport::new(area.width, usize::from(area.height)),
+            },
+            color_count,
+        }
+    }
+
+    pub fn load(&mut self, document: PreparedDocument) {
+        let viewport = &self.interaction.viewport;
+
+        self.interaction = Interaction {
+            selected_file: 0,
+            preferences: self.interaction.preferences,
+            viewport: Viewport::new(viewport.width, viewport.height),
         };
+        self.document = document;
+    }
 
-        let bounds = navigation_bounds(document, &interaction, &input);
-        let transition = interaction::transition_interaction(&interaction, input, &bounds);
-        match transition {
-            Transition::Exit => return Ok(()),
-            Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
-            Transition::RedrawInteraction(next_interaction) => {
-                interaction = next_interaction;
-                draw(session.terminal_mut(), document, &interaction, color_count)?;
+    pub fn run<B: Backend<Error = io::Error>>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        events: impl Iterator<Item = io::Result<Event>>,
+    ) -> io::Result<()> {
+        self.draw(terminal)?;
+
+        for event in events {
+            if self.step(terminal, event?)? == Step::Exit {
+                break;
             }
         }
+        Ok(())
+    }
+
+    pub fn step<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        event: Event,
+    ) -> Result<Step, B::Error> {
+        let Some(input) = input_for_event(event) else {
+            return Ok(Step::Continue);
+        };
+
+        let bounds = navigation_bounds(&self.document, &self.interaction, &input);
+        match interaction::transition_interaction(&self.interaction, input, &bounds) {
+            Transition::Exit => Ok(Step::Exit),
+            Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
+            Transition::RedrawInteraction(next) => {
+                self.interaction = next;
+                self.draw(terminal)?;
+                Ok(Step::Continue)
+            }
+        }
+    }
+
+    pub fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
+        let Some(file) = self.document.file(self.interaction.selected_file) else {
+            return terminal
+                .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
+                .map(|_| ());
+        };
+        let files = self.document.file_rows(self.interaction.selected_file);
+
+        terminal
+            .draw(|frame| {
+                view::render_prepared_frame(
+                    frame,
+                    &files,
+                    file,
+                    &self.interaction,
+                    self.color_count,
+                )
+            })
+            .map(|_| ())
+    }
+}
+
+/// Blocking terminal events with consecutive resizes coalesced into the latest one.
+#[derive(Default)]
+pub struct TtyEvents {
+    pending: Option<Event>,
+}
+
+impl Iterator for TtyEvents {
+    type Item = io::Result<Event>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let event = match self.pending.take() {
+            Some(event) => event,
+            None => match event::read() {
+                Ok(event) => event,
+                Err(error) => return Some(Err(error)),
+            },
+        };
+        Some(self.coalesce_resize(event))
+    }
+}
+
+impl TtyEvents {
+    fn coalesce_resize(&mut self, event: Event) -> io::Result<Event> {
+        let Event::Resize(..) = event else {
+            return Ok(event);
+        };
+        let mut latest_resize = event;
+
+        while event::poll(Duration::ZERO)? {
+            let next_event = event::read()?;
+            if !matches!(next_event, Event::Resize(..)) {
+                self.pending = Some(next_event);
+                break;
+            }
+            latest_resize = next_event;
+        }
+        Ok(latest_resize)
     }
 }
 
@@ -151,34 +211,13 @@ fn navigation_bounds(
     }
 }
 
-fn coalesce_resize_event(
-    event: CrosstermEvent,
-) -> io::Result<(CrosstermEvent, Option<CrosstermEvent>)> {
-    let CrosstermEvent::Resize(..) = event else {
-        return Ok((event, None));
-    };
-    let mut latest_resize = event;
-
-    while event::poll(Duration::ZERO)? {
-        let next_event = event::read()?;
-        if matches!(next_event, CrosstermEvent::Resize(..)) {
-            latest_resize = next_event;
-        } else {
-            return Ok((latest_resize, Some(next_event)));
-        }
-    }
-
-    Ok((latest_resize, None))
-}
-
-fn input_for_event(event: CrosstermEvent) -> Option<Input> {
+fn input_for_event(event: Event) -> Option<Input> {
     match event {
-        CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => input_for_key(key),
-        CrosstermEvent::Resize(width, height) => Some(Input::Resize { width, height }),
+        Event::Key(key) if key.kind == KeyEventKind::Press => input_for_key(key),
+        Event::Resize(width, height) => Some(Input::Resize { width, height }),
         _ => None,
     }
 }
-
 fn input_for_key(key: KeyEvent) -> Option<Input> {
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) => Some(Input::Quit),
@@ -204,88 +243,11 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
     }
 }
 
-fn draw(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    document: &PreparedDocument,
-    interaction: &Interaction,
-    color_count: u16,
-) -> io::Result<()> {
-    let Some(file) = document.file(interaction.selected_file) else {
-        return terminal
-            .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
-            .map(|_| ());
-    };
-    let files = document.file_rows(interaction.selected_file);
-
-    terminal
-        .draw(|frame| view::render_prepared_frame(frame, &files, file, interaction, color_count))
-        .map(|_| ())
-}
-
-struct TerminalSession {
-    terminal: Terminal<CrosstermBackend<io::Stdout>>,
-    stages: Vec<SetupStage>,
-}
-
-impl TerminalSession {
-    fn start() -> io::Result<Self> {
-        let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)?;
-        let mut session = TerminalSession {
-            terminal,
-            stages: Vec::new(),
-        };
-
-        terminal::enable_raw_mode()?;
-        session.stages.push(SetupStage::RawMode);
-        if let Err(error) = execute!(session.terminal.backend_mut(), EnterAlternateScreen) {
-            return Err(cleanup_failure(error, session.cleanup()));
-        }
-        session.stages.push(SetupStage::AlternateScreen);
-        if let Err(error) = execute!(session.terminal.backend_mut(), Hide) {
-            return Err(cleanup_failure(error, session.cleanup()));
-        }
-        session.stages.push(SetupStage::HiddenCursor);
-
-        Ok(session)
-    }
-
-    fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<io::Stdout>> {
-        &mut self.terminal
-    }
-
-    fn cleanup(&mut self) -> io::Result<()> {
-        let mut errors = Vec::new();
-        for stage in cleanup_order(&self.stages) {
-            let result = match stage {
-                SetupStage::HiddenCursor => execute!(self.terminal.backend_mut(), Show),
-                SetupStage::AlternateScreen => {
-                    execute!(self.terminal.backend_mut(), LeaveAlternateScreen)
-                }
-                SetupStage::RawMode => terminal::disable_raw_mode(),
-            };
-            if let Err(error) = result {
-                errors.push(error.to_string());
-            }
-        }
-        self.stages.clear();
-
-        match errors.is_empty() {
-            true => Ok(()),
-            false => Err(io::Error::other(errors.join("; "))),
-        }
-    }
-}
-
-pub fn cleanup_order(stages: &[SetupStage]) -> Vec<SetupStage> {
-    stages.iter().rev().copied().collect()
-}
-
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-    use super::{Input, OutputMode, SetupStage, cleanup_order, input_for_event, mode_for_output};
+    use super::{Input, OutputMode, input_for_event, mode_for_output};
 
     #[test]
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
@@ -438,24 +400,6 @@ mod tests {
                 KeyModifiers::CONTROL
             ))),
             Some(Input::Interrupt)
-        );
-    }
-
-    #[test]
-    fn unwinds_completed_setup_in_reverse_order() {
-        let completed = [
-            SetupStage::RawMode,
-            SetupStage::AlternateScreen,
-            SetupStage::HiddenCursor,
-        ];
-
-        assert_eq!(
-            cleanup_order(&completed),
-            vec![
-                SetupStage::HiddenCursor,
-                SetupStage::AlternateScreen,
-                SetupStage::RawMode,
-            ]
         );
     }
 }

@@ -47,10 +47,10 @@ Precedes the movement work. Contracts are in
 [architecture](architecture.md#interactive-loop) and
 [performance](performance.md#benchmark-drivers).
 
-- [ ] Extract `Tui` with `load`, `run`, and `step` over Ratatui's `Terminal<B>` and an
+- [x] Extract `Tui` with `load`, `run`, and `step` over Ratatui's `Terminal<B>` and an
   event iterator; move terminal setup to `ratatui::init` / `ratatui::restore`, confirming
   they cover cursor hiding and staged cleanup; add `TtyEvents` with resize coalescing.
-- [ ] Add `src/lib.rs` so test targets can reach `Tui`; keep `main.rs` a thin binary.
+- [x] Add `src/lib.rs` so test targets can reach `Tui`; keep `main.rs` a thin binary.
 - [ ] Add the `live` test target: `TestBackend` scenarios for movement, `Tab` /
   Shift-Tab, `v`, detail, context, resize, quit, the former SMOKE frames, and leading
   tabs and spaces, run across layouts and detail modes by a `macro_rules!` matrix.

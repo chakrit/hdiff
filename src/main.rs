@@ -1,19 +1,9 @@
 #![deny(warnings)]
 
-pub mod actions;
-pub mod detail;
-pub mod document;
-pub mod input;
-pub mod interaction;
-pub mod layout;
-pub mod measurement;
-pub mod parser;
-pub mod prepared;
-pub mod render;
-pub mod styling;
-pub mod syntax;
-pub mod terminal;
-pub mod theme;
+use hdiff::{
+    actions, document, input, measurement, parser, prepared, render,
+    terminal::{self, TtyEvents, Tui},
+};
 
 fn main() -> Result<(), String> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -147,16 +137,26 @@ fn run_render(document: &document::DiffDocument) -> Result<(), String> {
         terminal::OutputMode::Interactive => {
             let prepared = prepared::PreparedDocument::prepare(document);
 
-            terminal::run_interactive(&prepared).map_err(|error| error.to_string())?;
+            run_interactive(prepared).map_err(|error| error.to_string())?;
         }
     }
 
     Ok(())
 }
 
+fn run_interactive(document: prepared::PreparedDocument) -> std::io::Result<()> {
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
+    let area = terminal.size()?;
+    let color_count = crossterm::style::available_color_count();
+
+    let result = Tui::new(document, area, color_count).run(&mut terminal, TtyEvents::default());
+    ratatui::restore();
+    result
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{parser::parse_unified_diff, render::render_unified};
+    use hdiff::{parser::parse_unified_diff, render::render_unified};
 
     #[test]
     fn turns_diff_input_into_finite_safe_output() {

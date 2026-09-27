@@ -41,7 +41,7 @@ impl DiffLayout {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewPreferences {
     pub layout: DiffLayout,
     pub granularity: DiffGranularity,
