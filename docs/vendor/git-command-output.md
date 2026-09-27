@@ -101,6 +101,37 @@ output is therefore deferred; no mail-specific parser exception is part of this 
 syntax. `--stat` changes output to a summary; installing `pager.diff` does not make
 that non-patch variant suitable for hdiff. [Git diff](https://git-scm.com/docs/git-diff)
 
+## File order
+
+Provenance: Git master source read and Git 2.55.0 observed in an isolated repository
+on 2026-09-27.
+
+`git diff`, `git show`, and `git log -p` emit a patch's files in bytewise order of the
+full path. Tree walks compare a directory name as if it ended in `/`
+(`tree-diff.c:tree_entry_pathcmp`, `base_name_compare`), which equals `strcmp` on full
+paths; index diffs sort with `strcmp` on the path (`diff.c:diffcore_fix_diff_index`).
+`a/x` therefore follows `a.rs`, because `/` (0x2f) sorts after `.` (0x2e):
+
+```
+R100 m_src  0first
+M    a-b/x
+A    a.b
+M    a.rs
+M    a/x
+D    a0
+R100 zz_old b_new
+```
+
+A rename or copy takes its destination path's position
+(`diffcore-rename.c:record_rename_pair` rewrites the destination's creation pair, and
+`diffcore_rename_extended` writes it back at the creation's slot, dropping the source's
+deletion). A deletion sorts by its old path and an addition by its new path.
+
+`git diff --no-index` on directories differs: `diff-no-index.c:read_directory_contents`
+sorts each directory's names separately and recurses, so `a/x` precedes `a-b/x`.
+`-O<orderfile>` / `diff.orderFile` reorders the output, and `--rotate-to` / `--skip-to`
+move its start; all run after rename detection in `diff.c:diffcore_std`.
+
 ## Local evidence and remaining verification
 
 The retained runtime evidence is `.ace/git-compatibility/manifest.json`,

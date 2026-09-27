@@ -242,6 +242,88 @@ be the cause; this is unconfirmed.
 - [ ] Determine whether a recent change introduced it.
 - [x] Fix it and add a regression check.
 
+## Next: file tree sidebar
+
+Deliver the [file tree](architecture.md#file-tree) contract: the file list becomes files
+under directory headings, in Git's path order, with one state marker per file. Git's
+ordering rules are recorded in
+[Git command output](../vendor/git-command-output.md#file-order).
+
+### Open before coding
+
+- [ ] **Sort scope for multi-commit input.** `git log -p` and multi-commit `git show`
+  put each commit's message (surrounding text) before that commit's files, and Git sorts
+  files within each commit only. Either sort each run of files between text sections
+  (matching Git and keeping each commit's files under its message), or sort every file
+  in the document together (mixing commits). Recommended: per run.
+- [ ] **Copy marker.** Git's `copy from` / `copy to` creates a file at the new path while
+  the source stays. Recommended: `+`, placed at the new path.
+
+### Current code
+
+- `src/prepared.rs` builds flat labels (`file_list_label`, `git_metadata_label`,
+  `display_path`) in input order under `Stage::Labels`; the `labels` stage name is part of
+  `bench/kubernetes.sh`'s expected output and stays.
+- `src/terminal/chrome.rs` `render_file_list` draws one `List` item per label with a
+  `· ` highlight symbol and scrolls so the selected index is the last visible row.
+- `Interaction::selected_file` indexes `PreparedDocument` files; rotation in
+  `src/interaction.rs` wraps over `file_count`. Neither changes.
+- Current labels are wrong in two cases the tree must handle: `diff -u` headers carry a
+  tab and timestamp after the path (`--- tmp/x1\t2026-09-27 23:45:10`), and Git
+  C-quotes paths with unusual bytes (`"a/\340\270\201.txt"`, `core.quotePath`).
+
+### Steps
+
+1. **`src/file_tree.rs`, tests first.** Move label logic out of `src/prepared.rs` into:
+   - `FileState` (`Modified`, `Added`, `Deleted`, `Renamed`, `Unknown`) with its marker.
+   - `FileEntry::of(&DiffFile)`: the file's state and path, or `Unknown` with the raw
+     header as its label. Derivation:
+     - Git metadata decides state: `new file mode` → added, `deleted file mode` →
+       deleted, `rename from`/`rename to` → renamed (path from `rename to`, which
+       carries no `a/`/`b/` prefix); otherwise modified. Differing `---`/`+++` paths
+       alone never mean a rename, because plain `diff -u` always names two paths.
+     - Path from headers: the new path unless it is `/dev/null`; then the old path.
+       This also applies to plain `diff -u`, whose rows today show the old path. Cut each
+       header path at
+       its first tab; strip `a/` / `b/`; decode Git C-style quoting (`\"`, `\\`, `\t`,
+       `\n`, octal bytes, lossy UTF-8).
+     - Metadata-only entries (mode change, binary) take the path from `diff --git`,
+       split only when both halves name the same path after prefixes; otherwise
+       `Unknown`. Undecodable quoting is also `Unknown`.
+   - `FileTree::build(entries)`: file order (sort key = the entry's path bytes; `Unknown`
+     after all paths in input order, stable), and rows: `Directory(String)` headings with
+     full path and trailing `/`, and `File { marker, name }`. Emit a heading whenever the
+     directory differs from the previous file's; collapse a directory whose run holds only
+     one subdirectory into that subdirectory's heading. Store each file's row index.
+   - Unit cases: Git's order example (`0first`, `a-b/x`, `a.b`, `a.rs`, `a/x`, `a0`,
+     `b_new`); each marker; timestamps; quoted paths; ambiguous `diff --git`; collapsed
+     chains; root-level files; repeated paths.
+2. **Preparation order.** `PreparedDocument::prepare_observed` builds the tree under
+   `Stage::Labels`, then prepares `FileView`s in tree order, so a file's selection index
+   is its sorted position and each view keeps its own leading/trailing text. Replace
+   `file_labels()` with the tree; update the test-only `test_file_rows` / `Layout.files`
+   and the `layout.rs` test helper that indexes `document.file_views()` in input order.
+3. **Drawing.** `render_file_list` takes the tree rows: dimmed footer tone for headings,
+   file-list tone for files, whole-row highlight with no highlight symbol. The window
+   keeps the selected file's row visible using its stored row index.
+4. **Spec and roadmap.** Write the answers to "Open before coding" into the
+   [file tree](architecture.md#file-tree) contract, then mark this section and product
+   slice 4 complete.
+
+### Validation
+
+- `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`,
+  `cargo test --locked`.
+- Live tests (`tests/live.rs`): a fixture with files at several depths, an unsorted
+  input, a rename, an addition, a deletion, and a mode change. Assert the headings,
+  markers, sorted order, `Tab` / `Shift-Tab` skipping headings and wrapping, and a
+  selection beyond the pane height staying visible.
+- `bench/fixtures.sh` worst movement step stays under the 1 ms target. With the user's
+  approval for the run, report the Kubernetes `labels` stage change as a measured cost.
+- Human check: open `git log -p -3` output and a working-tree `git diff` with nested
+  directories; verify the headings read as a tree, markers match each file's change,
+  and `Tab` moves down the list file by file.
+
 ## Remaining interactive delivery sequence
 
 Each slice is incomplete until its automated checks and its human check both pass.
@@ -330,12 +412,8 @@ implementation remains unapproved.
    footer/help text matches the key behavior, additions and deletions remain distinguishable, and
    low contrast remains readable without saturating the whole terminal.
 
-4. Display the existing file list as a folder tree derived from its file names, without adding
-   file-system navigation or changing file-selection behavior.
-
-   Human check: open a diff containing files at multiple directory depths and verify that the
-   left pane shows their shared directories as a readable tree while selecting and rotating files
-   works exactly as it does for the flat list.
+4. Display the file list as a folder tree; planned in
+   [Next: file tree sidebar](#next-file-tree-sidebar).
 
 5. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.

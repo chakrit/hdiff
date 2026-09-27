@@ -118,9 +118,9 @@ valid diff lines without data loss.
   Leading text appears above the following file; final trailing text appears after
   the last file. Repeated paths remain separate file occurrences.
 - `DiffFile`: file identity, headers, and ordered hunks.
-- File-list labels use the new header path when the old header path is `/dev/null`; labels
-  omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff headers preserve
-  their original protocol text.
+- File-list paths omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff
+  headers preserve their original protocol text. The [file tree](#file-tree) defines
+  which path names a file.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `Selection`: the active file-list selection; the viewport offset is the reader's current
@@ -245,9 +245,40 @@ The file-list hints expose shortcuts relevant to the current context. A help vie
 complete keymap when the compact hints cannot fit. The pager-first model and live
 shortcut-driven settings are settled product requirements.
 
-Unselected file-list labels use a medium-muted neutral tone, one level brighter than the
+Unselected file rows use a medium-muted neutral tone, one level brighter than the
 separator and footer hints. The selected file row applies one shared muted
-foreground/background style to both its compact `·` marker and file label.
+foreground/background style to its whole row and has no selection glyph.
+
+### File tree
+
+Delivery is tracked in the [roadmap's file tree plan](roadmap.md#next-file-tree-sidebar).
+
+The file list shows files grouped under directory headings, derived from file paths only;
+it has no file-system navigation and no collapse or expansion.
+
+- Files are ordered by path as Git orders them: bytewise on the full path. A rename sorts
+  by its new path, a deletion by its old path, and every other file by its new path.
+  File rotation and the file list follow this order.
+- Directory rows are headings only. Selection and `Tab` / `Shift-Tab` rotation move
+  between files and never stop on a directory row.
+- Rows have no indentation. A directory heading shows the directory's full path with a
+  trailing `/`, such as `src/terminal/`. A directory whose only content is one
+  subdirectory shares that subdirectory's heading.
+- Directory headings use the footer tone, dimmed, so they recede from file rows.
+- Each file row is one state marker, one space, and the file's basename:
+
+  | Marker | State                                      |
+  |--------|--------------------------------------------|
+  | `~`    | modified, including mode-only changes      |
+  | `+`    | added                                      |
+  | `-`    | deleted                                    |
+  | `*`    | renamed; the row shows the new name        |
+  | `?`    | ambiguous or erroneous entry               |
+
+- Markers use the row's own color.
+- A `?` entry has no directory; it appears at the top level after every path, in input
+  order, labelled with its raw header line.
+- Nerd Font glyphs are not used.
 
 ## View model
 
