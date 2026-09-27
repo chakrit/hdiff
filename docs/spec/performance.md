@@ -186,6 +186,31 @@ visible row's tabs to find the maximum width. Workload preparation stayed at
 142–150 ms across the three runs, within run-to-run variation; the Kubernetes
 preparation benchmark was not run for these slices.
 
+#### Cached layout splits
+
+Ratatui's `layout-cache` feature memoizes `Layout::split` instead of running its solver
+every frame. The whole `--bench movement` process on the 1,024-hunk workload (96 steps,
+including preparation), measured with `/usr/bin/time -lp` on `gz44` in three
+baseline-candidate pairs:
+
+| Binary           | Retired instructions (three runs)             | Mean          |
+|------------------|-----------------------------------------------|---------------|
+| `95ccc17`        | 3,137,491,182 · 3,141,996,319 · 3,140,215,102 | 3,139,900,868 |
+| + `layout-cache` | 3,029,821,341 · 3,029,504,257 · 3,025,169,607 | 3,028,165,068 |
+
+The mean saving is 111.7 million retired instructions per run (paired savings 107.7,
+112.5, and 115.0 million), about 1.16 million per step. Elapsed cycles fell from about
+663 million to 625 million. `bench/fixtures.sh` at scheduler priority 19, worst
+`movement` step on the 1,024-hunk workload:
+
+| Run                              | Revision                   | Worst step |
+|----------------------------------|----------------------------|------------|
+| `20260927T142023Z-95ccc17-69390` | `95ccc17`                  | 0.440 ms   |
+| `20260927T142059Z-95ccc17-72599` | `95ccc17` + `layout-cache` | 0.296 ms   |
+
+The feature adds `critical-section` to the lock file; `lru` was already present. The
+Kubernetes preparation benchmark was not run: preparation renders no frame.
+
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS

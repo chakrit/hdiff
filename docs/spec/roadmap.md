@@ -126,12 +126,10 @@ Enabling `layout-cache` in the harness alone measured 204 µs unified, 281 µs v
 and 209 µs stacked, from 299, 414, and 338 µs; `Layout::split` then appears in under 0.2%
 of samples.
 
-### Slice 1: enable `layout-cache`
+### Slice 1: enable `layout-cache` (complete)
 
-- In `Cargo.toml`, add `layout-cache` to the `ratatui` features next to
-  `crossterm_0_29`. It pulls `lru` and `critical-section` through `ratatui-core`.
-- No source change. Report the compile-time change after `cargo build`.
-- Verify: fmt, tests, clippy, `bench/fixtures.sh`.
+See [performance.md](performance.md#cached-layout-splits). The worst
+1,024-hunk movement step fell from 0.44 ms to 0.30 ms.
 
 ### Slice 2: row writer with whole-row grapheme segmentation
 
