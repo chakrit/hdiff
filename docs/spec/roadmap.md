@@ -249,15 +249,11 @@ under directory headings, in Git's path order, with one state marker per file. G
 ordering rules are recorded in
 [Git command output](../vendor/git-command-output.md#file-order).
 
-### Open before coding
+### Settled before coding
 
-- [ ] **Sort scope for multi-commit input.** `git log -p` and multi-commit `git show`
-  put each commit's message (surrounding text) before that commit's files, and Git sorts
-  files within each commit only. Either sort each run of files between text sections
-  (matching Git and keeping each commit's files under its message), or sort every file
-  in the document together (mixing commits). Recommended: per run.
-- [ ] **Copy marker.** Git's `copy from` / `copy to` creates a file at the new path while
-  the source stays. Recommended: `+`, placed at the new path.
+- [x] **Sort scope for multi-commit input.** Files sort within commit groups under a
+  commit heading; other surrounding text does not split the list.
+- [x] **Copy marker.** `+`, placed at the new path.
 
 ### Current code
 
@@ -290,14 +286,15 @@ ordering rules are recorded in
      - Metadata-only entries (mode change, binary) take the path from `diff --git`,
        split only when both halves name the same path after prefixes; otherwise
        `Unknown`. Undecodable quoting is also `Unknown`.
-   - `FileTree::build(entries)`: file order (sort key = the entry's path bytes; `Unknown`
-     after all paths in input order, stable), and rows: `Directory(String)` headings with
-     full path and trailing `/`, and `File { marker, name }`. Emit a heading whenever the
-     directory differs from the previous file's; collapse a directory whose run holds only
-     one subdirectory into that subdirectory's heading. Store each file's row index.
+   - `FileTree::build(document)`: commit groups from surrounding text, file order within
+     each group (sort key = the entry's path bytes; `Unknown` after all paths in input
+     order, stable), and rows: `Commit(String)` and `Directory(String)` headings, and
+     `File { marker, name }`. Emit a directory heading whenever the directory differs
+     from the previous file's in the group; headings name only directories that hold
+     files, which collapses single-subdirectory chains. Store each file's row index.
    - Unit cases: Git's order example (`0first`, `a-b/x`, `a.b`, `a.rs`, `a/x`, `a0`,
      `b_new`); each marker; timestamps; quoted paths; ambiguous `diff --git`; collapsed
-     chains; root-level files; repeated paths.
+     chains; root-level files; repeated paths; commit groups; `diff -ru` command lines.
 2. **Preparation order.** `PreparedDocument::prepare_observed` builds the tree under
    `Stage::Labels`, then prepares `FileView`s in tree order, so a file's selection index
    is its sorted position and each view keeps its own leading/trailing text. Replace
@@ -306,9 +303,7 @@ ordering rules are recorded in
 3. **Drawing.** `render_file_list` takes the tree rows: dimmed footer tone for headings,
    file-list tone for files, whole-row highlight with no highlight symbol. The window
    keeps the selected file's row visible using its stored row index.
-4. **Spec and roadmap.** Write the answers to "Open before coding" into the
-   [file tree](architecture.md#file-tree) contract, then mark this section and product
-   slice 4 complete.
+4. **Roadmap.** Mark this section and product slice 4 complete.
 
 ### Validation
 

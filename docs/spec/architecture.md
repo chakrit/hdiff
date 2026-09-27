@@ -256,28 +256,39 @@ Delivery is tracked in the [roadmap's file tree plan](roadmap.md#next-file-tree-
 The file list shows files grouped under directory headings, derived from file paths only;
 it has no file-system navigation and no collapse or expansion.
 
-- Files are ordered by path as Git orders them: bytewise on the full path. A rename sorts
-  by its new path, a deletion by its old path, and every other file by its new path.
-  File rotation and the file list follow this order.
-- Directory rows are headings only. Selection and `Tab` / `Shift-Tab` rotation move
-  between files and never stop on a directory row.
+- Files are ordered by path as Git orders them: bytewise on the full path. A rename or
+  copy sorts by its new path, a deletion by its old path, and every other file by its new
+  path. File rotation and the file list follow this order.
+- Files are sorted within commit groups, as Git sorts per commit. Surrounding text
+  containing a line `commit <hash>` starts a new group at the file that follows it; the
+  last such line in the text names the group. Other surrounding text neither starts a
+  group nor adds a row.
+- A group's first row is a commit heading: the hash's first seven characters, one space,
+  and the commit's subject (its first indented message line). Commit headings use the
+  footer tone.
+- Directory and commit rows are headings only. Selection and `Tab` / `Shift-Tab`
+  rotation move between files and never stop on a heading.
 - Rows have no indentation. A directory heading shows the directory's full path with a
   trailing `/`, such as `src/terminal/`. A directory whose only content is one
-  subdirectory shares that subdirectory's heading.
+  subdirectory shares that subdirectory's heading. A heading appears wherever a file's
+  directory differs from the previous file's in the same group; top-level files after
+  another directory take the heading `./`.
 - Directory headings use the footer tone, dimmed, so they recede from file rows.
 - Each file row is one state marker, one space, and the file's basename:
 
   | Marker | State                                      |
   |--------|--------------------------------------------|
   | `~`    | modified, including mode-only changes      |
-  | `+`    | added                                      |
+  | `+`    | added or copied; a copy shows the new name |
   | `-`    | deleted                                    |
   | `*`    | renamed; the row shows the new name        |
   | `?`    | ambiguous or erroneous entry               |
 
 - Markers use the row's own color.
-- A `?` entry has no directory; it appears at the top level after every path, in input
-  order, labelled with its raw header line.
+- Git metadata decides a file's state. Without it, a `/dev/null` old header means added
+  and a `/dev/null` new header means deleted; differing header paths never mean a rename.
+- A `?` entry has no directory; it appears at the top level after every path in its
+  group, in input order, labelled with its raw header line.
 - Nerd Font glyphs are not used.
 
 ## View model
