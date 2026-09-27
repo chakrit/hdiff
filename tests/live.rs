@@ -83,6 +83,25 @@ impl Live {
             .collect()
     }
 
+    /// The file-list column: each row's text left of the pane separator.
+    fn file_list(&self) -> Vec<String> {
+        self.rows()
+            .iter()
+            .map(|row| {
+                let column = row
+                    .split_once('│')
+                    .map_or(row.as_str(), |(column, _)| column);
+                column.trim_end().to_owned()
+            })
+            .collect()
+    }
+
+    /// The background of the cell where `text` first appears.
+    fn background(&self, text: &str) -> Color {
+        let position = self.find(text);
+        self.buffer()[(position.x, position.y)].bg
+    }
+
     fn shows(&self, text: &str) -> bool {
         self.rows().iter().any(|row| row.contains(text))
     }
@@ -455,9 +474,6 @@ fn unified_line() -> Mode {
     }
 }
 
-/// Selected file-list rows carry the shared selection background; headings never do.
-const SELECTED_BACKGROUND: Color = Color::Rgb(65, 65, 65);
-
 #[test]
 fn lists_files_under_directory_headings_in_git_order() {
     let live = Live::load(TREE_PATCH, unified_line());
@@ -472,13 +488,7 @@ fn lists_files_under_directory_headings_in_git_order() {
         "~ view.rs",
     ];
 
-    for (y, expected) in listed.iter().enumerate() {
-        assert!(
-            live.rows()[y].starts_with(expected),
-            "row {y} lists {expected:?}:\n{}",
-            live.rows().join("\n")
-        );
-    }
+    assert_eq!(live.file_list()[..listed.len()], listed);
 }
 
 #[test]
@@ -487,6 +497,14 @@ fn tab_moves_between_files_and_skips_headings() {
     assert!(
         live.shows("readme_gone"),
         "the first sorted file is selected"
+    );
+
+    let unselected = live.background("src/terminal/");
+    let mut previous = "- README.md";
+    assert_ne!(
+        live.background(previous),
+        unselected,
+        "README.md is highlighted"
     );
 
     for (expected_diff, expected_row) in [
@@ -498,18 +516,25 @@ fn tab_moves_between_files_and_skips_headings() {
     ] {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert!(live.shows(expected_diff), "Tab shows {expected_diff}");
-        let row = live.find(expected_row);
-        assert_eq!(
-            live.buffer()[(row.x, row.y)].bg,
-            SELECTED_BACKGROUND,
+        assert_ne!(
+            live.background(expected_row),
+            unselected,
             "{expected_row} is highlighted"
         );
+        assert_eq!(
+            live.background(previous),
+            unselected,
+            "{previous} is no longer highlighted"
+        );
+        previous = expected_row;
     }
-    let heading = live.find("src/terminal/");
-    assert_ne!(
-        live.buffer()[(heading.x, heading.y)].bg,
-        SELECTED_BACKGROUND
-    );
+    for heading in ["bin/", "src/", "src/terminal/"] {
+        assert_eq!(
+            live.background(heading),
+            unselected,
+            "{heading} is never selected"
+        );
+    }
 
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     assert!(live.shows("view_new"), "Shift-Tab wraps to the last file");
@@ -540,17 +565,36 @@ fn groups_files_by_commit_under_commit_headings() {
         "~ m.rs",
     ];
 
-    for (y, expected) in listed.iter().enumerate() {
-        assert!(
-            live.rows()[y].starts_with(expected),
-            "row {y} lists {expected:?}:\n{}",
-            live.rows().join("\n")
-        );
-    }
+    assert_eq!(live.file_list()[..listed.len()], listed);
     for expected in ["newer_a", "newer_z", "older_m"] {
         assert!(live.shows(expected), "{expected} in commit order");
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
+}
+
+#[test]
+fn keeps_a_selection_below_its_headings_visible() {
+    let patch = (0..30)
+        .map(|file| {
+            let path = format!("dir_{file:02}/file_{file:02}.rs");
+            format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
+        })
+        .collect::<String>();
+    let mut live = Live::load(&patch, unified_line());
+
+    for _ in 0..20 {
+        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
+    let list = live.file_list();
+    let selected = list
+        .iter()
+        .position(|row| row == "~ file_20.rs")
+        .expect("the selected file stays listed below its heading rows");
+    assert_eq!(list[selected - 1], "dir_20/");
+    assert!(
+        !live.shows("dir_00/"),
+        "the list scrolls past earlier headings"
+    );
 }
 
 #[test]

@@ -1,5 +1,8 @@
-use crate::document::{
-    DiffDocument, DiffFile, Hunk, Record, RecordKind, Section, SourceLine, UnifiedDiffFile,
+use crate::{
+    document::{
+        DiffDocument, DiffFile, Hunk, Record, RecordKind, Section, SourceLine, UnifiedDiffFile,
+    },
+    file_identity::{FileIdentity, HeaderPath},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,9 +51,11 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
             }
 
             if index == lines.len() || !decoded_line(lines[index]).starts_with("--- ") {
+                let identity = FileIdentity::of_metadata(&header, &git_lines);
                 sections.push(Section::File(DiffFile::Metadata {
                     header,
                     lines: git_lines,
+                    identity,
                 }));
                 continue;
             }
@@ -108,12 +113,18 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
         if hunks.is_empty() {
             return Err(error(index, "file has no hunks"));
         }
+        let old_path = HeaderPath::of_field(&old_header[4..]);
+        let new_path = HeaderPath::of_field(&new_header[4..]);
+        let old_header = source_line(old_header_bytes);
+        let first_line = metadata.first().unwrap_or(&old_header);
+        let identity = FileIdentity::of_unified(&metadata, &old_path, &new_path, first_line);
         sections.push(Section::File(DiffFile::Unified(Box::new(
             UnifiedDiffFile {
                 metadata,
-                old_path: old_header[4..].to_owned(),
-                new_path: new_header[4..].to_owned(),
-                old_header: source_line(old_header_bytes),
+                identity,
+                old_path,
+                new_path,
+                old_header,
                 new_header: source_line(new_header_bytes),
                 hunks,
             },

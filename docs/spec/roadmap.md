@@ -255,55 +255,23 @@ ordering rules are recorded in
   commit heading; other surrounding text does not split the list.
 - [x] **Copy marker.** `+`, placed at the new path.
 
-### Current code
+### Implemented
 
-- `src/prepared.rs` builds flat labels (`file_list_label`, `git_metadata_label`,
-  `display_path`) in input order under `Stage::Labels`; the `labels` stage name is part of
-  `bench/kubernetes.sh`'s expected output and stays.
-- `src/terminal/chrome.rs` `render_file_list` draws one `List` item per label with a
-  `· ` highlight symbol and scrolls so the selected index is the last visible row.
-- `Interaction::selected_file` indexes `PreparedDocument` files; rotation in
-  `src/interaction.rs` wraps over `file_count`. Neither changes.
-- Current labels are wrong in two cases the tree must handle: `diff -u` headers carry a
-  tab and timestamp after the path (`--- tmp/x1\t2026-09-27 23:45:10`), and Git
-  C-quotes paths with unusual bytes (`"a/\340\270\201.txt"`, `core.quotePath`).
+- `src/file_identity.rs`: each file's state and path, derived by the parser from Git
+  metadata and decoded `---` / `+++` header paths (timestamps cut, C-quoting decoded,
+  `a/` / `b/` stripped); `?` when the path cannot be determined.
+- `src/file_tree.rs`: commit groups from each file's leading text, Git order within a
+  group, and heading and file rows with each file's row index.
+- `src/prepared.rs` prepares files in list order under `Stage::Labels`; each prepared
+  file carries its list row, and `src/terminal/chrome.rs` draws the rows.
 
-### Steps
+### Remaining
 
-1. **`src/file_tree.rs`, tests first.** Move label logic out of `src/prepared.rs` into:
-   - `FileState` (`Modified`, `Added`, `Deleted`, `Renamed`, `Unknown`) with its marker.
-   - `FileEntry::of(&DiffFile)`: the file's state and path, or `Unknown` with the raw
-     header as its label. Derivation:
-     - Git metadata decides state: `new file mode` → added, `deleted file mode` →
-       deleted, `rename from`/`rename to` → renamed (path from `rename to`, which
-       carries no `a/`/`b/` prefix); otherwise modified. Differing `---`/`+++` paths
-       alone never mean a rename, because plain `diff -u` always names two paths.
-     - Path from headers: the new path unless it is `/dev/null`; then the old path.
-       This also applies to plain `diff -u`, whose rows today show the old path. Cut each
-       header path at
-       its first tab; strip `a/` / `b/`; decode Git C-style quoting (`\"`, `\\`, `\t`,
-       `\n`, octal bytes, lossy UTF-8).
-     - Metadata-only entries (mode change, binary) take the path from `diff --git`,
-       split only when both halves name the same path after prefixes; otherwise
-       `Unknown`. Undecodable quoting is also `Unknown`.
-   - `FileTree::build(document)`: commit groups from surrounding text, file order within
-     each group (sort key = the entry's path bytes; `Unknown` after all paths in input
-     order, stable), and rows: `Commit(String)` and `Directory(String)` headings, and
-     `File { marker, name }`. Emit a directory heading whenever the directory differs
-     from the previous file's in the group; headings name only directories that hold
-     files, which collapses single-subdirectory chains. Store each file's row index.
-   - Unit cases: Git's order example (`0first`, `a-b/x`, `a.b`, `a.rs`, `a/x`, `a0`,
-     `b_new`); each marker; timestamps; quoted paths; ambiguous `diff --git`; collapsed
-     chains; root-level files; repeated paths; commit groups; `diff -ru` command lines.
-2. **Preparation order.** `PreparedDocument::prepare_observed` builds the tree under
-   `Stage::Labels`, then prepares `FileView`s in tree order, so a file's selection index
-   is its sorted position and each view keeps its own leading/trailing text. Replace
-   `file_labels()` with the tree; update the test-only `test_file_rows` / `Layout.files`
-   and the `layout.rs` test helper that indexes `document.file_views()` in input order.
-3. **Drawing.** `render_file_list` takes the tree rows: dimmed footer tone for headings,
-   file-list tone for files, whole-row highlight with no highlight symbol. The window
-   keeps the selected file's row visible using its stored row index.
-4. **Roadmap.** Mark this section and product slice 4 complete.
+- [ ] Human check (below).
+- [ ] With the user's approval for the run, report the Kubernetes `labels` stage change.
+- [ ] Rule on prefixes other than `a/` / `b/` (`diff.mnemonicPrefix`, `--no-prefix`,
+  `--src-prefix`), which currently stay in the path, and on grouping for
+  `format-patch` mbox, `--oneline`, and `--graph` input, which forms no commit groups.
 
 ### Validation
 

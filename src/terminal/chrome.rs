@@ -33,7 +33,7 @@ pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_file: usize,
+    selected_row: usize,
     color_count: u16,
 ) {
     let palette = chrome_palette(color_count);
@@ -47,7 +47,7 @@ pub(super) fn render_file_column(
     ])
     .areas(area);
 
-    render_file_list(frame, list_area, tree, selected_file, palette);
+    render_file_list(frame, list_area, tree, selected_row, palette);
     render_footer(frame.buffer_mut(), footer_area, palette);
 }
 
@@ -71,17 +71,16 @@ pub(super) fn draw_inner_separator(
 }
 
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
-/// the selected file's row on the last row, so listing that window draws the same frame.
+/// the selected row on the last row, so listing that window draws the same frame.
 fn render_file_list(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_file: usize,
+    selected_row: usize,
     palette: ChromePalette,
 ) {
     let height = usize::from(area.height);
-    let selected_row = tree.file_row(selected_file);
-    let first = selected_row.map_or(0, |row| (row + 1).saturating_sub(height));
+    let first = (selected_row + 1).saturating_sub(height);
 
     let items = tree
         .rows()
@@ -94,7 +93,7 @@ fn render_file_list(
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let mut state = ListState::default().with_selected(selected_row.map(|row| row - first));
+    let mut state = ListState::default().with_selected(Some(selected_row - first));
 
     frame.render_stateful_widget(file_list, area, &mut state);
 }
@@ -111,7 +110,7 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
                 .add_modifier(Modifier::DIM),
         ),
         TreeRow::File { marker, name } => Line::from(vec![
-            Span::raw(*marker),
+            Span::raw(marker.label()),
             Span::raw(" "),
             Span::raw(name.as_str()),
         ])

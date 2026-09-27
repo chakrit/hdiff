@@ -16,6 +16,7 @@ pub struct PreparedDocument {
 
 pub struct PreparedFile {
     rows: StyledLayout,
+    list_row: usize,
 }
 
 impl PreparedDocument {
@@ -25,12 +26,15 @@ impl PreparedDocument {
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let mut syntax = SyntaxHighlighter::default();
-        let file_tree = observer.measure(Stage::Labels, |_| FileTree::build(document));
         let views = document.file_views().collect::<Vec<_>>();
+        let file_tree = observer.measure(Stage::Labels, |_| FileTree::build(&views));
+
         let files = file_tree
-            .input_order()
+            .files()
             .iter()
-            .map(|&input| PreparedFile::prepare(views[input], &mut syntax, observer))
+            .map(|listed| {
+                PreparedFile::prepare(views[listed.view], listed.row, &mut syntax, observer)
+            })
             .collect();
 
         Self { files, file_tree }
@@ -56,6 +60,7 @@ impl PreparedDocument {
 impl PreparedFile {
     fn prepare(
         file: FileView<'_>,
+        list_row: usize,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
@@ -73,7 +78,13 @@ impl PreparedFile {
 
         Self {
             rows: StyledLayout::new(layout, &syntax, &character_details),
+            list_row,
         }
+    }
+
+    /// The file's row in the [file tree](FileTree).
+    pub fn list_row(&self) -> usize {
+        self.list_row
     }
 
     pub fn layout(&self) -> &Layout {

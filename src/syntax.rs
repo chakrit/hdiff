@@ -2,6 +2,7 @@ use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterato
 
 use crate::{
     document::{DiffFile, RecordKind, UnifiedDiffFile},
+    file_identity::HeaderPath,
     measurement::{Observer, Stage, Unobserved, Work},
 };
 
@@ -78,8 +79,8 @@ impl SyntaxHighlighter {
         let mut spans = (0..hunk.records.len())
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
-        let old_language = Language::for_path(&file.old_path);
-        let new_language = Language::for_path(&file.new_path);
+        let old_language = Language::for_header(&file.old_path);
+        let new_language = Language::for_header(&file.new_path);
         let (old_projection, new_projection) = observer.measure(Stage::Projection, |observer| {
             let old = Projection::from_hunk(file, hunk_index, Side::Old);
             let new = Projection::from_hunk(file, hunk_index, Side::New);
@@ -206,7 +207,11 @@ enum Language {
 }
 
 impl Language {
-    fn for_path(path: &str) -> Option<Self> {
+    fn for_header(path: &HeaderPath) -> Option<Self> {
+        let HeaderPath::Path(path) = path else {
+            return None;
+        };
+
         match path.rsplit_once('.')?.1 {
             "rs" => Some(Self::Rust),
             "js" | "jsx" => Some(Self::JavaScript),

@@ -1,3 +1,5 @@
+use crate::file_identity::{FileIdentity, HeaderPath};
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
     pub sections: Vec<Section>,
@@ -89,15 +91,26 @@ pub enum DiffFile {
     Metadata {
         header: SourceLine,
         lines: Vec<SourceLine>,
+        identity: FileIdentity,
     },
     Unified(Box<UnifiedDiffFile>),
+}
+
+impl DiffFile {
+    pub fn identity(&self) -> &FileIdentity {
+        match self {
+            Self::Metadata { identity, .. } => identity,
+            Self::Unified(file) => &file.identity,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnifiedDiffFile {
     pub metadata: Vec<SourceLine>,
-    pub old_path: String,
-    pub new_path: String,
+    pub identity: FileIdentity,
+    pub old_path: HeaderPath,
+    pub new_path: HeaderPath,
     pub old_header: SourceLine,
     pub new_header: SourceLine,
     pub hunks: Vec<Hunk>,

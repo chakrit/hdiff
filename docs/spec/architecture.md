@@ -117,7 +117,9 @@ valid diff lines without data loss.
 - `FileView`: a borrowed navigation projection of a file and its surrounding text.
   Leading text appears above the following file; final trailing text appears after
   the last file. Repeated paths remain separate file occurrences.
-- `DiffFile`: file identity, headers, and ordered hunks.
+- `DiffFile`: file identity, headers, and ordered hunks. Identity (state and path) and
+  decoded header paths are derived when the file is parsed; the file tree and syntax
+  highlighting read them rather than raw header text.
 - File-list paths omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff
   headers preserve their original protocol text. The [file tree](#file-tree) defines
   which path names a file.

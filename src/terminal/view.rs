@@ -113,13 +113,7 @@ pub(super) fn render_prepared_frame(
             ])
             .areas(area);
 
-            render_file_column(
-                frame,
-                file_column,
-                tree,
-                interaction.selected_file,
-                color_count,
-            );
+            render_file_column(frame, file_column, tree, file.list_row(), color_count);
             draw_outer_separator(frame.buffer_mut(), separator, color_count);
             render_display_layout(frame, display, diff);
         }
