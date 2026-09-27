@@ -284,7 +284,8 @@ Wrapping is session-local and toggled independently from layout. When wrapping i
 horizontal movement uses one synchronized offset for side-by-side panes. Context visibility is
 session-local: hdiff initially retains three context records on either side of each changed
 block within a hunk, `+` increases that bound, and `-` decreases it to zero. Context changes
-recompute the visible layout without mutating the document, selected file, or viewport.
+recompute the visible layout without mutating the document or selected file; the row on
+the diff pane's middle line stays on that line.
 
 Diff contrast is a session-local preference with four intensity levels, independent of
 line-versus-character diff granularity:

@@ -101,11 +101,7 @@ impl Tui {
             return Ok(Step::Continue);
         };
 
-        let top_row = self
-            .extent
-            .extent
-            .rows(self.interaction.viewport.vertical_offset, 1)
-            .next();
+        let focus = Focus::of(&self.interaction, &self.extent.extent);
         let target = ExtentKey::new(
             self.interaction.selected_file,
             self.interaction.preferences.after(&input),
@@ -116,7 +112,7 @@ impl Tui {
             &self.interaction,
             &input,
             target_extent,
-            top_row,
+            focus,
         );
 
         match interaction::transition_interaction(&self.interaction, input, &bounds) {
@@ -242,14 +238,36 @@ impl TtyEvents {
     }
 }
 
-/// Bounds of the display `input` leads to, whose rows are `target_extent`. `top_row` is
-/// the row-list index of the current top row, if any.
+/// The row on the diff pane's middle line. Context changes keep it on that line; see
+/// `docs/spec/architecture.md` (Interaction model).
+struct Focus {
+    /// Row-list index of the row.
+    row: usize,
+    /// Pane line the row sits on.
+    line: usize,
+}
+
+impl Focus {
+    /// No focus when the rows end above the middle line; the display then fits the pane.
+    fn of(interaction: &Interaction, extent: &ScrollExtent) -> Option<Self> {
+        let viewport = &interaction.viewport;
+        let pane_height = content_pane_height(viewport.height, interaction.preferences.layout);
+        let line = pane_height / 2;
+
+        extent
+            .rows(viewport.vertical_offset + line, 1)
+            .next()
+            .map(|row| Self { row, line })
+    }
+}
+
+/// Bounds of the display `input` leads to, whose rows are `target_extent`.
 fn navigation_bounds(
     file_count: usize,
     interaction: &Interaction,
     input: &Input,
     target_extent: &ScrollExtent,
-    top_row: Option<usize>,
+    focus: Option<Focus>,
 ) -> NavigationBounds {
     let display_layout = interaction.preferences.after(input).layout;
     let (screen_width, screen_height) = match input {
@@ -265,7 +283,11 @@ fn navigation_bounds(
             maximum_vertical_offset: target_extent.row_count().saturating_sub(pane_height),
             maximum_horizontal_offset: maximum_horizontal_offset(target_extent.width(), pane_width),
         },
-        anchored_vertical_offset: top_row.map_or(0, |row| target_extent.offset_of(row)),
+        anchored_vertical_offset: focus.map_or(0, |focus| {
+            target_extent
+                .offset_of(focus.row)
+                .saturating_sub(focus.line)
+        }),
     }
 }
 

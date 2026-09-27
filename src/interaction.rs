@@ -117,8 +117,8 @@ impl DiffGranularity {
 pub struct NavigationBounds {
     pub file_count: usize,
     pub target_display: DisplayBounds,
-    /// The target display's vertical offset of the current top row; context changes keep
-    /// that row at the top.
+    /// The target display's vertical offset that keeps the row on the diff pane's middle
+    /// line on that line; context changes use it.
     pub anchored_vertical_offset: usize,
 }
 

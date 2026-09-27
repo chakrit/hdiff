@@ -183,8 +183,8 @@ differs):
 See [performance.md](performance.md#stored-scroll-extents) and
 [architecture.md](architecture.md#viewport-coordinates). The worst 1,024-hunk movement
 step fell from 0.23 ms to 0.21 ms, and `G` now reaches the last row past hidden context.
-Context changes keep the current top row (`anchored_vertical_offset`); the plan's
-"existing clamp" did not exist.
+Context changes keep the row on the diff pane's middle line on that line
+(`anchored_vertical_offset`); the plan's "existing clamp" did not exist.
 
 - Add a per-(file, layout, context-count) scroll extent: the visible rows as raw indices
   (`Box<[u32]>`) and the widest visible row. `Tui` keeps the extent for its current key

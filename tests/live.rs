@@ -369,7 +369,7 @@ fn hidden_context_patch() -> String {
 }
 
 #[test]
-fn context_changes_keep_the_top_row() {
+fn context_changes_keep_the_middle_row() {
     let mut live = Live::load(
         &hidden_context_patch(),
         Mode {
@@ -380,12 +380,14 @@ fn context_changes_keep_the_top_row() {
     for _ in 0..14 {
         live.press('j');
     }
-    let top = live.rows()[0].clone();
+    // architecture.md: context changes keep the middle row on the middle line.
+    let middle_line = usize::from(HEIGHT / 2);
+    let middle = live.rows()[middle_line].clone();
 
     live.press('+');
-    assert_eq!(live.rows()[0], top, "+ keeps the top row");
+    assert_eq!(live.rows()[middle_line], middle, "+ keeps the middle row");
     live.press('-');
-    assert_eq!(live.rows()[0], top, "- keeps a top row that stays visible");
+    assert_eq!(live.rows()[middle_line], middle, "- keeps the middle row");
 }
 
 #[test]
