@@ -147,7 +147,7 @@ fn bench_prepares_diff_without_opening_the_terminal() {
     let input = fs::File::open("tests/fixtures/git-multiline.patch").expect("open fixture");
     let benchmark = env
         .hdiff()
-        .arg("--bench")
+        .args(["--bench", "prepare"])
         .stdin(Stdio::from(input))
         .output()
         .expect("run hdiff benchmark");

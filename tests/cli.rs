@@ -83,16 +83,16 @@ fn profile_rejects_install_even_when_that_patch_filename_exists() {
     )
     .expect("patch named like an installation option");
     let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .args(["--profile", "--install"])
+        .args(["--bench", "stages", "--install"])
         .current_dir(directory.path())
         .env_clear()
         .env("PATH", TEST_PATH)
         .output()
-        .expect("profile with incompatible installation option");
+        .expect("bench with incompatible installation option");
 
     assert!(
         !output.status.success(),
-        "installation cannot be combined with profiling"
+        "installation cannot be combined with measurement"
     );
     assert!(output.stdout.is_empty());
     assert!(
