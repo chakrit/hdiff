@@ -33,18 +33,18 @@ Capture diagnostic stage timings and a separate stack sample:
 bench/kubernetes.sh --mode profile --range 7/8
 ```
 
-Read the [diagnostic profile contract](../spec/performance.md#diagnostic-profiles)
+Read the [`stages` driver contract](../spec/performance.md#stages)
 to interpret stage timings. Inspect the stack sample status and coverage before using
 it to explain a stage; a short attachment window is not whole-process attribution.
 
 For a small patch, inspect the application's reports directly:
 
 ```sh
-target/release/hdiff --bench tests/fixtures/mixed-language-layout.patch
-target/release/hdiff --profile tests/fixtures/mixed-language-layout.patch
+target/release/hdiff --bench prepare tests/fixtures/mixed-language-layout.patch
+target/release/hdiff --bench stages tests/fixtures/mixed-language-layout.patch
 ```
 
-Use the [benchmark output contract](../spec/performance.md#benchmark-mode) to
+Use the [`prepare` driver contract](../spec/performance.md#prepare) to
 distinguish preparation, input-to-ready, and whole-process measurements.
 
 Add every new candidate build-input file to the Git index before running the benchmark.

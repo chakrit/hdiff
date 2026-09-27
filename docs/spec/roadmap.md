@@ -58,10 +58,10 @@ Precedes the movement work. Contracts are in
 - [x] Replace `--bench` / `--profile` with `--bench <driver>` (`prepare`, `stages`,
   `movement`) behind a `bench::Driver` enum; remove `--profile`; update `--help` and
   `tests/benchmark.rs`.
-- [ ] Delete the ignored `measures_prepared_movement` test; generate its workload as a
+- [x] Delete the ignored `measures_prepared_movement` test; generate its workload as a
   fixture for the `movement` driver.
 - [x] Switch `bench/kubernetes.sh` to `--bench stages` and update its runner test.
-- [ ] Add `bench/fixtures.sh`, writing to `.ace/bench/fixtures/`.
+- [x] Add `bench/fixtures.sh`, writing to `.ace/bench/fixtures/`.
 - [ ] Replace `docs/guides/testing-terminal-ui.md` with a testing guide; update
   `docs/guides/kubernetes-benchmark.md` and the `AGENTS.md` command list.
 
