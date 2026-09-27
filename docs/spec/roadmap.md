@@ -65,15 +65,16 @@ Precedes the movement work. Contracts are in
 - [x] Replace `docs/guides/testing-terminal-ui.md` with a testing guide; update
   `docs/guides/kubernetes-benchmark.md` and the `AGENTS.md` command list.
 
-## Next: restore responsive movement
+## Restore responsive movement (closed)
 
 Movement is noticeably slow after the interactive layout and detail work. Restore
 responsive navigation without raising time budgets or weakening rendering behavior.
 Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 
-- [ ] Measure movement and redraw cost with a representative multi-file diff.
-- [ ] Measure `h` / `l` input-to-frame latency and remove avoidable horizontal-bound or
-  redraw work.
+Closed after the [frame-cost movement plan](#frame-cost-movement-plan-closed). Movement
+and redraw cost on a representative multi-file diff and `h` / `l` input-to-frame latency
+are not measured further.
+
 - [x] Identify and remove redundant work from the interaction, layout, or terminal
   rendering hot path.
 - [x] Meet the [movement target](performance.md#targets) in `bench/fixtures.sh` output.
@@ -96,10 +97,13 @@ screen-bounded row construction are complete; see
 [performance.md](performance.md#constant-time-context-visibility). The worst
 `bench/fixtures.sh` movement step fell from 216.9 ms to 0.44 ms. The earlier proposals
 to borrow row text (`DiffRow<'a>`) and to buffer terminal output are superseded by the
-frame-cost plan below; output buffering is not measurable with the `movement` driver's
-`io::sink()` backend and stays unstarted.
+frame-cost plan below. Terminal output stays on the `Stdout` backend that
+`ratatui::try_init` builds.
 
-## Next: frame-cost movement plan
+## Frame-cost movement plan (closed)
+
+Closed at `0521119` with a mean `--bench movement` step of 141, 183, and 129 µs (unified,
+vertical, stacked) and a worst step of 0.19 ms; the 30–60 µs goal is not pursued further.
 
 Goal: bring a movement step from roughly 300–430 µs to 30–60 µs. The floor is Ratatui's
 own frame diff and escape-sequence encoding over the 120-by-36 screen (4,320 cells, about
