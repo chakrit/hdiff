@@ -7,10 +7,11 @@ for syntax and semantic processing.
 
 ## Project orientation
 
-`src/main.rs` owns command dispatch. Input flows through parsing and the retained document
-into preparation, interaction/layout, and rendering; `src/actions/` owns effectful work.
-`tests/` holds integration tests, fixtures, and terminal smoke captures; `bench/` holds
-the Kubernetes preparation benchmark.
+`src/main.rs` owns command dispatch; `src/lib.rs` exposes the modules to tests. Input
+flows through parsing and the retained document into preparation, interaction/layout,
+and rendering; `src/actions/` owns effectful work.
+`tests/` holds integration tests, fixtures, and `live` interaction tests; `bench/` holds
+the Kubernetes preparation benchmark and the fixture measurement script.
 
 Read `docs/spec/architecture.md` for product and engineering contracts,
 `docs/spec/performance.md` for measurement contracts, and `docs/spec/roadmap.md` for tasks.
@@ -20,16 +21,17 @@ Read `docs/spec/architecture.md` for product and engineering contracts,
 - Format check: `cargo fmt --check`.
 - Rust tests: `cargo test --locked`.
 - Lint: `cargo clippy --all-targets --locked -- -D warnings`.
-- Terminal checks: follow `docs/guides/testing-terminal-ui.md`.
+- Testing and live interaction tests: follow `docs/guides/testing.md`.
+- Fixture and movement measurements: `bench/fixtures.sh`.
 - Benchmark harness checks: `sh tests/benchmark-runner.sh`.
 - Preparation comparisons and profiling: follow `docs/guides/kubernetes-benchmark.md`.
 
 Obtain explicit approval before resource-intensive runs and use `nice -n 19` for approved
 heavy work, except the Kubernetes preparation benchmark, which runs at ordinary priority.
 
-Load `architect`, `code`, and `rust-coding` for coding work, and `smoke` for terminal
-snapshot work. The shared skill selection is in `ace.toml`; personal additions remain
-layered through ACE. Skill availability does not mean the skill has been loaded.
+Load `architect`, `code`, and `rust-coding` for coding work. The shared skill selection
+is in `ace.toml`; personal additions remain layered through ACE. Skill availability does
+not mean the skill has been loaded.
 
 ## Git checkpoints
 

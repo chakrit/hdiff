@@ -51,10 +51,10 @@ Precedes the movement work. Contracts are in
   event iterator; move terminal setup to `ratatui::init` / `ratatui::restore`, confirming
   they cover cursor hiding and staged cleanup; add `TtyEvents` with resize coalescing.
 - [x] Add `src/lib.rs` so test targets can reach `Tui`; keep `main.rs` a thin binary.
-- [ ] Add the `live` test target: `TestBackend` scenarios for movement, `Tab` /
+- [x] Add the `live` test target: `TestBackend` scenarios for movement, `Tab` /
   Shift-Tab, `v`, detail, context, resize, quit, the former SMOKE frames, and leading
   tabs and spaces, run across layouts and detail modes by a `macro_rules!` matrix.
-- [ ] Delete `tests/terminal-ui/`.
+- [x] Delete `tests/terminal-ui/`.
 - [x] Replace `--bench` / `--profile` with `--bench <driver>` (`prepare`, `stages`,
   `movement`) behind a `bench::Driver` enum; remove `--profile`; update `--help` and
   `tests/benchmark.rs`.
@@ -62,7 +62,7 @@ Precedes the movement work. Contracts are in
   fixture for the `movement` driver.
 - [x] Switch `bench/kubernetes.sh` to `--bench stages` and update its runner test.
 - [x] Add `bench/fixtures.sh`, writing to `.ace/bench/fixtures/`.
-- [ ] Replace `docs/guides/testing-terminal-ui.md` with a testing guide; update
+- [x] Replace `docs/guides/testing-terminal-ui.md` with a testing guide; update
   `docs/guides/kubernetes-benchmark.md` and the `AGENTS.md` command list.
 
 ## Next: restore responsive movement
@@ -148,9 +148,9 @@ Status: plan awaiting approval; no performance repair has been implemented.
 Leading tabs and spaces on code lines appear to render incorrectly. Recent changes may
 be the cause; this is unconfirmed.
 
-- [ ] Reproduce with tab- and space-indented lines in every layout and detail mode.
+- [x] Reproduce with tab- and space-indented lines in every layout and detail mode.
 - [ ] Determine whether a recent change introduced it.
-- [ ] Fix it and add a regression check.
+- [x] Fix it and add a regression check.
 
 ## Remaining interactive delivery sequence
 
