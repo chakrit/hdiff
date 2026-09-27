@@ -454,8 +454,8 @@ Interactive rows expand each tab to the next 2-column tab stop, counted from the
 of the payload.
 Interactive rows are segmented into grapheme clusters once per row, across style spans;
 a cluster takes the style of its first byte. Style boundaries never split or drop a
-cluster. Grapheme clusters and cell widths come from `unicode-segmentation` and
-`unicode-width`.
+cluster. Grapheme clusters come from `unicode-segmentation`; every cell width, including
+tab stops and row widths, comes from Ratatui's `CellWidth`.
 A wide grapheme cut by the left pane edge renders its visible cells blank.
 Text renders in logical order; hdiff does not reorder bidirectional text.
 Ratatui's `layout-cache` feature is enabled.

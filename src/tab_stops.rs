@@ -1,7 +1,8 @@
 //! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
 //! rendering) for the 2-column tab-stop rule.
 
-use ratatui::text::Span;
+use ratatui::buffer::CellWidth;
+use unicode_segmentation::UnicodeSegmentation;
 
 const TAB_WIDTH: usize = 2;
 
@@ -20,7 +21,7 @@ impl TabStops {
                 expanded.extend(std::iter::repeat_n(' ', self.advance_to_tab_stop()));
             }
             expanded.push_str(chunk);
-            self.column += Span::raw(chunk).width();
+            self.column += cells(chunk);
         }
     }
 
@@ -39,7 +40,32 @@ pub fn expanded_width(text: &str) -> usize {
         if index > 0 {
             tab_stops.advance_to_tab_stop();
         }
-        tab_stops.column += Span::raw(chunk).width();
+        tab_stops.column += cells(chunk);
     }
     tab_stops.column
+}
+
+/// Terminal cells the row writer covers drawing `text`: each grapheme cluster measured
+/// with Ratatui's `CellWidth`, skipping control-containing clusters as it does.
+fn cells(text: &str) -> usize {
+    text.graphemes(true)
+        .filter(|cluster| !cluster.contains(char::is_control))
+        .map(|cluster| usize::from(cluster.cell_width()))
+        .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TabStops, expanded_width};
+
+    #[test]
+    fn measures_halfwidth_sound_marks_as_the_frame_draws_them() {
+        let mut expanded = String::new();
+        TabStops::default().expand_into("ｶﾞ\tx", &mut expanded);
+
+        // Terminals draw U+FF9E in its own cell, so `ｶﾞ` covers two cells.
+        assert_eq!(expanded_width("ｶﾞ"), 2);
+        assert_eq!(expanded, "ｶﾞ  x");
+        assert_eq!(expanded_width("ｶﾞ\tx"), 5);
+    }
 }

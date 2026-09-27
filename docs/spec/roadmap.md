@@ -151,9 +151,9 @@ buffer directly through its public API (`Frame::buffer_mut`, `Buffer` indexing,
   clusters; map each cluster to the style of the segment containing its first byte.
   Clusters never split or disappear at style boundaries (the per-span segmentation in
   Ratatui drops a zero-width mark that starts a span).
-- Measure each cluster with the same width function Ratatui uses (`unicode-width` via
-  `Span::width` on the cluster), skip control-containing clusters as Ratatui does, and
-  keep zero-width clusters attached to their base.
+- Measure each cluster with Ratatui's `CellWidth`, as tab stops and row widths do, skip
+  control-containing clusters as Ratatui does, and keep zero-width clusters attached to
+  their base.
 - Skip `horizontal_offset` columns. A wide cluster straddling the left edge fills its
   visible cells with blanks in its style, keeping every following column aligned.
   (`Paragraph` currently draws the whole wide character and shifts the row right by one.)
