@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout as RatatuiLayout},
+    layout::{Constraint, Flex, Layout as RatatuiLayout},
     style::{Color, Style},
     text::{Line, Text},
     widgets::{List, ListItem, ListState, Paragraph},
@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{
     interaction::{DiffLayout, Interaction},
-    layout::{FileListRow, PaneLayout, pane_layout},
+    layout::{FileListRow, PaneLayout, content_pane_height, pane_layout},
     prepared::PreparedFile,
 };
 
@@ -273,11 +273,14 @@ fn render_stacked_rows(
     horizontal_offset: u16,
     color_count: u16,
 ) {
+    let pane_height = content_pane_height(usize::from(area.height), DiffLayout::Stacked);
+    let pane_height = u16::try_from(pane_height).expect("pane height fits the area");
     let panes = RatatuiLayout::vertical([
-        Constraint::Percentage(50),
+        Constraint::Length(pane_height),
         Constraint::Length(1),
-        Constraint::Percentage(50),
+        Constraint::Length(pane_height),
     ])
+    .flex(Flex::Start)
     .split(area);
     let mut before_rows = Vec::new();
     let mut after_rows = Vec::new();
@@ -812,7 +815,7 @@ mod tests {
         let bounds = NavigationBounds {
             file_count: prepared.file_count(),
             target_display: DisplayBounds {
-                line_count: file.layout().diff_lines.len(),
+                maximum_vertical_offset: file.layout().diff_lines.len().saturating_sub(30),
                 maximum_horizontal_offset: 1,
             },
         };

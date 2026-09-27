@@ -8,7 +8,7 @@ use crate::{
         self, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
         ViewPreferences, Viewport,
     },
-    layout::{content_pane_width, maximum_horizontal_offset},
+    layout::{content_pane_height, content_pane_width, maximum_horizontal_offset},
     prepared::PreparedDocument,
 };
 
@@ -186,9 +186,9 @@ fn navigation_bounds(
             )
         })
         .unwrap_or_default();
-    let screen_width = match input {
-        Input::Resize { width, .. } => *width,
-        _ => interaction.viewport.width,
+    let (screen_width, screen_height) = match input {
+        Input::Resize { width, height } => (*width, usize::from(*height)),
+        _ => (interaction.viewport.width, interaction.viewport.height),
     };
     let pane_width = content_pane_width(screen_width, display_layout);
     let maximum_horizontal_offset = maximum_horizontal_offset(content_width, pane_width);
@@ -206,7 +206,8 @@ fn navigation_bounds(
     NavigationBounds {
         file_count: document.file_count(),
         target_display: DisplayBounds {
-            line_count,
+            maximum_vertical_offset: line_count
+                .saturating_sub(content_pane_height(screen_height, display_layout)),
             maximum_horizontal_offset,
         },
     }

@@ -89,7 +89,7 @@ pub struct NavigationBounds {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisplayBounds {
-    pub line_count: usize,
+    pub maximum_vertical_offset: usize,
     pub maximum_horizontal_offset: u16,
 }
 
@@ -152,10 +152,10 @@ fn select_next_layout(interaction: &Interaction, bounds: &NavigationBounds) -> T
     let layout = interaction.preferences.layout.next();
 
     let display = bounds.target_display;
-    let maximum_offset = display
-        .line_count
-        .saturating_sub(interaction.viewport.height);
-    let vertical_offset = interaction.viewport.vertical_offset.min(maximum_offset);
+    let vertical_offset = interaction
+        .viewport
+        .vertical_offset
+        .min(display.maximum_vertical_offset);
     let horizontal_offset = interaction
         .viewport
         .horizontal_offset
@@ -327,7 +327,12 @@ fn transition(viewport: &Viewport, input: Input, bounds: DisplayBounds) -> Trans
             )
         }
         Input::Top => redraw(0, viewport.height, viewport, bounds),
-        Input::Bottom => redraw(bounds.line_count, viewport.height, viewport, bounds),
+        Input::Bottom => redraw(
+            bounds.maximum_vertical_offset,
+            viewport.height,
+            viewport,
+            bounds,
+        ),
         Input::Resize { width, height } => redraw(
             viewport.vertical_offset,
             usize::from(height),
@@ -348,8 +353,7 @@ fn redraw(
     viewport: &Viewport,
     bounds: DisplayBounds,
 ) -> Transition {
-    let maximum_offset = bounds.line_count.saturating_sub(height);
-    let bounded_offset = vertical_offset.min(maximum_offset);
+    let bounded_offset = vertical_offset.min(bounds.maximum_vertical_offset);
 
     Transition::Redraw(Viewport {
         vertical_offset: bounded_offset,
@@ -394,7 +398,7 @@ mod tests {
             &viewport,
             Input::Down,
             DisplayBounds {
-                line_count: 10,
+                maximum_vertical_offset: 7,
                 maximum_horizontal_offset: 4,
             },
         );
@@ -423,7 +427,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 3,
         };
         let bounds = NavigationBounds {
@@ -472,7 +476,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
@@ -506,7 +510,7 @@ mod tests {
         };
 
         let bounds = DisplayBounds {
-            line_count: 1,
+            maximum_vertical_offset: 0,
             maximum_horizontal_offset: 0,
         };
 
@@ -533,7 +537,7 @@ mod tests {
                 height: 9,
             },
             DisplayBounds {
-                line_count: 10,
+                maximum_vertical_offset: 1,
                 maximum_horizontal_offset: 4,
             },
         );
@@ -562,7 +566,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
@@ -600,7 +604,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
@@ -638,7 +642,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
@@ -680,7 +684,7 @@ mod tests {
             },
         };
         let display = DisplayBounds {
-            line_count: 10,
+            maximum_vertical_offset: 7,
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {

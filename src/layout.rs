@@ -56,6 +56,16 @@ pub fn content_pane_width(screen_width: u16, display_layout: DiffLayout) -> u16 
     }
 }
 
+/// Rows each diff pane shows; stacked panes share the height around a one-row separator.
+pub fn content_pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
+    match display_layout {
+        DiffLayout::Unified | DiffLayout::Vertical => screen_height,
+        DiffLayout::Stacked => screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
+    }
+}
+
+const STACKED_SEPARATOR_HEIGHT: usize = 1;
+
 pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
     match pane_width {
         0 => 0,
