@@ -388,6 +388,10 @@ input limits a faithful re-diff. Report feasibility and constraints for watching
 changes and reloading the diff. This task authorizes investigation only; live-watch
 implementation remains unapproved.
 
+### Smooth scrolling
+
+- [ ] Add smooth scrolling. Not yet planned.
+
 ### Product slices
 
 1. Add implicit Tree-sitter semantic strategies with textual fallback.
