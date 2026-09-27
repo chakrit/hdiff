@@ -48,11 +48,11 @@ fn help_describes_the_cli_without_reading_diff_input() {
             "              when omitted\n",
             "\n",
             "Options:\n",
-            "  --bench    Prepare the diff and report benchmark measurements\n",
-            "  --profile  Prepare the diff and report diagnostic stage measurements\n",
-            "  --install  Register hdiff as the user-level Git diff pager\n",
-            "  --help     Print help\n",
-            "  --version  Print version\n",
+            "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
+            "                    prepare, stages, or movement\n",
+            "  --install         Register hdiff as the user-level Git diff pager\n",
+            "  --help            Print help\n",
+            "  --version         Print version\n",
         )
     );
 }

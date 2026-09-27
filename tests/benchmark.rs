@@ -6,12 +6,12 @@ use std::{
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
-fn run(mode: &str, patch: &str) -> std::process::Output {
+fn run(driver: &str, patch: &str) -> std::process::Output {
     let directory = tempfile::tempdir().expect("fixture directory");
     let path = directory.path().join("input.patch");
     fs::write(&path, patch).expect("write patch");
     Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .arg(mode)
+        .args(["--bench", driver])
         .arg(path)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -31,7 +31,7 @@ fn fields(line: &str) -> BTreeMap<&str, u128> {
 
 #[test]
 fn benchmark_accounts_for_input_and_parsing_before_preparation() {
-    let output = run("--bench", PATCH);
+    let output = run("prepare", PATCH);
     assert!(output.status.success(), "{:?}", output);
     assert!(output.stderr.is_empty());
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
@@ -53,8 +53,8 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
 }
 
 #[test]
-fn profile_partitions_parent_costs_and_counts_real_work() {
-    let output = run("--profile", PATCH);
+fn stages_partitions_parent_costs_and_counts_real_work() {
+    let output = run("stages", PATCH);
     assert!(output.status.success(), "{:?}", output);
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let lines = text.lines().collect::<Vec<_>>();
@@ -89,7 +89,7 @@ fn profile_partitions_parent_costs_and_counts_real_work() {
 
 #[test]
 fn malformed_input_never_emits_success_measurements() {
-    for mode in ["--bench", "--profile"] {
+    for mode in ["prepare", "stages", "movement"] {
         let output = run(mode, "not a patch\n");
         assert!(!output.status.success());
         assert!(output.stdout.is_empty());
@@ -99,7 +99,7 @@ fn malformed_input_never_emits_success_measurements() {
 
 #[test]
 fn empty_input_still_emits_zero_count_measurements() {
-    for mode in ["--bench", "--profile"] {
+    for mode in ["prepare", "stages"] {
         let output = run(mode, "");
         assert!(output.status.success(), "{mode}: {output:?}");
         assert!(output.stderr.is_empty());
@@ -112,7 +112,7 @@ fn empty_input_still_emits_zero_count_measurements() {
         assert_eq!(preparation["records"], 0);
         assert_eq!(startup["bytes"], 0);
         assert_eq!(startup["version"], 1);
-        if mode == "--profile" {
+        if mode == "stages" {
             assert_eq!(lines[2], "profile version=1");
             let work = fields(lines.last().expect("work counters"));
             assert!(work.values().all(|count| *count == 0));
@@ -121,8 +121,39 @@ fn empty_input_still_emits_zero_count_measurements() {
 }
 
 #[test]
+fn movement_times_each_key_in_every_layout_and_detail_mode() {
+    let output = run("movement", PATCH);
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8(output.stdout).expect("UTF-8 report");
+
+    let modes = text
+        .lines()
+        .map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            let [kind, version, layout, detail, key, step] = fields[..] else {
+                panic!("movement line shape: {line}");
+            };
+            assert_eq!((kind, version), ("movement", "version=1"), "{line}");
+            assert!(
+                matches!(key, "key=l" | "key=h" | "key=j" | "key=k"),
+                "{line}"
+            );
+            let (_, step_ns) = step.split_once("step_ns=").expect("step duration");
+            step_ns.parse::<u128>().expect("integer step duration");
+            (layout, detail)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let expected = ["layout=unified", "layout=vertical", "layout=stacked"]
+        .into_iter()
+        .flat_map(|layout| ["detail=line", "detail=character"].map(|detail| (layout, detail)))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(modes, expected);
+}
+
+#[test]
 fn unsupported_language_has_no_syntax_parser_work() {
-    let output = run("--profile", &PATCH.replace("a.rs", "a.txt"));
+    let output = run("stages", &PATCH.replace("a.rs", "a.txt"));
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let work = fields(text.lines().last().expect("work counters"));
@@ -137,7 +168,7 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
     let patch = directory.path().join("input.patch");
     fs::write(&patch, PATCH).expect("patch");
     let stdin = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .arg("--bench")
+        .args(["--bench", "prepare"])
         .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -155,7 +186,7 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
     fs::write(&old, "fn old() {}\n").expect("old source");
     fs::write(&new, "fn new() {}\n").expect("new source");
     let comparison = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .args(["--profile"])
+        .args(["--bench", "stages"])
         .arg(old)
         .arg(new)
         .env_clear()

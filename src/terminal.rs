@@ -15,9 +15,6 @@ use crate::{
 mod rows;
 mod view;
 
-#[cfg(test)]
-mod movement_measurement;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Finite,
@@ -66,6 +63,10 @@ impl Tui {
             viewport: Viewport::new(viewport.width, viewport.height),
         };
         self.document = document;
+    }
+
+    pub fn preferences(&self) -> ViewPreferences {
+        self.interaction.preferences
     }
 
     pub fn run<B: Backend<Error = io::Error>>(

@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use hdiff::{
-    actions, document, input, measurement, parser, prepared, render,
+    actions, document, input, parser, prepared, render,
     terminal::{self, TtyEvents, Tui},
 };
 
@@ -20,37 +20,16 @@ fn main() -> Result<(), String> {
                 .map_err(|error| error.to_string())?;
             let output = format!("{}\n", report.completed_commands.join("\n"));
             write_stdout(output.as_bytes())?;
-            return Ok(());
         }
         input::Command::Version => write_stdout(input::VERSION.as_bytes())?,
-        input::Command::View { source, mode } => run_viewer(source, mode)?,
+        input::Command::Bench { driver, source } => {
+            let report = driver.run(source)?;
+            write_stdout(report.as_bytes())?;
+        }
+        input::Command::View { source } => view(source)?,
     }
 
     Ok(())
-}
-
-fn read_input(source: input::InputSource) -> Result<Vec<u8>, String> {
-    match source {
-        input::InputSource::Stdin => {
-            let mut input = Vec::new();
-            std::io::Read::read_to_end(&mut std::io::stdin(), &mut input)
-                .map_err(|error| error.to_string())?;
-            Ok(input)
-        }
-        input::InputSource::DiffFile(path) => {
-            std::fs::read(path).map_err(|error| error.to_string())
-        }
-        input::InputSource::Operands([before, after]) => {
-            let mut context = actions::compare_files::CompareFilesContext;
-
-            actions::compare_files::CompareFiles {
-                before: &before,
-                after: &after,
-            }
-            .run(&mut context)
-            .map_err(|error| error.to_string())
-        }
-    }
 }
 
 fn write_stdout(bytes: &[u8]) -> Result<(), String> {
@@ -64,84 +43,27 @@ fn write_stdout(bytes: &[u8]) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-fn run_viewer(source: input::InputSource, mode: input::ViewerMode) -> Result<(), String> {
-    match mode {
-        input::ViewerMode::Benchmark => {
-            let (startup, prepared) = measure_startup(source, &mut measurement::Unobserved)?;
-            write_stdout(measurement_report("preparation", &startup, &prepared).as_bytes())
-        }
-        input::ViewerMode::Profile => {
-            let mut profile = measurement::Profile::default();
-            let (startup, prepared) = measure_startup(source, &mut profile)?;
-            let mut output = measurement_report("diagnostic", &startup, &prepared);
-            output.push_str(&profile.report(startup.preparation));
-            write_stdout(output.as_bytes())
-        }
-        input::ViewerMode::Render => {
-            let input = read_input(source)?;
-            if input.is_empty() {
-                return Ok(());
-            }
-
-            let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
-            run_render(&document)
-        }
+fn view(source: input::InputSource) -> Result<(), String> {
+    let input = source.read()?;
+    if input.is_empty() {
+        return Ok(());
     }
-}
 
-fn measure_startup(
-    source: input::InputSource,
-    observer: &mut impl measurement::Observer,
-) -> Result<(measurement::Startup, prepared::PreparedDocument), String> {
-    let started = std::time::Instant::now();
-    let input = read_input(source)?;
-    let input_finished = std::time::Instant::now();
     let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
-    let parse_finished = std::time::Instant::now();
-    let prepared = prepared::PreparedDocument::prepare_observed(&document, observer);
-    let ready = std::time::Instant::now();
-    let startup = measurement::Startup {
-        input: input_finished.duration_since(started),
-        parse: parse_finished.duration_since(input_finished),
-        preparation: ready.duration_since(parse_finished),
-        ready: ready.duration_since(started),
-        bytes: input.len(),
-    };
-    Ok((startup, prepared))
+    render_document(&document)
 }
 
-fn measurement_report(
-    label: &str,
-    startup: &measurement::Startup,
-    prepared: &prepared::PreparedDocument,
-) -> String {
-    let mut output = format!(
-        "{label} duration_ns={} files={} records={}\n",
-        startup.preparation.as_nanos(),
-        prepared.file_count(),
-        prepared.record_count()
-    );
-    output.push_str(&startup.report());
-    output
-}
-
-fn run_render(document: &document::DiffDocument) -> Result<(), String> {
+fn render_document(document: &document::DiffDocument) -> Result<(), String> {
     let output_mode =
         terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout()));
 
     match output_mode {
-        terminal::OutputMode::Finite => {
-            let output = render::render_unified(document);
-            write_stdout(&output)?;
-        }
+        terminal::OutputMode::Finite => write_stdout(&render::render_unified(document)),
         terminal::OutputMode::Interactive => {
             let prepared = prepared::PreparedDocument::prepare(document);
-
-            run_interactive(prepared).map_err(|error| error.to_string())?;
+            run_interactive(prepared).map_err(|error| error.to_string())
         }
     }
-
-    Ok(())
 }
 
 fn run_interactive(document: prepared::PreparedDocument) -> std::io::Result<()> {

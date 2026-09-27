@@ -117,7 +117,7 @@ set -eu
 cat > /dev/null
 role=candidate
 case "$0" in *baseline*) role=baseline ;; esac
-printf '%s %s\n' "$role" "$1" >> "$FAKE_ROOT/executions.txt"
+printf '%s %s\n' "$role" "$*" >> "$FAKE_ROOT/executions.txt"
 case "$FAKE_CASE" in
     failed) exit 9 ;;
     late-failure) [ "$(wc -l < "$FAKE_ROOT/executions.txt")" -le 10 ] || exit 9 ;;
@@ -129,13 +129,13 @@ case "$FAKE_CASE" in
         ;;
     runner-change) printf '# source mutation\n' >> "$FAKE_ROOT/bench/kubernetes.sh" ;;
 esac
-case "$FAKE_CASE:$1" in
-    profile:--bench|sample-failure:--bench|empty-stacks:--bench)
+case "$FAKE_CASE:$2" in
+    profile:prepare|sample-failure:prepare|empty-stacks:prepare)
         IFS= read -r _signal < "$FAKE_ROOT/sample-signal"
         ;;
 esac
 label=preparation
-[ "$1" != --profile ] || label=diagnostic
+[ "$2" != stages ] || label=diagnostic
 duration=80
 [ "$role" != baseline ] || duration=100
 records=2
@@ -147,7 +147,7 @@ case "$FAKE_CASE" in invalid-total) ready=1 ;; esac
 printf 'startup version=1 input_ns=10 parse_ns=10 preparation_ns=%s ready_ns=%s bytes=6\n' \
     "$duration" "$ready"
 case "$FAKE_CASE" in malformed) printf 'garbage\n' ;; esac
-if [ "$1" = --profile ]; then
+if [ "$2" = stages ]; then
     printf 'profile version=1\n'
     for stage in labels layout syntax detail unattributed; do
         stage_duration=0
@@ -205,16 +205,16 @@ assert_contains "$fixture/output.txt" 'verdict=improved'
 assert_contains "$fixture/output.txt" 'cycle_saving=20'
 assert_contains "$fixture/builds.txt" '\+stable build --release --locked'
 [ "$(wc -l < "$fixture/executions.txt")" -eq 10 ]
-expected='baseline --bench
-candidate --bench
-baseline --bench
-candidate --bench
-baseline --bench
-candidate --bench
-candidate --bench
-baseline --bench
-baseline --bench
-candidate --bench'
+expected='baseline --bench prepare
+candidate --bench prepare
+baseline --bench prepare
+candidate --bench prepare
+baseline --bench prepare
+candidate --bench prepare
+candidate --bench prepare
+baseline --bench prepare
+baseline --bench prepare
+candidate --bench prepare'
 [ "$(cat "$fixture/executions.txt")" = "$expected" ]
 
 for case_name in regressed noisy instruction-regression memory-regression legacy; do

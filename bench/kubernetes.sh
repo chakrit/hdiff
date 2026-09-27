@@ -242,23 +242,23 @@ warmup() {
     warmup_role=$2
     warmup_number=$3
     warmup_output="$run_root/$numerator-8-warmup-$warmup_number-$warmup_role.benchmark.txt"
-    record_command "$warmup_output.command" "$patch" "$warmup_output" "$warmup_output.stderr" "$warmup_binary" --bench
-    "$warmup_binary" --bench < "$patch" > "$warmup_output" 2> "$warmup_output.stderr"
+    record_command "$warmup_output.command" "$patch" "$warmup_output" "$warmup_output.stderr" "$warmup_binary" --bench prepare
+    "$warmup_binary" --bench prepare < "$patch" > "$warmup_output" 2> "$warmup_output.stderr"
     validate_report "$warmup_output" preparation
 }
 
 profile() {
     record_command "$run_root/$numerator-8.profile.command" "$patch" \
-        "$run_root/$numerator-8.profile.txt" "$run_root/$numerator-8.profile.stderr" "$candidate_binary" --profile
-    "$candidate_binary" --profile < "$patch" > "$run_root/$numerator-8.profile.txt" \
+        "$run_root/$numerator-8.profile.txt" "$run_root/$numerator-8.profile.stderr" "$candidate_binary" --bench stages
+    "$candidate_binary" --bench stages < "$patch" > "$run_root/$numerator-8.profile.txt" \
         2> "$run_root/$numerator-8.profile.stderr"
     validate_report "$run_root/$numerator-8.profile.txt" diagnostic
     sampling_log="$run_root/$numerator-8.sampling.txt"
     printf 'requested_duration_s=10 interval_ms=1\n' > "$sampling_log"
     printf 'process_start_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$sampling_log"
     record_command "$run_root/$numerator-8.sampled-benchmark.command" "$patch" \
-        "$run_root/$numerator-8.sampled-benchmark.txt" "$run_root/$numerator-8.sampled-benchmark.stderr" "$candidate_binary" --bench
-    "$candidate_binary" --bench < "$patch" > "$run_root/$numerator-8.sampled-benchmark.txt" \
+        "$run_root/$numerator-8.sampled-benchmark.txt" "$run_root/$numerator-8.sampled-benchmark.stderr" "$candidate_binary" --bench prepare
+    "$candidate_binary" --bench prepare < "$patch" > "$run_root/$numerator-8.sampled-benchmark.txt" \
         2> "$run_root/$numerator-8.sampled-benchmark.stderr" &
     process_pid=$!
     printf 'pid=%s command=%s %s 10 1 -file %s\n' "$process_pid" "$sample_command" \
@@ -310,8 +310,8 @@ measure() {
     time_output="$run_root/$sample_name.time.txt"
 
     record_command "$run_root/$sample_name.command" "$measured_patch" "$benchmark_output" \
-        "$time_output" "$time_command" -lp "$measured_binary" --bench
-    LC_ALL=C "$time_command" -lp "$measured_binary" --bench \
+        "$time_output" "$time_command" -lp "$measured_binary" --bench prepare
+    LC_ALL=C "$time_command" -lp "$measured_binary" --bench prepare \
         < "$measured_patch" > "$benchmark_output" 2> "$time_output"
 
     validate_report "$benchmark_output" preparation

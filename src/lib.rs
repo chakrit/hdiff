@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 pub mod actions;
+pub mod bench;
 pub mod detail;
 pub mod document;
 pub mod input;

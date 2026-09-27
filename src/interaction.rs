@@ -39,6 +39,14 @@ impl DiffLayout {
             Self::Stacked => Self::Unified,
         }
     }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Unified => "unified",
+            Self::Vertical => "vertical",
+            Self::Stacked => "stacked",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +60,15 @@ pub struct ViewPreferences {
 pub enum DiffGranularity {
     Line,
     Character,
+}
+
+impl DiffGranularity {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Line => "line",
+            Self::Character => "character",
+        }
+    }
 }
 
 impl ViewPreferences {
