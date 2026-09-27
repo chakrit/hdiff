@@ -89,61 +89,134 @@ workload takes 54–55 ms per movement frame across all layouts and detail modes
 Actual terminal keypress latency and a representative user diff remain unmeasured;
 the diagnostic excludes event reads, PTY transport, and terminal-emulator painting.
 
-### Proposed first movement refactor
+### Completed first movement refactor
 
-Status: stages 2 and 3 are complete; see
-[performance.md](performance.md#constant-time-context-visibility). Stages 1 and 4 are
-unstarted and wait on measurements that justify them.
+Constant-time context visibility, precomputed row widths, and active-layout,
+screen-bounded row construction are complete; see
+[performance.md](performance.md#constant-time-context-visibility). The worst
+`bench/fixtures.sh` movement step fell from 216.9 ms to 0.44 ms. The earlier proposals
+to borrow row text (`DiffRow<'a>`) and to buffer terminal output are superseded by the
+frame-cost plan below; output buffering is not measurable with the `movement` driver's
+`io::sink()` backend and stays unstarted.
 
-#### Problem analysis
+## Next: frame-cost movement plan
 
-1. **Quadratic bounds search ($O(N^2)$)**: `shows_unified_row` scans the entire file for
-   every context line to determine distance to changes within its hunk, resulting in
-   ~49M checks on a 1,024-hunk file on every `h/j/k/l` keypress (~26 ms).
-2. **Unnecessary heap allocations / `.to_owned()` string cloning**: `DiffRow` is typed as
-   `Line<'static>`, forcing `styled_line` to call `Span::styled(text.to_owned(), style)`.
-   Every substring chunk is cloned into a heap `String` on every frame redraw.
-3. **Whole-file row collection**: `visible_diff_rows` and `visible_side_by_side_rows`
-   construct styled rows for all remaining lines to EOF, and construct both layouts on
-   every frame before `render_diff_rows` truncates them to pane height (~28 ms).
-4. **Unbuffered terminal I/O**: `CrosstermBackend` uses unbuffered `io::stdout()`,
-   increasing system call overhead during escape-sequence writes.
+Goal: bring a movement step from roughly 300–430 µs to 30–60 µs. The floor is Ratatui's
+own frame diff and escape-sequence encoding over the 120-by-36 screen (4,320 cells, about
+40 µs); nearly every cell changes on `j` / `k`, and every design pays that cost. The plan
+removes the work above it and never bypasses Ratatui's terminal, buffer, or diff path.
 
-#### Detailed implementation stages
+### Measured breakdown
 
-1. **Stage 1: Zero-copy borrowing without cloning (`DiffRow<'a>`)**
-   - Thread the lifetime `'a` from `PreparedFile` into `DiffRow<'a>` and `DisplayRows<'a>`.
-   - Use `Line<'a>` and `Span<'a>` wrapping `Cow::Borrowed(&'a str)` in `styled_line`.
-   - Eliminate `text.to_owned()`, enabling rows to directly reference immutable source text
-     slices from the prepared file with zero heap string allocations during rendering.
+A throwaway harness in `tmp/movement-profile/` (not part of the repository) loads the
+1,024-hunk workload from `bench/fixtures.sh`, repeats `l`, `j`, `h`, `k` steps against a
+120-by-36 `CrosstermBackend<io::Sink>`, and prints the mean step. macOS `sample` on that
+harness, unified layout, mean 313 µs per step:
 
-2. **Stage 2: Pre-compute hunk-local context distance ($O(1)$ visibility)**
-   - Pre-calculate each context row's distance to the nearest change (`+` or `-`) within its
-     hunk during preparation and store it in row metadata.
-   - Replace linear file scans in `shows_unified_row` and `shows_side_by_side_row` with a
-     constant-time threshold check (`distance <= context_lines`).
-   - Keep metadata owned by the prepared layout and support arbitrary context counts
-     without a terminal-loop cache.
+| Share | Work                                                                                                               |
+|-------|--------------------------------------------------------------------------------------------------------------------|
+| ~32%  | One `Paragraph` per row with `.scroll()`: grapheme reflow of the whole line, including the part left of the offset |
+| ~25%  | `Layout::split` running the Cassowary solver every frame; `default-features = false` disables `layout-cache`       |
+| ~22%  | Buffer reset, file list, footer, separators, and allocation                                                        |
+| ~14%  | Ratatui buffer diff and escape-sequence encoding (the floor)                                                       |
+| 3–4%  | Scroll limits rescanning the selected file on every keypress                                                       |
+| ~2%   | Styled row construction                                                                                            |
 
-3. **Stage 3: Viewport bounding and active layout dispatch**
-   - Resolve pane height $H$ from layout geometry before constructing diff rows.
-   - Bound row evaluation to `H` rows for the active layout only (`Unified` or `SideBySide`).
-   - Avoid constructing inactive layout projections during frame draw.
-   - Resolve viewport offsets consistently with filtered context rows and document the
-     coordinate contract in `architecture.md`.
+Enabling `layout-cache` in the harness alone measured 204 µs unified, 281 µs vertical,
+and 209 µs stacked, from 299, 414, and 338 µs; `Layout::split` then appears in under 0.2%
+of samples.
 
-4. **Stage 4: Output buffering**
-   - Wrap `io::stdout()` in `io::BufWriter::with_capacity(64 * 1024, io::stdout())` inside
-     `TerminalSession::start` to batch terminal escape sequences into a single `write(2)`.
+### Slice 1: enable `layout-cache`
 
-#### Verification & measurement
+- In `Cargo.toml`, add `layout-cache` to the `ratatui` features next to
+  `crossterm_0_29`. It pulls `lru` and `critical-section` through `ratatui-core`.
+- No source change. Report the compile-time change after `cargo build`.
+- Verify: fmt, tests, clippy, `bench/fixtures.sh`.
 
-- Verify zero-copy lifetime invariants and test coordinate consistency across layouts,
-  context adjustments (`+`/`-`), horizontal offsets, and resize events.
-- Run `cargo fmt --check`, `cargo test --locked`, and `cargo clippy --all-targets --locked -- -D warnings`.
-- Measure latency reduction against the baseline in `performance.md` using
-  `nice -n 19 cargo test --release --locked -j 1 measures_prepared_movement -- --ignored --nocapture`.
-- Measure preparation-time impact to ensure no regression on startup budgets.
+### Slice 2: row writer with whole-row grapheme segmentation
+
+Replace per-row `Paragraph` rendering in `src/terminal/view.rs` (`render_diff_rows`
+and its callers) and the `Line` / `Span` construction in `src/terminal/rows.rs`
+(`DiffRow`, `diff_row`, `styled_line`) with a row writer that fills Ratatui's frame
+buffer directly through its public API (`Frame::buffer_mut`, `Buffer` indexing,
+`Cell::set_symbol`, `Cell::set_style`, `Buffer::set_style`).
+
+- Input: a `StyledRow` (marker, segments with `TextStyle`), the row's `Rect`, the
+  horizontal offset, the row style, and the color count.
+- Expand tabs with `src/tab_stops.rs` using 2-column stops counted from the payload
+  start, as now.
+- Segment the whole expanded payload once with `unicode-segmentation` extended grapheme
+  clusters; map each cluster to the style of the segment containing its first byte.
+  Clusters never split or disappear at style boundaries (the per-span segmentation in
+  Ratatui drops a zero-width mark that starts a span).
+- Measure each cluster with the same width function Ratatui uses (`unicode-width` via
+  `Span::width` on the cluster), skip control-containing clusters as Ratatui does, and
+  keep zero-width clusters attached to their base.
+- Skip `horizontal_offset` columns. A wide cluster straddling the left edge fills its
+  visible cells with blanks in its style, keeping every following column aligned.
+  (`Paragraph` currently draws the whole wide character and shifts the row right by one.)
+- Write clusters left to right; a wide cluster writes its symbol in the first cell and
+  resets the continuation cells, matching `Buffer::set_stringn`. Stop at the pane's
+  right edge; a wide cluster that does not fit is not drawn and its cell stays blank.
+- Fill the full row width with the row style (change backgrounds stay full width), then
+  draw the two-cell marker gutter (`+ `, `- `, or blank) and the payload after it, as
+  `styled_line` does now.
+- Alignment peers (`aligned_pair`) stay blank rows in their pane's change style.
+- Preserve every existing rendering rule in `docs/spec/architecture.md` (Lossless and
+  safe rendering, low-contrast palette, deletion dim modifier).
+- Text stays in logical order; no bidirectional reordering.
+
+Tests (write first, earn a logic red against the current `Paragraph` path where it
+differs):
+
+- A Thai cluster whose tone mark starts a new style segment renders whole in one cell.
+- A double-width character straddling the left edge at offset 1 leaves one blank cell
+  and keeps the next character in its column.
+- A double-width character that does not fit at the right edge leaves a blank cell.
+- Existing live tests for tabs, wide text, horizontal movement, and all three layouts
+  keep passing unchanged.
+
+### Slice 3: scroll extents computed on change, visible-row offsets
+
+- Add a per-(file, layout, context-count) scroll extent: the visible rows as raw indices
+  (`Box<[u32]>`) and the widest visible row. `Tui` keeps the extent for its current key
+  and rebuilds it only when the selected file, layout, or context count changes;
+  `NextLayout`, file rotation, and context changes compute the extent for the target key.
+  Screen size does not affect the extent.
+- `navigation_bounds` reads the stored extent instead of calling
+  `visible_*_line_count` and `maximum_visible_width`, so `h` / `j` / `k` / `l` do no
+  per-file work.
+- Fix the viewport coordinate mismatch found by reading the code: `visible_diff_rows`
+  and `visible_side_by_side_rows` apply `viewport.vertical_offset` as a raw-row skip
+  before filtering, while `maximum_vertical_offset` counts visible rows. When context
+  hides rows, `G` and paging stop short of the bottom. Make `vertical_offset` a
+  visible-row index; the frame renders `extent.visible[offset..offset + height]`.
+  Context changes keep the existing clamp in `transition_interaction`.
+- Record the coordinate contract in `docs/spec/architecture.md`.
+- Tests first: a live test with hidden context rows where `G` shows the last row; a
+  unit test that the extent matches the visibility and width queries it replaces.
+
+### Slice 4: static frame chrome and the file list
+
+- `PreparedDocument::file_rows` clones every file label into a new `Vec` on every frame;
+  with the Kubernetes corpus that is 20,017 allocations per keypress. Render the file
+  list from borrowed labels and only the rows that fit the file-list pane around the
+  selection, keeping `List` scrolling behavior (selection visible, `· ` highlight).
+- Build footer hints from `&'static str` without per-frame `Vec<Line>` allocation.
+- Draw the vertical `│` separator and the stacked `─` separator by filling buffer cells
+  instead of building a `Text` of one `Line` per row or a repeated `String`.
+- Tests: existing live tests for the file list, footer, and separators keep passing; add
+  a live test that a selection beyond the pane height stays visible.
+
+### Measurement for every slice
+
+- `bench/fixtures.sh` worst `movement` step (target in
+  [performance.md](performance.md#targets): 1 ms) and the harness mean per layout.
+- Retired instructions are the primary measure; wall-clock numbers come from a shared
+  work machine.
+- Record each slice's result in
+  [performance.md](performance.md#constant-time-context-visibility).
+- Preparation is unaffected by slices 1, 2, and 4; slice 3 adds no preparation work.
 
 ## Investigate broken leading indentation
 

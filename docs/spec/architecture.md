@@ -444,6 +444,13 @@ input control sequences, including SGR colors, and applies hdiff's own styling.
 It never replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal.
 Interactive rows expand each tab to the next 2-column tab stop, counted from the start
 of the payload.
+Interactive rows are segmented into grapheme clusters once per row, across style spans;
+a cluster takes the style of its first byte. Style boundaries never split or drop a
+cluster. Grapheme clusters and cell widths come from `unicode-segmentation` and
+`unicode-width`.
+A wide grapheme cut by the left pane edge renders its visible cells blank.
+Text renders in logical order; hdiff does not reorder bidirectional text.
+Ratatui's `layout-cache` feature is enabled.
 The authoritative document is never truncated; only decoding, highlighting, wrapping,
 and visible-row work may be bounded.
 
