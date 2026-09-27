@@ -2,7 +2,11 @@ use crate::{
     document::FileView,
     interaction::DiffLayout,
     render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
+    styling::payload,
+    tab_stops::expanded_width,
 };
+
+const MARKER_GUTTER_WIDTH: usize = 2;
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const MINIMUM_SCREEN_HEIGHT: u16 = 3;
@@ -88,10 +92,18 @@ pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<RenderedLine>,
     pub side_by_side_rows: Vec<SideBySideRow>,
-    visibility: Box<[RowVisibility]>,
+    line_metrics: Box<[LineMetrics]>,
 }
 
-/// When a rendered line shows, derived once so each visibility check is constant time.
+/// Per-line facts derived once so bounds and visibility never rescan the file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LineMetrics {
+    visibility: RowVisibility,
+    /// Terminal cells the line occupies, including the two-cell marker gutter.
+    width: u32,
+}
+
+/// When a rendered line shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RowVisibility {
     Always,
@@ -112,14 +124,22 @@ pub enum SideBySideRow {
 impl Layout {
     fn new(diff_lines: Vec<RenderedLine>) -> Self {
         let side_by_side_rows = side_by_side_rows(&diff_lines);
-        let visibility = row_visibility(&diff_lines);
+        let line_metrics = row_visibility(&diff_lines)
+            .into_iter()
+            .zip(&diff_lines)
+            .map(|(visibility, line)| LineMetrics {
+                visibility,
+                width: u32::try_from(expanded_width(payload(line)) + MARKER_GUTTER_WIDTH)
+                    .expect("rendered line widths fit in u32"),
+            })
+            .collect();
 
         Layout {
             #[cfg(test)]
             files: Vec::new(),
             diff_lines,
             side_by_side_rows,
-            visibility,
+            line_metrics,
         }
     }
 
@@ -137,10 +157,14 @@ impl Layout {
     /// Context rows show within `context_lines` records of a change in their own hunk;
     /// every other row always shows.
     pub fn shows_unified_row(&self, index: usize, context_lines: usize) -> bool {
-        match self.visibility.get(index) {
+        match self
+            .line_metrics
+            .get(index)
+            .map(|metrics| metrics.visibility)
+        {
             None | Some(RowVisibility::Always) => true,
             Some(RowVisibility::NearChange(distance)) => {
-                usize::try_from(*distance).is_ok_and(|distance| distance <= context_lines)
+                usize::try_from(distance).is_ok_and(|distance| distance <= context_lines)
             }
             Some(RowVisibility::Never) => false,
         }
@@ -172,6 +196,34 @@ impl Layout {
             .iter()
             .filter(|row| self.shows_side_by_side_row(row, context_lines))
             .count()
+    }
+
+    /// The widest visible row in terminal cells, including the two-cell marker gutter.
+    pub fn maximum_visible_width(&self, display_layout: DiffLayout, context_lines: usize) -> usize {
+        match display_layout {
+            DiffLayout::Unified => (0..self.diff_lines.len())
+                .filter(|index| self.shows_unified_row(*index, context_lines))
+                .map(|index| self.line_width(index))
+                .max(),
+            DiffLayout::Vertical | DiffLayout::Stacked => self
+                .side_by_side_rows
+                .iter()
+                .filter(|row| self.shows_side_by_side_row(row, context_lines))
+                .map(|row| match row {
+                    SideBySideRow::Shared(index)
+                    | SideBySideRow::BeforeOnly(index)
+                    | SideBySideRow::AfterOnly(index) => self.line_width(*index),
+                    SideBySideRow::Paired { before, after } => {
+                        self.line_width(*before).max(self.line_width(*after))
+                    }
+                })
+                .max(),
+        }
+        .unwrap_or_default()
+    }
+
+    fn line_width(&self, index: usize) -> usize {
+        usize::try_from(self.line_metrics[index].width).expect("u32 widths fit in usize")
     }
 }
 
@@ -244,7 +296,7 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     rows
 }
 
-fn row_visibility(rendered_lines: &[RenderedLine]) -> Box<[RowVisibility]> {
+fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
     let before = distances_from_previous_change(rendered_lines.iter());
     let mut after = distances_from_previous_change(rendered_lines.iter().rev());
     after.reverse();
@@ -420,6 +472,20 @@ mod tests {
             shown(usize::MAX),
             "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n"
         );
+    }
+
+    #[test]
+    fn measures_the_widest_visible_row_in_terminal_cells() {
+        let document = parse_unified_diff(
+            "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n far context that is hidden at one line\n near\n-old\n+\t界界界界界界界界界界\n"
+                .as_bytes(),
+        )
+        .expect("valid Unicode diff");
+        let view = file_layout(&document.file_views().next().expect("first file"));
+
+        assert_eq!(view.maximum_visible_width(DiffLayout::Unified, 1), 24);
+        assert_eq!(view.maximum_visible_width(DiffLayout::Vertical, 1), 24);
+        assert_eq!(view.maximum_visible_width(DiffLayout::Unified, 2), 40);
     }
 
     #[test]

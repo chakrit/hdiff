@@ -179,11 +179,8 @@ fn navigation_bounds(
     let file = document.file(interaction.selected_file);
     let content_width = file
         .map(|file| {
-            rows::maximum_visible_row_width(
-                file.layout(),
-                display_layout,
-                interaction.preferences.context_lines,
-            )
+            file.layout()
+                .maximum_visible_width(display_layout, interaction.preferences.context_lines)
         })
         .unwrap_or_default();
     let (screen_width, screen_height) = match input {

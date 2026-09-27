@@ -97,7 +97,7 @@ Targets are recorded here and reviewed from script output. Tests never assert ti
 | Measurement                       | Target                                   |
 |-----------------------------------|------------------------------------------|
 | Kubernetes preparation            | 1 second                                 |
-| `movement` step, worst case       | 3 ms; the aim is sub-millisecond         |
+| `movement` step, worst case       | 1 ms                                     |
 
 The reference machine is `gz44`, an M1 Mac.
 
@@ -167,21 +167,24 @@ record counting in its preparation timer and was superseded by the final capture
 #### Constant-time context visibility
 
 `Layout` derives each rendered line's visibility once: always shown, shown within a
-record distance of the nearest change in its hunk, or never shown. The frame renderer
-builds rows for the active layout only, from the viewport, at most one screen tall.
+record distance of the nearest change in its hunk, or never shown. It also derives each
+line's tab-expanded width once, so movement bounds compare stored numbers. The frame
+renderer builds rows for the active layout only, from the viewport, at most one screen
+tall.
 
 `bench/fixtures.sh` on `gz44` at scheduler priority 19, worst `movement` step on the
 1,024-hunk workload across all layouts, detail modes, and keys:
 
-| Run                                   | Revision            | Worst step  |
-|---------------------------------------|---------------------|-------------|
-| `20260927T131110Z-e1f4d80-98479`      | `e1f4d80`           | 216.923 ms  |
-| `20260927T132036Z-e1f4d80-19824`      | `e1f4d80` + slice   | 1.598 ms    |
+| Run                              | Revision                 | Worst step |
+|----------------------------------|--------------------------|------------|
+| `20260927T131110Z-e1f4d80-98479` | `e1f4d80`                | 216.923 ms |
+| `20260927T132036Z-e1f4d80-19824` | `e1f4d80` + visibility   | 1.598 ms   |
+| `20260927T132603Z-343cb84-27077` | `343cb84` + widths       | 0.441 ms   |
 
-The remaining 1.4–1.6 ms per step is dominated by bounds, which still scan the
-selected file for the visible count and maximum tab-expanded width. Workload
-preparation moved from 149.5 ms to 142.4 ms, within run-to-run variation; the
-Kubernetes preparation benchmark was not run for this slice.
+With visibility alone, bounds dominated the remaining step by re-expanding every
+visible row's tabs to find the maximum width. Workload preparation stayed at
+142–150 ms across the three runs, within run-to-run variation; the Kubernetes
+preparation benchmark was not run for these slices.
 
 ### Preparation comparisons
 

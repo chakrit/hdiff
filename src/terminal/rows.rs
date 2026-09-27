@@ -5,9 +5,10 @@ use ratatui::{
 
 use crate::{
     interaction::{DiffGranularity, Viewport},
-    layout::{Layout, SideBySideRow},
+    layout::SideBySideRow,
     prepared::PreparedFile,
-    styling::{RowKind, StyledRow, TextStyle, payload},
+    styling::{RowKind, StyledRow, TextStyle},
+    tab_stops::TabStops,
     theme::DEFAULT_SYNTAX_THEME,
 };
 
@@ -49,61 +50,6 @@ pub(super) enum VisibleSideBySideRow {
         before: Option<DiffRow>,
         after: Option<DiffRow>,
     },
-}
-
-pub(super) fn maximum_visible_row_width(
-    layout: &Layout,
-    display_layout: crate::interaction::DiffLayout,
-    context_lines: usize,
-) -> usize {
-    match display_layout {
-        crate::interaction::DiffLayout::Unified => layout
-            .diff_lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
-            .map(|(_, line)| rendered_line_width(line))
-            .max()
-            .unwrap_or_default(),
-        crate::interaction::DiffLayout::Vertical | crate::interaction::DiffLayout::Stacked => {
-            layout
-                .side_by_side_rows
-                .iter()
-                .filter(|row| layout.shows_side_by_side_row(row, context_lines))
-                .map(|row| side_by_side_row_width(layout, row))
-                .max()
-                .unwrap_or_default()
-        }
-    }
-}
-
-fn side_by_side_row_width(layout: &Layout, row: &SideBySideRow) -> usize {
-    match row {
-        SideBySideRow::Shared(index)
-        | SideBySideRow::BeforeOnly(index)
-        | SideBySideRow::AfterOnly(index) => rendered_line_width(
-            layout
-                .rendered_line(*index)
-                .expect("side-by-side rows reference rendered lines"),
-        ),
-        SideBySideRow::Paired { before, after } => [before, after]
-            .into_iter()
-            .map(|index| {
-                rendered_line_width(
-                    layout
-                        .rendered_line(*index)
-                        .expect("side-by-side rows reference rendered lines"),
-                )
-            })
-            .max()
-            .expect("paired rows contain both rendered lines"),
-    }
-}
-
-fn rendered_line_width(line: &crate::render::RenderedLine) -> usize {
-    let mut tab_stops = TabStops::default();
-    tab_stops.expand(payload(line));
-    tab_stops.column + 2
 }
 
 pub(super) fn visible_diff_rows(
@@ -203,32 +149,6 @@ fn styled_line(row: StyledRow<'_>, color_count: u16) -> Line<'static> {
     Line::from(rendered).style(row_style(row.kind, palette, color_count))
 }
 
-const TAB_WIDTH: usize = 2;
-
-/// Expands tabs to the next multiple of `TAB_WIDTH` cells from the start of the payload,
-/// across consecutive segments of one row.
-#[derive(Default)]
-struct TabStops {
-    column: usize,
-}
-
-impl TabStops {
-    fn expand(&mut self, text: &str) -> String {
-        let mut expanded = String::with_capacity(text.len());
-
-        for (index, chunk) in text.split('\t').enumerate() {
-            if index > 0 {
-                let padding = TAB_WIDTH - self.column % TAB_WIDTH;
-                expanded.extend(std::iter::repeat_n(' ', padding));
-                self.column += padding;
-            }
-            expanded.push_str(chunk);
-            self.column += Span::raw(chunk).width();
-        }
-        expanded
-    }
-}
-
 fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     let color = match row_kind {
         RowKind::Addition => palette.addition_marker,
@@ -319,12 +239,9 @@ pub(super) fn inner_separator_color(color_count: u16) -> Color {
 mod tests {
     use ratatui::style::Color;
 
-    use super::{
-        hunk_header_color, low_contrast_palette, maximum_visible_row_width, visible_diff_rows,
-    };
+    use super::{hunk_header_color, low_contrast_palette, visible_diff_rows};
     use crate::{
-        interaction::{DiffGranularity, DiffLayout, Viewport},
-        layout::file_layout,
+        interaction::{DiffGranularity, Viewport},
         parser::parse_unified_diff,
         prepared::PreparedDocument,
     };
@@ -401,20 +318,6 @@ mod tests {
                 "+ 新",
                 "  \\ No newline at end of file",
             ]
-        );
-    }
-
-    #[test]
-    fn measures_rendered_rows_in_terminal_cells() {
-        let document = parse_unified_diff(
-            "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+界界界界界界\n".as_bytes(),
-        )
-        .expect("valid Unicode diff");
-        let layout = file_layout(&document.file_views().next().expect("first file"));
-
-        assert_eq!(
-            maximum_visible_row_width(&layout, DiffLayout::Unified, 3),
-            14
         );
     }
 

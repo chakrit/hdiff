@@ -13,5 +13,6 @@ pub mod prepared;
 pub mod render;
 pub mod styling;
 pub mod syntax;
+pub mod tab_stops;
 pub mod terminal;
 pub mod theme;
