@@ -74,9 +74,9 @@ Horizontal scrolling adds repeated `h` / `l` input and redraw pressure.
 - [ ] Measure movement and redraw cost with a representative multi-file diff.
 - [ ] Measure `h` / `l` input-to-frame latency and remove avoidable horizontal-bound or
   redraw work.
-- [ ] Identify and remove redundant work from the interaction, layout, or terminal
+- [x] Identify and remove redundant work from the interaction, layout, or terminal
   rendering hot path.
-- [ ] Meet the [movement target](performance.md#targets) in `bench/fixtures.sh` output.
+- [x] Meet the [movement target](performance.md#targets) in `bench/fixtures.sh` output.
 
 Relevant boundaries: `src/interaction.rs`, `src/layout.rs`, `src/terminal.rs`,
 `src/terminal/view.rs`, and `src/terminal/rows.rs`.
@@ -91,7 +91,9 @@ the diagnostic excludes event reads, PTY transport, and terminal-emulator painti
 
 ### Proposed first movement refactor
 
-Status: plan awaiting approval; no performance repair has been implemented.
+Status: stages 2 and 3 are complete; see
+[performance.md](performance.md#constant-time-context-visibility). Stages 1 and 4 are
+unstarted and wait on measurements that justify them.
 
 #### Problem analysis
 

@@ -28,11 +28,16 @@ use super::rows::{
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
 struct DisplayRows {
-    unified: Vec<DiffRow>,
-    side_by_side: Vec<VisibleSideBySideRow>,
-    layout: DiffLayout,
+    rows: LayoutRows,
     horizontal_offset: u16,
     color_count: u16,
+}
+
+/// Rows of the active layout only, starting at the viewport and bounded by the screen.
+enum LayoutRows {
+    Unified(Vec<DiffRow>),
+    Vertical(Vec<VisibleSideBySideRow>),
+    Stacked(Vec<VisibleSideBySideRow>),
 }
 
 #[cfg(test)]
@@ -85,25 +90,35 @@ pub(super) fn render_prepared_frame(
     color_count: u16,
 ) {
     let area = frame.area();
-    let rows = visible_diff_rows(
-        file,
-        &interaction.viewport,
-        interaction.preferences.granularity,
-        interaction.preferences.context_lines,
-        color_count,
-    );
-    let side_by_side_rows = visible_side_by_side_rows(
-        file,
-        &interaction.viewport,
-        interaction.preferences.granularity,
-        interaction.preferences.context_lines,
-        color_count,
-    );
+    let row_limit = usize::from(area.height);
+    let granularity = interaction.preferences.granularity;
+    let context_lines = interaction.preferences.context_lines;
+    let viewport = &interaction.viewport;
+    let side_by_side_rows = || {
+        visible_side_by_side_rows(
+            file,
+            viewport,
+            granularity,
+            context_lines,
+            row_limit,
+            color_count,
+        )
+    };
+    let rows = match interaction.preferences.layout {
+        DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
+            file,
+            viewport,
+            granularity,
+            context_lines,
+            row_limit,
+            color_count,
+        )),
+        DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
+        DiffLayout::Stacked => LayoutRows::Stacked(side_by_side_rows()),
+    };
     let display = DisplayRows {
-        unified: rows,
-        side_by_side: side_by_side_rows,
-        layout: interaction.preferences.layout,
-        horizontal_offset: interaction.viewport.horizontal_offset,
+        rows,
+        horizontal_offset: viewport.horizontal_offset,
         color_count,
     };
 
@@ -200,20 +215,18 @@ fn render_diff_rows(
 }
 
 fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: ratatui::layout::Rect) {
-    match display.layout {
-        DiffLayout::Unified => {
-            render_diff_rows(frame, display.unified, area, display.horizontal_offset)
-        }
-        DiffLayout::Vertical => render_vertical_rows(
+    match display.rows {
+        LayoutRows::Unified(rows) => render_diff_rows(frame, rows, area, display.horizontal_offset),
+        LayoutRows::Vertical(rows) => render_vertical_rows(
             frame,
-            display.side_by_side,
+            rows,
             area,
             display.horizontal_offset,
             display.color_count,
         ),
-        DiffLayout::Stacked => render_stacked_rows(
+        LayoutRows::Stacked(rows) => render_stacked_rows(
             frame,
-            display.side_by_side,
+            rows,
             area,
             display.horizontal_offset,
             display.color_count,

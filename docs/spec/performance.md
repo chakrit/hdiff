@@ -10,7 +10,7 @@ This file is authoritative for preparation, measurement, and performance optimiz
 
 `hdiff` completes parsing, layout derivation, Tree-sitter syntax highlighting, and
 character detail before entering the terminal loop. The loop receives fully prepared data
-and has no parser, cache, readiness, loading, or first-file state.
+and has no parser, readiness, loading, or first-file state.
 It owns only interaction, terminal lifecycle, redraw decisions, and rendering of the
 prepared active viewport. No async runtime, executor, channel, or task dependency is
 part of this boundary.
@@ -163,6 +163,25 @@ and Clippy completed in 10.37 seconds. The original record references raw verifi
 in `.ace/movement-tests.txt` and `.ace/movement-clippy.txt`; those files and earlier
 diagnostic captures are unavailable in this checkout. The first capture included
 record counting in its preparation timer and was superseded by the final capture.
+
+#### Constant-time context visibility
+
+`Layout` derives each rendered line's visibility once: always shown, shown within a
+record distance of the nearest change in its hunk, or never shown. The frame renderer
+builds rows for the active layout only, from the viewport, at most one screen tall.
+
+`bench/fixtures.sh` on `gz44` at scheduler priority 19, worst `movement` step on the
+1,024-hunk workload across all layouts, detail modes, and keys:
+
+| Run                                   | Revision            | Worst step  |
+|---------------------------------------|---------------------|-------------|
+| `20260927T131110Z-e1f4d80-98479`      | `e1f4d80`           | 216.923 ms  |
+| `20260927T132036Z-e1f4d80-19824`      | `e1f4d80` + slice   | 1.598 ms    |
+
+The remaining 1.4–1.6 ms per step is dominated by bounds, which still scan the
+selected file for the visible count and maximum tab-expanded width. Workload
+preparation moved from 149.5 ms to 142.4 ms, within run-to-run variation; the
+Kubernetes preparation benchmark was not run for this slice.
 
 ### Preparation comparisons
 

@@ -1,7 +1,7 @@
 use crate::{
     document::FileView,
     interaction::DiffLayout,
-    render::{RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
+    render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
 };
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
@@ -88,6 +88,17 @@ pub struct Layout {
     pub files: Vec<FileListRow>,
     pub diff_lines: Vec<RenderedLine>,
     pub side_by_side_rows: Vec<SideBySideRow>,
+    visibility: Box<[RowVisibility]>,
+}
+
+/// When a rendered line shows, derived once so each visibility check is constant time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RowVisibility {
+    Always,
+    /// A context row this many records from the nearest change in its hunk.
+    NearChange(u32),
+    /// A context row in a hunk without changes.
+    Never,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -99,6 +110,19 @@ pub enum SideBySideRow {
 }
 
 impl Layout {
+    fn new(diff_lines: Vec<RenderedLine>) -> Self {
+        let side_by_side_rows = side_by_side_rows(&diff_lines);
+        let visibility = row_visibility(&diff_lines);
+
+        Layout {
+            #[cfg(test)]
+            files: Vec::new(),
+            diff_lines,
+            side_by_side_rows,
+            visibility,
+        }
+    }
+
     pub fn rendered_line(&self, index: usize) -> Option<&RenderedLine> {
         self.diff_lines.get(index)
     }
@@ -110,31 +134,16 @@ impl Layout {
         }
     }
 
+    /// Context rows show within `context_lines` records of a change in their own hunk;
+    /// every other row always shows.
     pub fn shows_unified_row(&self, index: usize, context_lines: usize) -> bool {
-        let Some(line) = self.diff_lines.get(index) else {
-            return true;
-        };
-        let RenderedLineKind::Record(address) = line.kind else {
-            return true;
-        };
-        if line.bytes.first() != Some(&b' ') {
-            return true;
+        match self.visibility.get(index) {
+            None | Some(RowVisibility::Always) => true,
+            Some(RowVisibility::NearChange(distance)) => {
+                usize::try_from(*distance).is_ok_and(|distance| distance <= context_lines)
+            }
+            Some(RowVisibility::Never) => false,
         }
-
-        self.diff_lines
-            .iter()
-            .enumerate()
-            .any(|(candidate_index, line)| {
-                let RenderedLineKind::Record(candidate) = line.kind else {
-                    return false;
-                };
-                candidate.hunk_index == address.hunk_index
-                    && candidate.record_index.abs_diff(address.record_index) <= context_lines
-                    && matches!(
-                        self.diff_lines[candidate_index].bytes.first(),
-                        Some(b'+') | Some(b'-')
-                    )
-            })
     }
 
     pub fn visible_unified_line_count(&self, context_lines: usize) -> usize {
@@ -172,14 +181,8 @@ pub fn file_layout(view: &FileView<'_>) -> Layout {
         .chain(render_file_lines(view.file))
         .chain(render_text_lines(view.trailing))
         .collect::<Vec<_>>();
-    let side_by_side_rows = side_by_side_rows(&diff_lines);
 
-    Layout {
-        #[cfg(test)]
-        files: Vec::new(),
-        diff_lines,
-        side_by_side_rows,
-    }
+    Layout::new(diff_lines)
 }
 
 #[cfg(test)]
@@ -191,8 +194,7 @@ pub fn layout(
     let Some(file) = document.file_views().nth(interaction.selected_file) else {
         return Layout {
             files,
-            diff_lines: Vec::new(),
-            side_by_side_rows: Vec::new(),
+            ..Layout::new(Vec::new())
         };
     };
 
@@ -240,6 +242,58 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     }
 
     rows
+}
+
+fn row_visibility(rendered_lines: &[RenderedLine]) -> Box<[RowVisibility]> {
+    let before = distances_from_previous_change(rendered_lines.iter());
+    let mut after = distances_from_previous_change(rendered_lines.iter().rev());
+    after.reverse();
+
+    rendered_lines
+        .iter()
+        .zip(before.into_iter().zip(after))
+        .map(|(line, (before, after))| {
+            if !is_context_line(line) {
+                return RowVisibility::Always;
+            }
+
+            before
+                .into_iter()
+                .chain(after)
+                .min()
+                .map_or(RowVisibility::Never, RowVisibility::NearChange)
+        })
+        .collect()
+}
+
+/// Walks lines in the given direction, measuring each record's distance in records to the
+/// last change seen in the same hunk.
+fn distances_from_previous_change<'a>(
+    lines: impl Iterator<Item = &'a RenderedLine>,
+) -> Vec<Option<u32>> {
+    let mut last_change: Option<RecordAddress> = None;
+
+    lines
+        .map(|line| {
+            let RenderedLineKind::Record(address) = line.kind else {
+                return None;
+            };
+            if is_changed_line(line) {
+                last_change = Some(address);
+            }
+
+            last_change
+                .filter(|change| change.hunk_index == address.hunk_index)
+                .map(|change| {
+                    u32::try_from(change.record_index.abs_diff(address.record_index))
+                        .expect("hunk record distances fit in u32")
+                })
+        })
+        .collect()
+}
+
+fn is_context_line(line: &RenderedLine) -> bool {
+    matches!(line.kind, RenderedLineKind::Record(_)) && line.bytes.first() == Some(&b' ')
 }
 
 fn is_changed_line(line: &RenderedLine) -> bool {
@@ -338,6 +392,34 @@ mod tests {
             SideBySideRow::BeforeOnly(before)
                 if view.diff_lines[*before].bytes.as_ref() == b"-old second\n"
         ));
+    }
+
+    #[test]
+    fn shows_context_rows_within_the_context_count_of_a_change_in_their_hunk() {
+        let document = parse_unified_diff(
+            b"--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n far0\n far1\n",
+        )
+        .expect("valid diff");
+        let view = file_layout(&document.file_views().next().expect("first file"));
+        let shown = |context_lines| {
+            (0..view.diff_lines.len())
+                .filter(|index| view.shows_unified_row(*index, context_lines))
+                .map(|index| String::from_utf8_lossy(&view.diff_lines[index].bytes).into_owned())
+                .collect::<String>()
+        };
+
+        assert_eq!(
+            shown(0),
+            "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n-old\n+new\n@@ -20,2 +20,2 @@\n"
+        );
+        assert_eq!(
+            shown(1),
+            "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c2\n-old\n+new\n c3\n@@ -20,2 +20,2 @@\n"
+        );
+        assert_eq!(
+            shown(usize::MAX),
+            "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n"
+        );
     }
 
     #[test]

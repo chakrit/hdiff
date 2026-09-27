@@ -111,6 +111,7 @@ pub(super) fn visible_diff_rows(
     viewport: &Viewport,
     granularity: DiffGranularity,
     context_lines: usize,
+    row_limit: usize,
     color_count: u16,
 ) -> Vec<DiffRow> {
     let layout = file.layout();
@@ -121,6 +122,7 @@ pub(super) fn visible_diff_rows(
         .enumerate()
         .skip(viewport.vertical_offset)
         .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
+        .take(row_limit)
         .map(|(index, _)| diff_row(file.row(index, granularity), color_count))
         .collect()
 }
@@ -130,6 +132,7 @@ pub(super) fn visible_side_by_side_rows(
     viewport: &Viewport,
     granularity: DiffGranularity,
     context_lines: usize,
+    row_limit: usize,
     color_count: u16,
 ) -> Vec<VisibleSideBySideRow> {
     let layout = file.layout();
@@ -139,6 +142,7 @@ pub(super) fn visible_side_by_side_rows(
         .iter()
         .skip(viewport.vertical_offset)
         .filter(|row| layout.shows_side_by_side_row(row, context_lines))
+        .take(row_limit)
         .map(|row| match row {
             SideBySideRow::Shared(index) => {
                 VisibleSideBySideRow::Shared(diff_row(file.row(*index, granularity), color_count))
@@ -339,6 +343,7 @@ mod tests {
             &Viewport::new(120, 12),
             DiffGranularity::Line,
             3,
+            usize::MAX,
             u16::MAX,
         );
         let text = rows
@@ -375,6 +380,7 @@ mod tests {
             &Viewport::new(120, 12),
             DiffGranularity::Line,
             3,
+            usize::MAX,
             u16::MAX,
         );
         let text = rows
