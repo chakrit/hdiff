@@ -20,24 +20,28 @@ use crate::{
     prepared::PreparedDocument,
 };
 
-use super::rows::{
-    DiffRow, VisibleSideBySideRow, aligned_pair, inner_separator_color, visible_diff_rows,
-    visible_side_by_side_rows,
+use super::{
+    row_writer::write_row,
+    rows::{
+        PaneRow, VisibleSideBySideRow, aligned_pair, inner_separator_color, visible_diff_rows,
+        visible_side_by_side_rows,
+    },
 };
+use crate::styling::StyledRow;
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
-struct DisplayRows {
-    rows: LayoutRows,
+struct DisplayRows<'a> {
+    rows: LayoutRows<'a>,
     horizontal_offset: u16,
     color_count: u16,
 }
 
 /// Rows of the active layout only, starting at the viewport and bounded by the screen.
-enum LayoutRows {
-    Unified(Vec<DiffRow>),
-    Vertical(Vec<VisibleSideBySideRow>),
-    Stacked(Vec<VisibleSideBySideRow>),
+enum LayoutRows<'a> {
+    Unified(Vec<StyledRow<'a>>),
+    Vertical(Vec<VisibleSideBySideRow<'a>>),
+    Stacked(Vec<VisibleSideBySideRow<'a>>),
 }
 
 #[cfg(test)]
@@ -94,16 +98,8 @@ pub(super) fn render_prepared_frame(
     let granularity = interaction.preferences.granularity;
     let context_lines = interaction.preferences.context_lines;
     let viewport = &interaction.viewport;
-    let side_by_side_rows = || {
-        visible_side_by_side_rows(
-            file,
-            viewport,
-            granularity,
-            context_lines,
-            row_limit,
-            color_count,
-        )
-    };
+    let side_by_side_rows =
+        || visible_side_by_side_rows(file, viewport, granularity, context_lines, row_limit);
     let rows = match interaction.preferences.layout {
         DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
             file,
@@ -111,7 +107,6 @@ pub(super) fn render_prepared_frame(
             granularity,
             context_lines,
             row_limit,
-            color_count,
         )),
         DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
         DiffLayout::Stacked => LayoutRows::Stacked(side_by_side_rows()),
@@ -196,41 +191,44 @@ fn render_split_panes(
     render_display_layout(frame, display, panes[4]);
 }
 
-fn render_diff_rows(
+fn render_diff_rows<'a>(
     frame: &mut Frame,
-    rows: Vec<DiffRow>,
+    rows: impl IntoIterator<Item = PaneRow<'a>>,
     area: ratatui::layout::Rect,
     horizontal_offset: u16,
+    color_count: u16,
 ) {
     for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
         let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
 
-        frame.render_widget(
-            Paragraph::new(row.line)
-                .style(row.style)
-                .scroll((0, horizontal_offset)),
+        write_row(
+            frame.buffer_mut(),
             row_area,
+            row,
+            horizontal_offset,
+            color_count,
         );
     }
 }
 
 fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: ratatui::layout::Rect) {
+    let horizontal_offset = display.horizontal_offset;
+    let color_count = display.color_count;
+
     match display.rows {
-        LayoutRows::Unified(rows) => render_diff_rows(frame, rows, area, display.horizontal_offset),
-        LayoutRows::Vertical(rows) => render_vertical_rows(
+        LayoutRows::Unified(rows) => render_diff_rows(
             frame,
-            rows,
+            rows.into_iter().map(PaneRow::Text),
             area,
-            display.horizontal_offset,
-            display.color_count,
+            horizontal_offset,
+            color_count,
         ),
-        LayoutRows::Stacked(rows) => render_stacked_rows(
-            frame,
-            rows,
-            area,
-            display.horizontal_offset,
-            display.color_count,
-        ),
+        LayoutRows::Vertical(rows) => {
+            render_vertical_rows(frame, rows, area, horizontal_offset, color_count)
+        }
+        LayoutRows::Stacked(rows) => {
+            render_stacked_rows(frame, rows, area, horizontal_offset, color_count)
+        }
     }
 }
 
@@ -254,28 +252,21 @@ fn render_vertical_rows(
         let before_area = ratatui::layout::Rect::new(panes[0].x, row_area.y, panes[0].width, 1);
         let separator_area = ratatui::layout::Rect::new(panes[1].x, row_area.y, 1, 1);
         let after_area = ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
-        match row {
-            VisibleSideBySideRow::Shared(row) => {
-                render_diff_rows(frame, vec![row.clone()], before_area, horizontal_offset);
-                frame.render_widget(
-                    Paragraph::new(Line::styled("│", separator_style)),
-                    separator_area,
-                );
-                render_diff_rows(frame, vec![row], after_area, horizontal_offset);
-            }
-            VisibleSideBySideRow::Paired { before, after } => {
-                let Some((before, after)) = aligned_pair(before, after, color_count) else {
-                    continue;
-                };
+        let pair = match row {
+            VisibleSideBySideRow::Shared(row) => Some((PaneRow::Text(row), PaneRow::Text(row))),
+            VisibleSideBySideRow::Paired { before, after } => aligned_pair(before, after),
+        };
+        let Some((before, after)) = pair else {
+            continue;
+        };
 
-                render_diff_rows(frame, vec![before], before_area, horizontal_offset);
-                frame.render_widget(
-                    Paragraph::new(Line::styled("│", separator_style)),
-                    separator_area,
-                );
-                render_diff_rows(frame, vec![after], after_area, horizontal_offset);
-            }
-        }
+        let buffer = frame.buffer_mut();
+        write_row(buffer, before_area, before, horizontal_offset, color_count);
+        write_row(buffer, after_area, after, horizontal_offset, color_count);
+        frame.render_widget(
+            Paragraph::new(Line::styled("│", separator_style)),
+            separator_area,
+        );
     }
 }
 
@@ -301,11 +292,11 @@ fn render_stacked_rows(
     for row in rows {
         match row {
             VisibleSideBySideRow::Shared(row) => {
-                before_rows.push(row.clone());
-                after_rows.push(row);
+                before_rows.push(PaneRow::Text(row));
+                after_rows.push(PaneRow::Text(row));
             }
             VisibleSideBySideRow::Paired { before, after } => {
-                let Some((before, after)) = aligned_pair(before, after, color_count) else {
+                let Some((before, after)) = aligned_pair(before, after) else {
                     continue;
                 };
 
@@ -323,8 +314,8 @@ fn render_stacked_rows(
         )),
         panes[1],
     );
-    render_diff_rows(frame, before_rows, panes[0], horizontal_offset);
-    render_diff_rows(frame, after_rows, panes[2], horizontal_offset);
+    render_diff_rows(frame, before_rows, panes[0], horizontal_offset, color_count);
+    render_diff_rows(frame, after_rows, panes[2], horizontal_offset, color_count);
 }
 
 fn footer_hints() -> Vec<Line<'static>> {

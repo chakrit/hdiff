@@ -211,6 +211,27 @@ The mean saving is 111.7 million retired instructions per run (paired savings 10
 The feature adds `critical-section` to the lock file; `lru` was already present. The
 Kubernetes preparation benchmark was not run: preparation renders no frame.
 
+#### Direct row writing
+
+Each diff row is written straight into the frame buffer, with one grapheme segmentation
+of the whole expanded row, instead of a `Paragraph` per row. The row borrows prepared
+text; nothing is copied into a `Line`. Same measurement as
+[Cached layout splits](#cached-layout-splits):
+
+| Binary          | Retired instructions (three runs)             | Mean          |
+|-----------------|-----------------------------------------------|---------------|
+| `8c4d462`       | 3,029,867,528 · 3,029,862,946 · 3,024,736,951 | 3,028,155,808 |
+| + row writer    | 2,965,450,185 · 2,975,084,988 · 2,966,034,094 | 2,968,856,422 |
+
+The mean saving is 59.3 million retired instructions per run (paired savings 64.4,
+54.8, and 58.7 million), about 0.62 million per step. Elapsed cycles fell from about
+622 million to 606 million. `bench/fixtures.sh` at scheduler priority 19, worst
+`movement` step on the 1,024-hunk workload, from 0.296 ms:
+
+| Run                              | Revision                 | Worst step |
+|----------------------------------|--------------------------|------------|
+| `20260927T142701Z-8c4d462-88695` | `8c4d462` + row writer   | 0.234 ms   |
+
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS

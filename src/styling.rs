@@ -76,6 +76,7 @@ impl RowKind {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct StyledRow<'a> {
     pub kind: RowKind,
     text: &'a str,

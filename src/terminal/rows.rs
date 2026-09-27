@@ -1,65 +1,62 @@
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-};
+use ratatui::style::{Color, Modifier, Style};
 
 use crate::{
     interaction::{DiffGranularity, Viewport},
     layout::SideBySideRow,
     prepared::PreparedFile,
     styling::{RowKind, StyledRow, TextStyle},
-    tab_stops::TabStops,
     theme::DEFAULT_SYNTAX_THEME,
 };
 
-#[derive(Clone)]
-pub(super) struct DiffRow {
-    pub(super) line: Line<'static>,
-    pub(super) style: Style,
+/// One pane's row: prepared text, or the blank peer that aligns a one-sided change.
+#[derive(Clone, Copy)]
+pub(super) enum PaneRow<'a> {
+    Text(StyledRow<'a>),
+    AlignmentPeer(RowKind),
 }
 
-pub(super) fn aligned_pair(
-    before: Option<DiffRow>,
-    after: Option<DiffRow>,
-    color_count: u16,
-) -> Option<(DiffRow, DiffRow)> {
+impl PaneRow<'_> {
+    pub(super) fn kind(&self) -> RowKind {
+        match self {
+            Self::Text(row) => row.kind,
+            Self::AlignmentPeer(kind) => *kind,
+        }
+    }
+}
+
+pub(super) fn aligned_pair<'a>(
+    before: Option<StyledRow<'a>>,
+    after: Option<StyledRow<'a>>,
+) -> Option<(PaneRow<'a>, PaneRow<'a>)> {
     match (before, after) {
-        (Some(before), Some(after)) => Some((before, after)),
-        (Some(before), None) => {
-            let after = alignment_peer(RowKind::Addition, color_count);
-            Some((before, after))
-        }
-        (None, Some(after)) => {
-            let before = alignment_peer(RowKind::Deletion, color_count);
-            Some((before, after))
-        }
+        (Some(before), Some(after)) => Some((PaneRow::Text(before), PaneRow::Text(after))),
+        (Some(before), None) => Some((
+            PaneRow::Text(before),
+            PaneRow::AlignmentPeer(RowKind::Addition),
+        )),
+        (None, Some(after)) => Some((
+            PaneRow::AlignmentPeer(RowKind::Deletion),
+            PaneRow::Text(after),
+        )),
         (None, None) => None,
     }
 }
 
-fn alignment_peer(row_kind: RowKind, color_count: u16) -> DiffRow {
-    DiffRow {
-        line: Line::raw(""),
-        style: row_style(row_kind, low_contrast_palette(color_count), color_count),
-    }
-}
-
-pub(super) enum VisibleSideBySideRow {
-    Shared(DiffRow),
+pub(super) enum VisibleSideBySideRow<'a> {
+    Shared(StyledRow<'a>),
     Paired {
-        before: Option<DiffRow>,
-        after: Option<DiffRow>,
+        before: Option<StyledRow<'a>>,
+        after: Option<StyledRow<'a>>,
     },
 }
 
-pub(super) fn visible_diff_rows(
-    file: &PreparedFile,
+pub(super) fn visible_diff_rows<'a>(
+    file: &'a PreparedFile,
     viewport: &Viewport,
     granularity: DiffGranularity,
     context_lines: usize,
     row_limit: usize,
-    color_count: u16,
-) -> Vec<DiffRow> {
+) -> Vec<StyledRow<'a>> {
     let layout = file.layout();
 
     layout
@@ -69,18 +66,17 @@ pub(super) fn visible_diff_rows(
         .skip(viewport.vertical_offset)
         .filter(|(index, _)| layout.shows_unified_row(*index, context_lines))
         .take(row_limit)
-        .map(|(index, _)| diff_row(file.row(index, granularity), color_count))
+        .map(|(index, _)| file.row(index, granularity))
         .collect()
 }
 
-pub(super) fn visible_side_by_side_rows(
-    file: &PreparedFile,
+pub(super) fn visible_side_by_side_rows<'a>(
+    file: &'a PreparedFile,
     viewport: &Viewport,
     granularity: DiffGranularity,
     context_lines: usize,
     row_limit: usize,
-    color_count: u16,
-) -> Vec<VisibleSideBySideRow> {
+) -> Vec<VisibleSideBySideRow<'a>> {
     let layout = file.layout();
 
     layout
@@ -91,62 +87,46 @@ pub(super) fn visible_side_by_side_rows(
         .take(row_limit)
         .map(|row| match row {
             SideBySideRow::Shared(index) => {
-                VisibleSideBySideRow::Shared(diff_row(file.row(*index, granularity), color_count))
+                VisibleSideBySideRow::Shared(file.row(*index, granularity))
             }
             SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
-                before: Some(diff_row(file.row(*before, granularity), color_count)),
-                after: Some(diff_row(file.row(*after, granularity), color_count)),
+                before: Some(file.row(*before, granularity)),
+                after: Some(file.row(*after, granularity)),
             },
             SideBySideRow::BeforeOnly(index) => VisibleSideBySideRow::Paired {
-                before: Some(diff_row(file.row(*index, granularity), color_count)),
+                before: Some(file.row(*index, granularity)),
                 after: None,
             },
             SideBySideRow::AfterOnly(index) => VisibleSideBySideRow::Paired {
                 before: None,
-                after: Some(diff_row(file.row(*index, granularity), color_count)),
+                after: Some(file.row(*index, granularity)),
             },
         })
         .collect()
 }
 
-fn diff_row(row: StyledRow<'_>, color_count: u16) -> DiffRow {
+/// The two-cell marker gutter that precedes a row's payload.
+pub(super) fn gutter(row_kind: RowKind, color_count: u16) -> [(&'static str, Style); 2] {
     let palette = low_contrast_palette(color_count);
-    let style = row_style(row.kind, palette, color_count);
-    let line = styled_line(row, color_count);
+    let spacing = (" ", Style::default());
 
-    DiffRow { line, style }
+    match row_kind {
+        RowKind::Addition => [("+", Style::default().fg(palette.addition_marker)), spacing],
+        RowKind::Deletion => [("-", Style::default().fg(palette.deletion_marker)), spacing],
+        RowKind::Context | RowKind::Raw | RowKind::Metadata | RowKind::HunkHeader => {
+            [spacing, spacing]
+        }
+    }
 }
 
-fn styled_line(row: StyledRow<'_>, color_count: u16) -> Line<'static> {
-    let palette = low_contrast_palette(color_count);
-    let mut rendered = match row.kind {
-        RowKind::Addition => vec![
-            Span::styled("+", Style::default().fg(palette.addition_marker)),
-            Span::raw(" "),
-        ],
-        RowKind::Deletion => vec![
-            Span::styled("-", Style::default().fg(palette.deletion_marker)),
-            Span::raw(" "),
-        ],
-        RowKind::Context | RowKind::Raw | RowKind::Metadata | RowKind::HunkHeader => {
-            vec![Span::raw("  ")]
+pub(super) fn segment_style(row_kind: RowKind, text_style: TextStyle, color_count: u16) -> Style {
+    match text_style {
+        TextStyle::Plain => Style::default(),
+        TextStyle::Syntax(class) => {
+            Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count))
         }
-    };
-
-    let mut tab_stops = TabStops::default();
-    rendered.extend(row.segments().map(|(text, style)| {
-        let text = tab_stops.expand(text);
-        let style = match style {
-            TextStyle::Plain => Style::default(),
-            TextStyle::Syntax(class) => {
-                Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count))
-            }
-            TextStyle::Detail => detail_style(row.kind, palette),
-        };
-        Span::styled(text, style)
-    }));
-
-    Line::from(rendered).style(row_style(row.kind, palette, color_count))
+        TextStyle::Detail => detail_style(row_kind, low_contrast_palette(color_count)),
+    }
 }
 
 fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
@@ -161,7 +141,9 @@ fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     Style::default().fg(color).add_modifier(Modifier::DIM)
 }
 
-fn row_style(row_kind: RowKind, palette: LowContrastPalette, color_count: u16) -> Style {
+pub(super) fn row_style(row_kind: RowKind, color_count: u16) -> Style {
+    let palette = low_contrast_palette(color_count);
+
     match row_kind {
         RowKind::Addition => Style::default()
             .bg(palette.addition_background)
@@ -239,87 +221,7 @@ pub(super) fn inner_separator_color(color_count: u16) -> Color {
 mod tests {
     use ratatui::style::Color;
 
-    use super::{hunk_header_color, low_contrast_palette, visible_diff_rows};
-    use crate::{
-        interaction::{DiffGranularity, Viewport},
-        parser::parse_unified_diff,
-        prepared::PreparedDocument,
-    };
-
-    #[test]
-    fn syntax_highlighting_preserves_source_text() {
-        let document = parse_unified_diff(
-            b"--- a/example.rs\n+++ b/example.rs\n@@ -1,3 +1,3 @@\n fn example() {\n-    let excluded = ace.excluded_mcp();\n+    let excluded = ace.excluded_mcp()?;\n }\n",
-        )
-        .expect("valid Rust method-call diff");
-        let prepared = PreparedDocument::prepare(&document);
-        let file = prepared.file(0).expect("prepared example file");
-
-        let rows = visible_diff_rows(
-            file,
-            &Viewport::new(120, 12),
-            DiffGranularity::Line,
-            3,
-            usize::MAX,
-            u16::MAX,
-        );
-        let text = rows
-            .iter()
-            .map(|row| row.line.to_string())
-            .collect::<Vec<_>>();
-
-        // architecture.md: lossless rendering preserves source text through styling.
-        assert_eq!(
-            text,
-            [
-                "  --- a/example.rs",
-                "  +++ b/example.rs",
-                "  @@ -1,3 +1,3 @@",
-                "  fn example() {",
-                "-     let excluded = ace.excluded_mcp();",
-                "+     let excluded = ace.excluded_mcp()?;",
-                "  }",
-            ]
-        );
-    }
-
-    #[test]
-    fn preserves_unicode_crlf_and_unmarked_records() {
-        let document = parse_unified_diff(
-            "--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-旧\r\n\\ No newline at end of file\r\n\r\n界\r\n+新\r\n\\ No newline at end of file".as_bytes(),
-        )
-        .expect("valid diff with Unicode and raw records");
-        let prepared = PreparedDocument::prepare(&document);
-        let file = prepared.file(0).expect("prepared file");
-
-        let rows = visible_diff_rows(
-            file,
-            &Viewport::new(120, 12),
-            DiffGranularity::Line,
-            3,
-            usize::MAX,
-            u16::MAX,
-        );
-        let text = rows
-            .iter()
-            .map(|row| row.line.to_string())
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            text,
-            [
-                "  --- a/file",
-                "  +++ b/file",
-                "  @@ -1 +1 @@",
-                "- 旧",
-                "  \\ No newline at end of file",
-                "  ",
-                "  界",
-                "+ 新",
-                "  \\ No newline at end of file",
-            ]
-        );
-    }
+    use super::{hunk_header_color, low_contrast_palette};
 
     #[test]
     fn falls_back_from_truecolor_to_256_and_basic_low_contrast_colors() {

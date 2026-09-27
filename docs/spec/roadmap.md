@@ -131,7 +131,11 @@ of samples.
 See [performance.md](performance.md#cached-layout-splits). The worst
 1,024-hunk movement step fell from 0.44 ms to 0.30 ms.
 
-### Slice 2: row writer with whole-row grapheme segmentation
+### Slice 2: row writer with whole-row grapheme segmentation (complete)
+
+See [performance.md](performance.md#direct-row-writing). The worst 1,024-hunk movement
+step fell from 0.30 ms to 0.23 ms. The design below is implemented in
+`src/terminal/row_writer.rs`.
 
 Replace per-row `Paragraph` rendering in `src/terminal/view.rs` (`render_diff_rows`
 and its callers) and the `Line` / `Span` construction in `src/terminal/rows.rs`

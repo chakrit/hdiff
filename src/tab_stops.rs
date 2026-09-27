@@ -13,9 +13,8 @@ pub struct TabStops {
 }
 
 impl TabStops {
-    pub fn expand(&mut self, text: &str) -> String {
-        let mut expanded = String::with_capacity(text.len());
-
+    /// Appends `text` to `expanded` with its tabs replaced by spaces.
+    pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
         for (index, chunk) in text.split('\t').enumerate() {
             if index > 0 {
                 expanded.extend(std::iter::repeat_n(' ', self.advance_to_tab_stop()));
@@ -23,7 +22,6 @@ impl TabStops {
             expanded.push_str(chunk);
             self.column += Span::raw(chunk).width();
         }
-        expanded
     }
 
     fn advance_to_tab_stop(&mut self) -> usize {

@@ -12,6 +12,7 @@ use crate::{
     prepared::PreparedDocument,
 };
 
+mod row_writer;
 mod rows;
 mod view;
 
