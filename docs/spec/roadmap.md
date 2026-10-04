@@ -328,6 +328,9 @@ layouts, rows outside the viewport, allocations, cloning, palette construction, 
 ordering. Active-rendering work belongs to the responsive-movement task above.
 Each resumed slice requires its specification amendment, tests, verification, audit,
 and commit under the [performance contract](performance.md).
+Before the first resumed comparison, change `bench/kubernetes.sh` to key its improvement
+verdict on retired instructions as the performance contract requires; it still keys on
+cycles.
 
 ## Deferred work
 

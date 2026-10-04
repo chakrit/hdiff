@@ -309,9 +309,9 @@ and corpus generation happen outside the timed interval, with workloads run seri
 
 Each Kubernetes range warms the baseline and candidate twice, then measures three pairs
 in baseline-candidate, candidate-baseline, baseline-candidate order. A pair's saving is
-the baseline measurement minus the candidate measurement. The mean cycle saving must be
-positive and greater than the maximum absolute deviation among the three paired savings.
-Mean retired-instruction and peak-memory savings must not be negative by more than their
+the baseline measurement minus the candidate measurement. The mean retired-instruction
+saving must be positive and greater than the maximum absolute deviation among the three
+paired savings. Mean cycle and peak-memory savings must not be negative by more than their
 own maximum absolute deviations. A comparison that does not meet every condition cannot
 be accepted as improved.
 
