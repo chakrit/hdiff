@@ -106,6 +106,22 @@ impl Live {
         self.rows().iter().any(|row| row.contains(text))
     }
 
+    /// The foreground of `text` where it first appears, which must be one color.
+    fn foreground(&self, text: &str) -> Color {
+        let start = self.find(text);
+        let buffer = self.buffer();
+        let colors = (start.x..)
+            .take(text.chars().count())
+            .map(|x| buffer[(x, start.y)].fg)
+            .collect::<Vec<_>>();
+
+        assert!(
+            colors.windows(2).all(|pair| pair[0] == pair[1]),
+            "{text:?} is drawn in one color: {colors:?}"
+        );
+        colors[0]
+    }
+
     /// Cell position of the first occurrence of `text`.
     fn find(&self, text: &str) -> Position {
         self.rows()
@@ -538,6 +554,26 @@ fn tab_moves_between_files_and_skips_headings() {
 
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     assert!(live.shows("view_new"), "Shift-Tab wraps to the last file");
+}
+
+/// Contract: docs/spec/architecture.md#file-tree (file rows take their state's color).
+#[test]
+fn colors_file_rows_by_state() {
+    let mut live = Live::load(TREE_PATCH, unified_line());
+    live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+    let deleted = live.foreground("- README.md");
+    let modified = live.foreground("~ lib.rs");
+    let added = live.foreground("+ new.rs");
+
+    assert_eq!(
+        live.foreground("~ view.rs"),
+        modified,
+        "one color per state"
+    );
+    assert_ne!(deleted, modified, "deleted and modified differ");
+    assert_ne!(deleted, added, "deleted and added differ");
+    assert_ne!(modified, added, "modified and added differ");
 }
 
 #[test]

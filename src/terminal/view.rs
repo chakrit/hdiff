@@ -290,7 +290,11 @@ mod tests {
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
-        assert_eq!(rendered[(2, 0)].fg, Color::Rgb(160, 160, 160), "file label");
+        assert_eq!(
+            rendered[(2, 0)].fg,
+            Color::Rgb(190, 170, 120),
+            "modified file label"
+        );
         assert_eq!(
             rendered[(0, 9)].fg,
             Color::Rgb(110, 110, 110),
