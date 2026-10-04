@@ -33,6 +33,15 @@ Load `architect`, `code`, and `rust-coding` for coding work. The shared skill se
 is in `ace.toml`; personal additions remain layered through ACE. Skill availability does
 not mean the skill has been loaded.
 
+## Look before proposing
+
+Before presenting a proposal, option, or question to the user, check it against
+`docs/spec/` contracts (such as POSIX `diff` and Git input compatibility) and the
+current code, and work through its concrete inputs. Present only conflicts that remain
+and decisions the user must make; state standard conventions and forced answers as
+facts. Spec rules the user never gave carry no authority in discussion: trace a rule to
+the user's words before arguing from it, and treat an untraced rule as a proposal.
+
 ## Git checkpoints
 
 Commit coherent, completed slices autonomously after completing the checks required for
