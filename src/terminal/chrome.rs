@@ -4,7 +4,7 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{Constraint, Layout as RatatuiLayout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState},
 };
@@ -105,11 +105,15 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
     let line = match row {
         TreeRow::Commit(heading) => Line::styled(
             heading.as_str(),
-            Style::default().fg(palette.commit_heading),
+            Style::default()
+                .fg(palette.commit_heading)
+                .add_modifier(Modifier::BOLD),
         ),
         TreeRow::Directory(heading) => Line::styled(
             heading.as_str(),
-            Style::default().fg(palette.directory_heading),
+            Style::default()
+                .fg(palette.directory_heading)
+                .add_modifier(Modifier::BOLD),
         ),
         TreeRow::File { marker, name } => Line::from(vec![
             Span::raw(marker.label()),
@@ -169,10 +173,10 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         u16::MAX => ChromePalette {
             commit_heading: Color::Rgb(150, 150, 150),
             directory_heading: Color::Rgb(125, 125, 125),
-            modified_file: Color::Rgb(190, 170, 120),
-            added_file: Color::Rgb(130, 185, 130),
-            deleted_file: Color::Rgb(200, 130, 130),
-            renamed_file: Color::Rgb(130, 170, 205),
+            modified_file: Color::Rgb(166, 162, 150),
+            added_file: Color::Rgb(152, 166, 154),
+            deleted_file: Color::Rgb(170, 152, 152),
+            renamed_file: Color::Rgb(152, 160, 172),
             unknown_file: Color::Rgb(160, 160, 160),
             selected_file: Color::Rgb(220, 220, 220),
             selected_file_background: Color::Rgb(65, 65, 65),
@@ -182,10 +186,10 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         256.. => ChromePalette {
             commit_heading: Color::Indexed(245),
             directory_heading: Color::Indexed(243),
-            modified_file: Color::Indexed(144),
-            added_file: Color::Indexed(108),
-            deleted_file: Color::Indexed(138),
-            renamed_file: Color::Indexed(110),
+            modified_file: Color::Indexed(246),
+            added_file: Color::Indexed(246),
+            deleted_file: Color::Indexed(246),
+            renamed_file: Color::Indexed(246),
             unknown_file: Color::Indexed(246),
             selected_file: Color::Indexed(255),
             selected_file_background: Color::Indexed(238),
@@ -195,10 +199,10 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         _ => ChromePalette {
             commit_heading: Color::Gray,
             directory_heading: Color::DarkGray,
-            modified_file: Color::Yellow,
-            added_file: Color::Green,
-            deleted_file: Color::Red,
-            renamed_file: Color::Blue,
+            modified_file: Color::Gray,
+            added_file: Color::Gray,
+            deleted_file: Color::Gray,
+            renamed_file: Color::Gray,
             unknown_file: Color::Gray,
             selected_file: Color::White,
             selected_file_background: Color::DarkGray,

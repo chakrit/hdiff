@@ -292,7 +292,7 @@ mod tests {
         }
         assert_eq!(
             rendered[(2, 0)].fg,
-            Color::Rgb(190, 170, 120),
+            Color::Rgb(166, 162, 150),
             "modified file label"
         );
         assert_eq!(

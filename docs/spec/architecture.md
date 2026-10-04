@@ -266,8 +266,8 @@ it has no file-system navigation and no collapse or expansion.
   last such line in the text names the group. Other surrounding text neither starts a
   group nor adds a row.
 - A group's first row is a commit heading: the hash's first seven characters, one space,
-  and the commit's subject (its first indented message line). Commit headings use a
-  neutral tone brighter than the footer hints.
+  and the commit's subject (its first indented message line). Commit headings are bold
+  in a neutral tone brighter than the footer hints.
 - Directory and commit rows are headings only. Selection and `Tab` / `Shift-Tab`
   rotation move between files and never stop on a heading.
 - Rows have no indentation. A directory heading shows the directory's full path with a
@@ -275,7 +275,7 @@ it has no file-system navigation and no collapse or expansion.
   subdirectory shares that subdirectory's heading. A heading appears wherever a file's
   directory differs from the previous file's in the same group; top-level files after
   another directory take the heading `./`.
-- Directory headings use the separator tone.
+- Directory headings are bold in the separator tone.
 - Each file row is one state marker, one space, and the file's basename:
 
   | Marker | State                                      |
@@ -286,8 +286,9 @@ it has no file-system navigation and no collapse or expansion.
   | `*`    | renamed; the row shows the new name        |
   | `?`    | ambiguous or erroneous entry               |
 
-- A file row's marker and name share one light color per state: modified amber, added
-  green, deleted red, renamed blue, and `?` neutral.
+- A file row's marker and name share one very subtle per-state tint of the neutral file
+  tone: modified amber, added green, deleted red, renamed blue, and `?` neutral. Terminals
+  without true color show every state in the neutral tone.
 - Git metadata decides a file's state. Without it, a `/dev/null` old header means added
   and a `/dev/null` new header means deleted; differing header paths never mean a rename.
 - A `?` entry has no directory; it appears at the top level after every path in its
