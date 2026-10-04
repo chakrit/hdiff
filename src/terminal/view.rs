@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_character_detail_in_dim_change_colors_and_selects_files_cohesively() {
+    fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_files_cohesively() {
         let document =
             parse_unified_diff(b"--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n")
                 .expect("valid character diff");
@@ -595,8 +595,24 @@ mod tests {
         );
         assert_eq!(rendered[(30, 3)].fg, Color::Rgb(206, 74, 74));
         assert_eq!(rendered[(30, 4)].fg, Color::Rgb(112, 195, 115));
-        assert!(rendered[(30, 3)].modifier.contains(Modifier::DIM));
-        assert!(rendered[(30, 4)].modifier.contains(Modifier::DIM));
+        assert!(
+            !rendered[(30, 3)].modifier.contains(Modifier::DIM),
+            "changed deletion span is not dimmed"
+        );
+        assert!(
+            !rendered[(30, 4)].modifier.contains(Modifier::DIM),
+            "changed addition span is not dimmed"
+        );
+        assert_eq!(
+            rendered[(29, 3)].fg,
+            Color::Rgb(120, 120, 120),
+            "unchanged deletion text is one step below the deletion body"
+        );
+        assert_eq!(
+            rendered[(29, 4)].fg,
+            Color::Rgb(170, 185, 170),
+            "unchanged addition text is one step below the addition body"
+        );
     }
 
     #[test]
@@ -673,7 +689,7 @@ mod tests {
             let cells = unique_payload_cells(terminal.backend().buffer(), payload);
             for cell in cells {
                 assert_eq!(cell.fg, color, "{diff_layout:?}: {payload}");
-                assert!(cell.modifier.contains(Modifier::DIM), "{payload}");
+                assert!(!cell.modifier.contains(Modifier::DIM), "{payload}");
             }
         }
         let Transition::RedrawInteraction(line) =

@@ -117,7 +117,10 @@ pub fn payload(line: &RenderedLine) -> &str {
 pub enum TextStyle {
     Plain,
     Syntax(SyntaxClass),
+    /// A changed span on a row with character detail.
     Detail,
+    /// Text between the changed spans on a row with character detail.
+    Unchanged,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -147,11 +150,11 @@ impl RowStyles {
                     style: TextStyle::Detail,
                 })
                 .collect::<Vec<_>>();
-            Partition::new(text, &annotations)
+            Partition::new(text, &annotations, TextStyle::Unchanged)
         });
 
         Self {
-            syntax: Partition::new(text, &syntax),
+            syntax: Partition::new(text, &syntax, TextStyle::Plain),
             character,
         }
     }
@@ -174,7 +177,8 @@ struct Boundary {
 }
 
 impl Partition {
-    fn new(text: &str, annotations: &[Annotation]) -> Self {
+    /// Splits `text` at annotation edges; text no annotation covers takes `uncovered`.
+    fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self(Box::new([]));
         }
@@ -207,7 +211,7 @@ impl Partition {
             // architecture.md: shortest capture wins; later encounters break ties.
             let style = active
                 .peek()
-                .map_or(TextStyle::Plain, |(_, index)| annotations[*index].style);
+                .map_or(uncovered, |(_, index)| annotations[*index].style);
             if let Some(previous) = boundaries.last_mut()
                 && previous.style == style
             {
@@ -271,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn detail_presentation_suppresses_syntax_and_keeps_plain_gaps() {
+    fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
         let text = "αcall!";
         let syntax = [SyntaxSpan {
             start: 0,
@@ -290,9 +294,9 @@ mod tests {
         assert_eq!(
             row.segments().collect::<Vec<_>>(),
             [
-                ("α", TextStyle::Plain),
+                ("α", TextStyle::Unchanged),
                 ("call", TextStyle::Detail),
-                ("!", TextStyle::Plain),
+                ("!", TextStyle::Unchanged),
             ]
         );
     }

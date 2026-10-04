@@ -358,11 +358,12 @@ Character detail does not use reverse video. It first preserves matching identif
 delimiter tokens, then uses grapheme spans only for similar replacement words; unrelated words
 remain whole-token changes rather than matching coincidental letters. It coalesces an equal island
 of at most three graphemes bracketed by changed spans, so incidental short matches do not fragment
-a change. Its changed spans use dim green on addition rows and dim red on deletion rows, reusing
-the line-change palette while leaving unchanged text plain on rows with detail spans.
+a change. Its changed spans use undimmed green on addition rows and undimmed red on deletion
+rows, reusing the line-change marker colors; unchanged text on rows with detail spans is one
+step dimmer than the row's line-mode text.
 Rows without detail spans retain syntax styling.
 
-In character mode, unmatched additions and deletions use their dim green or dim red
+In character mode, unmatched additions and deletions use their green or red
 detail foreground across the entire payload in every layout, overriding syntax colors.
 The payload excludes its diff marker and line ending; empty changed lines retain their
 marker and row background, and alignment peers retain their markerless pane styling.

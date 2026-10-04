@@ -115,6 +115,7 @@ pub(super) fn segment_style(row_kind: RowKind, text_style: TextStyle, color_coun
             Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count))
         }
         TextStyle::Detail => detail_style(row_kind, low_contrast_palette(color_count)),
+        TextStyle::Unchanged => unchanged_style(row_kind, low_contrast_palette(color_count)),
     }
 }
 
@@ -127,7 +128,19 @@ fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
         }
     };
 
-    Style::default().fg(color).add_modifier(Modifier::DIM)
+    Style::default().fg(color).remove_modifier(Modifier::DIM)
+}
+
+fn unchanged_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
+    let color = match row_kind {
+        RowKind::Addition => palette.unchanged_addition,
+        RowKind::Deletion => palette.unchanged_deletion,
+        RowKind::Context | RowKind::Raw | RowKind::HunkHeader | RowKind::Metadata => {
+            palette.context_body
+        }
+    };
+
+    Style::default().fg(color)
 }
 
 pub(super) fn row_style(row_kind: RowKind, color_count: u16) -> Style {
@@ -159,8 +172,10 @@ fn hunk_header_color(color_count: u16) -> Color {
 struct LowContrastPalette {
     addition_background: Color,
     addition_body: Color,
+    unchanged_addition: Color,
     deletion_background: Color,
     deletion_body: Color,
+    unchanged_deletion: Color,
     context_body: Color,
     deletion_marker: Color,
     addition_marker: Color,
@@ -171,8 +186,10 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
         u16::MAX => LowContrastPalette {
             addition_background: Color::Rgb(35, 73, 43),
             addition_body: Color::Rgb(220, 235, 220),
+            unchanged_addition: Color::Rgb(170, 185, 170),
             deletion_background: Color::Rgb(50, 30, 30),
             deletion_body: Color::Rgb(150, 150, 150),
+            unchanged_deletion: Color::Rgb(120, 120, 120),
             context_body: Color::Rgb(180, 180, 180),
             deletion_marker: Color::Rgb(206, 74, 74),
             addition_marker: Color::Rgb(112, 195, 115),
@@ -180,8 +197,10 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
         256.. => LowContrastPalette {
             addition_background: Color::Indexed(22),
             addition_body: Color::Indexed(255),
+            unchanged_addition: Color::Indexed(250),
             deletion_background: Color::Indexed(52),
             deletion_body: Color::Indexed(245),
+            unchanged_deletion: Color::Indexed(242),
             context_body: Color::Indexed(250),
             deletion_marker: Color::Indexed(167),
             addition_marker: Color::Indexed(71),
@@ -189,8 +208,10 @@ fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
         _ => LowContrastPalette {
             addition_background: Color::Green,
             addition_body: Color::White,
+            unchanged_addition: Color::Gray,
             deletion_background: Color::Red,
             deletion_body: Color::DarkGray,
+            unchanged_deletion: Color::DarkGray,
             context_body: Color::Gray,
             deletion_marker: Color::Red,
             addition_marker: Color::Green,
