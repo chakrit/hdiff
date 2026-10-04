@@ -267,7 +267,7 @@ ordering rules are recorded in
 
 ### Remaining
 
-- [ ] Human check (below).
+- [x] Human check (below): passed through `./git.sh` on 2026-10-04.
 - [ ] With the user's approval for the run, report the Kubernetes `labels` stage change.
 - [ ] Rule on prefixes other than `a/` / `b/` (`diff.mnemonicPrefix`, `--no-prefix`,
   `--src-prefix`), which currently stay in the path, and on grouping for
