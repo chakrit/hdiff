@@ -268,7 +268,8 @@ ordering rules are recorded in
 ### Remaining
 
 - [x] Human check (below): passed through `./git.sh` on 2026-10-04.
-- [ ] With the user's approval for the run, report the Kubernetes `labels` stage change.
+- [x] Kubernetes `labels` stage change reported on 2026-10-04: paired comparison against
+  `883d76b` adds 0.03–0.09% retired instructions per range; `labels` is 10–31 ms per range.
 - [ ] Rule on prefixes other than `a/` / `b/` (`diff.mnemonicPrefix`, `--no-prefix`,
   `--src-prefix`), which currently stay in the path, and on grouping for
   `format-patch` mbox, `--oneline`, and `--graph` input, which forms no commit groups.
