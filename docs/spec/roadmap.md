@@ -233,13 +233,11 @@ step fell from 0.21 ms to 0.19 ms. Chrome lives in `src/terminal/chrome.rs`.
   [performance.md](performance.md#constant-time-context-visibility).
 - Preparation is unaffected by slices 1, 2, and 4; slice 3 adds no preparation work.
 
-## Investigate broken leading indentation
+## Investigate broken leading indentation (closed)
 
-Leading tabs and spaces on code lines appear to render incorrectly. Recent changes may
-be the cause; this is unconfirmed.
+Leading tabs rendered without width; tab expansion fixed it.
 
 - [x] Reproduce with tab- and space-indented lines in every layout and detail mode.
-- [ ] Determine whether a recent change introduced it.
 - [x] Fix it and add a regression check.
 
 ## Next: file tree sidebar
