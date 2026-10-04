@@ -21,15 +21,17 @@ pub enum FileIdentity {
 }
 
 impl FileIdentity {
-    /// A section with `---` / `+++` headers; `metadata` includes its `diff --git` line.
+    /// A section with `---` / `+++` headers; `metadata` is empty outside Git and otherwise
+    /// starts with its `diff --git` line.
     pub fn of_unified(
         metadata: &[SourceLine],
         old_path: &HeaderPath,
         new_path: &HeaderPath,
         first_line: &SourceLine,
     ) -> Self {
-        let located =
-            git_change(metadata).and_then(|change| locate_unified(change, old_path, new_path));
+        let git_header = metadata.first();
+        let located = git_change(metadata)
+            .and_then(|change| locate_unified(change, git_header, old_path, new_path));
 
         Self::located_or_unknown(located, first_line)
     }
@@ -96,21 +98,30 @@ enum GitChange {
 
 fn locate_unified(
     change: GitChange,
+    git_header: Option<&SourceLine>,
     old_path: &HeaderPath,
     new_path: &HeaderPath,
 ) -> Option<(FileState, String)> {
+    // A `/dev/null` side leaves one header path, so Git sections name the file from
+    // their `diff --git` line; plain diffs show the path as written.
+    let one_sided = |path: &String| match git_header {
+        Some(header) => git_header_path(header),
+        None => Some(path.clone()),
+    };
     let (header_state, named_path) = match (old_path, new_path) {
         (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => return None,
         (HeaderPath::DevNull, HeaderPath::DevNull) => return None,
-        (HeaderPath::DevNull, HeaderPath::Path(new)) => (FileState::Added, strip(new, "b/")),
-        (HeaderPath::Path(old), HeaderPath::DevNull) => (FileState::Deleted, strip(old, "a/")),
-        (HeaderPath::Path(_), HeaderPath::Path(new)) => (FileState::Modified, strip(new, "b/")),
+        (HeaderPath::DevNull, HeaderPath::Path(new)) => (FileState::Added, one_sided(new)?),
+        (HeaderPath::Path(old), HeaderPath::DevNull) => (FileState::Deleted, one_sided(old)?),
+        (HeaderPath::Path(old), HeaderPath::Path(new)) => {
+            (FileState::Modified, shared_name(old, new).to_owned())
+        }
     };
 
     let located = match change {
-        GitChange::Unmarked => (header_state, named_path.to_owned()),
-        GitChange::Added => (FileState::Added, named_path.to_owned()),
-        GitChange::Deleted => (FileState::Deleted, named_path.to_owned()),
+        GitChange::Unmarked => (header_state, named_path),
+        GitChange::Added => (FileState::Added, named_path),
+        GitChange::Deleted => (FileState::Deleted, named_path),
         GitChange::Renamed(destination) => (FileState::Renamed, destination),
         GitChange::Copied(destination) => (FileState::Added, destination),
     };
@@ -152,36 +163,57 @@ fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
         })
 }
 
-/// The path of `diff --git a/<path> b/<path>` when both halves name the same path.
+/// The name a `diff --git <old> <new>` line gives: the path suffix its halves share.
 fn git_header_path(line: &SourceLine) -> Option<String> {
     let names = line.structural_text.strip_prefix("diff --git ")?;
-    let (old, new) = match names.starts_with('"') {
-        true => {
-            let (old, rest) = unquote(names)?;
-            (old, quoted_or_plain(rest.strip_prefix(' ')?)?)
-        }
-        false => symmetric_halves(names)?,
-    };
+    if !names.starts_with('"') {
+        return unquoted_git_name(names);
+    }
 
-    let old = strip(&old, "a/");
-    let new = strip(&new, "b/");
-    (old == new).then(|| new.to_owned())
+    let (old, rest) = unquote(names)?;
+    let new = quoted_or_plain(rest.strip_prefix(' ')?)?;
+    shared_suffix(&old, &new).map(str::to_owned)
 }
 
-/// Splits unquoted `<old> <new>` at its middle space, as Git does when both names are
-/// the same length and may contain spaces.
-fn symmetric_halves(names: &str) -> Option<(String, String)> {
-    let middle = names.len() / 2;
-    let has_middle_space = names.len() % 2 == 1 && names.get(middle..=middle) == Some(" ");
-    if !has_middle_space {
+/// Unquoted names may contain spaces; the halves split at the one space whose sides
+/// share a path suffix.
+fn unquoted_git_name(names: &str) -> Option<String> {
+    let mut named = names
+        .match_indices(' ')
+        .filter_map(|(space, _)| shared_suffix(&names[..space], &names[space + 1..]));
+    let name = named.next()?;
+
+    named.next().is_none().then(|| name.to_owned())
+}
+
+// Naming a file from two paths
+
+/// The shared path suffix of `old` and `new`, or all of `new` when they share none.
+fn shared_name<'a>(old: &str, new: &'a str) -> &'a str {
+    let shared = shared_suffix(old, new);
+    shared.unwrap_or(new)
+}
+
+/// The longest run of trailing `/`-separated components both paths end with, as
+/// written in `new`. Drops whatever comparison roots precede it, such as `a/` and `b/`.
+fn shared_suffix<'a>(old: &str, new: &'a str) -> Option<&'a str> {
+    let shared_components = old
+        .rsplit('/')
+        .zip(new.rsplit('/'))
+        .take_while(|(old_component, new_component)| old_component == new_component)
+        .count();
+    if shared_components == 0 {
         return None;
     }
 
-    Some((names[..middle].to_owned(), names[middle + 1..].to_owned()))
-}
-
-fn strip<'a>(path: &'a str, prefix: &str) -> &'a str {
-    path.strip_prefix(prefix).unwrap_or(path)
+    let separators = shared_components - 1;
+    let length = new
+        .rsplit('/')
+        .take(shared_components)
+        .map(str::len)
+        .sum::<usize>()
+        + separators;
+    Some(&new[new.len() - length..])
 }
 
 // Git's C-style quoting
@@ -302,25 +334,52 @@ mod tests {
         }
     }
 
+    /// Contract: docs/spec/architecture.md#file-tree (path naming).
     #[test]
-    fn reads_dev_null_headers_without_git_metadata() {
+    fn plain_dev_null_sections_show_the_path_as_written() {
         assert_eq!(
             identity("--- /dev/null\n+++ b/added\n@@ -0,0 +1 @@\n+a\n"),
-            path(FileState::Added, "added")
+            path(FileState::Added, "b/added")
         );
         assert_eq!(
             identity("--- a/gone\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"),
-            path(FileState::Deleted, "gone")
+            path(FileState::Deleted, "a/gone")
         );
     }
 
     #[test]
-    fn plain_diff_names_the_new_path_without_a_rename() {
+    fn names_a_file_by_the_path_suffix_both_headers_share() {
+        let cases = [
+            ("a/src/x.rs", "b/src/x.rs", "src/x.rs"),
+            ("i/src/x.rs", "w/src/x.rs", "src/x.rs"),
+            ("src/x.rs", "src/x.rs", "src/x.rs"),
+            ("/tmp/x/foo", "/tmp/y/foo", "foo"),
+            ("tmp/x1", "tmp/x2", "tmp/x2"),
+        ];
+
+        for (old, new, expected) in cases {
+            let input = format!("--- {old}\n+++ {new}\n@@ -1 +1 @@\n-a\n+b\n");
+            assert_eq!(
+                identity(&input),
+                path(FileState::Modified, expected),
+                "{old} {new}"
+            );
+        }
+    }
+
+    #[test]
+    fn git_dev_null_sections_take_their_name_from_the_git_header() {
         assert_eq!(
             identity(
-                "--- tmp/x1\t2026-09-27 23:45:10\n+++ tmp/x2\t2026-09-27 23:45:11\n@@ -1 +1 @@\n-a\n+b\n"
+                "diff --git i/src/new w/src/new\nnew file mode 100644\n--- /dev/null\n+++ w/src/new\n@@ -0,0 +1 @@\n+a\n"
             ),
-            path(FileState::Modified, "tmp/x2")
+            path(FileState::Added, "src/new")
+        );
+        assert_eq!(
+            identity(
+                "diff --git src/gone src/gone\ndeleted file mode 100644\n--- src/gone\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+            ),
+            path(FileState::Deleted, "src/gone")
         );
     }
 

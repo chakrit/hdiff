@@ -103,12 +103,6 @@ fn render_file_list(
 
 fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
     let line = match row {
-        TreeRow::Commit(heading) => Line::styled(
-            heading.as_str(),
-            Style::default()
-                .fg(palette.commit_heading)
-                .add_modifier(Modifier::BOLD),
-        ),
         TreeRow::Directory(heading) => Line::styled(
             heading.as_str(),
             Style::default()
@@ -143,7 +137,6 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 
 #[derive(Clone, Copy)]
 struct ChromePalette {
-    commit_heading: Color,
     directory_heading: Color,
     file_name: Color,
     modified_marker: Color,
@@ -171,7 +164,6 @@ impl ChromePalette {
 fn chrome_palette(color_count: u16) -> ChromePalette {
     match color_count {
         u16::MAX => ChromePalette {
-            commit_heading: Color::Rgb(150, 150, 150),
             directory_heading: Color::Rgb(125, 125, 125),
             file_name: Color::Rgb(160, 160, 160),
             modified_marker: Color::Rgb(190, 170, 120),
@@ -184,7 +176,6 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             footer: Color::Rgb(110, 110, 110),
         },
         256.. => ChromePalette {
-            commit_heading: Color::Indexed(245),
             directory_heading: Color::Indexed(243),
             file_name: Color::Indexed(246),
             modified_marker: Color::Indexed(144),
@@ -197,7 +188,6 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             footer: Color::Indexed(240),
         },
         _ => ChromePalette {
-            commit_heading: Color::Gray,
             directory_heading: Color::DarkGray,
             file_name: Color::Gray,
             modified_marker: Color::Yellow,

@@ -120,9 +120,8 @@ valid diff lines without data loss.
 - `DiffFile`: file identity, headers, and ordered hunks. Identity (state and path) and
   decoded header paths are derived when the file is parsed; the file tree and syntax
   highlighting read them rather than raw header text.
-- File-list paths omit Git's `a/` and `b/` comparison-root prefixes, while rendered diff
-  headers preserve their original protocol text. The [file tree](#file-tree) defines
-  which path names a file.
+- File-list paths follow the [file tree](#file-tree) path naming, while rendered diff
+  headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `Selection`: the active file-list selection; the viewport offset is the reader's current
@@ -259,23 +258,14 @@ Delivery is tracked in the [roadmap's file tree plan](roadmap.md#next-file-tree-
 The file list shows files grouped under directory headings, derived from file paths only;
 it has no file-system navigation and no collapse or expansion.
 
-- Files are ordered by path as Git orders them: bytewise on the full path. A rename or
-  copy sorts by its new path, a deletion by its old path, and every other file by its new
-  path. File rotation and the file list follow this order.
-- Files are sorted within commit groups, as Git sorts per commit. Surrounding text
-  containing a line `commit <hash>` starts a new group at the file that follows it; the
-  last such line in the text names the group. Other surrounding text neither starts a
-  group nor adds a row.
-- A group's first row is a commit heading: the hash's first seven characters, one space,
-  and the commit's subject (its first indented message line). Commit headings are bold
-  in a neutral tone brighter than the footer hints.
-- Directory and commit rows are headings only. Selection and `Tab` / `Shift-Tab`
-  rotation move between files and never stop on a heading.
+- Top-level files come first, then every other file; each part keeps input order. File
+  rotation and the file list follow this order.
+- Directory rows are headings only. Selection and `Tab` / `Shift-Tab` rotation move
+  between files and never stop on a heading.
 - Rows have no indentation. A directory heading shows the directory's full path with a
   trailing `/`, such as `src/terminal/`. A directory whose only content is one
   subdirectory shares that subdirectory's heading. A heading appears wherever a file's
-  directory differs from the previous file's in the same group; top-level files after
-  another directory take the heading `./`.
+  directory differs from the previous file's.
 - Directory headings are bold in the separator tone.
 - Each file row is one state marker, one space, and the file's basename:
 
@@ -289,10 +279,15 @@ it has no file-system navigation and no collapse or expansion.
 
 - Each marker takes a light per-state color: modified amber, added green, deleted red,
   renamed blue, and `?` in the name's neutral tone. File names stay neutral.
+- A `rename to` or `copy to` line names a file. Otherwise the name is the longest run of
+  trailing `/`-separated components both header paths share, or the whole new path
+  when they share none. In a Git section with a `/dev/null` header, both paths come
+  from the `diff --git` line, split at the one space whose halves share such a run;
+  outside Git, the other header's path is shown as written.
 - Git metadata decides a file's state. Without it, a `/dev/null` old header means added
   and a `/dev/null` new header means deleted; differing header paths never mean a rename.
-- A `?` entry has no directory; it appears at the top level after every path in its
-  group, in input order, labelled with its raw header line.
+- A `?` entry has no directory; it is a top-level file labelled with its raw header
+  line.
 - Nerd Font glyphs are not used.
 
 ## View model

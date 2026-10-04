@@ -234,16 +234,16 @@ fn horizontal_movement(mode: Mode) {
 fn file_rotation(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     assert!(
-        live.shows("func greeting() string"),
-        "cmd/sample.go sorts first"
+        live.shows("pub fn greeting()"),
+        "src/sample.rs, the first input file, is selected"
     );
 
     for expected in [
+        "export const greeting",
+        "def greeting()",
+        "func greeting() string",
         "const char *greeting(void)",
         "pub fn greeting()",
-        "def greeting()",
-        "export const greeting",
-        "func greeting() string",
     ] {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         assert!(
@@ -254,12 +254,12 @@ fn file_rotation(mode: Mode) {
 
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     assert!(
-        live.shows("export const greeting"),
+        live.shows("const char *greeting(void)"),
         "Shift-Tab wraps to the last file"
     );
     live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT));
     assert!(
-        live.shows("def greeting()"),
+        live.shows("func greeting() string"),
         "Shift-Tab selects the previous file"
     );
 }
@@ -267,8 +267,8 @@ fn file_rotation(mode: Mode) {
 fn layout_cycle(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     let start = live.buffer();
-    let old = "func greeting() string {";
-    let new = "func greeting(name string) string {";
+    let old = "pub fn greeting() -> &'static str {";
+    let new = "pub fn greeting(name: &str) -> String {";
 
     let side_by_side = live.find(old).y == live.find(new).y;
     assert_eq!(side_by_side, mode.layout == DiffLayout::Vertical);
@@ -325,7 +325,7 @@ fn resize(mode: Mode) {
     assert_eq!(live.resize(80, 20), Step::Continue);
     assert_eq!(live.rows().len(), 20);
     assert!(live.rows().iter().all(|row| row.chars().count() == 80));
-    assert!(live.shows("func greeting("));
+    assert!(live.shows("pub fn greeting("));
 
     live.resize(WIDTH, HEIGHT);
     assert_eq!(
@@ -493,17 +493,18 @@ fn unified_line() -> Mode {
 }
 
 #[test]
-fn lists_files_under_directory_headings_in_git_order() {
+fn lists_top_level_files_first_then_directories_in_input_order() {
     let live = Live::load(TREE_PATCH, unified_line());
     let listed = [
         "- README.md",
+        "src/terminal/",
+        "~ view.rs",
+        "src/",
+        "+ new.rs",
         "bin/",
         "* run.sh",
         "src/",
         "~ lib.rs",
-        "+ new.rs",
-        "src/terminal/",
-        "~ view.rs",
     ];
 
     assert_eq!(live.file_list()[..listed.len()], listed);
@@ -514,7 +515,7 @@ fn tab_moves_between_files_and_skips_headings() {
     let mut live = Live::load(TREE_PATCH, unified_line());
     assert!(
         live.shows("readme_gone"),
-        "the first sorted file is selected"
+        "the first listed file is selected"
     );
 
     let unselected = live.background("src/terminal/");
@@ -526,10 +527,10 @@ fn tab_moves_between_files_and_skips_headings() {
     );
 
     for (expected_diff, expected_row) in [
+        ("view_new", "~ view.rs"),
+        ("added_file", "+ new.rs"),
         ("rename to bin/run.sh", "* run.sh"),
         ("new mode 100755", "~ lib.rs"),
-        ("added_file", "+ new.rs"),
-        ("view_new", "~ view.rs"),
         ("readme_gone", "- README.md"),
     ] {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -555,14 +556,18 @@ fn tab_moves_between_files_and_skips_headings() {
     }
 
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-    assert!(live.shows("view_new"), "Shift-Tab wraps to the last file");
+    assert!(
+        live.shows("new mode 100755"),
+        "Shift-Tab wraps to the last file"
+    );
 }
 
 /// Contract: docs/spec/architecture.md#file-tree (markers take their state's color).
 #[test]
 fn colors_markers_by_state() {
     let mut live = Live::load(TREE_PATCH, unified_line());
-    live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
 
     let (deleted, name) = live.file_row_colors("- README.md");
     let (modified, lib_name) = live.file_row_colors("~ lib.rs");
@@ -580,38 +585,6 @@ fn colors_markers_by_state() {
         "every name shares one color"
     );
     assert_ne!(name, deleted, "names are not colored by state");
-}
-
-#[test]
-fn groups_files_by_commit_under_commit_headings() {
-    let file = |path: &str, marker: &str| {
-        format!(
-            "diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+{marker}\n"
-        )
-    };
-    let patch = format!(
-        "commit 0123456789abcdef0123456789abcdef01234567\nAuthor: A <a@example.com>\n\n    Newer change\n\n{}{}\
-         commit fedcba9876543210fedcba9876543210fedcba98\nAuthor: A <a@example.com>\n\n    Older change\n\n{}",
-        file("src/z.rs", "newer_z"),
-        file("src/a.rs", "newer_a"),
-        file("src/m.rs", "older_m"),
-    );
-    let mut live = Live::load(&patch, unified_line());
-    let listed = [
-        "0123456 Newer change",
-        "src/",
-        "~ a.rs",
-        "~ z.rs",
-        "fedcba9 Older change",
-        "src/",
-        "~ m.rs",
-    ];
-
-    assert_eq!(live.file_list()[..listed.len()], listed);
-    for expected in ["newer_a", "newer_z", "older_m"] {
-        assert!(live.shows(expected), "{expected} in commit order");
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    }
 }
 
 #[test]

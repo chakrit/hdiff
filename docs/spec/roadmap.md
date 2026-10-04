@@ -245,23 +245,20 @@ be the cause; this is unconfirmed.
 ## Next: file tree sidebar
 
 Deliver the [file tree](architecture.md#file-tree) contract: the file list becomes files
-under directory headings, in Git's path order, with one state marker per file. Git's
-ordering rules are recorded in
-[Git command output](../vendor/git-command-output.md#file-order).
+under directory headings, top-level files first and otherwise in input order, with one
+state marker per file.
 
 ### Settled before coding
 
-- [x] **Sort scope for multi-commit input.** Files sort within commit groups under a
-  commit heading; other surrounding text does not split the list.
 - [x] **Copy marker.** `+`, placed at the new path.
 
 ### Implemented
 
 - `src/file_identity.rs`: each file's state and path, derived by the parser from Git
   metadata and decoded `---` / `+++` header paths (timestamps cut, C-quoting decoded,
-  `a/` / `b/` stripped); `?` when the path cannot be determined.
-- `src/file_tree.rs`: commit groups from each file's leading text, Git order within a
-  group, and heading and file rows with each file's row index.
+  named by their shared path suffix); `?` when the path cannot be determined.
+- `src/file_tree.rs`: top-level files first, then input order, and heading and file
+  rows with each file's row index.
 - `src/prepared.rs` prepares files in list order under `Stage::Labels`; each prepared
   file carries its list row, and `src/terminal/chrome.rs` draws the rows.
 
@@ -270,9 +267,8 @@ ordering rules are recorded in
 - [x] Human check (below): passed through `./git.sh` on 2026-10-04.
 - [x] Kubernetes `labels` stage change reported on 2026-10-04: paired comparison against
   `883d76b` adds 0.03–0.09% retired instructions per range; `labels` is 10–31 ms per range.
-- [ ] Rule on prefixes other than `a/` / `b/` (`diff.mnemonicPrefix`, `--no-prefix`,
-  `--src-prefix`), which currently stay in the path, and on grouping for
-  `format-patch` mbox, `--oneline`, and `--graph` input, which forms no commit groups.
+- [x] Name files by their shared path suffix instead of stripping `a/` / `b/`; list
+  top-level files first and the rest in input order; remove commit groups.
 
 ### Validation
 
@@ -280,7 +276,7 @@ ordering rules are recorded in
   `cargo test --locked`.
 - Live tests (`tests/live.rs`): a fixture with files at several depths, an unsorted
   input, a rename, an addition, a deletion, and a mode change. Assert the headings,
-  markers, sorted order, `Tab` / `Shift-Tab` skipping headings and wrapping, and a
+  markers, list order, `Tab` / `Shift-Tab` skipping headings and wrapping, and a
   selection beyond the pane height staying visible.
 - `bench/fixtures.sh` worst movement step stays under the 1 ms target. With the user's
   approval for the run, report the Kubernetes `labels` stage change as a measured cost.

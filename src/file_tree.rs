@@ -1,20 +1,13 @@
-//! The file list: files under directory headings, sorted within commit groups.
-//! Contract: docs/spec/architecture.md#file-tree.
-
-use std::cmp::Ordering;
+//! The file list: top-level files first, then files under directory headings, each part
+//! in input order. Contract: docs/spec/architecture.md#file-tree.
 
 use crate::{
-    document::{FileView, SourceLine, sanitize},
+    document::{FileView, sanitize},
     file_identity::{FileIdentity, FileState},
 };
 
-/// Git abbreviates hashes to at least four digits (`--abbrev`).
-const MINIMUM_HASH_LENGTH: usize = 4;
-const HEADING_HASH_LENGTH: usize = 7;
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum TreeRow {
-    Commit(String),
     Directory(String),
     File { marker: Marker, name: String },
 }
@@ -54,30 +47,28 @@ pub struct FileTree {
 
 impl FileTree {
     pub fn build(views: &[FileView<'_>]) -> Self {
-        let groups = commit_groups(views);
+        let identities = views.iter().map(|view| view.file.identity()).enumerate();
+        let (top_level, nested): (Vec<_>, Vec<_>) =
+            identities.partition(|(_, identity)| placement(identity).0.is_empty());
 
+        // Top-level files come first, so a directory heading never needs to be closed.
         let mut rows = Vec::new();
         let mut files = Vec::new();
-        for group in groups {
-            if let Some(heading) = group.heading {
-                rows.push(TreeRow::Commit(heading));
+        let mut directory = "";
+        for (view, identity) in top_level.into_iter().chain(nested) {
+            let (file_directory, name) = placement(identity);
+            if file_directory != directory {
+                rows.push(TreeRow::Directory(format!("{}/", sanitize(file_directory))));
+                directory = file_directory;
             }
-            let mut directory = "";
-            for (view, identity) in group.files {
-                let (file_directory, name) = placement(identity);
-                if file_directory != directory {
-                    rows.push(TreeRow::Directory(directory_heading(file_directory)));
-                    directory = file_directory;
-                }
-                files.push(ListedFile {
-                    view,
-                    row: rows.len(),
-                });
-                rows.push(TreeRow::File {
-                    marker: marker(identity),
-                    name: sanitize(name),
-                });
-            }
+            files.push(ListedFile {
+                view,
+                row: rows.len(),
+            });
+            rows.push(TreeRow::File {
+                marker: marker(identity),
+                name: sanitize(name),
+            });
         }
 
         Self {
@@ -113,86 +104,6 @@ fn placement(identity: &FileIdentity) -> (&str, &str) {
     }
 }
 
-fn directory_heading(directory: &str) -> String {
-    match directory {
-        "" => "./".to_owned(),
-        _ => format!("{}/", sanitize(directory)),
-    }
-}
-
-// Commit groups
-
-/// Files that share a commit heading, as (view index, identity) in list order.
-struct CommitGroup<'a> {
-    heading: Option<String>,
-    files: Vec<(usize, &'a FileIdentity)>,
-}
-
-fn commit_groups<'a>(views: &[FileView<'a>]) -> Vec<CommitGroup<'a>> {
-    let mut groups = Vec::new();
-    let mut current = CommitGroup {
-        heading: None,
-        files: Vec::new(),
-    };
-    for (index, view) in views.iter().enumerate() {
-        if let Some(heading) = commit_heading(view.leading) {
-            let next = CommitGroup {
-                heading: Some(heading),
-                files: Vec::new(),
-            };
-            groups.push(std::mem::replace(&mut current, next));
-        }
-        current.files.push((index, view.file.identity()));
-    }
-    groups.push(current);
-
-    groups.retain(|group| !group.files.is_empty());
-    for group in &mut groups {
-        group.files.sort_by(|(_, a), (_, b)| list_order(a, b));
-    }
-    groups
-}
-
-/// Paths bytewise, as Git orders them; unknown entries after every path, stable.
-fn list_order(a: &FileIdentity, b: &FileIdentity) -> Ordering {
-    match (a, b) {
-        (FileIdentity::Path { path, .. }, FileIdentity::Path { path: other, .. }) => {
-            path.cmp(other)
-        }
-        (FileIdentity::Path { .. }, FileIdentity::Unknown { .. }) => Ordering::Less,
-        (FileIdentity::Unknown { .. }, FileIdentity::Path { .. }) => Ordering::Greater,
-        (FileIdentity::Unknown { .. }, FileIdentity::Unknown { .. }) => Ordering::Equal,
-    }
-}
-
-/// The heading of the last `commit <hash>` line in surrounding text: the short hash and
-/// the commit's first indented message line.
-fn commit_heading(lines: &[SourceLine]) -> Option<String> {
-    let (start, hash) = lines
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, line)| Some((index, commit_hash(&line.structural_text)?)))?;
-    let short_hash = hash.get(..HEADING_HASH_LENGTH).unwrap_or(hash);
-    let subject = lines[start + 1..].iter().find_map(|line| {
-        let message = line.structural_text.strip_prefix("    ")?.trim();
-        (!message.is_empty()).then_some(message)
-    });
-
-    let heading = match subject {
-        Some(subject) => format!("{short_hash} {subject}"),
-        None => short_hash.to_owned(),
-    };
-    Some(heading)
-}
-
-fn commit_hash(line: &str) -> Option<&str> {
-    let hash = line.strip_prefix("commit ")?.split(' ').next()?;
-    let is_hash = hash.len() >= MINIMUM_HASH_LENGTH && hash.bytes().all(|b| b.is_ascii_hexdigit());
-
-    is_hash.then_some(hash)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{FileTree, TreeRow};
@@ -214,7 +125,6 @@ mod tests {
             .rows()
             .iter()
             .map(|row| match row {
-                TreeRow::Commit(heading) => format!("# {heading}"),
                 TreeRow::Directory(heading) => heading.clone(),
                 TreeRow::File { marker, name } => format!("{} {name}", marker.label()),
             })
@@ -225,20 +135,20 @@ mod tests {
         tree(input).files().iter().map(|file| file.view).collect()
     }
 
+    /// Contract: docs/spec/architecture.md#file-tree (root-level files first).
     #[test]
-    fn orders_files_bytewise_on_the_full_path_as_git_does() {
-        let input = ["b_new", "a0", "a/x", "a.rs", "a.b", "a-b/x", "0first"]
+    fn lists_top_level_files_first_then_the_rest_in_input_order() {
+        let input = ["src/b.rs", "z.md", "lib/a.rs", "a.md", "src/c.rs"]
             .map(modified)
             .concat();
 
         assert_eq!(
             rows(&input),
             [
-                "~ 0first", "a-b/", "~ x", "./", "~ a.b", "~ a.rs", "a/", "~ x", "./", "~ a0",
-                "~ b_new",
+                "~ z.md", "~ a.md", "src/", "~ b.rs", "lib/", "~ a.rs", "src/", "~ c.rs"
             ]
         );
-        assert_eq!(view_order(&input), [6, 5, 4, 3, 2, 1, 0]);
+        assert_eq!(view_order(&input), [1, 3, 0, 2, 4]);
     }
 
     #[test]
@@ -250,7 +160,7 @@ mod tests {
             .map(|file| (file.view, file.row))
             .collect::<Vec<_>>();
 
-        assert_eq!(listed, [(1, 0), (2, 2), (0, 3)]);
+        assert_eq!(listed, [(1, 0), (0, 2), (2, 3)]);
     }
 
     #[test]
@@ -264,10 +174,10 @@ mod tests {
             [
                 "docs/spec/",
                 "~ roadmap.md",
-                "src/",
-                "~ lib.rs",
                 "src/terminal/",
                 "~ view.rs",
+                "src/",
+                "~ lib.rs",
             ]
         );
     }
@@ -291,81 +201,14 @@ mod tests {
         assert_eq!(
             rows(input),
             [
-                "dir/",
-                "~ mode",
-                "./",
                 "- gone",
                 "+ new",
                 "* renamed",
                 "? diff --git a/x b/y z",
+                "dir/",
+                "~ mode",
             ]
         );
-        assert_eq!(view_order(input), [4, 0, 1, 2, 3]);
-    }
-
-    #[test]
-    fn sorts_within_commit_groups_under_commit_headings() {
-        let input = format!(
-            "commit 0123456789abcdef0123456789abcdef01234567 (HEAD -> main)\n\
-             Author: A <a@example.com>\n\n    Second change\n\n    Body.\n\n{}{}\
-             commit fedcba9876543210fedcba9876543210fedcba98\n\
-             Author: A <a@example.com>\n\n    First change\n\n{}",
-            modified("z"),
-            modified("a"),
-            modified("m"),
-        );
-
-        assert_eq!(
-            rows(&input),
-            [
-                "# 0123456 Second change",
-                "~ a",
-                "~ z",
-                "# fedcba9 First change",
-                "~ m",
-            ]
-        );
-        assert_eq!(view_order(&input), [1, 0, 2]);
-    }
-
-    #[test]
-    fn restarts_directory_headings_in_each_commit_group() {
-        let input = format!(
-            "commit 0123456789abcdef0123456789abcdef01234567\n\n    One\n\n{}\
-             commit fedcba9876543210fedcba9876543210fedcba98\n\n    Two\n\n{}",
-            modified("src/a.rs"),
-            modified("src/b.rs"),
-        );
-
-        assert_eq!(
-            rows(&input),
-            [
-                "# 0123456 One",
-                "src/",
-                "~ a.rs",
-                "# fedcba9 Two",
-                "src/",
-                "~ b.rs"
-            ]
-        );
-    }
-
-    #[test]
-    fn names_a_group_after_the_last_commit_in_its_text() {
-        let input = format!(
-            "commit 1111111111111111111111111111111111111111\n\n    Merge\n\n\
-             commit 2222222222222222222222222222222222222222\n\n    Change\n\n{}",
-            modified("f"),
-        );
-
-        assert_eq!(rows(&input), ["# 2222222 Change", "~ f"]);
-    }
-
-    #[test]
-    fn other_surrounding_text_does_not_split_the_list() {
-        let input = "Only in a: only\ndiff -ru a/y b/y\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-1\n+2\n\
-                     diff -ru a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-1\n+2\n";
-
-        assert_eq!(rows(input), ["~ x", "~ y"]);
+        assert_eq!(view_order(input), [0, 1, 2, 3, 4]);
     }
 }
