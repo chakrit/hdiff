@@ -116,11 +116,11 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
                 .add_modifier(Modifier::BOLD),
         ),
         TreeRow::File { marker, name } => Line::from(vec![
-            Span::raw(marker.label()),
+            Span::styled(marker.label(), Style::default().fg(palette.marker(*marker))),
             Span::raw(" "),
             Span::raw(name.as_str()),
         ])
-        .style(Style::default().fg(palette.file_row(*marker))),
+        .style(Style::default().fg(palette.file_name)),
     };
 
     ListItem::new(line)
@@ -145,11 +145,11 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 struct ChromePalette {
     commit_heading: Color,
     directory_heading: Color,
-    modified_file: Color,
-    added_file: Color,
-    deleted_file: Color,
-    renamed_file: Color,
-    unknown_file: Color,
+    file_name: Color,
+    modified_marker: Color,
+    added_marker: Color,
+    deleted_marker: Color,
+    renamed_marker: Color,
     selected_file: Color,
     selected_file_background: Color,
     separator: Color,
@@ -157,13 +157,13 @@ struct ChromePalette {
 }
 
 impl ChromePalette {
-    fn file_row(self, marker: Marker) -> Color {
+    fn marker(self, marker: Marker) -> Color {
         match marker {
-            Marker::State(FileState::Modified) => self.modified_file,
-            Marker::State(FileState::Added) => self.added_file,
-            Marker::State(FileState::Deleted) => self.deleted_file,
-            Marker::State(FileState::Renamed) => self.renamed_file,
-            Marker::Unknown => self.unknown_file,
+            Marker::State(FileState::Modified) => self.modified_marker,
+            Marker::State(FileState::Added) => self.added_marker,
+            Marker::State(FileState::Deleted) => self.deleted_marker,
+            Marker::State(FileState::Renamed) => self.renamed_marker,
+            Marker::Unknown => self.file_name,
         }
     }
 }
@@ -173,11 +173,11 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         u16::MAX => ChromePalette {
             commit_heading: Color::Rgb(150, 150, 150),
             directory_heading: Color::Rgb(125, 125, 125),
-            modified_file: Color::Rgb(166, 162, 150),
-            added_file: Color::Rgb(152, 166, 154),
-            deleted_file: Color::Rgb(170, 152, 152),
-            renamed_file: Color::Rgb(152, 160, 172),
-            unknown_file: Color::Rgb(160, 160, 160),
+            file_name: Color::Rgb(160, 160, 160),
+            modified_marker: Color::Rgb(190, 170, 120),
+            added_marker: Color::Rgb(130, 185, 130),
+            deleted_marker: Color::Rgb(200, 130, 130),
+            renamed_marker: Color::Rgb(130, 170, 205),
             selected_file: Color::Rgb(220, 220, 220),
             selected_file_background: Color::Rgb(65, 65, 65),
             separator: Color::Rgb(125, 125, 125),
@@ -186,11 +186,11 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         256.. => ChromePalette {
             commit_heading: Color::Indexed(245),
             directory_heading: Color::Indexed(243),
-            modified_file: Color::Indexed(246),
-            added_file: Color::Indexed(246),
-            deleted_file: Color::Indexed(246),
-            renamed_file: Color::Indexed(246),
-            unknown_file: Color::Indexed(246),
+            file_name: Color::Indexed(246),
+            modified_marker: Color::Indexed(144),
+            added_marker: Color::Indexed(108),
+            deleted_marker: Color::Indexed(138),
+            renamed_marker: Color::Indexed(110),
             selected_file: Color::Indexed(255),
             selected_file_background: Color::Indexed(238),
             separator: Color::Indexed(243),
@@ -199,11 +199,11 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
         _ => ChromePalette {
             commit_heading: Color::Gray,
             directory_heading: Color::DarkGray,
-            modified_file: Color::Gray,
-            added_file: Color::Gray,
-            deleted_file: Color::Gray,
-            renamed_file: Color::Gray,
-            unknown_file: Color::Gray,
+            file_name: Color::Gray,
+            modified_marker: Color::Yellow,
+            added_marker: Color::Green,
+            deleted_marker: Color::Red,
+            renamed_marker: Color::Blue,
             selected_file: Color::White,
             selected_file_background: Color::DarkGray,
             separator: Color::DarkGray,

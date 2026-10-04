@@ -106,20 +106,22 @@ impl Live {
         self.rows().iter().any(|row| row.contains(text))
     }
 
-    /// The foreground of `text` where it first appears, which must be one color.
-    fn foreground(&self, text: &str) -> Color {
-        let start = self.find(text);
+    /// The marker and name foregrounds of the file row `row`, such as `"~ lib.rs"`; the
+    /// name must be drawn in one color.
+    fn file_row_colors(&self, row: &str) -> (Color, Color) {
+        let start = self.find(row);
         let buffer = self.buffer();
-        let colors = (start.x..)
-            .take(text.chars().count())
+        let marker = buffer[(start.x, start.y)].fg;
+        let name = (start.x + 2..)
+            .take(row.chars().count() - 2)
             .map(|x| buffer[(x, start.y)].fg)
             .collect::<Vec<_>>();
 
         assert!(
-            colors.windows(2).all(|pair| pair[0] == pair[1]),
-            "{text:?} is drawn in one color: {colors:?}"
+            name.windows(2).all(|pair| pair[0] == pair[1]),
+            "{row:?} draws its name in one color: {name:?}"
         );
-        colors[0]
+        (marker, name[0])
     }
 
     /// Cell position of the first occurrence of `text`.
@@ -556,24 +558,28 @@ fn tab_moves_between_files_and_skips_headings() {
     assert!(live.shows("view_new"), "Shift-Tab wraps to the last file");
 }
 
-/// Contract: docs/spec/architecture.md#file-tree (file rows take their state's color).
+/// Contract: docs/spec/architecture.md#file-tree (markers take their state's color).
 #[test]
-fn colors_file_rows_by_state() {
+fn colors_markers_by_state() {
     let mut live = Live::load(TREE_PATCH, unified_line());
     live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
-    let deleted = live.foreground("- README.md");
-    let modified = live.foreground("~ lib.rs");
-    let added = live.foreground("+ new.rs");
+    let (deleted, name) = live.file_row_colors("- README.md");
+    let (modified, lib_name) = live.file_row_colors("~ lib.rs");
+    let (added, new_name) = live.file_row_colors("+ new.rs");
+    let (view_marker, view_name) = live.file_row_colors("~ view.rs");
 
-    assert_eq!(
-        live.foreground("~ view.rs"),
-        modified,
-        "one color per state"
-    );
+    assert_eq!(view_marker, modified, "one color per state");
     assert_ne!(deleted, modified, "deleted and modified differ");
     assert_ne!(deleted, added, "deleted and added differ");
     assert_ne!(modified, added, "modified and added differ");
+
+    assert_eq!(
+        [lib_name, new_name, view_name],
+        [name; 3],
+        "every name shares one color"
+    );
+    assert_ne!(name, deleted, "names are not colored by state");
 }
 
 #[test]

@@ -247,9 +247,10 @@ The file-list hints expose shortcuts relevant to the current context. A help vie
 complete keymap when the compact hints cannot fit. The pager-first model and live
 shortcut-driven settings are settled product requirements.
 
-Unselected file rows take their state's color, as the [file tree](#file-tree) defines.
-The selected file row applies one shared muted foreground/background style to its whole
-row and has no selection glyph.
+Unselected file names use a medium-muted neutral tone, one level brighter than the
+separator and footer hints; their markers take their state's color, as the
+[file tree](#file-tree) defines. The selected file row applies one shared muted
+foreground/background style to its whole row and has no selection glyph.
 
 ### File tree
 
@@ -286,9 +287,8 @@ it has no file-system navigation and no collapse or expansion.
   | `*`    | renamed; the row shows the new name        |
   | `?`    | ambiguous or erroneous entry               |
 
-- A file row's marker and name share one very subtle per-state tint of the neutral file
-  tone: modified amber, added green, deleted red, renamed blue, and `?` neutral. Terminals
-  without true color show every state in the neutral tone.
+- Each marker takes a light per-state color: modified amber, added green, deleted red,
+  renamed blue, and `?` in the name's neutral tone. File names stay neutral.
 - Git metadata decides a file's state. Without it, a `/dev/null` old header means added
   and a `/dev/null` new header means deleted; differing header paths never mean a rename.
 - A `?` entry has no directory; it appears at the top level after every path in its
