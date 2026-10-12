@@ -253,7 +253,7 @@ foreground/background style to its whole row and has no selection glyph.
 
 ### File tree
 
-Delivery is tracked in the [roadmap's file tree plan](roadmap.md#next-file-tree-sidebar).
+Delivery is recorded in the [roadmap](roadmap.md#completed-delivery).
 
 The file list shows files grouped under directory headings, derived from file paths only;
 it has no file-system navigation and no collapse or expansion.
