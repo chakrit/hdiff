@@ -1,4 +1,5 @@
-//! Frame chrome around the diff panes: the file list, footer hints, and separators.
+//! Frame chrome around the diff panes: the file list, footer hints, separators, and
+//! continuity markers.
 
 use ratatui::{
     Frame,
@@ -9,9 +10,11 @@ use ratatui::{
     widgets::{List, ListItem, ListState},
 };
 
+use super::row_writer::Clip;
 use crate::{
     file_identity::FileState,
     file_tree::{FileTree, Marker, TreeRow},
+    layout::{PANE_FRAME_HEIGHT, PANE_FRAME_WIDTH},
 };
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
@@ -72,6 +75,90 @@ pub(super) fn draw_inner_separator(
     let style = Style::default().fg(inner_separator_color(color_count));
 
     fill(buffer, area, symbol, style);
+}
+
+/// A diff pane: its content area inside a continuity-marker frame of one row above and
+/// below and one column on either side. Rules: `docs/spec/architecture.md` (Continuity
+/// markers).
+#[derive(Clone, Copy)]
+pub(super) struct PaneFrame {
+    pane: Rect,
+    content: Rect,
+}
+
+/// The visible lines of a pane among all the lines of its scroll extent.
+#[derive(Clone, Copy)]
+pub(super) struct LineWindow {
+    /// The first visible line.
+    pub(super) first: usize,
+    /// Lines in the scroll extent.
+    pub(super) total: usize,
+}
+
+impl PaneFrame {
+    pub(super) fn around(pane: Rect) -> Self {
+        let frame_rows = u16::try_from(PANE_FRAME_HEIGHT).expect("frame rows fit u16");
+        let content = Rect::new(
+            pane.x + PANE_FRAME_WIDTH / 2,
+            pane.y + frame_rows / 2,
+            pane.width.saturating_sub(PANE_FRAME_WIDTH),
+            pane.height.saturating_sub(frame_rows),
+        );
+
+        Self { pane, content }
+    }
+
+    pub(super) fn content(&self) -> Rect {
+        self.content
+    }
+
+    /// `‹` and `›` beside content line `y` on each side where its row was clipped.
+    pub(super) fn draw_line_markers(
+        &self,
+        buffer: &mut Buffer,
+        y: u16,
+        clip: Clip,
+        color_count: u16,
+    ) {
+        let style = Style::default().fg(chrome_palette(color_count).separator);
+
+        if clip.left {
+            buffer[(self.pane.left(), y)]
+                .set_symbol("‹")
+                .set_style(style);
+        }
+        if clip.right {
+            buffer[(self.pane.right() - 1, y)]
+                .set_symbol("›")
+                .set_style(style);
+        }
+    }
+
+    /// `▲` above and `▼` below the content while `window` has lines past that edge.
+    pub(super) fn draw_window_markers(
+        &self,
+        buffer: &mut Buffer,
+        window: LineWindow,
+        color_count: u16,
+    ) {
+        if self.content.is_empty() {
+            return;
+        }
+        let style = Style::default().fg(chrome_palette(color_count).separator);
+        let center = self.pane.x + self.pane.width / 2;
+        let shown = usize::from(self.content.height);
+
+        if window.first > 0 {
+            buffer[(center, self.pane.top())]
+                .set_symbol("▲")
+                .set_style(style);
+        }
+        if window.first + shown < window.total {
+            buffer[(center, self.pane.bottom() - 1)]
+                .set_symbol("▼")
+                .set_style(style);
+        }
+    }
 }
 
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep

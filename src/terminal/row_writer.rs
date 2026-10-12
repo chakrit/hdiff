@@ -32,6 +32,13 @@ impl RowPlacement {
     }
 }
 
+/// Whether a written line left cells of its row outside the pane on either side.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Clip {
+    pub(super) left: bool,
+    pub(super) right: bool,
+}
+
 /// Fills `area` with the row's style, then writes the part of its marker gutter and
 /// payload that `placement` selects. Only a row's first line carries its marker.
 pub(super) fn write_row(
@@ -40,10 +47,10 @@ pub(super) fn write_row(
     row: PaneRow<'_>,
     placement: RowPlacement,
     color_count: u16,
-) {
+) -> Clip {
     buffer.set_style(area, row_style(row.kind(), color_count));
     let PaneRow::Text(row) = row else {
-        return;
+        return Clip::default();
     };
 
     let payload = ExpandedPayload::new(row);
@@ -57,6 +64,7 @@ pub(super) fn write_row(
         area,
         horizontal_offset: 0,
         column: 0,
+        clip: Clip::default(),
     };
 
     match placement {
@@ -65,27 +73,31 @@ pub(super) fn write_row(
                 horizontal_offset: usize::from(horizontal_offset),
                 ..cursor
             };
-            write_clusters(cursor, gutter.into_iter().chain(payload_clusters));
+            write_clusters(cursor, gutter.into_iter().chain(payload_clusters))
         }
         RowPlacement::Wrapped { line: 0, width } => {
-            write_wrapped_line(cursor, gutter, payload_clusters, 0, width);
+            write_wrapped_line(cursor, gutter, payload_clusters, 0, width)
         }
         RowPlacement::Wrapped { line, width } => {
             let cursor = RowCursor {
                 column: MARKER_GUTTER_WIDTH,
                 ..cursor
             };
-            write_wrapped_line(cursor, [], payload_clusters, line, width);
+            write_wrapped_line(cursor, [], payload_clusters, line, width)
         }
     }
 }
 
-fn write_clusters<'c>(mut cursor: RowCursor<'_>, clusters: impl Iterator<Item = (&'c str, Style)>) {
+fn write_clusters<'c>(
+    mut cursor: RowCursor<'_>,
+    clusters: impl Iterator<Item = (&'c str, Style)>,
+) -> Clip {
     for (cluster, style) in clusters {
         if cursor.write(cluster, style).is_break() {
             break;
         }
     }
+    cursor.clip
 }
 
 /// Writes `gutter`, then the payload clusters that wrapping at `width` places on `line`.
@@ -95,7 +107,7 @@ fn write_wrapped_line<'c>(
     payload_clusters: impl Iterator<Item = (&'c str, Style)>,
     line: usize,
     width: usize,
-) {
+) -> Clip {
     let mut breaks = LineBreaks::new(width);
     let line_clusters = payload_clusters
         .map(|(cluster, style)| (cluster_cells(cluster), cluster, style))
@@ -105,7 +117,7 @@ fn write_wrapped_line<'c>(
         .take_while(|(placed_line, _, _)| *placed_line == line)
         .map(|(_, cluster, style)| (cluster, style));
 
-    write_clusters(cursor, gutter.into_iter().chain(line_clusters));
+    write_clusters(cursor, gutter.into_iter().chain(line_clusters))
 }
 
 /// A row's payload with tabs expanded, segmented into grapheme clusters as a whole so
@@ -149,12 +161,13 @@ impl ExpandedPayload {
 }
 
 /// Places clusters by logical column, showing the columns from `horizontal_offset` to the
-/// pane's right edge.
+/// pane's right edge, and records the sides where clusters fell outside.
 struct RowCursor<'b> {
     buffer: &'b mut Buffer,
     area: Rect,
     horizontal_offset: usize,
     column: usize,
+    clip: Clip,
 }
 
 impl RowCursor<'_> {
@@ -167,10 +180,14 @@ impl RowCursor<'_> {
         let start = self.column;
         let end = start + width;
         self.column = end;
+        if start < self.horizontal_offset {
+            self.clip.left = true;
+        }
         if end <= self.horizontal_offset {
             return ControlFlow::Continue(());
         }
         if end - self.horizontal_offset > usize::from(self.area.width) {
+            self.clip.right = true;
             return ControlFlow::Break(());
         }
 
@@ -217,7 +234,7 @@ mod tests {
         style::{Color, Modifier},
     };
 
-    use super::{RowPlacement, write_row};
+    use super::{Clip, RowPlacement, write_row};
     use crate::{
         interaction::{DiffGranularity, DiffLayout, Viewport},
         layout::Wrap,
@@ -322,6 +339,7 @@ mod tests {
                 6,
                 RowPlacement::Wrapped { line, width: 4 },
             )
+            .0
         };
 
         let (first, second, past_the_end) = (line(0), line(1), line(2));
@@ -331,6 +349,36 @@ mod tests {
         assert_eq!(row_text(&past_the_end), "");
         assert_eq!(second[(0, 0)].bg, ADDITION_BACKGROUND);
         assert_eq!(past_the_end[(5, 0)].bg, ADDITION_BACKGROUND);
+    }
+
+    #[test]
+    fn reports_the_sides_where_a_row_leaves_the_pane() {
+        let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
+        let file = prepared.file(0).expect("prepared file");
+        let row = PaneRow::Text(file.row(3, DiffGranularity::Line));
+        let clip = |width, horizontal_offset| {
+            let area = Rect::new(0, 0, width, 1);
+            let mut buffer = Buffer::empty(area);
+            let placement = RowPlacement::Scrolled { horizontal_offset };
+            write_row(&mut buffer, area, row, placement, u16::MAX)
+        };
+        let sides = |left, right| Clip { left, right };
+
+        // architecture.md (Continuity markers): the row has cells left of the offset, or
+        // continues past the right edge.
+        assert_eq!(clip(7, 0), sides(false, false), "the row fits");
+        assert_eq!(
+            clip(6, 0),
+            sides(false, true),
+            "a wide cluster that does not fit"
+        );
+        assert_eq!(clip(4, 1), sides(true, true));
+        assert_eq!(clip(6, 1), sides(true, false));
+        assert_eq!(
+            write_placed(row, 3, RowPlacement::Wrapped { line: 1, width: 1 }).1,
+            sides(false, false),
+            "a wrapped line shows its whole part of the row"
+        );
     }
 
     #[test]
@@ -351,14 +399,14 @@ mod tests {
     }
 
     fn write(row: PaneRow<'_>, width: u16, horizontal_offset: u16) -> Buffer {
-        write_placed(row, width, RowPlacement::Scrolled { horizontal_offset })
+        write_placed(row, width, RowPlacement::Scrolled { horizontal_offset }).0
     }
 
-    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Buffer {
+    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> (Buffer, Clip) {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
-        write_row(&mut buffer, area, row, placement, u16::MAX);
-        buffer
+        let clip = write_row(&mut buffer, area, row, placement, u16::MAX);
+        (buffer, clip)
     }
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {

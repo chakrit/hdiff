@@ -7,7 +7,7 @@ use ratatui::{
 use crate::{
     file_tree::FileTree,
     interaction::{DiffLayout, Interaction},
-    layout::{PaneLayout, ScrollExtent, Wrap, content_pane_height, pane_layout},
+    layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
     prepared::PreparedFile,
     styling::StyledRow,
 };
@@ -16,7 +16,9 @@ use crate::{
 use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
-    chrome::{draw_inner_separator, draw_outer_separator, render_file_column},
+    chrome::{
+        LineWindow, PaneFrame, draw_inner_separator, draw_outer_separator, render_file_column,
+    },
     row_writer::{RowPlacement, write_row},
     rows::{
         PaneRow, VisibleLine, VisibleSideBySideRow, aligned_pair, visible_diff_rows,
@@ -26,6 +28,7 @@ use super::{
 
 struct DisplayRows<'a> {
     rows: LayoutRows<'a>,
+    window: LineWindow,
     horizontal_offset: u16,
     wrap: Wrap,
     color_count: u16,
@@ -101,12 +104,16 @@ pub(super) fn render_prepared_frame(
     let preferences = interaction.preferences;
     let display = DisplayRows {
         rows,
+        window: LineWindow {
+            first: viewport.vertical_offset,
+            total: extent.line_count(),
+        },
         horizontal_offset: viewport.horizontal_offset,
         wrap: Wrap::of(preferences.wrapping, area.width, preferences.layout),
         color_count,
     };
 
-    match pane_layout(area.width, area.height) {
+    match pane_layout(area.width, area.height, preferences.layout) {
         PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
         PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
         PaneLayout::DiffOnly => render_display_layout(frame, display, area),
@@ -130,47 +137,59 @@ pub(super) fn render_prepared_frame(
     }
 }
 
-fn render_diff_rows<'a>(
-    frame: &mut Frame,
-    lines: impl IntoIterator<Item = VisibleLine<PaneRow<'a>>>,
-    area: Rect,
-    placement: impl Fn(usize) -> RowPlacement,
-    color_count: u16,
-) {
-    for (index, line) in lines.into_iter().take(area.height.into()).enumerate() {
-        let row_area = Rect::new(area.x, area.y + index as u16, area.width, 1);
-
-        write_row(
-            frame.buffer_mut(),
-            row_area,
-            line.row,
-            placement(line.line),
-            color_count,
-        );
-    }
-}
-
 fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
-    let color_count = display.color_count;
     let placement = |line| RowPlacement::new(display.wrap, display.horizontal_offset, line);
+    let pane_rows = PaneRows {
+        window: display.window,
+        placement,
+        color_count: display.color_count,
+    };
 
     match display.rows {
-        LayoutRows::Unified(lines) => render_diff_rows(
+        LayoutRows::Unified(lines) => pane_rows.render(
             frame,
+            PaneFrame::around(area),
             lines.into_iter().map(|line| VisibleLine {
                 row: PaneRow::Text(line.row),
                 line: line.line,
             }),
-            area,
-            placement,
-            color_count,
         ),
-        LayoutRows::Vertical(lines) => {
-            render_vertical_rows(frame, lines, area, placement, color_count)
+        LayoutRows::Vertical(lines) => render_vertical_rows(frame, lines, area, pane_rows),
+        LayoutRows::Stacked(lines) => render_stacked_rows(frame, lines, area, pane_rows),
+    }
+}
+
+/// Draws one pane's lines inside its continuity-marker frame.
+struct PaneRows<P> {
+    window: LineWindow,
+    placement: P,
+    color_count: u16,
+}
+
+impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
+    fn render<'a>(
+        &self,
+        frame: &mut Frame,
+        pane: PaneFrame,
+        lines: impl IntoIterator<Item = VisibleLine<PaneRow<'a>>>,
+    ) {
+        let content = pane.content();
+        let buffer = frame.buffer_mut();
+
+        for (index, line) in lines.into_iter().take(content.height.into()).enumerate() {
+            let y = content.y + index as u16;
+            let row_area = Rect::new(content.x, y, content.width, 1);
+
+            let clip = write_row(
+                buffer,
+                row_area,
+                line.row,
+                (self.placement)(line.line),
+                self.color_count,
+            );
+            pane.draw_line_markers(buffer, y, clip, self.color_count);
         }
-        LayoutRows::Stacked(lines) => {
-            render_stacked_rows(frame, lines, area, placement, color_count)
-        }
+        pane.draw_window_markers(buffer, self.window, self.color_count);
     }
 }
 
@@ -178,75 +197,68 @@ fn render_vertical_rows(
     frame: &mut Frame,
     lines: Vec<VisibleLine<VisibleSideBySideRow>>,
     area: Rect,
-    placement: impl Fn(usize) -> RowPlacement,
-    color_count: u16,
+    pane_rows: PaneRows<impl Fn(usize) -> RowPlacement>,
 ) {
-    let panes = RatatuiLayout::horizontal([
+    let [before_pane, separator, after_pane] = RatatuiLayout::horizontal([
         Constraint::Percentage(50),
         Constraint::Length(1),
         Constraint::Percentage(50),
     ])
-    .split(area);
+    .areas(area);
+    let (before_lines, after_lines) = split_panes(lines);
+    let before_pane = PaneFrame::around(before_pane);
+    let after_pane = PaneFrame::around(after_pane);
 
-    for (index, line) in lines.into_iter().take(area.height.into()).enumerate() {
-        let y = area.y + index as u16;
-        let before_area = Rect::new(panes[0].x, y, panes[0].width, 1);
-        let separator_area = Rect::new(panes[1].x, y, 1, 1);
-        let after_area = Rect::new(panes[2].x, y, panes[2].width, 1);
-        let Some((before, after)) = pane_pair(line.row) else {
-            continue;
-        };
+    let content = before_pane.content();
+    let shown = before_lines.len().min(content.height.into()) as u16;
+    let separator = Rect::new(separator.x, content.y, separator.width, shown);
+    draw_inner_separator(frame.buffer_mut(), separator, "│", pane_rows.color_count);
 
-        let buffer = frame.buffer_mut();
-        write_row(
-            buffer,
-            before_area,
-            before,
-            placement(line.line),
-            color_count,
-        );
-        write_row(buffer, after_area, after, placement(line.line), color_count);
-        draw_inner_separator(buffer, separator_area, "│", color_count);
-    }
+    pane_rows.render(frame, before_pane, before_lines);
+    pane_rows.render(frame, after_pane, after_lines);
 }
 
 fn render_stacked_rows(
     frame: &mut Frame,
     lines: Vec<VisibleLine<VisibleSideBySideRow>>,
     area: Rect,
-    placement: impl Fn(usize) -> RowPlacement,
-    color_count: u16,
+    pane_rows: PaneRows<impl Fn(usize) -> RowPlacement>,
 ) {
-    let pane_height = content_pane_height(usize::from(area.height), DiffLayout::Stacked);
+    let pane_height = pane_height(usize::from(area.height), DiffLayout::Stacked);
     let pane_height = u16::try_from(pane_height).expect("pane height fits the area");
-    let panes = RatatuiLayout::vertical([
+    let [before_pane, separator, after_pane] = RatatuiLayout::vertical([
         Constraint::Length(pane_height),
         Constraint::Length(1),
         Constraint::Length(pane_height),
     ])
     .flex(Flex::Start)
-    .split(area);
-    let mut before_lines = Vec::new();
-    let mut after_lines = Vec::new();
+    .areas(area);
+    let (before_lines, after_lines) = split_panes(lines);
 
-    for line in lines {
-        let Some((before, after)) = pane_pair(line.row) else {
-            continue;
-        };
+    draw_inner_separator(frame.buffer_mut(), separator, "─", pane_rows.color_count);
+    pane_rows.render(frame, PaneFrame::around(before_pane), before_lines);
+    pane_rows.render(frame, PaneFrame::around(after_pane), after_lines);
+}
 
-        before_lines.push(VisibleLine {
-            row: before,
-            line: line.line,
-        });
-        after_lines.push(VisibleLine {
-            row: after,
-            line: line.line,
-        });
-    }
-
-    draw_inner_separator(frame.buffer_mut(), panes[1], "─", color_count);
-    render_diff_rows(frame, before_lines, panes[0], &placement, color_count);
-    render_diff_rows(frame, after_lines, panes[2], &placement, color_count);
+/// The before and after pane lines of side-by-side lines.
+fn split_panes<'a>(
+    lines: Vec<VisibleLine<VisibleSideBySideRow<'a>>>,
+) -> (Vec<VisibleLine<PaneRow<'a>>>, Vec<VisibleLine<PaneRow<'a>>>) {
+    lines
+        .into_iter()
+        .filter_map(|line| {
+            let (before, after) = pane_pair(line.row)?;
+            let before = VisibleLine {
+                row: before,
+                line: line.line,
+            };
+            let after = VisibleLine {
+                row: after,
+                line: line.line,
+            };
+            Some((before, after))
+        })
+        .unzip()
 }
 
 /// The before and after pane rows of one side-by-side row.
@@ -299,12 +311,12 @@ mod tests {
             ((24, 0), " ", "left separator padding"),
             ((25, 0), "│", "separator"),
             ((26, 0), " ", "right separator padding"),
-            ((27, 0), " ", "metadata marker column"),
-            ((28, 0), " ", "metadata marker spacing"),
-            ((29, 0), "-", "metadata content"),
+            ((28, 1), " ", "metadata marker column"),
+            ((29, 1), " ", "metadata marker spacing"),
+            ((30, 1), "-", "metadata content"),
             ((0, 1), "~", "selected file's state marker"),
-            ((27, 3), "-", "deletion marker"),
-            ((27, 4), "+", "addition marker"),
+            ((28, 4), "-", "deletion marker"),
+            ((28, 5), "+", "addition marker"),
             ((3, 3), "k", "footer hint"),
         ];
 
@@ -335,8 +347,8 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(0, 3)].symbol(), "-");
-        assert_eq!(rendered[(1, 3)].symbol(), " ");
+        assert_eq!(rendered[(1, 4)].symbol(), "-");
+        assert_eq!(rendered[(2, 4)].symbol(), " ");
     }
 
     #[test]
@@ -357,28 +369,28 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(27, 3)].symbol(), "-", "before marker");
-        assert_eq!(rendered[(54, 3)].symbol(), "+", "after marker");
-        assert_eq!(rendered[(53, 3)].symbol(), "│", "inner separator");
-        assert_eq!(rendered[(29, 5)].symbol(), "c", "before context payload");
-        assert_eq!(rendered[(56, 5)].symbol(), "c", "after context payload");
-        assert_eq!(rendered[(53, 5)].symbol(), "│", "context separator");
+        assert_eq!(rendered[(28, 4)].symbol(), "-", "before marker");
+        assert_eq!(rendered[(55, 4)].symbol(), "+", "after marker");
+        assert_eq!(rendered[(53, 4)].symbol(), "│", "inner separator");
+        assert_eq!(rendered[(30, 6)].symbol(), "c", "before context payload");
+        assert_eq!(rendered[(57, 6)].symbol(), "c", "after context payload");
+        assert_eq!(rendered[(53, 6)].symbol(), "│", "context separator");
         assert_eq!(
-            rendered[(54, 4)].symbol(),
+            rendered[(55, 5)].symbol(),
             " ",
             "alignment peer has no marker"
         );
         assert_eq!(
-            rendered[(79, 4)].bg,
+            rendered[(78, 5)].bg,
             Color::Rgb(35, 73, 43),
             "alignment peer retains addition background"
         );
         assert!(
-            !rendered[(79, 4)].modifier.contains(Modifier::DIM),
+            !rendered[(78, 5)].modifier.contains(Modifier::DIM),
             "alignment peer does not inherit deletion dimming"
         );
         assert_eq!(
-            rendered[(53, 3)].fg,
+            rendered[(53, 4)].fg,
             Color::Rgb(95, 95, 95),
             "inner separator is dimmer than the outer separator"
         );
@@ -405,8 +417,8 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        assert_eq!(rendered[(27, 3)].symbol(), "a", "before pane offset");
-        assert_eq!(rendered[(54, 3)].symbol(), "A", "after pane offset");
+        assert_eq!(rendered[(28, 4)].symbol(), "a", "before pane offset");
+        assert_eq!(rendered[(55, 4)].symbol(), "A", "after pane offset");
     }
 
     #[test]
@@ -429,17 +441,17 @@ mod tests {
         let rendered = terminal.backend().buffer();
 
         assert_eq!(
-            rendered[(27, 4)].symbol(),
+            rendered[(28, 5)].symbol(),
             " ",
             "deletion peer has no marker"
         );
         assert_eq!(
-            rendered[(52, 4)].bg,
+            rendered[(51, 5)].bg,
             Color::Rgb(50, 30, 30),
             "deletion peer reaches the before pane edge"
         );
         assert!(
-            rendered[(52, 4)].modifier.contains(Modifier::DIM),
+            rendered[(51, 5)].modifier.contains(Modifier::DIM),
             "deletion peer retains deletion dimming"
         );
     }
@@ -453,35 +465,35 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Stacked),
-            viewport: Viewport::new(80, 14),
+            viewport: Viewport::new(80, 20),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 14)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        let context_row = (0..14)
+        let context_row = (0..20)
             .rev()
-            .find(|row| rendered[(29, *row)].symbol() == "c")
+            .find(|row| rendered[(30, *row)].symbol() == "c")
             .expect("after context row");
         let alignment_peer_row = context_row
             .checked_sub(1)
             .expect("alignment peer precedes context");
 
         assert_eq!(
-            rendered[(29, alignment_peer_row)].symbol(),
+            rendered[(30, alignment_peer_row)].symbol(),
             " ",
             "alignment peer is empty"
         );
         assert_eq!(
-            rendered[(79, alignment_peer_row)].bg,
+            rendered[(78, alignment_peer_row)].bg,
             Color::Rgb(35, 73, 43),
             "alignment peer retains addition background"
         );
         assert!(
-            !rendered[(79, alignment_peer_row)]
+            !rendered[(78, alignment_peer_row)]
                 .modifier
                 .contains(Modifier::DIM),
             "alignment peer does not inherit deletion dimming"
@@ -507,59 +519,59 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected_symbols = [
-            ((27, 0), " ", "header marker column"),
-            ((28, 0), " ", "header marker spacing"),
-            ((29, 0), "-", "header content"),
-            ((27, 3), " ", "context marker column"),
-            ((28, 3), " ", "context marker spacing"),
-            ((28, 4), " ", "deletion marker spacing"),
-            ((28, 5), " ", "addition marker spacing"),
+            ((28, 1), " ", "header marker column"),
+            ((29, 1), " ", "header marker spacing"),
+            ((30, 1), "-", "header content"),
+            ((28, 4), " ", "context marker column"),
+            ((29, 4), " ", "context marker spacing"),
+            ((29, 5), " ", "deletion marker spacing"),
+            ((29, 6), " ", "addition marker spacing"),
         ];
         let expected_styles = [
             (
-                (29, 3),
+                (30, 4),
                 Color::Rgb(180, 180, 180),
                 Color::Reset,
                 "context payload",
             ),
             (
-                (27, 4),
+                (28, 5),
                 Color::Rgb(206, 74, 74),
                 Color::Rgb(50, 30, 30),
                 "deletion marker",
             ),
             (
-                (27, 5),
+                (28, 6),
                 Color::Rgb(112, 195, 115),
                 Color::Rgb(35, 73, 43),
                 "addition marker",
             ),
             (
-                (29, 4),
+                (30, 5),
                 Color::Rgb(86, 156, 214),
                 Color::Rgb(50, 30, 30),
                 "deletion keyword",
             ),
             (
-                (29, 5),
+                (30, 6),
                 Color::Rgb(86, 156, 214),
                 Color::Rgb(35, 73, 43),
                 "addition keyword",
             ),
             (
-                (54, 5),
+                (55, 6),
                 Color::Rgb(206, 145, 120),
                 Color::Rgb(35, 73, 43),
                 "addition string",
             ),
             (
-                (79, 4),
+                (78, 5),
                 Color::Rgb(150, 150, 150),
                 Color::Rgb(50, 30, 30),
                 "deletion background reaches the diff pane edge",
             ),
             (
-                (79, 5),
+                (78, 6),
                 Color::Rgb(220, 235, 220),
                 Color::Rgb(35, 73, 43),
                 "addition background reaches the diff pane edge",
@@ -576,7 +588,7 @@ mod tests {
             assert_eq!(cell.bg, expected_background, "{name} background");
         }
         assert!(
-            rendered[(29, 4)].modifier.contains(Modifier::DIM),
+            rendered[(30, 5)].modifier.contains(Modifier::DIM),
             "deletion syntax inherits row-wide dimming"
         );
     }
@@ -615,23 +627,23 @@ mod tests {
             selected_row_end.bg, selected_label.bg,
             "the highlight spans the whole row"
         );
-        assert_eq!(rendered[(30, 3)].fg, Color::Rgb(206, 74, 74));
-        assert_eq!(rendered[(30, 4)].fg, Color::Rgb(112, 195, 115));
+        assert_eq!(rendered[(31, 4)].fg, Color::Rgb(206, 74, 74));
+        assert_eq!(rendered[(31, 5)].fg, Color::Rgb(112, 195, 115));
         assert!(
-            !rendered[(30, 3)].modifier.contains(Modifier::DIM),
+            !rendered[(31, 4)].modifier.contains(Modifier::DIM),
             "changed deletion span is not dimmed"
         );
         assert!(
-            !rendered[(30, 4)].modifier.contains(Modifier::DIM),
+            !rendered[(31, 5)].modifier.contains(Modifier::DIM),
             "changed addition span is not dimmed"
         );
         assert_eq!(
-            rendered[(29, 3)].fg,
+            rendered[(30, 4)].fg,
             Color::Rgb(120, 120, 120),
             "unchanged deletion text is one step below the deletion body"
         );
         assert_eq!(
-            rendered[(29, 4)].fg,
+            rendered[(30, 5)].fg,
             Color::Rgb(170, 185, 170),
             "unchanged addition text is one step below the addition body"
         );
@@ -760,15 +772,15 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        for y in [2, 5] {
-            let hunk_header = &rendered[(29, y)];
+        for y in [3, 6] {
+            let hunk_header = &rendered[(30, y)];
 
             assert_eq!(hunk_header.symbol(), "@");
             assert_eq!(hunk_header.fg, Color::Rgb(100, 155, 175));
             assert_eq!(hunk_header.bg, Color::Reset);
         }
         assert_eq!(
-            rendered[(29, 0)].fg,
+            rendered[(30, 1)].fg,
             Color::Reset,
             "file header stays neutral"
         );

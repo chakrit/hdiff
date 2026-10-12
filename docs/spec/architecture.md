@@ -240,7 +240,8 @@ vertical separator padded by one space on each side, with no pane borders or lab
 The left file list is the primary navigation pane. As width decreases it collapses before the
 diff view; a compact footer hint remains when possible. If the terminal is too narrow or too
 short for the minimum layout, the only rendered content is `screen too narrow` or
-`screen too short`. The selected layout is never silently replaced by another layout.
+`screen too short`. The minimum layout shows one content line in each diff pane.
+The selected layout is never silently replaced by another layout.
 
 The file-list hints expose shortcuts relevant to the current context. A help view can expose the
 complete keymap when the compact hints cannot fit. The pager-first model and live
@@ -335,6 +336,23 @@ side-by-side panes. When wrapping is enabled:
 - the maximum horizontal offset is zero;
 - toggling wrapping keeps the row on the diff pane's middle line on that line.
 
+### Continuity markers
+
+Each diff pane is framed by one reserved row above and below its content and one reserved
+column on its left and right. The frame shows where content continues past the visible
+content area and never holds diff content:
+
+- the top row shows `▲` at its center while lines exist above the first visible line;
+- the bottom row shows `▼` at its center while lines exist below the last visible line;
+- the left column shows `‹` beside each content line whose row has cells left of the
+  horizontal offset;
+- the right column shows `›` beside each content line whose row continues past the
+  content area's right edge;
+- frame cells use the separator color on the default background; row backgrounds stop at
+  the frame;
+- the frame is reserved even when it shows no marker, and stacked panes each have their
+  own frame.
+
 Resizing keeps the record on the diff pane's top line at the top, on the same line within
 that record where it still exists. Context visibility is
 session-local: hdiff initially retains three context records on either side of each changed
@@ -382,7 +400,7 @@ presentation from the same prepared data.
 Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
 file headers retain neutral metadata styling.
 
-Addition and deletion backgrounds extend through the right edge of the active diff pane, including
+Addition and deletion backgrounds extend through the right edge of the diff pane's content area, including
 cells after the final source character.
 
 ### Keyboard bindings

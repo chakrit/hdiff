@@ -19,6 +19,8 @@ use ratatui::{
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 36;
+/// The screen row of a diff pane's first content line, below its top frame row.
+const FIRST_CONTENT_LINE: usize = 1;
 const MIXED_LANGUAGES: &str = include_str!("fixtures/mixed-language-layout.patch");
 
 struct Live {
@@ -100,6 +102,13 @@ impl Live {
     fn background(&self, text: &str) -> Color {
         let position = self.find(text);
         self.buffer()[(position.x, position.y)].bg
+    }
+
+    fn count(&self, symbol: char) -> usize {
+        self.rows()
+            .iter()
+            .map(|row| row.matches(symbol).count())
+            .sum()
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -195,6 +204,8 @@ matrix!(
     leading_tabs,
     bottom_past_hidden_context,
     wrapping,
+    continuity_markers,
+    no_markers_when_content_fits,
 );
 
 fn vertical_movement(mode: Mode) {
@@ -660,6 +671,108 @@ fn wrapping(mode: Mode) {
     assert_eq!(live.buffer(), start, "w restores unwrapped rows");
 }
 
+/// architecture.md (Continuity markers): each marker shows only while content continues
+/// past its edge.
+fn continuity_markers(mode: Mode) {
+    let mut live = Live::load(&long_patch(), mode);
+    let panes = match mode.layout {
+        DiffLayout::Unified => 1,
+        DiffLayout::Vertical | DiffLayout::Stacked => 2,
+    };
+
+    assert_eq!(live.count('▼'), panes, "lines below each pane");
+    assert_eq!(live.count('▲'), 0, "nothing above the top");
+    assert_eq!(live.count('‹'), 0, "nothing left of the first column");
+    assert_eq!(live.count('›'), 1, "the wide row continues right");
+
+    live.press('j');
+    assert_eq!(live.count('▲'), panes, "a line above each pane");
+    assert_eq!(live.count('▼'), panes);
+
+    live.press('G');
+    assert_eq!(live.count('▲'), panes);
+    assert_eq!(live.count('▼'), 0, "nothing below the bottom");
+
+    live.press('g');
+    live.press('l');
+    assert!(
+        live.count('‹') > 1,
+        "every scrolled line has cells to its left"
+    );
+    assert_eq!(live.count('›'), 1);
+
+    live.press('$');
+    assert_eq!(
+        live.find("_end").x + 4,
+        WIDTH - 1,
+        "the widest row ends beside the right frame column"
+    );
+    assert_eq!(live.count('›'), 0, "$ shows the end of the widest row");
+
+    live.press('w');
+    assert_eq!(
+        live.count('‹') + live.count('›'),
+        0,
+        "wrapped rows never clip"
+    );
+}
+
+fn no_markers_when_content_fits(mode: Mode) {
+    let live = Live::load(INDENTED, mode);
+
+    for marker in ['▲', '▼', '‹', '›'] {
+        assert_eq!(live.count(marker), 0, "{marker}");
+    }
+}
+
+#[test]
+fn frame_cells_never_hold_diff_content() {
+    let mut live = Live::load(&long_patch(), unified_line());
+    let rows = live.rows();
+    let row_of = |text: &str| rows.iter().position(|row| row.contains(text));
+    let first_content = row_of("--- a/long.rs").expect("file header");
+    let wide = live.find("wide_");
+
+    assert_eq!(
+        first_content, FIRST_CONTENT_LINE,
+        "the top frame row precedes the content"
+    );
+    assert!(
+        rows[0].chars().skip(27).all(|cell| cell == ' '),
+        "the top frame row holds no content: {:?}",
+        rows[0]
+    );
+    assert_eq!(
+        diff_pane(&rows[wide.y as usize]).chars().last(),
+        Some('›'),
+        "the right frame column holds the marker, not the row's text"
+    );
+
+    live.press('l');
+    assert_eq!(
+        live.find("ide_").x,
+        wide.x,
+        "content scrolls under a fixed frame"
+    );
+}
+
+#[test]
+fn stacked_panes_need_room_for_one_content_line_each() {
+    let mut live = Live::load(
+        INDENTED,
+        Mode {
+            layout: DiffLayout::Stacked,
+            detail: DiffGranularity::Line,
+        },
+    );
+
+    live.resize(80, 6);
+    assert!(live.shows("screen too short"));
+    live.resize(80, 7);
+    assert_eq!(live.count('▼'), 2, "each pane shows a line");
+    assert!(!live.shows("screen too short"));
+}
+
 /// Count of `x` on screen; the footer's own `x` cancels out of differences.
 fn x_count(live: &Live) -> usize {
     live.rows().iter().map(|row| row.matches('x').count()).sum()
@@ -676,7 +789,7 @@ fn wrapping_starts_disabled() {
 fn wrapping_pads_the_shorter_side_of_a_pair() {
     let patch = format!(
         "--- a/pair.rs\n+++ b/pair.rs\n@@ -1 +1 @@\n-short\n+long_{}_end\n",
-        "y".repeat(120)
+        "y".repeat(121)
     );
     let mut live = Live::load(
         &patch,
@@ -709,13 +822,13 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     for _ in 0..5 {
         live.press('j');
     }
-    let top = diff_pane(&live.rows()[0]);
+    let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "the wide row's second line: {top:?}");
 
     live.resize(100, 20);
 
     // architecture.md: resizing keeps the top record on the same line within it.
-    let top = diff_pane(&live.rows()[0]);
+    let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "still the second line: {top:?}");
     assert!(!top.contains("wide_") && !top.starts_with('+'));
 }
