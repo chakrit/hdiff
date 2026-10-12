@@ -8,7 +8,10 @@ use crate::{
         self, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
         ViewPreferences, Viewport,
     },
-    layout::{ScrollExtent, content_pane_height, content_pane_width, maximum_horizontal_offset},
+    layout::{
+        ScreenLine, ScrollExtent, Wrap, content_pane_height, content_pane_width,
+        maximum_horizontal_offset,
+    },
     prepared::PreparedDocument,
 };
 
@@ -101,10 +104,12 @@ impl Tui {
             return Ok(Step::Continue);
         };
 
-        let focus = Focus::of(&self.interaction, &self.extent.extent);
+        let focus = Focus::of(&self.interaction, &input, &self.extent.extent);
+        let (target_width, _) = target_screen(&self.interaction, &input);
         let target = ExtentKey::new(
             self.interaction.selected_file,
             self.interaction.preferences.after(&input),
+            target_width,
         );
         let target_extent = self.extent.select(&self.document, target);
         let bounds = navigation_bounds(
@@ -151,8 +156,8 @@ impl Tui {
     }
 }
 
-/// The scroll extent of one file, layout, and context count, rebuilt only when that key
-/// changes.
+/// The scroll extent of one file, layout, context count, and wrap, rebuilt only when that
+/// key changes.
 struct KeyedExtent {
     key: ExtentKey,
     extent: ScrollExtent,
@@ -163,7 +168,10 @@ impl KeyedExtent {
         // A document without files shows no rows.
         let extent = document
             .file(key.file)
-            .map(|file| file.layout().scroll_extent(key.layout, key.context_lines))
+            .map(|file| {
+                file.layout()
+                    .scroll_extent(key.layout, key.context_lines, key.wrap)
+            })
             .unwrap_or_default();
 
         Self { key, extent }
@@ -182,19 +190,25 @@ struct ExtentKey {
     file: usize,
     layout: DiffLayout,
     context_lines: usize,
+    wrap: Wrap,
 }
 
 impl ExtentKey {
-    fn new(file: usize, preferences: ViewPreferences) -> Self {
+    fn new(file: usize, preferences: ViewPreferences, screen_width: u16) -> Self {
         Self {
             file,
             layout: preferences.layout,
             context_lines: preferences.context_lines,
+            wrap: Wrap::of(preferences.wrapping, screen_width, preferences.layout),
         }
     }
 
     fn of(interaction: &Interaction) -> Self {
-        Self::new(interaction.selected_file, interaction.preferences)
+        Self::new(
+            interaction.selected_file,
+            interaction.preferences,
+            interaction.viewport.width,
+        )
     }
 }
 
@@ -238,26 +252,31 @@ impl TtyEvents {
     }
 }
 
-/// The row on the diff pane's middle line. Context changes keep it on that line; see
-/// `docs/spec/architecture.md` (Interaction model).
+/// The screen line on the diff pane line that `input` keeps in place: the top line for
+/// resizes, the middle line otherwise. See `docs/spec/architecture.md` (View model).
 struct Focus {
-    /// Row-list index of the row.
-    row: usize,
-    /// Pane line the row sits on.
-    line: usize,
+    screen_line: ScreenLine,
+    /// Pane line the screen line sits on.
+    pane_line: usize,
 }
 
 impl Focus {
-    /// No focus when the rows end above the middle line; the display then fits the pane.
-    fn of(interaction: &Interaction, extent: &ScrollExtent) -> Option<Self> {
+    /// No focus when the lines end above the anchor line; the display then fits the pane.
+    fn of(interaction: &Interaction, input: &Input, extent: &ScrollExtent) -> Option<Self> {
         let viewport = &interaction.viewport;
         let pane_height = content_pane_height(viewport.height, interaction.preferences.layout);
-        let line = pane_height / 2;
+        let pane_line = match input {
+            Input::Resize { .. } => 0,
+            _ => pane_height / 2,
+        };
 
         extent
-            .rows(viewport.vertical_offset + line, 1)
+            .lines(viewport.vertical_offset + pane_line, 1)
             .next()
-            .map(|row| Self { row, line })
+            .map(|screen_line| Self {
+                screen_line,
+                pane_line,
+            })
     }
 }
 
@@ -270,24 +289,30 @@ fn navigation_bounds(
     focus: Option<Focus>,
 ) -> NavigationBounds {
     let display_layout = interaction.preferences.after(input).layout;
-    let (screen_width, screen_height) = match input {
-        Input::Resize { width, height } => (*width, usize::from(*height)),
-        _ => (interaction.viewport.width, interaction.viewport.height),
-    };
+    let (screen_width, screen_height) = target_screen(interaction, input);
     let pane_width = content_pane_width(screen_width, display_layout);
     let pane_height = content_pane_height(screen_height, display_layout);
 
     NavigationBounds {
         file_count,
         target_display: DisplayBounds {
-            maximum_vertical_offset: target_extent.row_count().saturating_sub(pane_height),
+            maximum_vertical_offset: target_extent.line_count().saturating_sub(pane_height),
             maximum_horizontal_offset: maximum_horizontal_offset(target_extent.width(), pane_width),
         },
         anchored_vertical_offset: focus.map_or(0, |focus| {
+            let ScreenLine { row, line } = focus.screen_line;
             target_extent
-                .offset_of(focus.row)
-                .saturating_sub(focus.line)
+                .offset_of(row, line)
+                .saturating_sub(focus.pane_line)
         }),
+    }
+}
+
+/// The screen width and height after `input`.
+fn target_screen(interaction: &Interaction, input: &Input) -> (u16, usize) {
+    match input {
+        Input::Resize { width, height } => (*width, usize::from(*height)),
+        _ => (interaction.viewport.width, interaction.viewport.height),
     }
 }
 
@@ -314,6 +339,7 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Char('G'), _) => Some(Input::Bottom),
         (KeyCode::Char('v'), _) => Some(Input::NextLayout),
         (KeyCode::Char('c'), _) => Some(Input::ToggleGranularity),
+        (KeyCode::Char('w'), _) => Some(Input::ToggleWrapping),
         (KeyCode::Char('+'), _) => Some(Input::IncreaseContext),
         (KeyCode::Char('-'), _) => Some(Input::DecreaseContext),
         (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
@@ -333,6 +359,7 @@ mod tests {
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
         use crate::{
             interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
+            layout::Wrap,
             parser::parse_unified_diff,
             prepared::PreparedDocument,
         };
@@ -368,7 +395,7 @@ mod tests {
                                 .file(selected_file)
                                 .expect("file occurrence")
                                 .layout()
-                                .scroll_extent(layout, 3),
+                                .scroll_extent(layout, 3, Wrap::Off),
                             &interaction,
                             u16::MAX,
                         )

@@ -100,6 +100,7 @@ const MOVEMENT_KEYS: [char; 4] = ['l', 'h', 'j', 'k'];
 const MOVEMENT_ROUNDS: usize = 4;
 const LAYOUT_COUNT: usize = 3;
 const DETAIL_COUNT: usize = 2;
+const WRAPPING_COUNT: usize = 2;
 
 fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let backend = CrosstermBackend::new(io::sink());
@@ -111,29 +112,44 @@ fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let mut report = String::new();
 
     tui.draw(&mut terminal)?;
-    for _ in 0..LAYOUT_COUNT {
-        for _ in 0..DETAIL_COUNT {
-            let preferences = tui.preferences();
-            for key in MOVEMENT_KEYS
-                .iter()
-                .cycle()
-                .take(MOVEMENT_KEYS.len() * MOVEMENT_ROUNDS)
-            {
-                let step = timed_step(&mut tui, &mut terminal, *key)?;
-                writeln!(
-                    report,
-                    "movement version=1 layout={} detail={} key={key} step_ns={}",
-                    preferences.layout.label(),
-                    preferences.granularity.label(),
-                    step.as_nanos()
-                )
-                .expect("writing to a String cannot fail");
+    for _ in 0..WRAPPING_COUNT {
+        for _ in 0..LAYOUT_COUNT {
+            for _ in 0..DETAIL_COUNT {
+                measure_movement(&mut tui, &mut terminal, &mut report)?;
+                tui.step(&mut terminal, key_event('c'))?;
             }
-            tui.step(&mut terminal, key_event('c'))?;
+            tui.step(&mut terminal, key_event('v'))?;
         }
-        tui.step(&mut terminal, key_event('v'))?;
+        tui.step(&mut terminal, key_event('w'))?;
     }
     Ok(report)
+}
+
+/// Times each movement key under the current preferences, appending one line per step.
+fn measure_movement<B: ratatui::backend::Backend>(
+    tui: &mut Tui,
+    terminal: &mut Terminal<B>,
+    report: &mut String,
+) -> Result<(), B::Error> {
+    let preferences = tui.preferences();
+
+    for key in MOVEMENT_KEYS
+        .iter()
+        .cycle()
+        .take(MOVEMENT_KEYS.len() * MOVEMENT_ROUNDS)
+    {
+        let step = timed_step(tui, terminal, *key)?;
+        writeln!(
+            report,
+            "movement version=2 layout={} detail={} wrap={} key={key} step_ns={}",
+            preferences.layout.label(),
+            preferences.granularity.label(),
+            preferences.wrapping.label(),
+            step.as_nanos()
+        )
+        .expect("writing to a String cannot fail");
+    }
+    Ok(())
 }
 
 fn timed_step<B: ratatui::backend::Backend>(

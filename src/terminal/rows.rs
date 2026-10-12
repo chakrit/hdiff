@@ -50,16 +50,25 @@ pub(super) enum VisibleSideBySideRow<'a> {
     },
 }
 
+/// One screen line: line `line` of `row`.
+pub(super) struct VisibleLine<R> {
+    pub(super) row: R,
+    pub(super) line: usize,
+}
+
 pub(super) fn visible_diff_rows<'a>(
     file: &'a PreparedFile,
     extent: &ScrollExtent,
     viewport: &Viewport,
     granularity: DiffGranularity,
     row_limit: usize,
-) -> Vec<StyledRow<'a>> {
+) -> Vec<VisibleLine<StyledRow<'a>>> {
     extent
-        .rows(viewport.vertical_offset, row_limit)
-        .map(|index| file.row(index, granularity))
+        .lines(viewport.vertical_offset, row_limit)
+        .map(|screen_line| VisibleLine {
+            row: file.row(screen_line.row, granularity),
+            line: screen_line.line,
+        })
         .collect()
 }
 
@@ -69,27 +78,29 @@ pub(super) fn visible_side_by_side_rows<'a>(
     viewport: &Viewport,
     granularity: DiffGranularity,
     row_limit: usize,
-) -> Vec<VisibleSideBySideRow<'a>> {
+) -> Vec<VisibleLine<VisibleSideBySideRow<'a>>> {
     let side_by_side_rows = &file.layout().side_by_side_rows;
+    let side_by_side_row = |index| match &side_by_side_rows[index] {
+        SideBySideRow::Shared(index) => VisibleSideBySideRow::Shared(file.row(*index, granularity)),
+        SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
+            before: Some(file.row(*before, granularity)),
+            after: Some(file.row(*after, granularity)),
+        },
+        SideBySideRow::BeforeOnly(index) => VisibleSideBySideRow::Paired {
+            before: Some(file.row(*index, granularity)),
+            after: None,
+        },
+        SideBySideRow::AfterOnly(index) => VisibleSideBySideRow::Paired {
+            before: None,
+            after: Some(file.row(*index, granularity)),
+        },
+    };
 
     extent
-        .rows(viewport.vertical_offset, row_limit)
-        .map(|index| match &side_by_side_rows[index] {
-            SideBySideRow::Shared(index) => {
-                VisibleSideBySideRow::Shared(file.row(*index, granularity))
-            }
-            SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
-                before: Some(file.row(*before, granularity)),
-                after: Some(file.row(*after, granularity)),
-            },
-            SideBySideRow::BeforeOnly(index) => VisibleSideBySideRow::Paired {
-                before: Some(file.row(*index, granularity)),
-                after: None,
-            },
-            SideBySideRow::AfterOnly(index) => VisibleSideBySideRow::Paired {
-                before: None,
-                after: Some(file.row(*index, granularity)),
-            },
+        .lines(viewport.vertical_offset, row_limit)
+        .map(|screen_line| VisibleLine {
+            row: side_by_side_row(screen_line.row),
+            line: screen_line.line,
         })
         .collect()
 }

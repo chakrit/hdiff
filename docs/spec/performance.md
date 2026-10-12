@@ -80,10 +80,11 @@ their timings never enter benchmark acceptance calculations.
 
 `movement` loads the prepared document into a `Tui` drawing to a 120-by-36
 `Terminal<CrosstermBackend<io::Sink>>` and times each `tui.step` over a fixed `l/h/j/k`
-key sequence in every layout and detail mode. It emits one line per key:
+key sequence in every layout, detail, and wrapping mode, wrapping disabled first. It emits
+one line per key:
 
 ```text
-movement version=1 layout=NAME detail=NAME key=KEY step_ns=N
+movement version=2 layout=NAME detail=NAME wrap=off|on key=KEY step_ns=N
 ```
 
 Step time covers input mapping, interaction transition, frame rendering, and escape

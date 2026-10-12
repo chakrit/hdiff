@@ -16,7 +16,7 @@ use crate::{
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
-const FOOTER_HINTS: [&str; 12] = [
+const FOOTER_HINTS: [&str; 13] = [
     "   k",
     " h · l  movement",
     "   j",
@@ -26,6 +26,7 @@ const FOOTER_HINTS: [&str; 12] = [
     "  g·G   top/bottom",
     "  v    cycle layout",
     "  c    character detail",
+    "  w    wrap",
     " +/-   context",
     "(⇧)Tab  next/prev file",
     "   q    exit",

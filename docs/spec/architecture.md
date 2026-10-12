@@ -308,7 +308,7 @@ layout is preserved through resizes; hdiff does not automatically switch between
 cycles unified, vertical split, and stacked split in that order, preserving the
 selected file and viewport.
 
-Semantic diff strategies and wrapping remain pending delivery; contrast selection is
+Semantic diff strategies remain pending delivery; contrast selection is
 also unimplemented. The current viewer uses textual comparisons and the `low` palette.
 
 Vertical split renders each changed block as aligned before/after pairs, adding a markerless
@@ -321,8 +321,22 @@ and after panes; each pane retains the marker column and payload spacer used by 
 Stacked split derives the same pairs and renders the same alignment peers, so both panes retain
 equal content height while shared hunk headers and context retain orientation.
 
-Wrapping is session-local and toggled independently from layout. When wrapping is disabled,
-horizontal movement uses one synchronized offset for side-by-side panes. Context visibility is
+Wrapping is session-local and toggled independently from layout. Wrapping starts disabled.
+When wrapping is disabled, horizontal movement uses one synchronized offset for
+side-by-side panes. When wrapping is enabled:
+
+- payloads break at grapheme-cluster boundaries; a cluster that does not fit the remaining
+  cells starts the next line;
+- continuation lines keep the row's background and leave the marker column and payload
+  spacer blank;
+- both side-by-side panes wrap at the narrower pane's payload width; a side-by-side row
+  takes the height of its taller side, and the shorter side pads with blank lines in its
+  own row style;
+- the maximum horizontal offset is zero;
+- toggling wrapping keeps the row on the diff pane's middle line on that line.
+
+Resizing keeps the record on the diff pane's top line at the top, on the same line within
+that record where it still exists. Context visibility is
 session-local: hdiff initially retains three context records on either side of each changed
 block within a hunk, `+` increases that bound, and `-` decreases it to zero. Context changes
 recompute the visible layout without mutating the document or selected file; the row on
@@ -386,6 +400,7 @@ The current keymap is pager-like:
 | `Tab`, `Shift-Tab`        | Rotate to the next or previous file           |
 | `v`                       | Cycle unified, vertical, and stacked layouts  |
 | `c`                       | Toggle line and character detail              |
+| `w`                       | Toggle wrapping                               |
 | `+`, `-`                  | Increase or decrease visible context          |
 | `q`, `Ctrl-C`             | Exit                                          |
 
@@ -393,18 +408,18 @@ Horizontal movement uses one bounded offset across content panes in every layout
 the file list stays fixed. File rotation wraps around and moves the viewport to the
 selected file's top. There is no separate diff editing cursor; movement changes the
 viewport. Shifted shortcuts perform meaningful inverse actions; ambiguous keys follow
-Vim semantics. Planned bindings are `w` for wrapping and `:` for command entry.
+Vim semantics. The planned binding is `:` for command entry.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 
 The file-list footer is a compact multi-row reference for navigation, layout cycling,
-character detail, context adjustment, and exit. It uses only the available footer
-rows and never advertises a deferred shortcut.
+character detail, wrapping, context adjustment, and exit. It uses only the available
+footer rows and never advertises a deferred shortcut.
 
 The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
 and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
-middots: `g·G` top/bottom, `v` cycle layout, `c` character detail, `+/-` context,
-`(⇧)Tab` next/previous file, and `q` exit.
+middots: `g·G` top/bottom, `v` cycle layout, `c` character detail, `w` wrap,
+`+/-` context, `(⇧)Tab` next/previous file, and `q` exit.
 
 ## Technology direction
 
@@ -467,10 +482,11 @@ remain valid values rather than arithmetic errors.
 
 ### Viewport coordinates
 
-The viewport's vertical offset indexes the visible rows of the active layout at the
-current context count. The frame shows the visible rows from that offset, and scroll
-limits count visible rows. The visible rows and their widest row are derived once per
-selected file, layout, and context count, and not on movement.
+The viewport's vertical offset indexes the screen lines of the visible rows of the active
+layout at the current context count; a row is one line unless wrapping breaks it into
+several. The frame shows the lines from that offset, and scroll limits count lines. The
+visible rows, their lines, and their widest row are derived once per selected file,
+layout, context count, and wrap width, and not on movement.
 
 ### Eager prepared rendering
 

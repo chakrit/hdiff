@@ -1,28 +1,44 @@
 //! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
-//! and safe rendering).
+//! and safe rendering, View model).
 
 use std::ops::ControlFlow;
 
-use ratatui::{
-    buffer::{Buffer, CellWidth},
-    layout::Rect,
-    style::Style,
-};
+use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rows::{PaneRow, gutter, row_style, segment_style};
 use crate::{
+    layout::{MARKER_GUTTER_WIDTH, Wrap},
+    line_breaks::LineBreaks,
     styling::{StyledRow, TextStyle},
-    tab_stops::TabStops,
+    tab_stops::{TabStops, cluster_cells},
 };
 
-/// Fills `area` with the row's style, then writes its marker gutter and payload from
-/// column `horizontal_offset` onward.
+/// Which part of a row a pane line shows.
+#[derive(Clone, Copy)]
+pub(super) enum RowPlacement {
+    /// The whole row, from column `horizontal_offset` onward.
+    Scrolled { horizontal_offset: u16 },
+    /// Wrapped line `line` of the row's payload, wrapped at `width` cells.
+    Wrapped { line: usize, width: usize },
+}
+
+impl RowPlacement {
+    pub(super) fn new(wrap: Wrap, horizontal_offset: u16, line: usize) -> Self {
+        match wrap {
+            Wrap::Off => Self::Scrolled { horizontal_offset },
+            Wrap::At(width) => Self::Wrapped { line, width },
+        }
+    }
+}
+
+/// Fills `area` with the row's style, then writes the part of its marker gutter and
+/// payload that `placement` selects. Only a row's first line carries its marker.
 pub(super) fn write_row(
     buffer: &mut Buffer,
     area: Rect,
     row: PaneRow<'_>,
-    horizontal_offset: u16,
+    placement: RowPlacement,
     color_count: u16,
 ) {
     buffer.set_style(area, row_style(row.kind(), color_count));
@@ -34,21 +50,62 @@ pub(super) fn write_row(
     let payload_clusters = payload
         .clusters()
         .map(|(cluster, text_style)| (cluster, segment_style(row.kind, text_style, color_count)));
-    let mut cursor = RowCursor {
+    let gutter = gutter(row.kind, color_count);
+
+    let cursor = RowCursor {
         buffer,
         area,
-        horizontal_offset: usize::from(horizontal_offset),
+        horizontal_offset: 0,
         column: 0,
     };
 
-    for (cluster, style) in gutter(row.kind, color_count)
-        .into_iter()
-        .chain(payload_clusters)
-    {
+    match placement {
+        RowPlacement::Scrolled { horizontal_offset } => {
+            let cursor = RowCursor {
+                horizontal_offset: usize::from(horizontal_offset),
+                ..cursor
+            };
+            write_clusters(cursor, gutter.into_iter().chain(payload_clusters));
+        }
+        RowPlacement::Wrapped { line: 0, width } => {
+            write_wrapped_line(cursor, gutter, payload_clusters, 0, width);
+        }
+        RowPlacement::Wrapped { line, width } => {
+            let cursor = RowCursor {
+                column: MARKER_GUTTER_WIDTH,
+                ..cursor
+            };
+            write_wrapped_line(cursor, [], payload_clusters, line, width);
+        }
+    }
+}
+
+fn write_clusters<'c>(mut cursor: RowCursor<'_>, clusters: impl Iterator<Item = (&'c str, Style)>) {
+    for (cluster, style) in clusters {
         if cursor.write(cluster, style).is_break() {
             break;
         }
     }
+}
+
+/// Writes `gutter`, then the payload clusters that wrapping at `width` places on `line`.
+fn write_wrapped_line<'c>(
+    cursor: RowCursor<'_>,
+    gutter: impl IntoIterator<Item = (&'c str, Style)>,
+    payload_clusters: impl Iterator<Item = (&'c str, Style)>,
+    line: usize,
+    width: usize,
+) {
+    let mut breaks = LineBreaks::new(width);
+    let line_clusters = payload_clusters
+        .map(|(cluster, style)| (cluster_cells(cluster), cluster, style))
+        .filter(|(cells, _, _)| *cells > 0)
+        .map(|(cells, cluster, style)| (breaks.place(cells), cluster, style))
+        .skip_while(|(placed_line, _, _)| *placed_line < line)
+        .take_while(|(placed_line, _, _)| *placed_line == line)
+        .map(|(_, cluster, style)| (cluster, style));
+
+    write_clusters(cursor, gutter.into_iter().chain(line_clusters));
 }
 
 /// A row's payload with tabs expanded, segmented into grapheme clusters as a whole so
@@ -102,11 +159,7 @@ struct RowCursor<'b> {
 
 impl RowCursor<'_> {
     fn write(&mut self, cluster: &str, style: Style) -> ControlFlow<()> {
-        // Ratatui skips control-containing and zero-width clusters the same way.
-        if cluster.contains(char::is_control) {
-            return ControlFlow::Continue(());
-        }
-        let width = usize::from(cluster.cell_width());
+        let width = cluster_cells(cluster);
         if width == 0 {
             return ControlFlow::Continue(());
         }
@@ -164,9 +217,10 @@ mod tests {
         style::{Color, Modifier},
     };
 
-    use super::write_row;
+    use super::{RowPlacement, write_row};
     use crate::{
         interaction::{DiffGranularity, DiffLayout, Viewport},
+        layout::Wrap,
         parser::parse_unified_diff,
         prepared::PreparedDocument,
         terminal::rows::{PaneRow, visible_diff_rows},
@@ -258,6 +312,28 @@ mod tests {
     }
 
     #[test]
+    fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
+        let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
+        let file = prepared.file(0).expect("prepared file");
+        let addition = file.row(3, DiffGranularity::Line);
+        let line = |line| {
+            write_placed(
+                PaneRow::Text(addition),
+                6,
+                RowPlacement::Wrapped { line, width: 4 },
+            )
+        };
+
+        let (first, second, past_the_end) = (line(0), line(1), line(2));
+
+        assert_eq!(row_text(&first), "+ abcd");
+        assert_eq!(row_text(&second), "  e界f");
+        assert_eq!(row_text(&past_the_end), "");
+        assert_eq!(second[(0, 0)].bg, ADDITION_BACKGROUND);
+        assert_eq!(past_the_end[(5, 0)].bg, ADDITION_BACKGROUND);
+    }
+
+    #[test]
     fn fills_an_alignment_peer_with_its_change_style_only() {
         let buffer = write(
             PaneRow::AlignmentPeer(crate::styling::RowKind::Deletion),
@@ -275,15 +351,21 @@ mod tests {
     }
 
     fn write(row: PaneRow<'_>, width: u16, horizontal_offset: u16) -> Buffer {
+        write_placed(row, width, RowPlacement::Scrolled { horizontal_offset })
+    }
+
+    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Buffer {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
-        write_row(&mut buffer, area, row, horizontal_offset, u16::MAX);
+        write_row(&mut buffer, area, row, placement, u16::MAX);
         buffer
     }
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
         let file = prepared.file(0).expect("prepared file");
-        let extent = file.layout().scroll_extent(DiffLayout::Unified, 3);
+        let extent = file
+            .layout()
+            .scroll_extent(DiffLayout::Unified, 3, Wrap::Off);
         let rows = visible_diff_rows(
             file,
             &extent,
@@ -293,7 +375,7 @@ mod tests {
         );
 
         rows.into_iter()
-            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
+            .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))
             .collect()
     }
 

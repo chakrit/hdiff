@@ -121,7 +121,7 @@ fn empty_input_still_emits_zero_count_measurements() {
 }
 
 #[test]
-fn movement_times_each_key_in_every_layout_and_detail_mode() {
+fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
     let output = run("movement", PATCH);
     assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
@@ -130,23 +130,24 @@ fn movement_times_each_key_in_every_layout_and_detail_mode() {
         .lines()
         .map(|line| {
             let fields = line.split_whitespace().collect::<Vec<_>>();
-            let [kind, version, layout, detail, key, step] = fields[..] else {
+            let [kind, version, layout, detail, wrap, key, step] = fields[..] else {
                 panic!("movement line shape: {line}");
             };
-            assert_eq!((kind, version), ("movement", "version=1"), "{line}");
+            assert_eq!((kind, version), ("movement", "version=2"), "{line}");
             assert!(
                 matches!(key, "key=l" | "key=h" | "key=j" | "key=k"),
                 "{line}"
             );
             let (_, step_ns) = step.split_once("step_ns=").expect("step duration");
             step_ns.parse::<u128>().expect("integer step duration");
-            (layout, detail)
+            (layout, detail, wrap)
         })
         .collect::<std::collections::BTreeSet<_>>();
 
     let expected = ["layout=unified", "layout=vertical", "layout=stacked"]
         .into_iter()
         .flat_map(|layout| ["detail=line", "detail=character"].map(|detail| (layout, detail)))
+        .flat_map(|(layout, detail)| ["wrap=off", "wrap=on"].map(|wrap| (layout, detail, wrap)))
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(modes, expected);
 }

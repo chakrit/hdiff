@@ -286,7 +286,7 @@ state marker per file.
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-1. Add wrapping for unified and side-by-side panes.
+1. Add wrapping for unified and side-by-side panes. Implemented; awaiting the human check.
 
    Human check: open a diff with long changed lines, disable wrapping, then use `h` and `l`.
    Both before and after panes move by the same horizontal offset and their aligned content stays
@@ -340,6 +340,8 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
   display model in a later task. Deferred by the user; support is not an acceptance
   requirement or prerequisite for the empty-input and Git-paging QoL work.
 - [ ] Make the tab-stop width configurable; it is fixed at 2 columns.
+- [ ] Design configurable defaults: the user sets view-preference defaults, such as
+  wrapping, in a configuration file.
 
 ## Later work
 

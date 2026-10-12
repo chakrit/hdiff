@@ -9,6 +9,7 @@ pub mod file_tree;
 pub mod input;
 pub mod interaction;
 pub mod layout;
+pub mod line_breaks;
 pub mod measurement;
 pub mod parser;
 pub mod prepared;

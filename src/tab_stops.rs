@@ -45,13 +45,18 @@ pub fn expanded_width(text: &str) -> usize {
     tab_stops.column
 }
 
-/// Terminal cells the row writer covers drawing `text`: each grapheme cluster measured
-/// with Ratatui's `CellWidth`, skipping control-containing clusters as it does.
+/// Terminal cells the row writer covers drawing `text`.
 fn cells(text: &str) -> usize {
-    text.graphemes(true)
-        .filter(|cluster| !cluster.contains(char::is_control))
-        .map(|cluster| usize::from(cluster.cell_width()))
-        .sum()
+    text.graphemes(true).map(cluster_cells).sum()
+}
+
+/// Terminal cells the row writer covers drawing `cluster`, measured with Ratatui's
+/// `CellWidth`; Ratatui skips control-containing clusters, so they cover none.
+pub fn cluster_cells(cluster: &str) -> usize {
+    match cluster.contains(char::is_control) {
+        true => 0,
+        false => usize::from(cluster.cell_width()),
+    }
 }
 
 #[cfg(test)]

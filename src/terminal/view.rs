@@ -1,13 +1,13 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, Layout as RatatuiLayout},
+    layout::{Constraint, Flex, Layout as RatatuiLayout, Rect},
     widgets::Paragraph,
 };
 
 use crate::{
     file_tree::FileTree,
     interaction::{DiffLayout, Interaction},
-    layout::{PaneLayout, ScrollExtent, content_pane_height, pane_layout},
+    layout::{PaneLayout, ScrollExtent, Wrap, content_pane_height, pane_layout},
     prepared::PreparedFile,
     styling::StyledRow,
 };
@@ -17,23 +17,26 @@ use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
     chrome::{draw_inner_separator, draw_outer_separator, render_file_column},
-    row_writer::write_row,
+    row_writer::{RowPlacement, write_row},
     rows::{
-        PaneRow, VisibleSideBySideRow, aligned_pair, visible_diff_rows, visible_side_by_side_rows,
+        PaneRow, VisibleLine, VisibleSideBySideRow, aligned_pair, visible_diff_rows,
+        visible_side_by_side_rows,
     },
 };
 
 struct DisplayRows<'a> {
     rows: LayoutRows<'a>,
     horizontal_offset: u16,
+    wrap: Wrap,
     color_count: u16,
 }
 
-/// Rows of the active layout only, starting at the viewport and bounded by the screen.
+/// Screen lines of the active layout only, starting at the viewport and bounded by the
+/// screen.
 enum LayoutRows<'a> {
-    Unified(Vec<StyledRow<'a>>),
-    Vertical(Vec<VisibleSideBySideRow<'a>>),
-    Stacked(Vec<VisibleSideBySideRow<'a>>),
+    Unified(Vec<VisibleLine<StyledRow<'a>>>),
+    Vertical(Vec<VisibleLine<VisibleSideBySideRow<'a>>>),
+    Stacked(Vec<VisibleLine<VisibleSideBySideRow<'a>>>),
 }
 
 /// Prepares `document` and draws the interaction's selected file.
@@ -49,9 +52,14 @@ fn render_document(
         .file(interaction.selected_file)
         .expect("selected prepared file");
     let preferences = interaction.preferences;
+    let wrap = Wrap::of(
+        preferences.wrapping,
+        interaction.viewport.width,
+        preferences.layout,
+    );
     let extent = file
         .layout()
-        .scroll_extent(preferences.layout, preferences.context_lines);
+        .scroll_extent(preferences.layout, preferences.context_lines, wrap);
 
     render_prepared_frame(
         frame,
@@ -90,9 +98,11 @@ pub(super) fn render_prepared_frame(
         DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
         DiffLayout::Stacked => LayoutRows::Stacked(side_by_side_rows()),
     };
+    let preferences = interaction.preferences;
     let display = DisplayRows {
         rows,
         horizontal_offset: viewport.horizontal_offset,
+        wrap: Wrap::of(preferences.wrapping, area.width, preferences.layout),
         color_count,
     };
 
@@ -122,50 +132,53 @@ pub(super) fn render_prepared_frame(
 
 fn render_diff_rows<'a>(
     frame: &mut Frame,
-    rows: impl IntoIterator<Item = PaneRow<'a>>,
-    area: ratatui::layout::Rect,
-    horizontal_offset: u16,
+    lines: impl IntoIterator<Item = VisibleLine<PaneRow<'a>>>,
+    area: Rect,
+    placement: impl Fn(usize) -> RowPlacement,
     color_count: u16,
 ) {
-    for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
-        let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
+    for (index, line) in lines.into_iter().take(area.height.into()).enumerate() {
+        let row_area = Rect::new(area.x, area.y + index as u16, area.width, 1);
 
         write_row(
             frame.buffer_mut(),
             row_area,
-            row,
-            horizontal_offset,
+            line.row,
+            placement(line.line),
             color_count,
         );
     }
 }
 
-fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: ratatui::layout::Rect) {
-    let horizontal_offset = display.horizontal_offset;
+fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
     let color_count = display.color_count;
+    let placement = |line| RowPlacement::new(display.wrap, display.horizontal_offset, line);
 
     match display.rows {
-        LayoutRows::Unified(rows) => render_diff_rows(
+        LayoutRows::Unified(lines) => render_diff_rows(
             frame,
-            rows.into_iter().map(PaneRow::Text),
+            lines.into_iter().map(|line| VisibleLine {
+                row: PaneRow::Text(line.row),
+                line: line.line,
+            }),
             area,
-            horizontal_offset,
+            placement,
             color_count,
         ),
-        LayoutRows::Vertical(rows) => {
-            render_vertical_rows(frame, rows, area, horizontal_offset, color_count)
+        LayoutRows::Vertical(lines) => {
+            render_vertical_rows(frame, lines, area, placement, color_count)
         }
-        LayoutRows::Stacked(rows) => {
-            render_stacked_rows(frame, rows, area, horizontal_offset, color_count)
+        LayoutRows::Stacked(lines) => {
+            render_stacked_rows(frame, lines, area, placement, color_count)
         }
     }
 }
 
 fn render_vertical_rows(
     frame: &mut Frame,
-    rows: Vec<VisibleSideBySideRow>,
-    area: ratatui::layout::Rect,
-    horizontal_offset: u16,
+    lines: Vec<VisibleLine<VisibleSideBySideRow>>,
+    area: Rect,
+    placement: impl Fn(usize) -> RowPlacement,
     color_count: u16,
 ) {
     let panes = RatatuiLayout::horizontal([
@@ -175,31 +188,33 @@ fn render_vertical_rows(
     ])
     .split(area);
 
-    for (index, row) in rows.into_iter().take(area.height.into()).enumerate() {
-        let row_area = ratatui::layout::Rect::new(area.x, area.y + index as u16, area.width, 1);
-        let before_area = ratatui::layout::Rect::new(panes[0].x, row_area.y, panes[0].width, 1);
-        let separator_area = ratatui::layout::Rect::new(panes[1].x, row_area.y, 1, 1);
-        let after_area = ratatui::layout::Rect::new(panes[2].x, row_area.y, panes[2].width, 1);
-        let pair = match row {
-            VisibleSideBySideRow::Shared(row) => Some((PaneRow::Text(row), PaneRow::Text(row))),
-            VisibleSideBySideRow::Paired { before, after } => aligned_pair(before, after),
-        };
-        let Some((before, after)) = pair else {
+    for (index, line) in lines.into_iter().take(area.height.into()).enumerate() {
+        let y = area.y + index as u16;
+        let before_area = Rect::new(panes[0].x, y, panes[0].width, 1);
+        let separator_area = Rect::new(panes[1].x, y, 1, 1);
+        let after_area = Rect::new(panes[2].x, y, panes[2].width, 1);
+        let Some((before, after)) = pane_pair(line.row) else {
             continue;
         };
 
         let buffer = frame.buffer_mut();
-        write_row(buffer, before_area, before, horizontal_offset, color_count);
-        write_row(buffer, after_area, after, horizontal_offset, color_count);
+        write_row(
+            buffer,
+            before_area,
+            before,
+            placement(line.line),
+            color_count,
+        );
+        write_row(buffer, after_area, after, placement(line.line), color_count);
         draw_inner_separator(buffer, separator_area, "│", color_count);
     }
 }
 
 fn render_stacked_rows(
     frame: &mut Frame,
-    rows: Vec<VisibleSideBySideRow>,
-    area: ratatui::layout::Rect,
-    horizontal_offset: u16,
+    lines: Vec<VisibleLine<VisibleSideBySideRow>>,
+    area: Rect,
+    placement: impl Fn(usize) -> RowPlacement,
     color_count: u16,
 ) {
     let pane_height = content_pane_height(usize::from(area.height), DiffLayout::Stacked);
@@ -211,29 +226,35 @@ fn render_stacked_rows(
     ])
     .flex(Flex::Start)
     .split(area);
-    let mut before_rows = Vec::new();
-    let mut after_rows = Vec::new();
+    let mut before_lines = Vec::new();
+    let mut after_lines = Vec::new();
 
-    for row in rows {
-        match row {
-            VisibleSideBySideRow::Shared(row) => {
-                before_rows.push(PaneRow::Text(row));
-                after_rows.push(PaneRow::Text(row));
-            }
-            VisibleSideBySideRow::Paired { before, after } => {
-                let Some((before, after)) = aligned_pair(before, after) else {
-                    continue;
-                };
+    for line in lines {
+        let Some((before, after)) = pane_pair(line.row) else {
+            continue;
+        };
 
-                before_rows.push(before);
-                after_rows.push(after);
-            }
-        }
+        before_lines.push(VisibleLine {
+            row: before,
+            line: line.line,
+        });
+        after_lines.push(VisibleLine {
+            row: after,
+            line: line.line,
+        });
     }
 
     draw_inner_separator(frame.buffer_mut(), panes[1], "─", color_count);
-    render_diff_rows(frame, before_rows, panes[0], horizontal_offset, color_count);
-    render_diff_rows(frame, after_rows, panes[2], horizontal_offset, color_count);
+    render_diff_rows(frame, before_lines, panes[0], &placement, color_count);
+    render_diff_rows(frame, after_lines, panes[2], &placement, color_count);
+}
+
+/// The before and after pane rows of one side-by-side row.
+fn pane_pair(row: VisibleSideBySideRow) -> Option<(PaneRow, PaneRow)> {
+    match row {
+        VisibleSideBySideRow::Shared(row) => Some((PaneRow::Text(row), PaneRow::Text(row))),
+        VisibleSideBySideRow::Paired { before, after } => aligned_pair(before, after),
+    }
 }
 
 #[cfg(test)]
@@ -570,6 +591,7 @@ mod tests {
             preferences: ViewPreferences {
                 layout: DiffLayout::Unified,
                 granularity: crate::interaction::DiffGranularity::Character,
+                wrapping: crate::interaction::Wrapping::Disabled,
                 context_lines: 3,
             },
             viewport: Viewport::new(80, 8),
@@ -640,7 +662,9 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
         let file = prepared.file(1).expect("second prepared file");
         let tree = prepared.file_tree();
-        let extent = file.layout().scroll_extent(diff_layout, 3);
+        let extent = file
+            .layout()
+            .scroll_extent(diff_layout, 3, crate::layout::Wrap::Off);
         let interaction = Interaction {
             selected_file: 1,
             preferences: ViewPreferences::line(diff_layout),
@@ -761,7 +785,7 @@ mod tests {
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 12),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 15)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
@@ -780,9 +804,10 @@ mod tests {
             ((2, 9), "g", "top and bottom"),
             ((2, 10), "v", "layout cycle"),
             ((2, 11), "c", "character detail"),
-            ((1, 12), "+", "context controls"),
-            ((0, 13), "(", "file rotation"),
-            ((3, 14), "q", "exit"),
+            ((2, 12), "w", "wrapping"),
+            ((1, 13), "+", "context controls"),
+            ((0, 14), "(", "file rotation"),
+            ((3, 15), "q", "exit"),
         ];
 
         for ((x, y), symbol, name) in expected {

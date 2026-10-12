@@ -53,7 +53,30 @@ impl DiffLayout {
 pub struct ViewPreferences {
     pub layout: DiffLayout,
     pub granularity: DiffGranularity,
+    pub wrapping: Wrapping,
     pub context_lines: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wrapping {
+    Disabled,
+    Enabled,
+}
+
+impl Wrapping {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "off",
+            Self::Enabled => "on",
+        }
+    }
+
+    const fn toggled(self) -> Self {
+        match self {
+            Self::Disabled => Self::Enabled,
+            Self::Enabled => Self::Disabled,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +99,7 @@ impl ViewPreferences {
         Self {
             layout,
             granularity: DiffGranularity::Line,
+            wrapping: Wrapping::Disabled,
             context_lines: 3,
         }
     }
@@ -89,6 +113,10 @@ impl ViewPreferences {
             },
             Input::ToggleGranularity => Self {
                 granularity: self.granularity.toggled(),
+                ..self
+            },
+            Input::ToggleWrapping => Self {
+                wrapping: self.wrapping.toggled(),
                 ..self
             },
             Input::IncreaseContext => Self {
@@ -117,8 +145,9 @@ impl DiffGranularity {
 pub struct NavigationBounds {
     pub file_count: usize,
     pub target_display: DisplayBounds,
-    /// The target display's vertical offset that keeps the row on the diff pane's middle
-    /// line on that line; context changes use it.
+    /// The target display's vertical offset that keeps the input's anchor line in place:
+    /// the diff pane's top line for resizes, its middle line otherwise. Resizes, wrapping
+    /// toggles, and context changes use it.
     pub anchored_vertical_offset: usize,
 }
 
@@ -144,6 +173,7 @@ pub enum Input {
     PreviousFile,
     NextLayout,
     ToggleGranularity,
+    ToggleWrapping,
     IncreaseContext,
     DecreaseContext,
     Quit,
@@ -171,9 +201,18 @@ pub fn transition_interaction(
         Input::ToggleGranularity => {
             return redraw_preferences(interaction, preferences, viewport.clone());
         }
-        Input::IncreaseContext | Input::DecreaseContext => {
+        Input::ToggleWrapping | Input::IncreaseContext | Input::DecreaseContext => {
             let anchored = bounds.anchored_vertical_offset;
             let viewport = bounded_viewport(anchored, viewport.height, viewport, display);
+            return redraw_preferences(interaction, preferences, viewport);
+        }
+        Input::Resize { width, height } => {
+            let resized = Viewport {
+                width,
+                ..viewport.clone()
+            };
+            let anchored = bounds.anchored_vertical_offset;
+            let viewport = bounded_viewport(anchored, usize::from(height), &resized, display);
             return redraw_preferences(interaction, preferences, viewport);
         }
         _ => {}
@@ -257,8 +296,10 @@ fn transition(viewport: &Viewport, input: Input, bounds: DisplayBounds) -> Trans
         | Input::PreviousFile
         | Input::NextLayout
         | Input::ToggleGranularity
+        | Input::ToggleWrapping
         | Input::IncreaseContext
-        | Input::DecreaseContext => Transition::Redraw(viewport.clone()),
+        | Input::DecreaseContext
+        | Input::Resize { .. } => Transition::Redraw(viewport.clone()),
         Input::Down => redraw(
             viewport.vertical_offset.saturating_add(1),
             viewport.height,
@@ -296,17 +337,6 @@ fn transition(viewport: &Viewport, input: Input, bounds: DisplayBounds) -> Trans
             bounds.maximum_vertical_offset,
             viewport.height,
             viewport,
-            bounds,
-        ),
-        Input::Resize { width, height } => redraw(
-            viewport.vertical_offset,
-            usize::from(height),
-            &Viewport {
-                vertical_offset: viewport.vertical_offset,
-                horizontal_offset: viewport.horizontal_offset,
-                width,
-                height: usize::from(height),
-            },
             bounds,
         ),
     }
@@ -355,7 +385,7 @@ fn redraw_horizontal(
 mod tests {
     use super::{
         DiffGranularity, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds,
-        Transition, ViewPreferences, Viewport, transition, transition_interaction,
+        Transition, ViewPreferences, Viewport, Wrapping, transition, transition_interaction,
     };
 
     #[test]
@@ -497,35 +527,81 @@ mod tests {
     }
 
     #[test]
-    fn resize_clamps_the_offset_for_the_new_height() {
-        let viewport = Viewport {
-            vertical_offset: 2,
-            horizontal_offset: 4,
-            width: 40,
-            height: 3,
+    fn resize_moves_to_the_anchored_offset_clamped_for_the_new_size() {
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport {
+                vertical_offset: 2,
+                horizontal_offset: 4,
+                width: 40,
+                height: 3,
+            },
         };
-
-        let next = transition(
-            &viewport,
-            Input::Resize {
+        let resize = |anchored_vertical_offset| {
+            let bounds = NavigationBounds {
+                file_count: 1,
+                target_display: DisplayBounds {
+                    maximum_vertical_offset: 5,
+                    maximum_horizontal_offset: 3,
+                },
+                anchored_vertical_offset,
+            };
+            let input = Input::Resize {
                 width: 80,
                 height: 9,
-            },
-            DisplayBounds {
-                maximum_vertical_offset: 1,
-                maximum_horizontal_offset: 4,
-            },
-        );
+            };
+            let Transition::RedrawInteraction(next) =
+                transition_interaction(&interaction, input, &bounds)
+            else {
+                panic!("resize redraws interaction");
+            };
+            next.viewport
+        };
 
         assert_eq!(
-            next,
-            Transition::Redraw(Viewport {
-                vertical_offset: 1,
+            resize(4),
+            Viewport {
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
+                height: 9,
+            }
+        );
+        assert_eq!(resize(7).vertical_offset, 5);
+    }
+
+    #[test]
+    fn toggles_wrapping_at_the_anchored_offset() {
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            viewport: Viewport {
+                vertical_offset: 2,
                 horizontal_offset: 4,
                 width: 80,
                 height: 9,
-            })
-        );
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: 1,
+            target_display: DisplayBounds {
+                maximum_vertical_offset: 20,
+                maximum_horizontal_offset: 0,
+            },
+            anchored_vertical_offset: 11,
+        };
+
+        let Transition::RedrawInteraction(wrapped) =
+            transition_interaction(&interaction, Input::ToggleWrapping, &bounds)
+        else {
+            panic!("wrapping toggle redraws interaction");
+        };
+
+        assert_eq!(wrapped.preferences.wrapping, Wrapping::Enabled);
+        assert_eq!(wrapped.preferences.layout, DiffLayout::Vertical);
+        assert_eq!(wrapped.viewport.vertical_offset, 11);
+        assert_eq!(wrapped.viewport.horizontal_offset, 0);
     }
 
     #[test]
