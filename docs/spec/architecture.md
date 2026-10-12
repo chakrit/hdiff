@@ -342,16 +342,20 @@ Each diff pane is framed by one reserved row above and below its content and one
 column on its left and right. The frame shows where content continues past the visible
 content area and never holds diff content:
 
-- the top row shows `▲` at its center while lines exist above the first visible line;
-- the bottom row shows `▼` at its center while lines exist below the last visible line;
-- the left column shows `‹` beside each content line whose row has cells left of the
+- the top row shows `▴` at its center while lines exist above the first visible line;
+- the bottom row shows `▾` at its center while lines exist below the last visible line;
+- the left column shows `◂` beside each content line whose row has cells left of the
   horizontal offset;
-- the right column shows `›` beside each content line whose row continues past the
+- the right column shows `▸` beside each content line whose row continues past the
   content area's right edge;
 - frame cells use the separator color on the default background; row backgrounds stop at
   the frame;
 - the frame is reserved even when it shows no marker, and stacked panes each have their
   own frame.
+
+The file list has the same reserved row above and below its rows, with no side columns:
+`▴` shows while tree rows exist above the first listed row and `▾` while tree rows exist
+below the last.
 
 Resizing keeps the record on the diff pane's top line at the top, on the same line within
 that record where it still exists. Context visibility is

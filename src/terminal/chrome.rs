@@ -44,17 +44,19 @@ pub(super) fn render_file_column(
     color_count: u16,
 ) {
     let palette = chrome_palette(color_count);
+    let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
     let footer_height = area
         .height
-        .saturating_sub(MINIMUM_FILE_LIST_HEIGHT)
+        .saturating_sub(list_height)
         .min(FOOTER_HINTS.len() as u16);
     let [list_area, footer_area] = RatatuiLayout::vertical([
-        Constraint::Min(MINIMUM_FILE_LIST_HEIGHT),
+        Constraint::Min(list_height),
         Constraint::Length(footer_height),
     ])
     .areas(area);
+    let list_frame = ContinuityFrame::file_list(list_area);
 
-    render_file_list(frame, list_area, tree, selected_row, palette);
+    render_file_list(frame, list_frame, tree, selected_row, color_count);
     render_footer(frame.buffer_mut(), footer_area, palette);
 }
 
@@ -77,11 +79,10 @@ pub(super) fn draw_inner_separator(
     fill(buffer, area, symbol, style);
 }
 
-/// A diff pane: its content area inside a continuity-marker frame of one row above and
-/// below and one column on either side. Rules: `docs/spec/architecture.md` (Continuity
-/// markers).
+/// A content area inside a continuity-marker frame. Rules: `docs/spec/architecture.md`
+/// (Continuity markers).
 #[derive(Clone, Copy)]
-pub(super) struct PaneFrame {
+pub(super) struct ContinuityFrame {
     pane: Rect,
     content: Rect,
 }
@@ -95,24 +96,33 @@ pub(super) struct LineWindow {
     pub(super) total: usize,
 }
 
-impl PaneFrame {
-    pub(super) fn around(pane: Rect) -> Self {
-        let frame_rows = u16::try_from(PANE_FRAME_HEIGHT).expect("frame rows fit u16");
+impl ContinuityFrame {
+    /// A diff pane: one frame row above and below and one frame column on either side.
+    pub(super) fn diff_pane(pane: Rect) -> Self {
+        let rows = between_frame_rows(pane);
         let content = Rect::new(
-            pane.x + PANE_FRAME_WIDTH / 2,
-            pane.y + frame_rows / 2,
-            pane.width.saturating_sub(PANE_FRAME_WIDTH),
-            pane.height.saturating_sub(frame_rows),
+            rows.x + PANE_FRAME_WIDTH / 2,
+            rows.y,
+            rows.width.saturating_sub(PANE_FRAME_WIDTH),
+            rows.height,
         );
 
         Self { pane, content }
+    }
+
+    /// The file list: one frame row above and below, and no frame columns.
+    fn file_list(area: Rect) -> Self {
+        Self {
+            pane: area,
+            content: between_frame_rows(area),
+        }
     }
 
     pub(super) fn content(&self) -> Rect {
         self.content
     }
 
-    /// `‹` and `›` beside content line `y` on each side where its row was clipped.
+    /// `◂` and `▸` beside content line `y` on each side where its row was clipped.
     pub(super) fn draw_line_markers(
         &self,
         buffer: &mut Buffer,
@@ -124,17 +134,17 @@ impl PaneFrame {
 
         if clip.left {
             buffer[(self.pane.left(), y)]
-                .set_symbol("‹")
+                .set_symbol("◂")
                 .set_style(style);
         }
         if clip.right {
             buffer[(self.pane.right() - 1, y)]
-                .set_symbol("›")
+                .set_symbol("▸")
                 .set_style(style);
         }
     }
 
-    /// `▲` above and `▼` below the content while `window` has lines past that edge.
+    /// `▴` above and `▾` below the content while `window` has lines past that edge.
     pub(super) fn draw_window_markers(
         &self,
         buffer: &mut Buffer,
@@ -150,28 +160,46 @@ impl PaneFrame {
 
         if window.first > 0 {
             buffer[(center, self.pane.top())]
-                .set_symbol("▲")
+                .set_symbol("▴")
                 .set_style(style);
         }
         if window.first + shown < window.total {
             buffer[(center, self.pane.bottom() - 1)]
-                .set_symbol("▼")
+                .set_symbol("▾")
                 .set_style(style);
         }
     }
 }
 
+/// `area` without its frame rows above and below.
+fn between_frame_rows(area: Rect) -> Rect {
+    Rect::new(
+        area.x,
+        area.y + FRAME_ROWS / 2,
+        area.width,
+        area.height.saturating_sub(FRAME_ROWS),
+    )
+}
+
+const FRAME_ROWS: u16 = PANE_FRAME_HEIGHT as u16;
+
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
 /// the selected row on the last row, so listing that window draws the same frame.
 fn render_file_list(
     frame: &mut Frame,
-    area: Rect,
+    list_frame: ContinuityFrame,
     tree: &FileTree,
     selected_row: usize,
-    palette: ChromePalette,
+    color_count: u16,
 ) {
+    let palette = chrome_palette(color_count);
+    let area = list_frame.content();
     let height = usize::from(area.height);
     let first = (selected_row + 1).saturating_sub(height);
+    let window = LineWindow {
+        first,
+        total: tree.rows().len(),
+    };
 
     let items = tree
         .rows()
@@ -187,6 +215,7 @@ fn render_file_list(
     let mut state = ListState::default().with_selected(Some(selected_row - first));
 
     frame.render_stateful_widget(file_list, area, &mut state);
+    list_frame.draw_window_markers(frame.buffer_mut(), window, color_count);
 }
 
 fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {

@@ -519,7 +519,8 @@ fn lists_top_level_files_first_then_directories_in_input_order() {
         "~ lib.rs",
     ];
 
-    assert_eq!(live.file_list()[..listed.len()], listed);
+    let rows = FIRST_CONTENT_LINE..FIRST_CONTENT_LINE + listed.len();
+    assert_eq!(live.file_list()[rows], listed);
 }
 
 #[test]
@@ -597,6 +598,34 @@ fn colors_markers_by_state() {
         "every name shares one color"
     );
     assert_ne!(name, deleted, "names are not colored by state");
+}
+
+#[test]
+fn marks_files_beyond_the_file_list() {
+    let patch = (0..40)
+        .map(|file| {
+            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
+        })
+        .collect::<String>();
+    let mut live = Live::load(&patch, unified_line());
+    let markers = |live: &Live| {
+        let list = live.file_list().join("");
+        (list.matches('▴').count(), list.matches('▾').count())
+    };
+
+    // architecture.md (Continuity markers): the file list marks rows past each edge.
+    assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
+    assert_eq!(markers(&live), (0, 1), "files below the list");
+    for _ in 0..30 {
+        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
+    assert_eq!(markers(&live), (1, 1), "files above and below");
+    // Back past the first file, wrapping to the last.
+    for _ in 0..31 {
+        live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    }
+    assert!(live.shows("~ file_39.rs"));
+    assert_eq!(markers(&live), (1, 0), "the last file ends the list");
 }
 
 #[test]
@@ -680,26 +709,26 @@ fn continuity_markers(mode: Mode) {
         DiffLayout::Vertical | DiffLayout::Stacked => 2,
     };
 
-    assert_eq!(live.count('▼'), panes, "lines below each pane");
-    assert_eq!(live.count('▲'), 0, "nothing above the top");
-    assert_eq!(live.count('‹'), 0, "nothing left of the first column");
-    assert_eq!(live.count('›'), 1, "the wide row continues right");
+    assert_eq!(live.count('▾'), panes, "lines below each pane");
+    assert_eq!(live.count('▴'), 0, "nothing above the top");
+    assert_eq!(live.count('◂'), 0, "nothing left of the first column");
+    assert_eq!(live.count('▸'), 1, "the wide row continues right");
 
     live.press('j');
-    assert_eq!(live.count('▲'), panes, "a line above each pane");
-    assert_eq!(live.count('▼'), panes);
+    assert_eq!(live.count('▴'), panes, "a line above each pane");
+    assert_eq!(live.count('▾'), panes);
 
     live.press('G');
-    assert_eq!(live.count('▲'), panes);
-    assert_eq!(live.count('▼'), 0, "nothing below the bottom");
+    assert_eq!(live.count('▴'), panes);
+    assert_eq!(live.count('▾'), 0, "nothing below the bottom");
 
     live.press('g');
     live.press('l');
     assert!(
-        live.count('‹') > 1,
+        live.count('◂') > 1,
         "every scrolled line has cells to its left"
     );
-    assert_eq!(live.count('›'), 1);
+    assert_eq!(live.count('▸'), 1);
 
     live.press('$');
     assert_eq!(
@@ -707,11 +736,11 @@ fn continuity_markers(mode: Mode) {
         WIDTH - 1,
         "the widest row ends beside the right frame column"
     );
-    assert_eq!(live.count('›'), 0, "$ shows the end of the widest row");
+    assert_eq!(live.count('▸'), 0, "$ shows the end of the widest row");
 
     live.press('w');
     assert_eq!(
-        live.count('‹') + live.count('›'),
+        live.count('◂') + live.count('▸'),
         0,
         "wrapped rows never clip"
     );
@@ -720,7 +749,7 @@ fn continuity_markers(mode: Mode) {
 fn no_markers_when_content_fits(mode: Mode) {
     let live = Live::load(INDENTED, mode);
 
-    for marker in ['▲', '▼', '‹', '›'] {
+    for marker in ['▴', '▾', '◂', '▸'] {
         assert_eq!(live.count(marker), 0, "{marker}");
     }
 }
@@ -744,7 +773,7 @@ fn frame_cells_never_hold_diff_content() {
     );
     assert_eq!(
         diff_pane(&rows[wide.y as usize]).chars().last(),
-        Some('›'),
+        Some('▸'),
         "the right frame column holds the marker, not the row's text"
     );
 
@@ -769,7 +798,7 @@ fn stacked_panes_need_room_for_one_content_line_each() {
     live.resize(80, 6);
     assert!(live.shows("screen too short"));
     live.resize(80, 7);
-    assert_eq!(live.count('▼'), 2, "each pane shows a line");
+    assert_eq!(live.count('▾'), 2, "each pane shows a line");
     assert!(!live.shows("screen too short"));
 }
 

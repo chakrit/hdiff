@@ -17,7 +17,7 @@ use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
     chrome::{
-        LineWindow, PaneFrame, draw_inner_separator, draw_outer_separator, render_file_column,
+        ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator, render_file_column,
     },
     row_writer::{RowPlacement, write_row},
     rows::{
@@ -148,7 +148,7 @@ fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
     match display.rows {
         LayoutRows::Unified(lines) => pane_rows.render(
             frame,
-            PaneFrame::around(area),
+            ContinuityFrame::diff_pane(area),
             lines.into_iter().map(|line| VisibleLine {
                 row: PaneRow::Text(line.row),
                 line: line.line,
@@ -170,7 +170,7 @@ impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
     fn render<'a>(
         &self,
         frame: &mut Frame,
-        pane: PaneFrame,
+        pane: ContinuityFrame,
         lines: impl IntoIterator<Item = VisibleLine<PaneRow<'a>>>,
     ) {
         let content = pane.content();
@@ -206,8 +206,8 @@ fn render_vertical_rows(
     ])
     .areas(area);
     let (before_lines, after_lines) = split_panes(lines);
-    let before_pane = PaneFrame::around(before_pane);
-    let after_pane = PaneFrame::around(after_pane);
+    let before_pane = ContinuityFrame::diff_pane(before_pane);
+    let after_pane = ContinuityFrame::diff_pane(after_pane);
 
     let content = before_pane.content();
     let shown = before_lines.len().min(content.height.into()) as u16;
@@ -236,8 +236,8 @@ fn render_stacked_rows(
     let (before_lines, after_lines) = split_panes(lines);
 
     draw_inner_separator(frame.buffer_mut(), separator, "─", pane_rows.color_count);
-    pane_rows.render(frame, PaneFrame::around(before_pane), before_lines);
-    pane_rows.render(frame, PaneFrame::around(after_pane), after_lines);
+    pane_rows.render(frame, ContinuityFrame::diff_pane(before_pane), before_lines);
+    pane_rows.render(frame, ContinuityFrame::diff_pane(after_pane), after_lines);
 }
 
 /// The before and after pane lines of side-by-side lines.
@@ -307,23 +307,23 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected_symbols = [
-            ((2, 0), "f", "first file"),
+            ((2, 1), "f", "first file"),
             ((24, 0), " ", "left separator padding"),
             ((25, 0), "│", "separator"),
             ((26, 0), " ", "right separator padding"),
             ((28, 1), " ", "metadata marker column"),
             ((29, 1), " ", "metadata marker spacing"),
             ((30, 1), "-", "metadata content"),
-            ((0, 1), "~", "selected file's state marker"),
+            ((0, 2), "~", "selected file's state marker"),
             ((28, 4), "-", "deletion marker"),
             ((28, 5), "+", "addition marker"),
-            ((3, 3), "k", "footer hint"),
+            ((3, 5), "k", "footer hint"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
-        assert_eq!(rendered[(2, 0)].fg, Color::Rgb(160, 160, 160), "file name");
+        assert_eq!(rendered[(2, 1)].fg, Color::Rgb(160, 160, 160), "file name");
         assert_eq!(
             rendered[(0, 9)].fg,
             Color::Rgb(110, 110, 110),
@@ -615,10 +615,10 @@ mod tests {
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
-        let selected_marker = &rendered[(0, 0)];
-        let selected_label = &rendered[(2, 0)];
+        let selected_marker = &rendered[(0, 1)];
+        let selected_label = &rendered[(2, 1)];
 
-        let selected_row_end = &rendered[(23, 0)];
+        let selected_row_end = &rendered[(23, 1)];
 
         assert_eq!(selected_marker.symbol(), "~");
         assert_eq!(selected_marker.fg, selected_label.fg);
@@ -795,9 +795,9 @@ mod tests {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 12),
+            viewport: Viewport::new(80, 18),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 16)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 18)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
@@ -805,21 +805,21 @@ mod tests {
 
         let rendered = terminal.backend().buffer();
         let expected = [
-            ((3, 3), "k", "upward movement"),
-            ((1, 4), "h", "leftward movement"),
-            ((3, 4), "·", "movement separator"),
-            ((5, 4), "l", "rightward movement"),
-            ((8, 4), "m", "movement label"),
-            ((3, 5), "j", "downward movement"),
-            ((2, 7), "^", "page up"),
-            ((2, 8), "^", "page down"),
-            ((2, 9), "g", "top and bottom"),
-            ((2, 10), "v", "layout cycle"),
-            ((2, 11), "c", "character detail"),
-            ((2, 12), "w", "wrapping"),
-            ((1, 13), "+", "context controls"),
-            ((0, 14), "(", "file rotation"),
-            ((3, 15), "q", "exit"),
+            ((3, 5), "k", "upward movement"),
+            ((1, 6), "h", "leftward movement"),
+            ((3, 6), "·", "movement separator"),
+            ((5, 6), "l", "rightward movement"),
+            ((8, 6), "m", "movement label"),
+            ((3, 7), "j", "downward movement"),
+            ((2, 9), "^", "page up"),
+            ((2, 10), "^", "page down"),
+            ((2, 11), "g", "top and bottom"),
+            ((2, 12), "v", "layout cycle"),
+            ((2, 13), "c", "character detail"),
+            ((2, 14), "w", "wrapping"),
+            ((1, 15), "+", "context controls"),
+            ((0, 16), "(", "file rotation"),
+            ((3, 17), "q", "exit"),
         ];
 
         for ((x, y), symbol, name) in expected {
