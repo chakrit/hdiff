@@ -302,8 +302,7 @@ View choices are orthogonal rather than one growing mode enum:
 - `DiffGranularity`: line-based or character-based;
 - `DiffSemantics`: textual or Tree-sitter semantic strategy;
 - navigation-pane state: file list visibility and active pane;
-- display preferences: wrapping, context-line count, diff contrast, highlighting, and color
-  capability.
+- display preferences: wrapping, context-line count, highlighting, and color capability.
 
 The intended `EffectiveView` derives the renderable combination from these preferences, document
 capabilities, language support, and terminal dimensions. Tree-sitter semantic diff is used when
@@ -312,8 +311,8 @@ layout is preserved through resizes; hdiff does not automatically switch between
 cycles unified, vertical split, and stacked split in that order, preserving the
 selected file and viewport.
 
-Semantic diff strategies remain pending delivery; contrast selection is
-also unimplemented. The current viewer uses textual comparisons and the `low` palette.
+Semantic diff strategies remain pending delivery. The current viewer uses textual
+comparisons and the `low` palette.
 
 Vertical split renders each changed block as aligned before/after pairs, adding a markerless
 alignment peer with the corresponding dim addition or deletion background on the shorter side.
@@ -367,26 +366,14 @@ block within a hunk, `+` increases that bound, and `-` decreases it to zero. Con
 recompute the visible layout without mutating the document or selected file; the row on
 the diff pane's middle line stays on that line.
 
-Diff contrast is a session-local preference with four intensity levels, independent of
-line-versus-character diff granularity:
-
-1. `none`: no diff-specific contrast; render additions, deletions, and context with the base
-   palette;
-2. `low`: the preferred default, using dim red deletion background and muted deletion text,
-   quiet neutral context, and a restrained green addition background with a brighter plus marker;
-3. `high`: stronger red/green emphasis while retaining readable surrounding context;
-4. `max`: the strongest red/green highlighting, including full-line emphasis where the active
-   layout supports it.
-
-The `low` palette is the locked preferred display: additions are strongest; deletion text and
+The `low` palette is the only palette and the locked preferred display: additions are strongest; deletion text and
 syntax spans are muted by a row-wide dim modifier over a dim red background; context is quieter
 neutral text. Every rendered row reserves a marker
 column and one payload spacer: addition and deletion markers occupy that column, while metadata,
 hunks, and context leave it blank so all payloads align. The separator remains neutral, and each
-change background begins after its right-hand gutter. Contrast changes never alter the parsed
-document and apply consistently in unified and side-by-side layouts. `DiffGranularity` controls
-whether differences are represented as lines or characters; `DiffContrast` controls only their
-visual intensity and never changes that representation.
+change background begins after its right-hand gutter. The palette applies consistently in
+unified and side-by-side layouts. `DiffGranularity` controls whether differences are
+represented as lines or characters.
 
 Character detail does not use reverse video. It first preserves matching identifier/word and
 delimiter tokens, then uses grapheme spans only for similar replacement words; unrelated words
@@ -433,7 +420,7 @@ Horizontal movement uses one bounded offset across content panes in every layout
 the file list stays fixed. File rotation wraps around and moves the viewport to the
 selected file's top. There is no separate diff editing cursor; movement changes the
 viewport. Shifted shortcuts perform meaningful inverse actions; ambiguous keys follow
-Vim semantics. The planned binding is `:` for command entry.
+Vim semantics.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 

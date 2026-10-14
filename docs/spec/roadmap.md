@@ -75,15 +75,6 @@ Each slice is incomplete until its automated checks and its human check both pas
    Human check: run `git diff` through the installed pager and `hdiff a b` in a terminal,
    move and quit, and confirm the shell prompt, cursor, and echo are restored.
 
-## Accepted requirements awaiting implementation
-
-These existing architecture obligations have no implementation slice yet; listing them
-here does not authorize implementation or settle additional behavior.
-
-- [ ] Implement the specified session-local contrast levels and `:` command entry under
-  the existing [view model](architecture.md#view-model); unresolved interface details
-  remain design work.
-
 ## Parked preparation optimization
 
 Further preparation optimization is parked. Resumption requires considering a more
@@ -107,6 +98,8 @@ Git integrations beyond user-level Git diff-pager installation remain deferred.
 - [ ] Combined merge diffs: assess Git's multi-parent patch format and an appropriate
   display model in a later task. Deferred by the user; support is not an acceptance
   requirement or prerequisite for the empty-input and Git-paging QoL work.
+- [ ] Session-local diff contrast levels `none`, `low`, `high`, and `max`, independent of
+  line-versus-character granularity; `low` is the only palette until then.
 - [ ] Make the tab-stop width configurable; it is fixed at 2 columns.
 - [ ] Design configurable defaults: the user sets view-preference defaults, such as
   wrapping, in a configuration file.
