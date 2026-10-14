@@ -31,6 +31,34 @@ fn short_commit_hash() -> String {
         .to_owned()
 }
 
+fn comparison_tree() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    for (path, text) in [
+        ("before/top.txt", "old top\n"),
+        ("after/top.txt", "new top\n"),
+        ("before/nested/inner.txt", "old inner\n"),
+        ("after/nested/inner.txt", "new inner\n"),
+    ] {
+        let path = directory.path().join(path);
+        std::fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture tree");
+        std::fs::write(path, text).expect("fixture file");
+    }
+    directory
+}
+
+fn compare(directory: &std::path::Path, arguments: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        .args(arguments)
+        .current_dir(directory)
+        .env_clear()
+        .env("PATH", TEST_PATH)
+        .output()
+        .expect("run comparison");
+
+    assert!(output.status.success(), "{arguments:?}: {output:?}");
+    String::from_utf8(output.stdout).expect("comparison output is UTF-8")
+}
+
 #[test]
 fn help_describes_the_cli_without_reading_diff_input() {
     let help = hdiff("--help");
@@ -43,11 +71,12 @@ fn help_describes_the_cli_without_reading_diff_input() {
             "Usage: hdiff [OPTIONS] [FILE ...]\n",
             "\n",
             "Arguments:\n",
-            "  [FILE ...]  Read one patch file, compare two files, ",
-            "or read standard input\n",
-            "              when omitted\n",
+            "  [FILE ...]  Read one patch file, compare two files or directories, ",
+            "or read\n",
+            "              standard input when omitted; - names standard input\n",
             "\n",
             "Options:\n",
+            "  -r                Compare directories recursively\n",
             "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
             "                    prepare, stages, or movement\n",
             "  --install         Register hdiff as the user-level Git diff pager\n",
@@ -147,4 +176,42 @@ fn truncated_patch_is_an_error() {
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     assert!(!output.stderr.is_empty());
+}
+#[test]
+fn directory_comparison_descends_only_with_recursion() {
+    let directory = comparison_tree();
+
+    let top_level = compare(directory.path(), &["before", "after"]);
+    assert!(top_level.contains("+new top\n"));
+    assert!(!top_level.contains("+new inner\n"));
+
+    let recursive = compare(directory.path(), &["-r", "before", "after"]);
+    assert!(recursive.contains("+new top\n"));
+    assert!(recursive.contains("+new inner\n"));
+}
+
+#[test]
+fn dash_operand_compares_standard_input() {
+    let directory = comparison_tree();
+    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        .args(["-", "after/top.txt"])
+        .current_dir(directory.path())
+        .stdin(std::fs::File::open(directory.path().join("before/top.txt")).expect("stdin"))
+        .env_clear()
+        .env("PATH", TEST_PATH)
+        .output()
+        .expect("run stdin comparison");
+
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8(output.stdout).expect("comparison output is UTF-8");
+    assert!(text.contains("-old top\n+new top\n"), "{text}");
+}
+
+#[test]
+fn dash_leading_paths_remain_comparison_operands() {
+    let directory = comparison_tree();
+    std::fs::write(directory.path().join("-q"), "old top\n").expect("dash-named file");
+
+    let text = compare(directory.path(), &["-q", "after/top.txt"]);
+    assert!(text.contains("-old top\n+new top\n"), "{text}");
 }

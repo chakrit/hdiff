@@ -55,6 +55,8 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   clipped side, dimmed separator tone) and frame rows on the file list, per the
   [continuity marker](architecture.md#continuity-markers) contract; human check passed on
   2026-10-14.
+- Recursive `-r` comparison and `-` stdin operands per the
+  [input contract](architecture.md#input-contract).
 
 Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
 and human terminal checks passed for every delivered slice. Historical delivery plans
@@ -72,8 +74,6 @@ No slice is scheduled.
 These existing architecture obligations have no implementation slice yet; listing them
 here does not authorize implementation or settle additional behavior.
 
-- [ ] Implement recursive `-r` comparison and stdin `-` operands under the existing
-  [input contract](architecture.md#input-contract).
 - [ ] Reject piped standard input combined with file arguments under the existing
   [input and terminal boundary](architecture.md#input-and-terminal-boundary).
 - [ ] Complete the existing controlling-terminal output and finite-fallback requirements

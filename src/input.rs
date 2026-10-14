@@ -1,4 +1,7 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+};
 
 use crate::{actions, bench::Driver};
 
@@ -6,10 +9,11 @@ pub const HELP: &str = concat!(
     "Usage: hdiff [OPTIONS] [FILE ...]\n",
     "\n",
     "Arguments:\n",
-    "  [FILE ...]  Read one patch file, compare two files, or read standard input\n",
-    "              when omitted\n",
+    "  [FILE ...]  Read one patch file, compare two files or directories, or read\n",
+    "              standard input when omitted; - names standard input\n",
     "\n",
     "Options:\n",
+    "  -r                Compare directories recursively\n",
     "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
     "                    prepare, stages, or movement\n",
     "  --install         Register hdiff as the user-level Git diff pager\n",
@@ -38,7 +42,43 @@ pub enum Command {
 pub enum InputSource {
     Stdin,
     DiffFile(PathBuf),
-    Operands([PathBuf; 2]),
+    Comparison(Comparison),
+}
+
+/// Two operands for `diff -u`. Contract: docs/spec/architecture.md#input-contract.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Comparison {
+    pub operands: [Operand; 2],
+    pub depth: Depth,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Operand {
+    Stdin,
+    Path(PathBuf),
+}
+
+impl Operand {
+    fn from_argument(argument: &OsStr) -> Self {
+        match argument == "-" {
+            true => Self::Stdin,
+            false => Self::Path(PathBuf::from(argument)),
+        }
+    }
+
+    /// The operand as `diff` reads it, where `-` names standard input.
+    pub fn argument(&self) -> &OsStr {
+        match self {
+            Self::Stdin => OsStr::new("-"),
+            Self::Path(path) => path.as_os_str(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Depth {
+    TopLevel,
+    Recursive,
 }
 
 impl InputSource {
@@ -51,12 +91,11 @@ impl InputSource {
                 Ok(input)
             }
             InputSource::DiffFile(path) => std::fs::read(path).map_err(|error| error.to_string()),
-            InputSource::Operands([before, after]) => {
+            InputSource::Comparison(comparison) => {
                 let mut context = actions::compare_files::CompareFilesContext;
 
                 actions::compare_files::CompareFiles {
-                    before: &before,
-                    after: &after,
+                    comparison: &comparison,
                 }
                 .run(&mut context)
                 .map_err(|error| error.to_string())
@@ -82,7 +121,7 @@ pub fn select_command(arguments: &[OsString]) -> Result<Command, InputError> {
         [argument] if argument == "--help" => Ok(Command::Help),
         [argument] if argument == "--version" => Ok(Command::Version),
         [flag, rest @ ..] if flag == "--bench" => select_bench(rest),
-        operands => select_input(&paths(operands)).map(|source| Command::View { source }),
+        operands => select_input(operands).map(|source| Command::View { source }),
     }
 }
 
@@ -97,25 +136,40 @@ fn select_bench(arguments: &[OsString]) -> Result<Command, InputError> {
         )));
     };
 
-    select_input(&paths(operands)).map(|source| Command::Bench { driver, source })
+    select_input(operands).map(|source| Command::Bench { driver, source })
 }
 
-fn paths(arguments: &[OsString]) -> Vec<PathBuf> {
-    arguments.iter().map(PathBuf::from).collect()
-}
+pub fn select_input(arguments: &[OsString]) -> Result<InputSource, InputError> {
+    let (recursion_flags, operand_arguments): (Vec<_>, Vec<_>) =
+        arguments.iter().partition(|argument| *argument == "-r");
+    let depth = match recursion_flags.is_empty() {
+        true => Depth::TopLevel,
+        false => Depth::Recursive,
+    };
+    let operands = operand_arguments
+        .into_iter()
+        .map(|argument| Operand::from_argument(argument))
+        .collect::<Vec<_>>();
 
-pub fn select_input(arguments: &[PathBuf]) -> Result<InputSource, InputError> {
-    match arguments {
-        [] => Ok(InputSource::Stdin),
-        [path] => Ok(InputSource::DiffFile(path.clone())),
-        [first, second] => Ok(InputSource::Operands([first.clone(), second.clone()])),
+    match (operands.as_slice(), depth) {
+        ([] | [Operand::Stdin], Depth::TopLevel) => Ok(InputSource::Stdin),
+        ([Operand::Path(path)], Depth::TopLevel) => Ok(InputSource::DiffFile(path.clone())),
+        ([before, after], depth) => Ok(InputSource::Comparison(Comparison {
+            operands: [before.clone(), after.clone()],
+            depth,
+        })),
+        ([] | [_], Depth::Recursive) => {
+            Err(InputError("-r requires two comparison operands".to_owned()))
+        }
         _ => Err(InputError("expected zero, one, or two operands".to_owned())),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, Driver, InputSource, select_command, select_input};
+    use super::{
+        Command, Comparison, Depth, Driver, InputSource, Operand, select_command, select_input,
+    };
     use std::{ffi::OsString, path::PathBuf};
 
     #[test]
@@ -177,7 +231,49 @@ mod tests {
 
     #[test]
     fn rejects_more_than_two_operands() {
-        let paths = vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")];
-        assert!(select_input(&paths).is_err());
+        assert!(select_input(&["a", "b", "c"].map(OsString::from)).is_err());
+    }
+
+    #[test]
+    fn reads_a_lone_dash_operand_from_stdin() {
+        assert_eq!(
+            select_input(&[OsString::from("-")]).expect("stdin"),
+            InputSource::Stdin
+        );
+    }
+
+    #[test]
+    fn compares_a_dash_operand_as_stdin() {
+        assert_eq!(
+            select_input(&["-", "after"].map(OsString::from)).expect("comparison"),
+            InputSource::Comparison(Comparison {
+                operands: [Operand::Stdin, Operand::Path(PathBuf::from("after"))],
+                depth: Depth::TopLevel,
+            })
+        );
+    }
+
+    #[test]
+    fn selects_recursive_comparison_wherever_the_flag_appears() {
+        let recursive = InputSource::Comparison(Comparison {
+            operands: [
+                Operand::Path(PathBuf::from("a")),
+                Operand::Path(PathBuf::from("b")),
+            ],
+            depth: Depth::Recursive,
+        });
+
+        for arguments in [["-r", "a", "b"], ["a", "-r", "b"], ["a", "b", "-r"]] {
+            assert_eq!(
+                select_input(&arguments.map(OsString::from)).expect("comparison"),
+                recursive
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_recursion_without_two_operands() {
+        assert!(select_input(&[OsString::from("-r")]).is_err());
+        assert!(select_input(&["-r", "change.patch"].map(OsString::from)).is_err());
     }
 }

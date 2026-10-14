@@ -171,12 +171,12 @@ character-detail spans.
 An immediate record-looking continuation after a hunk's declared counts is an error.
 Surrounding text does not provide recovery from malformed recognized diff sections.
 
-The current input selector reads stdin with zero operands, reads a patch file with one,
-and invokes `diff -u` with two; more than two operands produce
-`expected zero, one, or two operands`. hdiff does not yet recognize `-r` as an option or
-translate `-` into a stdin source. A lone `-` is opened as a literal filename; in a
-two-operand comparison, both paths are passed directly to the external `diff` command.
-The recursive-comparison and stdin-operand requirements above remain intended behavior.
+The input selector reads stdin with zero operands or a lone `-`, reads a patch file with
+one other operand, and invokes `diff -u [-r] -- <before> <after>` with two; more than two
+operands produce `expected zero, one, or two operands`. `-r` is recognized anywhere in
+the input arguments and requires two operands; otherwise it produces
+`-r requires two comparison operands`. A `-` comparison operand is passed to `diff`,
+which reads hdiff's standard input. Other dash-leading arguments are paths.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached
 unambiguously, but malformed or truncated input is rejected with a contextual non-zero error
@@ -223,9 +223,9 @@ select input as described above. Their output contracts are in
 Any accompanying argument, including another option, produces
 `--install cannot be combined with diff input operands` before input is read.
 
-Other argument combinations fall through to operand selection. hdiff has no general
-unknown-option rejection or `--` option terminator; unrecognized arguments are treated
-as paths, subject to the operand-count limit.
+Other argument combinations fall through to operand selection, where `-r` is the only
+option. hdiff has no general unknown-option rejection or `--` option terminator;
+unrecognized arguments are treated as paths, subject to the operand-count limit.
 
 ## Interaction model
 

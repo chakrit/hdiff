@@ -1,18 +1,32 @@
-use std::{io, path::Path, process::Command};
+use std::{
+    io,
+    process::{Command, Stdio},
+};
+
+use crate::input::{Comparison, Depth};
 
 pub struct CompareFiles<'a> {
-    pub before: &'a Path,
-    pub after: &'a Path,
+    pub comparison: &'a Comparison,
 }
 
 pub struct CompareFilesContext;
 
 impl CompareFiles<'_> {
     pub fn run(self, _context: &mut CompareFilesContext) -> io::Result<Vec<u8>> {
+        let [before, after] = &self.comparison.operands;
+        let recursion: &[&str] = match self.comparison.depth {
+            Depth::TopLevel => &[],
+            Depth::Recursive => &["-r"],
+        };
+
+        // `--` keeps dash-leading paths operands; `diff` reads the inherited stdin for `-`.
         let output = Command::new("diff")
-            .args(["-u"])
-            .arg(self.before)
-            .arg(self.after)
+            .arg("-u")
+            .args(recursion)
+            .arg("--")
+            .arg(before.argument())
+            .arg(after.argument())
+            .stdin(Stdio::inherit())
             .output()?;
 
         match output.status.code() {
