@@ -56,7 +56,8 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   [continuity marker](architecture.md#continuity-markers) contract; human check passed on
   2026-10-14.
 - Recursive `-r` comparison and `-` stdin operands per the
-  [input contract](architecture.md#input-contract).
+  [input contract](architecture.md#input-contract), and a usage error for piped standard
+  input combined with file operands that do not read it.
 
 Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
 and human terminal checks passed for every delivered slice. Historical delivery plans
@@ -74,8 +75,6 @@ No slice is scheduled.
 These existing architecture obligations have no implementation slice yet; listing them
 here does not authorize implementation or settle additional behavior.
 
-- [ ] Reject piped standard input combined with file arguments under the existing
-  [input and terminal boundary](architecture.md#input-and-terminal-boundary).
 - [ ] Complete the existing controlling-terminal output and finite-fallback requirements
   in the [input and terminal boundary](architecture.md#input-and-terminal-boundary).
 - [ ] Implement the specified session-local contrast levels and `:` command entry under

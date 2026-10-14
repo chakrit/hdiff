@@ -215,3 +215,23 @@ fn dash_leading_paths_remain_comparison_operands() {
     let text = compare(directory.path(), &["-q", "after/top.txt"]);
     assert!(text.contains("-old top\n+new top\n"), "{text}");
 }
+
+#[test]
+fn piped_stdin_with_file_operands_is_a_usage_error() {
+    let directory = comparison_tree();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_hdiff"));
+    command
+        .args(["before/top.txt", "after/top.txt"])
+        .current_dir(directory.path())
+        .stdin(std::process::Stdio::piped())
+        .env_clear()
+        .env("PATH", TEST_PATH);
+    let output = command.output().expect("run comparison with piped stdin");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("piped standard input cannot be combined with file operands")
+    );
+}

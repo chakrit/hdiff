@@ -7,7 +7,8 @@ use hdiff::{
 
 fn main() -> Result<(), String> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let command = input::select_command(&arguments).map_err(|error| error.0)?;
+    let stdin = input::StdinState::inspect().map_err(|error| error.to_string())?;
+    let command = input::select_command(&arguments, stdin).map_err(|error| error.0)?;
 
     match command {
         input::Command::Help => write_stdout(input::HELP.as_bytes())?,

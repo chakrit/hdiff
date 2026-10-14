@@ -481,9 +481,9 @@ layouts and detail modes. Tests never assert timing and never start the `hdiff` 
 
 The first release reads the complete input before entering raw mode. Input selection distinguishes
 standard input, one existing patch file, and two comparison operands; combining piped standard
-input with file arguments must produce an explicit usage error. The current implementation
-does not enforce that requirement: file operands select the file or external comparison
-path without checking for piped stdin. Interactive mode requires a controlling
+input with file arguments must produce an explicit usage error. Standard input is piped
+when it is a pipe or socket; file arguments are accepted with piped standard input only
+when a `-` operand reads it. Interactive mode requires a controlling
 terminal independent of the data source, so `stdin` supplies diff bytes while the controlling
 terminal supplies events and output. If no controlling terminal is available, hdiff produces
 finite non-interactive output. hdiff is the pager and must not launch or depend on an external

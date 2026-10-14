@@ -63,7 +63,7 @@ for fixture in "$repo_root"/tests/fixtures/*.patch "$run_root/movement-$movement
     name=$(basename "$fixture" .patch)
     for driver in $drivers; do
         output="$run_root/$name.$driver.txt"
-        "$binary" --bench "$driver" "$fixture" > "$output" ||
+        "$binary" --bench "$driver" "$fixture" < /dev/null > "$output" ||
             fail "--bench $driver failed on $fixture"
     done
     printf 'fixture=%s preparation_ns=%s movement_worst_step_ns=%s\n' "$name" \
