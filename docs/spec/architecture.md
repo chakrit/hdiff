@@ -491,9 +491,9 @@ pager. The output contract decides whether interactive mode is attempted before 
 terminal is opened. The terminal backend must read events from an explicit controlling-terminal
 handle rather than rebinding standard input.
 
-The current implementation selects interactive mode when stdout is a terminal and
-uses stdout for drawing. Terminal setup errors propagate; fallback to finite output
-when no controlling terminal can be acquired remains unimplemented.
+Interactive mode is attempted when stdout is a terminal. hdiff then opens `/dev/tty`
+and draws there; when it cannot be opened, hdiff writes finite output to stdout instead.
+Setup errors after the controlling terminal opens propagate.
 
 ## Interaction and layout state
 

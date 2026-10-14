@@ -68,15 +68,17 @@ Git history.
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-No slice is scheduled.
+1. Controlling-terminal drawing with finite fallback, per the
+   [input and terminal boundary](architecture.md#input-and-terminal-boundary): drawing
+   goes to `/dev/tty` through a staged session restored in reverse order.
+   Human check: run `git diff` through the installed pager and `hdiff a b` in a terminal,
+   move and quit, and confirm the shell prompt, cursor, and echo are restored.
 
 ## Accepted requirements awaiting implementation
 
 These existing architecture obligations have no implementation slice yet; listing them
 here does not authorize implementation or settle additional behavior.
 
-- [ ] Complete the existing controlling-terminal output and finite-fallback requirements
-  in the [input and terminal boundary](architecture.md#input-and-terminal-boundary).
 - [ ] Implement the specified session-local contrast levels and `:` command entry under
   the existing [view model](architecture.md#view-model); unresolved interface details
   remain design work.

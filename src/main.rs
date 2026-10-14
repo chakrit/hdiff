@@ -1,9 +1,6 @@
 #![deny(warnings)]
 
-use hdiff::{
-    actions, document, input, parser, prepared, render,
-    terminal::{self, TtyEvents, Tui},
-};
+use hdiff::{actions, document, input, parser, prepared, render, terminal};
 
 fn main() -> Result<(), String> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -61,20 +58,14 @@ fn render_document(document: &document::DiffDocument) -> Result<(), String> {
     match output_mode {
         terminal::OutputMode::Finite => write_stdout(&render::render_unified(document)),
         terminal::OutputMode::Interactive => {
+            let Some(controlling_terminal) = terminal::open_controlling_terminal() else {
+                return write_stdout(&render::render_unified(document));
+            };
             let prepared = prepared::PreparedDocument::prepare(document);
-            run_interactive(prepared).map_err(|error| error.to_string())
+            terminal::run_interactive(controlling_terminal, prepared)
+                .map_err(|error| error.to_string())
         }
     }
-}
-
-fn run_interactive(document: prepared::PreparedDocument) -> std::io::Result<()> {
-    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
-    let area = terminal.size()?;
-    let color_count = crossterm::style::available_color_count();
-
-    let result = Tui::new(document, area, color_count).run(&mut terminal, TtyEvents::default());
-    ratatui::restore();
-    result
 }
 
 #[cfg(test)]

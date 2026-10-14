@@ -18,7 +18,10 @@ use crate::{
 mod chrome;
 mod row_writer;
 mod rows;
+mod session;
 mod view;
+
+pub use session::{open_controlling_terminal, run_interactive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
@@ -214,7 +217,7 @@ impl ExtentKey {
 
 /// Blocking terminal events with consecutive resizes coalesced into the latest one.
 #[derive(Default)]
-pub struct TtyEvents {
+struct TtyEvents {
     pending: Option<Event>,
 }
 
