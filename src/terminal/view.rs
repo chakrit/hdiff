@@ -398,6 +398,34 @@ mod tests {
         );
     }
 
+    /// architecture.md (Continuity markers): markers take the dimmed separator tone.
+    #[test]
+    fn draws_continuity_markers_in_the_dimmed_separator_tone() {
+        let rows = (0..20)
+            .map(|row| format!("+row_{row}\n"))
+            .collect::<String>();
+        let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
+        let document = parse_unified_diff(patch.as_bytes()).expect("valid diff");
+        let interaction = Interaction {
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport::new(80, 8),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+
+        terminal
+            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .expect("render frame");
+
+        let rendered = terminal.backend().buffer();
+        let marker = rendered
+            .content()
+            .iter()
+            .find(|cell| cell.symbol() == "▾")
+            .expect("lines continue below");
+        assert_eq!(marker.fg, Color::Rgb(95, 95, 95));
+    }
+
     #[test]
     fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
         let document = parse_unified_diff(b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef\n+ABCDEF\n")

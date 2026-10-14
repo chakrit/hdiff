@@ -74,7 +74,7 @@ pub(super) fn draw_inner_separator(
     symbol: &'static str,
     color_count: u16,
 ) {
-    let style = Style::default().fg(inner_separator_color(color_count));
+    let style = Style::default().fg(chrome_palette(color_count).dim_separator);
 
     fill(buffer, area, symbol, style);
 }
@@ -127,7 +127,7 @@ impl ContinuityFrame {
         if self.content.is_empty() {
             return;
         }
-        let style = Style::default().fg(chrome_palette(color_count).separator);
+        let style = Style::default().fg(chrome_palette(color_count).dim_separator);
         let y = self.content.y + self.content.height / 2;
 
         if clip.left {
@@ -152,7 +152,7 @@ impl ContinuityFrame {
         if self.content.is_empty() {
             return;
         }
-        let style = Style::default().fg(chrome_palette(color_count).separator);
+        let style = Style::default().fg(chrome_palette(color_count).dim_separator);
         let center = self.pane.x + self.pane.width / 2;
         let shown = usize::from(self.content.height);
 
@@ -261,6 +261,8 @@ struct ChromePalette {
     selected_file: Color,
     selected_file_background: Color,
     separator: Color,
+    /// The inner separator between side-by-side panes and the continuity markers.
+    dim_separator: Color,
     footer: Color,
 }
 
@@ -288,6 +290,7 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file: Color::Rgb(220, 220, 220),
             selected_file_background: Color::Rgb(65, 65, 65),
             separator: Color::Rgb(125, 125, 125),
+            dim_separator: Color::Rgb(95, 95, 95),
             footer: Color::Rgb(110, 110, 110),
         },
         256.. => ChromePalette {
@@ -300,6 +303,7 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file: Color::Indexed(255),
             selected_file_background: Color::Indexed(238),
             separator: Color::Indexed(243),
+            dim_separator: Color::Indexed(238),
             footer: Color::Indexed(240),
         },
         _ => ChromePalette {
@@ -312,15 +316,8 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file: Color::White,
             selected_file_background: Color::DarkGray,
             separator: Color::DarkGray,
+            dim_separator: Color::DarkGray,
             footer: Color::DarkGray,
         },
-    }
-}
-
-fn inner_separator_color(color_count: u16) -> Color {
-    match color_count {
-        u16::MAX => Color::Rgb(95, 95, 95),
-        256.. => Color::Indexed(238),
-        _ => Color::DarkGray,
     }
 }

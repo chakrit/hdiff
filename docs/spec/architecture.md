@@ -348,8 +348,8 @@ content area and never holds diff content:
   horizontal offset;
 - the right column shows one `▸` at its middle while any visible row continues past the
   content area's right edge;
-- frame cells use the separator color on the default background; row backgrounds stop at
-  the frame;
+- markers use the dimmed separator tone of the before/after divider on the default
+  background; row backgrounds stop at the frame;
 - the frame is reserved even when it shows no marker, and stacked panes each have their
   own frame.
 
