@@ -344,9 +344,9 @@ content area and never holds diff content:
 
 - the top row shows `▴` at its center while lines exist above the first visible line;
 - the bottom row shows `▾` at its center while lines exist below the last visible line;
-- the left column shows `◂` beside each content line whose row has cells left of the
+- the left column shows one `◂` at its middle while any visible row has cells left of the
   horizontal offset;
-- the right column shows `▸` beside each content line whose row continues past the
+- the right column shows one `▸` at its middle while any visible row continues past the
   content area's right edge;
 - frame cells use the separator color on the default background; row backgrounds stop at
   the frame;

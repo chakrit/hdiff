@@ -39,6 +39,16 @@ pub(super) struct Clip {
     pub(super) right: bool,
 }
 
+impl Clip {
+    /// The sides clipped in either `self` or `other`.
+    pub(super) fn union(self, other: Clip) -> Clip {
+        Clip {
+            left: self.left || other.left,
+            right: self.right || other.right,
+        }
+    }
+}
+
 /// Fills `area` with the row's style, then writes the part of its marker gutter and
 /// payload that `placement` selects. Only a row's first line carries its marker.
 pub(super) fn write_row(

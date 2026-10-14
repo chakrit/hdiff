@@ -724,9 +724,10 @@ fn continuity_markers(mode: Mode) {
 
     live.press('g');
     live.press('l');
-    assert!(
-        live.count('◂') > 1,
-        "every scrolled line has cells to its left"
+    assert_eq!(
+        live.count('◂'),
+        panes,
+        "one marker per pane however many scrolled lines have cells to their left"
     );
     assert_eq!(live.count('▸'), 1);
 
@@ -773,8 +774,8 @@ fn frame_cells_never_hold_diff_content() {
     );
     assert_eq!(
         diff_pane(&rows[wide.y as usize]).chars().last(),
-        Some('▸'),
-        "the right frame column holds the marker, not the row's text"
+        Some(' '),
+        "the right frame column holds no row text"
     );
 
     live.press('l');

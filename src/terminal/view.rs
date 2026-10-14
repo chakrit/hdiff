@@ -19,7 +19,7 @@ use super::{
     chrome::{
         ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator, render_file_column,
     },
-    row_writer::{RowPlacement, write_row},
+    row_writer::{Clip, RowPlacement, write_row},
     rows::{
         PaneRow, VisibleLine, VisibleSideBySideRow, aligned_pair, visible_diff_rows,
         visible_side_by_side_rows,
@@ -175,6 +175,7 @@ impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
     ) {
         let content = pane.content();
         let buffer = frame.buffer_mut();
+        let mut clipped = Clip::default();
 
         for (index, line) in lines.into_iter().take(content.height.into()).enumerate() {
             let y = content.y + index as u16;
@@ -187,8 +188,9 @@ impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
                 (self.placement)(line.line),
                 self.color_count,
             );
-            pane.draw_line_markers(buffer, y, clip, self.color_count);
+            clipped = clipped.union(clip);
         }
+        pane.draw_side_markers(buffer, clipped, self.color_count);
         pane.draw_window_markers(buffer, self.window, self.color_count);
     }
 }

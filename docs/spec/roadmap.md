@@ -51,9 +51,6 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   adds 0.03–0.09% retired instructions per range.
 - Session-local row wrapping toggled with `w`, starting disabled, per the
   [view model](architecture.md#view-model); human check passed on 2026-10-12.
-- Continuity markers in a one-cell frame around each diff pane and frame rows on the
-  file list, per the [continuity marker](architecture.md#continuity-markers) contract;
-  human check passed on 2026-10-14.
 
 Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
 and human terminal checks passed for every delivered slice. Historical delivery plans
@@ -64,7 +61,16 @@ Git history.
 
 Each slice is incomplete until its automated checks and its human check both pass.
 
-No slice is scheduled.
+1. Display continuity markers on each content-pane edge when content extends beyond the
+   visible frame: downward for content below, upward for content above, and one leftward or
+   rightward marker per side for horizontally clipped content, in the
+   [continuity marker](architecture.md#continuity-markers) frame. The glyphs passed the
+   human check on 2026-10-14; one marker per side is implemented and awaits the human
+   check.
+
+   Human check: open a diff that exceeds the pane vertically and horizontally. Verify that each
+   marker appears only while content continues past its corresponding edge, disappears at that
+   edge's boundary, and does not obscure diff content or pane layout.
 
 ## Accepted requirements awaiting implementation
 

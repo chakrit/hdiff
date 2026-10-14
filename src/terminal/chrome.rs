@@ -122,15 +122,13 @@ impl ContinuityFrame {
         self.content
     }
 
-    /// `◂` and `▸` beside content line `y` on each side where its row was clipped.
-    pub(super) fn draw_line_markers(
-        &self,
-        buffer: &mut Buffer,
-        y: u16,
-        clip: Clip,
-        color_count: u16,
-    ) {
+    /// `◂` and `▸` midway down each side where any visible row was clipped.
+    pub(super) fn draw_side_markers(&self, buffer: &mut Buffer, clip: Clip, color_count: u16) {
+        if self.content.is_empty() {
+            return;
+        }
         let style = Style::default().fg(chrome_palette(color_count).separator);
+        let y = self.content.y + self.content.height / 2;
 
         if clip.left {
             buffer[(self.pane.left(), y)]
