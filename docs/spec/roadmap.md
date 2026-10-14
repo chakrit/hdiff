@@ -57,7 +57,8 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   2026-10-14.
 - Recursive `-r` comparison and `-` stdin operands per the
   [input contract](architecture.md#input-contract), and a usage error for piped standard
-  input combined with file operands that do not read it.
+  input combined with file operands that do not read it. Comparisons pass `-N` and show
+  output that holds only surrounding text.
 
 Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
 and human terminal checks passed for every delivered slice. Historical delivery plans

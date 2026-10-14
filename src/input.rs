@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{actions, bench::Driver};
+use crate::{actions, bench::Driver, document::DiffDocument, parser};
 
 pub const HELP: &str = concat!(
     "Usage: hdiff [OPTIONS] [FILE ...]\n",
@@ -112,15 +112,17 @@ impl InputSource {
         }
     }
 
-    pub fn read(self) -> Result<Vec<u8>, String> {
+    pub fn read(self) -> Result<Input, String> {
         match self {
             InputSource::Stdin => {
                 let mut input = Vec::new();
                 std::io::Read::read_to_end(&mut std::io::stdin(), &mut input)
                     .map_err(|error| error.to_string())?;
-                Ok(input)
+                Ok(Input::Patch(input))
             }
-            InputSource::DiffFile(path) => std::fs::read(path).map_err(|error| error.to_string()),
+            InputSource::DiffFile(path) => std::fs::read(path)
+                .map(Input::Patch)
+                .map_err(|error| error.to_string()),
             InputSource::Comparison(comparison) => {
                 let mut context = actions::compare_files::CompareFilesContext;
 
@@ -128,9 +130,37 @@ impl InputSource {
                     comparison: &comparison,
                 }
                 .run(&mut context)
+                .map(Input::Comparison)
                 .map_err(|error| error.to_string())
             }
         }
+    }
+}
+
+/// Bytes read from a source, tagged by whether they must hold a file diff.
+/// Contract: docs/spec/architecture.md#input-contract.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Input {
+    /// Viewer input: stdin or a patch file.
+    Patch(Vec<u8>),
+    /// `diff` output, which may hold only surrounding text.
+    Comparison(Vec<u8>),
+}
+
+impl Input {
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Input::Patch(bytes) | Input::Comparison(bytes) => bytes,
+        }
+    }
+
+    pub fn parse(&self) -> Result<DiffDocument, String> {
+        let document = match self {
+            Input::Patch(bytes) => parser::parse_unified_diff(bytes),
+            Input::Comparison(bytes) => parser::parse_comparison_output(bytes),
+        };
+
+        document.map_err(|error| error.message)
     }
 }
 

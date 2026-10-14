@@ -17,7 +17,6 @@ use ratatui::{
 use crate::{
     input::InputSource,
     measurement::{self, Observer, Profile, Startup, Unobserved},
-    parser,
     prepared::PreparedDocument,
     terminal::Tui,
 };
@@ -69,7 +68,7 @@ fn prepare(
     let started = Instant::now();
     let input = source.read()?;
     let input_finished = Instant::now();
-    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+    let document = input.parse()?;
     let parse_finished = Instant::now();
     let prepared = PreparedDocument::prepare_observed(&document, observer);
     let ready = Instant::now();
@@ -79,7 +78,7 @@ fn prepare(
         parse: parse_finished.duration_since(input_finished),
         preparation: ready.duration_since(parse_finished),
         ready: ready.duration_since(started),
-        bytes: input.len(),
+        bytes: input.bytes().len(),
     };
     Ok((startup, prepared))
 }

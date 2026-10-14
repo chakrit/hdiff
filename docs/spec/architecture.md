@@ -161,8 +161,10 @@ rendering path for all producers. Do not introduce `git show` exceptions. Recogn
 diff sections remain strictly validated.
 
 Support diffs and their surrounding text through explicit `git show <commit> | hdiff`
-invocations. Do not provide general text-only paging; reject nonempty input containing
-no diff. Automatic `pager.show` registration is outside this scope.
+invocations. Do not provide general text-only paging; reject nonempty stdin or patch-file
+input containing no diff. Comparison output is exempt: it is shown even when it holds only
+surrounding text, such as `Binary files … differ`. Automatic `pager.show` registration is
+outside this scope.
 
 Surrounding text has document-level ownership. Prepared layouts render each text line
 once and share its row index across split panes. Text receives no source syntax or
@@ -172,10 +174,11 @@ An immediate record-looking continuation after a hunk's declared counts is an er
 Surrounding text does not provide recovery from malformed recognized diff sections.
 
 The input selector reads stdin with zero operands or a lone `-`, reads a patch file with
-one other operand, and invokes `diff -u [-r] -- <before> <after>` with two; more than two
-operands produce `expected zero, one, or two operands`. `-r` is recognized anywhere in
-the input arguments and requires two operands; otherwise it produces
-`-r requires two comparison operands`. A `-` comparison operand is passed to `diff`,
+one other operand, and invokes `diff -u -N [-r] -- <before> <after>` with two, so added
+and removed files render as diffs; `-N` is not POSIX, and GNU and Apple `diff` both
+support it. More than two operands produce `expected zero, one, or two operands`. `-r`
+is recognized anywhere in the input arguments and requires two operands; otherwise it
+produces `-r requires two comparison operands`. A `-` comparison operand is passed to `diff`,
 which reads hdiff's standard input. Other dash-leading arguments are paths.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached

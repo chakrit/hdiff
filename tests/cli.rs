@@ -235,3 +235,40 @@ fn piped_stdin_with_file_operands_is_a_usage_error() {
             .contains("piped standard input cannot be combined with file operands")
     );
 }
+
+#[test]
+fn directory_comparison_renders_added_and_removed_files_as_diffs() {
+    let directory = comparison_tree();
+    std::fs::write(directory.path().join("before/removed.txt"), "gone\n").expect("removed file");
+    std::fs::write(directory.path().join("after/added.txt"), "fresh\n").expect("added file");
+
+    let text = compare(directory.path(), &["before", "after"]);
+    assert!(text.contains("-gone\n"), "{text}");
+    assert!(text.contains("+fresh\n"), "{text}");
+}
+
+#[test]
+fn comparison_holding_only_surrounding_text_is_shown() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    for (path, bytes) in [("before.bin", b"\0old".as_slice()), ("after.bin", b"\0new")] {
+        std::fs::write(directory.path().join(path), bytes).expect("binary fixture");
+    }
+
+    let text = compare(directory.path(), &["before.bin", "after.bin"]);
+    assert!(
+        text.contains("before.bin") && text.contains("differ"),
+        "{text}"
+    );
+}
+
+#[test]
+fn patch_file_holding_only_text_is_an_error() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let patch = directory.path().join("notes.patch");
+    std::fs::write(&patch, "Binary files a and b differ\n").expect("text-only patch");
+    let output = hdiff(patch.to_str().expect("fixture path is UTF-8"));
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("input contains no diff"));
+}

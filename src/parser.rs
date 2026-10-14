@@ -10,7 +10,18 @@ pub struct ParseError {
     pub message: String,
 }
 
+/// Parses viewer input, rejecting nonempty input that holds no file diff.
 pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
+    let document = parse_comparison_output(input)?;
+
+    match !input.is_empty() && document.files().next().is_none() {
+        true => Err(error(0, "input contains no diff")),
+        false => Ok(document),
+    }
+}
+
+/// Parses `diff` output, which may hold only surrounding text such as `Binary files … differ`.
+pub fn parse_comparison_output(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let lines = input
         .split_inclusive(|byte| *byte == b'\n')
         .collect::<Vec<_>>();
@@ -130,12 +141,8 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
             },
         ))));
     }
-    let document = DiffDocument { sections };
-    if !input.is_empty() && document.files().next().is_none() {
-        return Err(error(0, "input contains no diff"));
-    }
 
-    Ok(document)
+    Ok(DiffDocument { sections })
 }
 
 fn reject_unsupported_header(line: &str, index: usize) -> Result<(), ParseError> {
@@ -326,7 +333,7 @@ fn after_string_sequence(line: &[u8], mut index: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_unified_diff;
+    use super::{parse_comparison_output, parse_unified_diff};
     use crate::document::{DiffDocument, DiffFile, Hunk};
 
     #[test]
@@ -344,6 +351,15 @@ mod tests {
             assert!(parse_unified_diff(input).is_err());
         }
         assert_eq!(parse_unified_diff(b""), Ok(DiffDocument::default()));
+    }
+
+    #[test]
+    fn keeps_comparison_output_that_holds_only_text() {
+        let input = b"Binary files before.bin and after.bin differ\n";
+
+        let document = parse_comparison_output(input).expect("text-only comparison output");
+
+        assert_eq!(crate::render::render_unified(&document), input);
     }
 
     #[test]

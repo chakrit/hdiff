@@ -19,9 +19,10 @@ impl CompareFiles<'_> {
             Depth::Recursive => &["-r"],
         };
 
-        // `--` keeps dash-leading paths operands; `diff` reads the inherited stdin for `-`.
+        // `-N` renders added and removed files as diffs; `--` keeps dash-leading paths
+        // operands; `diff` reads the inherited stdin for `-`.
         let output = Command::new("diff")
-            .arg("-u")
+            .args(["-u", "-N"])
             .args(recursion)
             .arg("--")
             .arg(before.argument())

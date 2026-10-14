@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use hdiff::{actions, document, input, parser, prepared, render, terminal};
+use hdiff::{actions, document, input, prepared, render, terminal};
 
 fn main() -> Result<(), String> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -43,11 +43,11 @@ fn write_stdout(bytes: &[u8]) -> Result<(), String> {
 
 fn view(source: input::InputSource) -> Result<(), String> {
     let input = source.read()?;
-    if input.is_empty() {
+    if input.bytes().is_empty() {
         return Ok(());
     }
 
-    let document = parser::parse_unified_diff(&input).map_err(|error| error.message)?;
+    let document = input.parse()?;
     render_document(&document)
 }
 
