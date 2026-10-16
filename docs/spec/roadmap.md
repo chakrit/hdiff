@@ -59,21 +59,15 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   [input contract](architecture.md#input-contract), and a usage error for piped standard
   input combined with file operands that do not read it. Comparisons pass `-N` and show
   output that holds only surrounding text.
+- Controlling-terminal drawing with finite fallback per the
+  [input and terminal boundary](architecture.md#input-and-terminal-boundary): drawing goes
+  to `/dev/tty` through a staged session restored in reverse order; human check passed on
+  2026-10-16.
 
 Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
 and human terminal checks passed for every delivered slice. Historical delivery plans
 and verification records are preserved in `.ace/spec-cleanup-roadmap-before.md` and in
 Git history.
-
-## Remaining interactive delivery sequence
-
-Each slice is incomplete until its automated checks and its human check both pass.
-
-1. Controlling-terminal drawing with finite fallback, per the
-   [input and terminal boundary](architecture.md#input-and-terminal-boundary): drawing
-   goes to `/dev/tty` through a staged session restored in reverse order.
-   Human check: run `git diff` through the installed pager and `hdiff a b` in a terminal,
-   move and quit, and confirm the shell prompt, cursor, and echo are restored.
 
 ## Parked preparation optimization
 
