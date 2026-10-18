@@ -65,7 +65,7 @@ pub(super) fn write_row(
     let payload_clusters = payload
         .clusters()
         .map(|(cluster, text_style)| (cluster, segment_style(text_style, theme)));
-    let gutter = gutter(row.tone, &theme.rows);
+    let gutter = gutter(row.tone(), &theme.rows);
 
     let cursor = RowCursor {
         buffer,

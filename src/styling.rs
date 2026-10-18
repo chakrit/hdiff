@@ -96,12 +96,16 @@ impl RowTone {
 
 #[derive(Clone, Copy)]
 pub struct StyledRow<'a> {
-    pub tone: RowTone,
+    tone: RowTone,
     text: &'a str,
     partition: &'a Partition,
 }
 
 impl<'a> StyledRow<'a> {
+    pub fn tone(&self) -> RowTone {
+        self.tone
+    }
+
     pub fn segments(&self) -> impl Iterator<Item = (&'a str, TextStyle)> + use<'a> {
         let text = self.text;
 

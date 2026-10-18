@@ -16,7 +16,7 @@ pub(super) enum PaneRow<'a> {
 impl PaneRow<'_> {
     pub(super) fn tone(&self) -> RowTone {
         match self {
-            Self::Text(row) => row.tone,
+            Self::Text(row) => row.tone(),
             Self::AlignmentPeer(side) => RowTone::Changed(*side),
         }
     }
