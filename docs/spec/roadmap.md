@@ -121,8 +121,8 @@ implementation remains unapproved.
 
 ### Product slices
 
-1. Shortcuts: compact file-list hints, `e` to show and hide the file list with a floating
-   `? help` box while it is hidden, and the grouped `?` keymap popup, per the
+1. Shortcuts: the `? help` hint below the file list, `e` to show and hide the file list,
+   with the hint floating in a box while the list is hidden, and the grouped `?` keymap popup, per the
    [interaction model](architecture.md#interaction-model) and
    [keyboard bindings](architecture.md#keyboard-bindings).
 
@@ -156,7 +156,7 @@ implementation remains unapproved.
 5. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
-   footer hints and keymap popup match the key behavior, additions and deletions remain
+   help hint and keymap popup match the key behavior, additions and deletions remain
    distinguishable, and low contrast remains readable without saturating the whole terminal.
 
 6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the

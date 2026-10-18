@@ -331,18 +331,14 @@ mod tests {
             ((0, 2), "~", "selected file's state marker"),
             ((28, 4), "-", "deletion marker"),
             ((28, 5), "+", "addition marker"),
-            ((1, 5), "h", "footer hint"),
+            ((1, 9), "?", "help hint"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
         assert_eq!(rendered[(2, 1)].fg, Color::Rgb(160, 160, 160), "file name");
-        assert_eq!(
-            rendered[(0, 9)].fg,
-            Color::Rgb(110, 110, 110),
-            "footer hint"
-        );
+        assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "help hint");
     }
 
     #[test]
@@ -903,7 +899,11 @@ mod tests {
             assert!(row_text(rendered, 7).starts_with("┌────────┐"));
             assert!(row_text(rendered, 8).starts_with("│ ? help │"));
             assert!(row_text(rendered, 9).starts_with("└────────┘"));
-            assert!(!screen_text(rendered).contains("move"), "no footer hints");
+            assert_eq!(
+                screen_text(rendered).matches("? help").count(),
+                1,
+                "one help hint"
+            );
         }
         assert_eq!(
             hidden[(1, 4)].symbol(),

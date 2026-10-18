@@ -15,7 +15,8 @@ use super::{
 };
 use crate::{syntax::SyntaxClass, theme::DEFAULT_SYNTAX_THEME};
 
-/// Shortcuts that belong together, as keys and the action they take.
+/// Shortcuts that belong together, one row each as keys and the action they take. A row
+/// with no action continues the keys of a neighboring row, as the `hjkl` diamond does.
 struct ShortcutGroup {
     heading: &'static str,
     shortcuts: &'static [(&'static str, &'static str)],
@@ -25,12 +26,14 @@ const GROUPS: [ShortcutGroup; 4] = [
     ShortcutGroup {
         heading: "Scroll",
         shortcuts: &[
-            ("j k ↓ ↑", "down / up"),
-            ("h l", "left / right"),
+            ("  k", ""),
+            ("h · l", "scroll"),
+            ("  j", ""),
+            ("↓ ↑", "down / up"),
             ("^D ^U", "half page down / up"),
             ("g G", "top / bottom"),
-            ("0 ^", "left edge"),
-            ("$", "right end"),
+            ("0 ^", "far left"),
+            ("$", "far right"),
         ],
     },
     ShortcutGroup {
@@ -184,12 +187,12 @@ mod tests {
             "Files",
             "View",
             "Keymap and exit",
+            "scroll",
             "down / up",
-            "left / right",
             "half page down / up",
             "top / bottom",
-            "left edge",
-            "right end",
+            "far left",
+            "far right",
             "next / previous file",
             "show / hide file list",
             "cycle layout",
@@ -206,6 +209,8 @@ mod tests {
             );
         }
         assert!(wide.contains('┌') && wide.contains('┘'), "popup border");
+        assert_diamond(&render_popup(120));
+        assert_diamond(&render_popup(60));
         assert!(
             wide.lines()
                 .any(|row| row.contains("Scroll") && row.contains("View")),
@@ -217,6 +222,27 @@ mod tests {
                 .any(|row| row.contains("Scroll") && row.contains("View")),
             "one column when narrow"
         );
+    }
+
+    /// architecture.md (Keyboard bindings): Scroll shows `h`, `j`, `k`, and `l` as a diamond.
+    fn assert_diamond(buffer: &Buffer) {
+        let middle = buffer
+            .area
+            .positions()
+            .find(|start| {
+                ["h", " ", "·", " ", "l"]
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, symbol)| {
+                        let x = start.x + offset as u16;
+                        x < buffer.area.right() && buffer[(x, start.y)].symbol() == *symbol
+                    })
+            })
+            .expect("h · l is drawn");
+        let center = middle.x + 2;
+
+        assert_eq!(buffer[(center, middle.y - 1)].symbol(), "k", "k above");
+        assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
     }
 
     /// architecture.md (Interaction model): headings take the hunk-header tone in bold, keys

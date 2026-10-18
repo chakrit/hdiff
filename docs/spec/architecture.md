@@ -46,8 +46,7 @@ Shell script filenames use dashes between words.
 - Resize cleanly and redraw from retained state.
 - Cycle unified, vertical-split, and stacked-split views without silently changing the selected
   mode.
-- Provide a pager-first TUI with muted shortcut hints at the bottom of the file-list column
-  and a popup listing every shortcut.
+- Provide a pager-first TUI with a muted `? help` hint and a popup listing every shortcut.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
   immediately.
 - Exit cleanly on EOF, quit input, and terminal errors.
@@ -131,7 +130,7 @@ valid diff lines without data loss.
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
 - `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
 - `Layout`: retained rendered rows, split pairs, and source addresses.
-- Visible layout: derived panes, effective visibility, footer hints, and the keymap popup.
+- Visible layout: derived panes, effective visibility, the help hint, and the keymap popup.
 
 The interaction state is a value that transitions in response to an input event. A transition
 returns a new state and a rendering request; it does not reach into the terminal or document.
@@ -233,16 +232,17 @@ unrecognized arguments are treated as paths, subject to the operand-count limit.
 ## Interaction model
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main
-viewport, and the file-list column ends with muted shortcut hints. The hints are a navigational
-aid, not a second control plane; every setting has one keyboard path, and changing it produces a
+viewport, and a muted `? help` hint points to the keymap popup. The hint and popup are a
+navigational aid, not a second control plane; every setting has one keyboard path, and changing it produces a
 new interaction state and immediate redraw.
 
 The compact surface has a file list on the left, a diff view on the right, and one
 vertical separator padded by one space on each side, with no pane borders or labels.
 
 The left file list is the primary navigation pane. `e` shows and hides it; it starts shown.
-As width decreases it collapses before the diff view. While the file list is hidden, a small
-bordered `? help` box floats over the bottom-left corner of the diff in place of the hints.
+As width decreases it collapses before the diff view. The help hint sits on the bottom row of
+the file list; while the file list is hidden, it floats in a small bordered box over the
+bottom-left corner of the diff.
 If the terminal is too narrow or too short for the minimum layout, the only rendered content
 is `screen too narrow` or `screen too short`. The minimum layout shows one content line in
 each diff pane.
@@ -254,7 +254,7 @@ exits, and every other key does nothing; closing it restores the view. The pager
 and live shortcut-driven settings are settled product requirements.
 
 Unselected file names use a medium-muted neutral tone, one level brighter than the
-separator and footer hints; their markers take their state's color, as the
+separator and the help hint; their markers take their state's color, as the
 [file tree](#file-tree) defines. The selected file row applies one shared muted
 foreground/background style to its whole row and has no selection glyph.
 
@@ -433,12 +433,9 @@ Vim semantics.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 
-The file-list footer lists one shortcut per row: `hjkl` move, `v` layout, `Tab` file,
-`e` files, `?` help, and `q` quit. It uses only the available footer rows and never
-advertises a deferred shortcut.
-
 The keymap popup lists every shortcut in the table above under four headings: Scroll,
-Files, View, and Keymap and exit. The groups sit in two columns when the screen is wide
+Files, View, and Keymap and exit. Scroll shows `h`, `j`, `k`, and `l` as a diamond. It never
+advertises a deferred shortcut. The groups sit in two columns when the screen is wide
 enough and in one column otherwise. Headings take the hunk-header tone in bold, keys the
 syntax function color, actions the file-name tone, and the border the separator tone.
 

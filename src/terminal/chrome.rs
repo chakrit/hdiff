@@ -1,5 +1,5 @@
-//! Frame chrome around the diff panes: the file list, footer hints, the `? help` box,
-//! separators, and continuity markers.
+//! Frame chrome around the diff panes: the file list, the `? help` hint, separators, and
+//! continuity markers.
 
 use ratatui::{
     Frame,
@@ -19,21 +19,12 @@ use crate::{
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
-const FOOTER_HINTS: [&str; 6] = [
-    " hjkl  move",
-    " v     layout",
-    " Tab   file",
-    " e     files",
-    " ?     help",
-    " q     quit",
-];
-
-const HELP_BOX_TEXT: &str = "? help";
-/// The text inside a border and a padding column on each side, between two border rows.
-const HELP_BOX_WIDTH: u16 = HELP_BOX_TEXT.len() as u16 + 4;
+const HELP_HINT: &str = "? help";
+/// The hint inside a border and a padding column on each side, between two border rows.
+const HELP_BOX_WIDTH: u16 = HELP_HINT.len() as u16 + 4;
 const HELP_BOX_HEIGHT: u16 = 3;
 
-/// Draws the file list above the footer hints in the file-list column.
+/// Draws the file list above the help hint in the file-list column.
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
@@ -43,22 +34,19 @@ pub(super) fn render_file_column(
 ) {
     let palette = chrome_palette(color_count);
     let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
-    let footer_height = area
-        .height
-        .saturating_sub(list_height)
-        .min(FOOTER_HINTS.len() as u16);
-    let [list_area, footer_area] = RatatuiLayout::vertical([
+    let hint_height = area.height.saturating_sub(list_height).min(1);
+    let [list_area, hint_area] = RatatuiLayout::vertical([
         Constraint::Min(list_height),
-        Constraint::Length(footer_height),
+        Constraint::Length(hint_height),
     ])
     .areas(area);
 
     render_file_list(frame, list_area, tree, selected_row, color_count);
-    render_footer(frame.buffer_mut(), footer_area, palette);
+    render_help_hint(frame.buffer_mut(), hint_area, palette);
 }
 
-/// The floating `? help` box over the bottom-left corner of `area`, shown in place of the
-/// footer hints while the file list is hidden.
+/// The help hint in a box floating over the bottom-left corner of `area`, while the file list
+/// is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, color_count: u16) {
     let palette = chrome_palette(color_count);
     let help_box = Rect::new(
@@ -72,7 +60,7 @@ pub(super) fn render_help_box(frame: &mut Frame, area: Rect, color_count: u16) {
     let border = Block::bordered()
         .border_style(Style::default().fg(palette.separator))
         .padding(Padding::horizontal(1));
-    let text = Line::styled(HELP_BOX_TEXT, Style::default().fg(palette.footer));
+    let text = Line::styled(HELP_HINT, Style::default().fg(palette.hint));
 
     frame.render_widget(Clear, help_box);
     frame.render_widget(Paragraph::new(text).block(border), help_box);
@@ -254,13 +242,20 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
     ListItem::new(line)
 }
 
-fn render_footer(buffer: &mut Buffer, area: Rect, palette: ChromePalette) {
-    let style = Style::default().fg(palette.footer);
+fn render_help_hint(buffer: &mut Buffer, area: Rect, palette: ChromePalette) {
+    if area.is_empty() {
+        return;
+    }
+    let style = Style::default().fg(palette.hint);
 
     buffer.set_style(area, style);
-    for (y, hint) in area.rows().map(|row| row.y).zip(FOOTER_HINTS) {
-        buffer.set_stringn(area.x, y, hint, usize::from(area.width), style);
-    }
+    buffer.set_stringn(
+        area.x + 1,
+        area.y,
+        HELP_HINT,
+        usize::from(area.width) - 1,
+        style,
+    );
 }
 
 fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
@@ -282,7 +277,7 @@ pub(super) struct ChromePalette {
     pub(super) separator: Color,
     /// The inner separator between side-by-side panes and the continuity markers.
     dim_separator: Color,
-    footer: Color,
+    hint: Color,
 }
 
 impl ChromePalette {
@@ -310,7 +305,7 @@ pub(super) fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::Rgb(65, 65, 65),
             separator: Color::Rgb(125, 125, 125),
             dim_separator: Color::Rgb(95, 95, 95),
-            footer: Color::Rgb(110, 110, 110),
+            hint: Color::Rgb(110, 110, 110),
         },
         256.. => ChromePalette {
             directory_heading: Color::Indexed(243),
@@ -323,7 +318,7 @@ pub(super) fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::Indexed(238),
             separator: Color::Indexed(243),
             dim_separator: Color::Indexed(238),
-            footer: Color::Indexed(240),
+            hint: Color::Indexed(240),
         },
         _ => ChromePalette {
             directory_heading: Color::DarkGray,
@@ -336,7 +331,7 @@ pub(super) fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::DarkGray,
             separator: Color::DarkGray,
             dim_separator: Color::DarkGray,
-            footer: Color::DarkGray,
+            hint: Color::DarkGray,
         },
     }
 }
@@ -348,10 +343,10 @@ mod tests {
     use super::render_file_column;
     use crate::{parser::parse_unified_diff, prepared::PreparedDocument};
 
-    /// architecture.md (Keyboard bindings): the footer lists one shortcut per row below the
-    /// file list.
+    /// architecture.md (Interaction model): the help hint sits on the bottom row of the file
+    /// list.
     #[test]
-    fn lists_compact_shortcuts_below_the_file_list() {
+    fn ends_the_file_list_with_the_help_hint() {
         let document = parse_unified_diff(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
@@ -371,17 +366,13 @@ mod tests {
                 .trim_end()
                 .to_owned()
         };
-        assert_eq!(
-            (12..18).map(row).collect::<Vec<_>>(),
-            [
-                " hjkl  move",
-                " v     layout",
-                " Tab   file",
-                " e     files",
-                " ?     help",
-                " q     quit"
-            ]
+        let rows = (0..18).map(row).collect::<Vec<_>>();
+
+        assert_eq!(rows[17], " ? help");
+        assert!(
+            rows[..17].iter().all(|row| !row.contains("help")),
+            "one hint row"
         );
-        assert_eq!(buffer[(1, 12)].fg, Color::Rgb(110, 110, 110), "footer tone");
+        assert_eq!(buffer[(1, 17)].fg, Color::Rgb(110, 110, 110), "hint tone");
     }
 }

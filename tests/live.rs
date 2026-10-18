@@ -933,7 +933,7 @@ fn file_list_toggle(mode: Mode) {
     live.press('e');
     assert!(!live.shows("pairs.rs"), "e hides the file list");
     assert_eq!(change_label(&live.rows()[middle_line]), middle);
-    assert!(live.shows("? help"), "a help box replaces the footer hints");
+    assert!(live.shows("? help"), "the help hint floats in a box");
 
     live.press('e');
     assert_eq!(live.buffer(), start, "e shows the file list again");
