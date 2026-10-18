@@ -3,7 +3,7 @@ use std::{fmt, ops::Range};
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, FileBody, Hunk, RecordKind, RecordMap, Side, UnifiedBody},
+    document::{DiffFile, FileBody, Hunk, RecordMap, Side, UnifiedBody},
     file_identity::HeaderPath,
     measurement::{Observer, Stage, Work},
     render::PayloadSpan,
@@ -50,9 +50,17 @@ pub struct SyntaxSpan {
 
 /// Highlights files, keeping each language's highlighter, or the reason it failed to
 /// load, across files.
-#[derive(Default)]
 pub struct SyntaxHighlighter {
-    languages: Vec<(Language, Result<LanguageHighlighter, LanguageError>)>,
+    /// Each language's highlighter once first used, at its [`Language::slot`].
+    languages: [Option<Result<LanguageHighlighter, LanguageError>>; Language::ALL.len()],
+}
+
+impl Default for SyntaxHighlighter {
+    fn default() -> Self {
+        Self {
+            languages: [const { None }; Language::ALL.len()],
+        }
+    }
 }
 
 impl SyntaxHighlighter {
@@ -84,36 +92,33 @@ impl SyntaxHighlighter {
         let old_language = Language::for_header(&file.old.path);
         let new_language = Language::for_header(&file.new.path);
         // architecture.md: context stays textual when the paths select different languages.
-        let new_styles = match old_language == new_language {
-            true => Styles::ChangesAndContext,
-            false => Styles::Changes,
+        let shared_language = old_language.filter(|language| Some(*language) == new_language);
+        let new_styles = match shared_language {
+            Some(_) => Styles::ChangesAndContext,
+            None => Styles::Changes,
         };
-        let (old_projection, new_projection) = observer.measure(Stage::Projection, |observer| {
+        let (old, new) = observer.measure(Stage::Projection, |observer| {
             let old = Projection::from_hunk(hunk, Side::Old, Styles::Changes);
             let new = Projection::from_hunk(hunk, Side::New, new_styles);
-            for projection in old.iter().chain(&new) {
+            for projection in [&old, &new] {
                 observer.count(Work::ProjectedBytes(projection.source.len()));
             }
             (old, new)
         });
 
-        match (
-            old_language,
-            new_language,
-            old_projection.as_ref(),
-            new_projection.as_ref(),
-        ) {
-            (Some(language), Some(other), Some(old), Some(new)) if language == other => {
-                self.highlight_pair(language, old, new, &mut spans, observer);
+        match shared_language {
+            Some(language) => {
+                let base = self
+                    .highlight_projection(language, &old, None, &mut spans, observer)
+                    .map(|tree| (&old, tree));
+                self.highlight_projection(language, &new, base, &mut spans, observer);
             }
-            _ => {
-                if let (Some(language), Some(projection)) = (old_language, old_projection.as_ref())
-                {
-                    self.highlight_projection(language, projection, &mut spans, observer);
-                }
-                if let (Some(language), Some(projection)) = (new_language, new_projection.as_ref())
-                {
-                    self.highlight_projection(language, projection, &mut spans, observer);
+            None => {
+                for (language, projection) in [(old_language, &old), (new_language, &new)] {
+                    let Some(language) = language else {
+                        continue;
+                    };
+                    self.highlight_projection(language, projection, None, &mut spans, observer);
                 }
             }
         }
@@ -121,59 +126,39 @@ impl SyntaxHighlighter {
         spans.into_boxed_slice()
     }
 
-    /// Highlights the old projection, then the new one as an edit of the old tree.
-    fn highlight_pair(
-        &mut self,
-        language: Language,
-        old: &Projection,
-        new: &Projection,
-        spans: &mut [Vec<SyntaxSpan>],
-        observer: &mut impl Observer,
-    ) {
-        let Ok(highlighter) = observer.measure(Stage::Language, |_| self.highlighter_for(language))
-        else {
-            // architecture.md: a language that fails to load stays textual.
-            return;
-        };
-
-        let mut tree = observer.measure(Stage::Parse, |observer| {
-            observer.count(Work::Parse);
-            highlighter.parse(&old.source, None)
-        });
-        observer.measure(Stage::Query, |observer| {
-            highlighter.highlight(old, &tree, spans, observer)
-        });
-
-        let tree = observer.measure(Stage::Parse, |observer| {
-            tree.edit(&old.edit_to(new));
-            observer.count(Work::Parse);
-            highlighter.parse(&new.source, Some(&tree))
-        });
-        observer.measure(Stage::Query, |observer| {
-            highlighter.highlight(new, &tree, spans, observer)
-        });
-    }
-
+    /// Highlights `projection`, parsing it as an edit of `base`'s tree when given, and
+    /// returns its tree. A projection without styled records is not parsed, and a
+    /// language that failed to load highlights nothing.
     fn highlight_projection(
         &mut self,
         language: Language,
         projection: &Projection,
+        base: Option<(&Projection, Tree)>,
         spans: &mut [Vec<SyntaxSpan>],
         observer: &mut impl Observer,
-    ) {
+    ) -> Option<Tree> {
+        if projection.records.is_empty() {
+            return None;
+        }
         let Ok(highlighter) = observer.measure(Stage::Language, |_| self.highlighter_for(language))
         else {
             // architecture.md: a language that fails to load stays textual.
-            return;
+            return None;
         };
 
         let tree = observer.measure(Stage::Parse, |observer| {
+            let edited_base = base.map(|(base_projection, mut tree)| {
+                tree.edit(&base_projection.edit_to(projection));
+                tree
+            });
             observer.count(Work::Parse);
-            highlighter.parse(&projection.source, None)
+            highlighter.parse(&projection.source, edited_base.as_ref())
         });
         observer.measure(Stage::Query, |observer| {
             highlighter.highlight(projection, &tree, spans, observer)
         });
+
+        Some(tree)
     }
 
     /// The highlighter for `language`, loaded on first use; a language that failed to load
@@ -182,20 +167,10 @@ impl SyntaxHighlighter {
         &mut self,
         language: Language,
     ) -> Result<&mut LanguageHighlighter, &LanguageError> {
-        let index = match self
-            .languages
-            .iter()
-            .position(|(loaded, _)| *loaded == language)
-        {
-            Some(index) => index,
-            None => {
-                self.languages
-                    .push((language, LanguageHighlighter::new(language)));
-                self.languages.len() - 1
-            }
-        };
-
-        self.languages[index].1.as_mut().map_err(|error| &*error)
+        self.languages[language.slot()]
+            .get_or_insert_with(|| LanguageHighlighter::new(language))
+            .as_mut()
+            .map_err(|error| &*error)
     }
 }
 
@@ -211,7 +186,7 @@ enum Language {
 }
 
 impl Language {
-    #[cfg(test)]
+    /// Every language, in [`slot`](Self::slot) order.
     const ALL: [Self; 5] = [
         Self::Rust,
         Self::JavaScript,
@@ -219,6 +194,17 @@ impl Language {
         Self::Go,
         Self::C,
     ];
+
+    /// The language's position in [`ALL`](Self::ALL).
+    const fn slot(self) -> usize {
+        match self {
+            Self::Rust => 0,
+            Self::JavaScript => 1,
+            Self::Python => 2,
+            Self::Go => 3,
+            Self::C => 4,
+        }
+    }
 
     fn for_header(path: &HeaderPath) -> Option<Self> {
         let HeaderPath::Path(path) = path else {
@@ -358,21 +344,22 @@ struct ProjectedRecord {
 }
 
 impl Projection {
-    /// `side`'s records of `hunk`, or `None` when the side has none.
-    fn from_hunk(hunk: &Hunk, side: Side, styles: Styles) -> Option<Self> {
+    /// `side`'s records of `hunk`; a side without records projects no source.
+    fn from_hunk(hunk: &Hunk, side: Side, styles: Styles) -> Self {
         let mut source = Vec::new();
         let mut records = Vec::new();
+        let side_records = hunk
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.kind.on_side(side));
 
-        for (record_index, record) in hunk.records.iter().enumerate() {
-            if !record.kind.on_side(side) {
-                continue;
-            }
+        for (record_index, record) in side_records {
             let start = source.len();
             source.extend_from_slice(record.payload.sanitized().as_bytes());
-            let styled = match (record.kind, styles) {
-                (RecordKind::Context, Styles::Changes) => false,
-                (RecordKind::Context, Styles::ChangesAndContext)
-                | (RecordKind::Addition | RecordKind::Deletion | RecordKind::Raw, _) => true,
+            let styled = match styles {
+                Styles::Changes => record.kind.changed_side().is_some(),
+                Styles::ChangesAndContext => true,
             };
             if styled {
                 records.push(ProjectedRecord {
@@ -383,7 +370,7 @@ impl Projection {
             source.push(b'\n');
         }
 
-        (!source.is_empty()).then_some(Self { source, records })
+        Self { source, records }
     }
 
     fn map_span(
@@ -470,7 +457,7 @@ mod tests {
     };
     use crate::{
         document::{FileBody, Side},
-        measurement::Unobserved,
+        measurement::{Profile, Unobserved},
         parser::parse_unified_diff,
     };
     use tree_sitter::{InputEdit, Point};
@@ -563,8 +550,7 @@ mod tests {
             panic!("fixture should contain a unified file");
         };
         let new_projection =
-            Projection::from_hunk(&file.hunks[0], Side::New, Styles::ChangesAndContext)
-                .expect("new projection");
+            Projection::from_hunk(&file.hunks[0], Side::New, Styles::ChangesAndContext);
         let mut incremental = SyntaxHighlighter::default();
         let incremental_spans = incremental.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
         let mut full = SyntaxHighlighter::default();
@@ -575,6 +561,7 @@ mod tests {
         full.highlight_projection(
             Language::Rust,
             &new_projection,
+            None,
             &mut full_spans,
             &mut Unobserved,
         );
@@ -659,6 +646,29 @@ mod tests {
             LanguageHighlighter::new(language)
                 .unwrap_or_else(|error| panic!("{language:?} failed to load: {error}"));
         }
+    }
+
+    #[test]
+    fn each_language_keeps_its_highlighter_in_its_own_slot() {
+        for (position, language) in Language::ALL.into_iter().enumerate() {
+            assert_eq!(language.slot(), position, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn a_side_with_only_context_is_not_parsed() {
+        let document = parse_unified_diff(
+            b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",
+        )
+        .expect("valid diff renaming Python to Rust");
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
+            panic!("fixture should contain a unified file");
+        };
+        let mut profile = Profile::default();
+
+        SyntaxHighlighter::default().highlight_hunk(file, &file.hunks[0], &mut profile);
+
+        assert_eq!(profile.work().parse_calls, 1);
     }
 
     fn projected(ranges: &[std::ops::Range<usize>]) -> Vec<ProjectedRecord> {
