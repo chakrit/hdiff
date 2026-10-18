@@ -172,16 +172,6 @@ enum Language {
 }
 
 impl Language {
-    /// Every language.
-    #[cfg(test)]
-    const ALL: [Self; 5] = [
-        Self::Rust,
-        Self::JavaScript,
-        Self::Python,
-        Self::Go,
-        Self::C,
-    ];
-
     fn for_header(path: &HeaderPath) -> Option<Self> {
         let HeaderPath::Path(path) = path else {
             return None;
@@ -209,6 +199,19 @@ struct LanguageTable<T> {
 }
 
 impl<T> LanguageTable<T> {
+    /// A table holding `value` of every language; naming each field means a new
+    /// language cannot be left out.
+    #[cfg(test)]
+    fn from_fn(mut value: impl FnMut(Language) -> T) -> Self {
+        Self {
+            rust: value(Language::Rust),
+            javascript: value(Language::JavaScript),
+            python: value(Language::Python),
+            go: value(Language::Go),
+            c: value(Language::C),
+        }
+    }
+
     fn get_mut(&mut self, language: Language) -> &mut T {
         match language {
             Language::Rust => &mut self.rust,
@@ -430,8 +433,8 @@ fn point_at(source: &[u8], byte: usize) -> Point {
 #[cfg(test)]
 mod tests {
     use super::{
-        Language, LanguageHighlighter, Projection, Styles, SyntaxClass, SyntaxHighlighter,
-        SyntaxSpan,
+        Language, LanguageHighlighter, LanguageTable, Projection, Styles, SyntaxClass,
+        SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
         document::{FileBody, Hunk, RecordAddress, RecordMap, UnifiedBody},
@@ -577,9 +580,7 @@ mod tests {
 
     #[test]
     fn every_bundled_language_loads_its_grammar_and_highlight_query() {
-        for language in Language::ALL {
-            LanguageHighlighter::new(language);
-        }
+        LanguageTable::from_fn(LanguageHighlighter::new);
     }
 
     #[test]

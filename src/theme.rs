@@ -262,6 +262,8 @@ static BASIC: Theme = Theme {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use ratatui::style::Color;
 
     use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
@@ -290,15 +292,23 @@ mod tests {
             (ColorDepth::TrueColor | ColorDepth::Indexed, _) => false,
         };
 
-        for depth in [
-            ColorDepth::TrueColor,
-            ColorDepth::Indexed,
-            ColorDepth::Basic,
-        ] {
+        for depth in every_depth() {
             for color in colors(Theme::for_depth(depth)) {
                 assert!(shows(depth, color), "{depth:?} draws {color:?}");
             }
         }
+    }
+
+    /// Every color depth, from the deepest down; each depth names the next in an
+    /// exhaustive match, so a new depth does not compile until the walk visits it.
+    fn every_depth() -> impl Iterator<Item = ColorDepth> {
+        let next = |depth: &ColorDepth| match depth {
+            ColorDepth::TrueColor => Some(ColorDepth::Indexed),
+            ColorDepth::Indexed => Some(ColorDepth::Basic),
+            ColorDepth::Basic => None,
+        };
+
+        iter::successors(Some(ColorDepth::TrueColor), next)
     }
 
     /// Every color of `theme`; destructured so a new color cannot be left out.
