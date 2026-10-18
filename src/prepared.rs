@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use crate::{
     detail::detail_rows,
     document::{DiffDocument, FileView},
-    file_tree::{FileTree, ListedFile},
+    file_tree::{FileListing, FileTree, ListedFile},
     interaction::DiffGranularity,
     layout::{Layout, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
@@ -33,9 +33,12 @@ impl PreparedDocument {
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let views = document.file_views().collect::<Vec<_>>();
-        let file_tree = observer.measure(Stage::Labels, |_| FileTree::build(&views));
+        let FileListing {
+            tree: file_tree,
+            order,
+        } = observer.measure(Stage::Labels, |_| FileTree::build(&views));
 
-        let (first, rest) = match file_tree.files() {
+        let (first, rest) = match order.as_ref() {
             [] => (PreparedPage::text(document, observer), Vec::new()),
             [first, rest @ ..] => {
                 let mut syntax = SyntaxHighlighter::default();
@@ -68,7 +71,7 @@ impl PreparedDocument {
     }
 
     pub fn file_count(&self) -> usize {
-        self.file_tree.files().len()
+        self.pages().filter(|page| page.list_row.is_some()).count()
     }
 
     pub fn record_count(&self) -> usize {

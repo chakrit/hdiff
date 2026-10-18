@@ -38,16 +38,21 @@ pub struct ListedFile {
     pub row: usize,
 }
 
-/// File-list rows and the files they list. A file's list position is its selection
-/// index.
+/// The file-list rows.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileTree {
     rows: Box<[TreeRow]>,
-    files: Box<[ListedFile]>,
+}
+
+/// A built file tree and its files in list order. A file's list position is its
+/// selection index.
+pub struct FileListing {
+    pub tree: FileTree,
+    pub order: Box<[ListedFile]>,
 }
 
 impl FileTree {
-    pub fn build(views: &[FileView<'_>]) -> Self {
+    pub fn build(views: &[FileView<'_>]) -> FileListing {
         let identities = views.iter().map(|view| &view.file.identity).enumerate();
         let (top_level, nested): (Vec<_>, Vec<_>) =
             identities.partition(|(_, identity)| placement(identity).0.is_empty());
@@ -75,19 +80,16 @@ impl FileTree {
             });
         }
 
-        Self {
-            rows: rows.into_boxed_slice(),
-            files: files.into_boxed_slice(),
+        FileListing {
+            tree: Self {
+                rows: rows.into_boxed_slice(),
+            },
+            order: files.into_boxed_slice(),
         }
     }
 
     pub fn rows(&self) -> &[TreeRow] {
         &self.rows
-    }
-
-    /// Files in list order.
-    pub fn files(&self) -> &[ListedFile] {
-        &self.files
     }
 }
 
@@ -110,10 +112,10 @@ fn placement(identity: &FileIdentity) -> (&str, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileTree, TreeRow};
+    use super::{FileListing, FileTree, TreeRow};
     use crate::{document::FileView, parser::parse_unified_diff};
 
-    fn tree(input: &str) -> FileTree {
+    fn listing(input: &str) -> FileListing {
         let document = parse_unified_diff(input.as_bytes()).expect("valid diff");
         let views = document.file_views().collect::<Vec<FileView>>();
 
@@ -125,7 +127,8 @@ mod tests {
     }
 
     fn rows(input: &str) -> Vec<String> {
-        tree(input)
+        listing(input)
+            .tree
             .rows()
             .iter()
             .map(|row| match row {
@@ -136,7 +139,7 @@ mod tests {
     }
 
     fn view_order(input: &str) -> Vec<usize> {
-        tree(input).files().iter().map(|file| file.view).collect()
+        listing(input).order.iter().map(|file| file.view).collect()
     }
 
     /// Contract: docs/spec/architecture.md#file-tree (root-level files first).
@@ -157,9 +160,9 @@ mod tests {
 
     #[test]
     fn stores_each_files_row() {
-        let tree = tree(&["src/b.rs", "README.md", "src/a.rs"].map(modified).concat());
-        let listed = tree
-            .files()
+        let listing = listing(&["src/b.rs", "README.md", "src/a.rs"].map(modified).concat());
+        let listed = listing
+            .order
             .iter()
             .map(|file| (file.view, file.row))
             .collect::<Vec<_>>();
