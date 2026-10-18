@@ -203,7 +203,11 @@ fn movement(prepared: PreparedDocument) -> io::Result<String> {
         viewport: Viewport::Fixed(MOVEMENT_AREA),
     };
     let mut terminal = Terminal::with_options(backend, options)?;
-    let mut tui = Tui::new(prepared, Size::from(MOVEMENT_AREA), u16::MAX);
+    let mut tui = Tui::new(
+        prepared,
+        Size::from(MOVEMENT_AREA),
+        crate::theme::ColorDepth::TrueColor,
+    );
     let mut report = String::new();
 
     tui.draw(&mut terminal)?;

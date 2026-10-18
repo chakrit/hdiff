@@ -9,11 +9,7 @@ use ratatui::{
     widgets::{Block, Clear, Padding, Paragraph},
 };
 
-use super::{
-    chrome::{ChromePalette, chrome_palette},
-    rows::hunk_header_color,
-};
-use crate::{syntax::SyntaxClass, theme::DEFAULT_SYNTAX_THEME};
+use crate::theme::Theme;
 
 /// Shortcuts that belong together, one row each as keys and the action they take. A row
 /// with no action continues the keys of a neighboring row, as the `hjkl` diamond does.
@@ -75,15 +71,14 @@ const TWO_COLUMN_WIDTH: u16 = 2 * COLUMN_WIDTH + COLUMN_GAP + FRAME_WIDTH;
 
 /// The popup, centered over `area` and clipped to it: two columns of groups when they fit
 /// the width, one otherwise.
-pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u16) {
-    let palette = chrome_palette(color_count);
+pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) {
     let groups_per_column = match area.width >= TWO_COLUMN_WIDTH {
         true => GROUPS.len().div_ceil(2),
         false => GROUPS.len(),
     };
     let columns = GROUPS
         .chunks(groups_per_column)
-        .map(|groups| column_lines(groups, palette, color_count))
+        .map(|groups| column_lines(groups, theme))
         .collect::<Vec<_>>();
 
     let column_count = columns.len() as u16;
@@ -98,7 +93,7 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u1
     )
     .intersection(area);
     let border = Block::bordered()
-        .border_style(Style::default().fg(palette.separator))
+        .border_style(Style::default().fg(theme.chrome.separator))
         .padding(Padding::horizontal(1));
     let column_areas =
         RatatuiLayout::horizontal(vec![Constraint::Length(COLUMN_WIDTH); columns.len()])
@@ -114,17 +109,12 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u1
 
 /// Each group's heading over its shortcuts, with a blank line between groups. Headings take
 /// the hunk-header tone, since both head sections, and keys the syntax function color.
-fn column_lines(
-    groups: &[ShortcutGroup],
-    palette: ChromePalette,
-    color_count: u16,
-) -> Vec<Line<'static>> {
+fn column_lines(groups: &[ShortcutGroup], theme: &Theme) -> Vec<Line<'static>> {
     let heading_style = Style::default()
-        .fg(hunk_header_color(color_count))
+        .fg(theme.rows.hunk_header)
         .add_modifier(Modifier::BOLD);
-    let keys_style =
-        Style::default().fg(DEFAULT_SYNTAX_THEME.color(SyntaxClass::Function, color_count));
-    let action_style = Style::default().fg(palette.file_name);
+    let keys_style = Style::default().fg(theme.syntax.function);
+    let action_style = Style::default().fg(theme.chrome.file_name);
 
     let group_lines = groups.iter().map(|group| {
         let heading = Line::styled(group.heading, heading_style);
@@ -145,19 +135,17 @@ fn column_lines(
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{
-        Terminal,
-        backend::TestBackend,
-        buffer::Buffer,
-        style::{Color, Modifier},
-    };
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, style::Modifier};
 
     use super::render_keymap_popup;
+    use crate::theme::{ColorDepth, Theme};
+
+    const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
     fn render_popup(width: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, 30)).expect("test terminal");
         terminal
-            .draw(|frame| render_keymap_popup(frame, frame.area(), u16::MAX))
+            .draw(|frame| render_keymap_popup(frame, frame.area(), THEME))
             .expect("render popup");
         terminal.backend().buffer().clone()
     }
@@ -268,9 +256,9 @@ mod tests {
         let key = &buffer[position("^D ^U")];
         let action = &buffer[position("half page")];
 
-        assert_eq!(heading.fg, Color::Rgb(100, 155, 175), "heading");
+        assert_eq!(heading.fg, THEME.rows.hunk_header, "heading");
         assert!(heading.modifier.contains(Modifier::BOLD), "bold heading");
-        assert_eq!(key.fg, Color::Rgb(220, 220, 170), "key");
-        assert_eq!(action.fg, Color::Rgb(160, 160, 160), "action");
+        assert_eq!(key.fg, THEME.syntax.function, "key");
+        assert_eq!(action.fg, THEME.chrome.file_name, "action");
     }
 }

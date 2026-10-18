@@ -13,6 +13,7 @@ use crate::{
         maximum_horizontal_offset,
     },
     prepared::PreparedDocument,
+    theme::{ColorDepth, Theme},
 };
 
 mod chrome;
@@ -48,11 +49,11 @@ pub struct Tui {
     document: PreparedDocument,
     interaction: Interaction,
     extent: KeyedExtent,
-    color_count: u16,
+    theme: &'static Theme,
 }
 
 impl Tui {
-    pub fn new(document: PreparedDocument, area: Size, color_count: u16) -> Self {
+    pub fn new(document: PreparedDocument, area: Size, color_depth: ColorDepth) -> Self {
         let interaction = Interaction {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
@@ -65,7 +66,7 @@ impl Tui {
             document,
             interaction,
             extent,
-            color_count,
+            theme: Theme::for_depth(color_depth),
         }
     }
 
@@ -156,7 +157,7 @@ impl Tui {
                     file,
                     &self.extent.extent,
                     &self.interaction,
-                    self.color_count,
+                    self.theme,
                 )
             })
             .map(|_| ())
@@ -364,7 +365,10 @@ mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use super::{Input, OutputMode, input_for_event, mode_for_output};
-    use crate::interaction::KeymapPopup;
+    use crate::{
+        interaction::KeymapPopup,
+        theme::{ColorDepth, Theme},
+    };
 
     #[test]
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
@@ -409,7 +413,7 @@ mod tests {
                                 .layout()
                                 .scroll_extent(layout, 3, Wrap::Off),
                             &interaction,
-                            u16::MAX,
+                            Theme::for_depth(ColorDepth::TrueColor),
                         )
                     })
                     .expect("render prepared frame");

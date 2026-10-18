@@ -10,7 +10,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use super::{TtyEvents, Tui};
-use crate::prepared::PreparedDocument;
+use crate::{prepared::PreparedDocument, theme::ColorDepth};
 
 const CONTROLLING_TERMINAL: &str = "/dev/tty";
 
@@ -37,9 +37,9 @@ fn run_loop(
     document: PreparedDocument,
 ) -> io::Result<()> {
     let area = terminal.size()?;
-    let color_count = crossterm::style::available_color_count();
+    let color_depth = ColorDepth::from_color_count(crossterm::style::available_color_count());
 
-    Tui::new(document, area, color_count).run(terminal, TtyEvents::default())
+    Tui::new(document, area, color_depth).run(terminal, TtyEvents::default())
 }
 
 enum Stage {

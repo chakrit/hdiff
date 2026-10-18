@@ -5,16 +5,16 @@ use ratatui::{
     Frame,
     buffer::Buffer,
     layout::{Constraint, Layout as RatatuiLayout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph},
 };
 
 use super::row_writer::Clip;
 use crate::{
-    file_identity::FileState,
-    file_tree::{FileTree, Marker, TreeRow},
+    file_tree::{FileTree, TreeRow},
     layout::{PANE_FRAME_HEIGHT, PANE_FRAME_WIDTH},
+    theme::ChromePalette,
 };
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
@@ -30,9 +30,8 @@ pub(super) fn render_file_column(
     area: Rect,
     tree: &FileTree,
     selected_row: usize,
-    color_count: u16,
+    palette: &ChromePalette,
 ) {
-    let palette = chrome_palette(color_count);
     let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
     let hint_height = area.height.saturating_sub(list_height).min(1);
     let [list_area, hint_area] = RatatuiLayout::vertical([
@@ -41,14 +40,13 @@ pub(super) fn render_file_column(
     ])
     .areas(area);
 
-    render_file_list(frame, list_area, tree, selected_row, color_count);
+    render_file_list(frame, list_area, tree, selected_row, palette);
     render_help_hint(frame.buffer_mut(), hint_area, palette);
 }
 
 /// The help hint in a box floating over the bottom-left corner of `area`, while the file list
 /// is hidden.
-pub(super) fn render_help_box(frame: &mut Frame, area: Rect, color_count: u16) {
-    let palette = chrome_palette(color_count);
+pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
     let help_box = Rect::new(
         area.x,
         area.bottom().saturating_sub(HELP_BOX_HEIGHT),
@@ -67,8 +65,8 @@ pub(super) fn render_help_box(frame: &mut Frame, area: Rect, color_count: u16) {
 }
 
 /// The full-height separator between the file-list column and the diff panes.
-pub(super) fn draw_outer_separator(buffer: &mut Buffer, area: Rect, color_count: u16) {
-    let style = Style::default().fg(chrome_palette(color_count).separator);
+pub(super) fn draw_outer_separator(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
+    let style = Style::default().fg(palette.separator);
 
     fill(buffer, area, "│", style);
 }
@@ -78,9 +76,9 @@ pub(super) fn draw_inner_separator(
     buffer: &mut Buffer,
     area: Rect,
     symbol: &'static str,
-    color_count: u16,
+    palette: &ChromePalette,
 ) {
-    let style = Style::default().fg(chrome_palette(color_count).dim_separator);
+    let style = Style::default().fg(palette.dim_separator);
 
     fill(buffer, area, symbol, style);
 }
@@ -129,11 +127,16 @@ impl ContinuityFrame {
     }
 
     /// `◂` and `▸` midway down each side where any visible row was clipped.
-    pub(super) fn draw_side_markers(&self, buffer: &mut Buffer, clip: Clip, color_count: u16) {
+    pub(super) fn draw_side_markers(
+        &self,
+        buffer: &mut Buffer,
+        clip: Clip,
+        palette: &ChromePalette,
+    ) {
         if self.content.is_empty() {
             return;
         }
-        let style = Style::default().fg(chrome_palette(color_count).dim_separator);
+        let style = Style::default().fg(palette.dim_separator);
         let y = self.content.y + self.content.height / 2;
 
         if clip.left {
@@ -153,12 +156,12 @@ impl ContinuityFrame {
         &self,
         buffer: &mut Buffer,
         window: LineWindow,
-        color_count: u16,
+        palette: &ChromePalette,
     ) {
         if self.content.is_empty() {
             return;
         }
-        let style = Style::default().fg(chrome_palette(color_count).dim_separator);
+        let style = Style::default().fg(palette.dim_separator);
         let center = self.pane.x + self.pane.width / 2;
         let shown = usize::from(self.content.height);
 
@@ -194,9 +197,8 @@ fn render_file_list(
     area: Rect,
     tree: &FileTree,
     selected_row: usize,
-    color_count: u16,
+    palette: &ChromePalette,
 ) {
-    let palette = chrome_palette(color_count);
     let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
     let height = usize::from(content.height);
@@ -220,10 +222,10 @@ fn render_file_list(
     let mut state = ListState::default().with_selected(Some(selected_row - first));
 
     frame.render_stateful_widget(file_list, content, &mut state);
-    list_frame.draw_window_markers(frame.buffer_mut(), window, color_count);
+    list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
 }
 
-fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
+fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
     let line = match row {
         TreeRow::Directory(heading) => Line::styled(
             heading.as_str(),
@@ -242,7 +244,7 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
     ListItem::new(line)
 }
 
-fn render_help_hint(buffer: &mut Buffer, area: Rect, palette: ChromePalette) {
+fn render_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
     if area.is_empty() {
         return;
     }
@@ -264,84 +266,16 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(super) struct ChromePalette {
-    directory_heading: Color,
-    pub(super) file_name: Color,
-    modified_marker: Color,
-    added_marker: Color,
-    deleted_marker: Color,
-    renamed_marker: Color,
-    selected_file: Color,
-    selected_file_background: Color,
-    pub(super) separator: Color,
-    /// The inner separator between side-by-side panes and the continuity markers.
-    dim_separator: Color,
-    hint: Color,
-}
-
-impl ChromePalette {
-    fn marker(self, marker: Marker) -> Color {
-        match marker {
-            Marker::State(FileState::Modified) => self.modified_marker,
-            Marker::State(FileState::Added) => self.added_marker,
-            Marker::State(FileState::Deleted) => self.deleted_marker,
-            Marker::State(FileState::Renamed) => self.renamed_marker,
-            Marker::Unknown => self.file_name,
-        }
-    }
-}
-
-pub(super) fn chrome_palette(color_count: u16) -> ChromePalette {
-    match color_count {
-        u16::MAX => ChromePalette {
-            directory_heading: Color::Rgb(125, 125, 125),
-            file_name: Color::Rgb(160, 160, 160),
-            modified_marker: Color::Rgb(190, 170, 120),
-            added_marker: Color::Rgb(130, 185, 130),
-            deleted_marker: Color::Rgb(200, 130, 130),
-            renamed_marker: Color::Rgb(130, 170, 205),
-            selected_file: Color::Rgb(220, 220, 220),
-            selected_file_background: Color::Rgb(65, 65, 65),
-            separator: Color::Rgb(125, 125, 125),
-            dim_separator: Color::Rgb(95, 95, 95),
-            hint: Color::Rgb(110, 110, 110),
-        },
-        256.. => ChromePalette {
-            directory_heading: Color::Indexed(243),
-            file_name: Color::Indexed(246),
-            modified_marker: Color::Indexed(144),
-            added_marker: Color::Indexed(108),
-            deleted_marker: Color::Indexed(138),
-            renamed_marker: Color::Indexed(110),
-            selected_file: Color::Indexed(255),
-            selected_file_background: Color::Indexed(238),
-            separator: Color::Indexed(243),
-            dim_separator: Color::Indexed(238),
-            hint: Color::Indexed(240),
-        },
-        _ => ChromePalette {
-            directory_heading: Color::DarkGray,
-            file_name: Color::Gray,
-            modified_marker: Color::Yellow,
-            added_marker: Color::Green,
-            deleted_marker: Color::Red,
-            renamed_marker: Color::Blue,
-            selected_file: Color::White,
-            selected_file_background: Color::DarkGray,
-            separator: Color::DarkGray,
-            dim_separator: Color::DarkGray,
-            hint: Color::DarkGray,
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, style::Color};
+    use ratatui::{Terminal, backend::TestBackend};
 
     use super::render_file_column;
-    use crate::{parser::parse_unified_diff, prepared::PreparedDocument};
+    use crate::{
+        parser::parse_unified_diff,
+        prepared::PreparedDocument,
+        theme::{ColorDepth, Theme},
+    };
 
     /// architecture.md (Interaction model): the help hint sits on the bottom row of the file
     /// list.
@@ -351,11 +285,10 @@ mod tests {
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
+        let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
-            .draw(|frame| {
-                render_file_column(frame, frame.area(), prepared.file_tree(), 0, u16::MAX)
-            })
+            .draw(|frame| render_file_column(frame, frame.area(), prepared.file_tree(), 0, palette))
             .expect("render file column");
 
         let buffer = terminal.backend().buffer();
@@ -373,6 +306,6 @@ mod tests {
             rows[..17].iter().all(|row| !row.contains("help")),
             "one hint row"
         );
-        assert_eq!(buffer[(1, 17)].fg, Color::Rgb(110, 110, 110), "hint tone");
+        assert_eq!(buffer[(1, 17)].fg, palette.hint, "hint tone");
     }
 }

@@ -34,7 +34,11 @@ impl Live {
         let document = parse_unified_diff(patch.as_bytes()).expect("valid fixture patch");
         let prepared = PreparedDocument::prepare(&document);
         let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).expect("test terminal");
-        let tui = Tui::new(prepared, Size::new(WIDTH, HEIGHT), u16::MAX);
+        let tui = Tui::new(
+            prepared,
+            Size::new(WIDTH, HEIGHT),
+            hdiff::theme::ColorDepth::TrueColor,
+        );
         tui.draw(&mut terminal).expect("initial frame");
 
         let mut live = Self { tui, terminal };

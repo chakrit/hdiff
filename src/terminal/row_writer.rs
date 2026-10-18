@@ -12,6 +12,7 @@ use crate::{
     line_breaks::LineBreaks,
     styling::{StyledRow, TextStyle},
     tab_stops::{TabStops, cluster_cells},
+    theme::Theme,
 };
 
 /// Which part of a row a pane line shows.
@@ -56,9 +57,9 @@ pub(super) fn write_row(
     area: Rect,
     row: PaneRow<'_>,
     placement: RowPlacement,
-    color_count: u16,
+    theme: &Theme,
 ) -> Clip {
-    buffer.set_style(area, row_style(row.kind(), color_count));
+    buffer.set_style(area, row_style(row.kind(), &theme.rows));
     let PaneRow::Text(row) = row else {
         return Clip::default();
     };
@@ -66,8 +67,8 @@ pub(super) fn write_row(
     let payload = ExpandedPayload::new(row);
     let payload_clusters = payload
         .clusters()
-        .map(|(cluster, text_style)| (cluster, segment_style(row.kind, text_style, color_count)));
-    let gutter = gutter(row.kind, color_count);
+        .map(|(cluster, text_style)| (cluster, segment_style(row.kind, text_style, theme)));
+    let gutter = gutter(row.kind, &theme.rows);
 
     let cursor = RowCursor {
         buffer,
@@ -241,7 +242,7 @@ mod tests {
     use ratatui::{
         buffer::{Buffer, CellWidth},
         layout::Rect,
-        style::{Color, Modifier},
+        style::Modifier,
     };
 
     use super::{Clip, RowPlacement, write_row};
@@ -251,9 +252,10 @@ mod tests {
         parser::parse_unified_diff,
         prepared::PreparedDocument,
         terminal::rows::{PaneRow, visible_diff_rows},
+        theme::{ColorDepth, Theme},
     };
 
-    const ADDITION_BACKGROUND: Color = Color::Rgb(35, 73, 43);
+    const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
     #[test]
     fn syntax_highlighting_preserves_source_text() {
@@ -321,7 +323,7 @@ mod tests {
         // architecture.md: a wide grapheme cut by the left pane edge renders its visible
         // cells blank, keeping later text in its column.
         assert_eq!(buffer[(0, 0)].symbol(), " ");
-        assert_eq!(buffer[(0, 0)].bg, ADDITION_BACKGROUND);
+        assert_eq!(buffer[(0, 0)].bg, THEME.rows.addition_background);
         assert_eq!(buffer[(1, 0)].symbol(), "x");
     }
 
@@ -335,7 +337,7 @@ mod tests {
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
-        assert_eq!(buffer[(4, 0)].bg, ADDITION_BACKGROUND);
+        assert_eq!(buffer[(4, 0)].bg, THEME.rows.addition_background);
     }
 
     #[test]
@@ -357,8 +359,8 @@ mod tests {
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
         assert_eq!(row_text(&past_the_end), "");
-        assert_eq!(second[(0, 0)].bg, ADDITION_BACKGROUND);
-        assert_eq!(past_the_end[(5, 0)].bg, ADDITION_BACKGROUND);
+        assert_eq!(second[(0, 0)].bg, THEME.rows.addition_background);
+        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.addition_background);
     }
 
     #[test]
@@ -370,7 +372,7 @@ mod tests {
             let area = Rect::new(0, 0, width, 1);
             let mut buffer = Buffer::empty(area);
             let placement = RowPlacement::Scrolled { horizontal_offset };
-            write_row(&mut buffer, area, row, placement, u16::MAX)
+            write_row(&mut buffer, area, row, placement, THEME)
         };
         let sides = |left, right| Clip { left, right };
 
@@ -415,7 +417,7 @@ mod tests {
     fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> (Buffer, Clip) {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
-        let clip = write_row(&mut buffer, area, row, placement, u16::MAX);
+        let clip = write_row(&mut buffer, area, row, placement, THEME);
         (buffer, clip)
     }
 

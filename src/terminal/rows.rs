@@ -1,11 +1,11 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
 use crate::{
     interaction::{DiffGranularity, Viewport},
     layout::{ScrollExtent, SideBySideRow},
     prepared::PreparedFile,
     styling::{RowKind, StyledRow, TextStyle},
-    theme::DEFAULT_SYNTAX_THEME,
+    theme::{RowPalette, Theme},
 };
 
 /// One pane's row: prepared text, or the blank peer that aligns a one-sided change.
@@ -106,8 +106,7 @@ pub(super) fn visible_side_by_side_rows<'a>(
 }
 
 /// The two-cell marker gutter that precedes a row's payload.
-pub(super) fn gutter(row_kind: RowKind, color_count: u16) -> [(&'static str, Style); 2] {
-    let palette = low_contrast_palette(color_count);
+pub(super) fn gutter(row_kind: RowKind, palette: &RowPalette) -> [(&'static str, Style); 2] {
     let spacing = (" ", Style::default());
 
     match row_kind {
@@ -119,18 +118,16 @@ pub(super) fn gutter(row_kind: RowKind, color_count: u16) -> [(&'static str, Sty
     }
 }
 
-pub(super) fn segment_style(row_kind: RowKind, text_style: TextStyle, color_count: u16) -> Style {
+pub(super) fn segment_style(row_kind: RowKind, text_style: TextStyle, theme: &Theme) -> Style {
     match text_style {
         TextStyle::Plain => Style::default(),
-        TextStyle::Syntax(class) => {
-            Style::default().fg(DEFAULT_SYNTAX_THEME.color(class, color_count))
-        }
-        TextStyle::Detail => detail_style(row_kind, low_contrast_palette(color_count)),
-        TextStyle::Unchanged => unchanged_style(row_kind, low_contrast_palette(color_count)),
+        TextStyle::Syntax(class) => Style::default().fg(theme.syntax.color(class)),
+        TextStyle::Detail => detail_style(row_kind, &theme.rows),
+        TextStyle::Unchanged => unchanged_style(row_kind, &theme.rows),
     }
 }
 
-fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
+fn detail_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     let color = match row_kind {
         RowKind::Addition => palette.addition_marker,
         RowKind::Deletion => palette.deletion_marker,
@@ -142,7 +139,7 @@ fn detail_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     Style::default().fg(color).remove_modifier(Modifier::DIM)
 }
 
-fn unchanged_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
+fn unchanged_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     let color = match row_kind {
         RowKind::Addition => palette.unchanged_addition,
         RowKind::Deletion => palette.unchanged_deletion,
@@ -154,9 +151,7 @@ fn unchanged_style(row_kind: RowKind, palette: LowContrastPalette) -> Style {
     Style::default().fg(color)
 }
 
-pub(super) fn row_style(row_kind: RowKind, color_count: u16) -> Style {
-    let palette = low_contrast_palette(color_count);
-
+pub(super) fn row_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     match row_kind {
         RowKind::Addition => Style::default()
             .bg(palette.addition_background)
@@ -166,93 +161,7 @@ pub(super) fn row_style(row_kind: RowKind, color_count: u16) -> Style {
             .fg(palette.deletion_body)
             .add_modifier(Modifier::DIM),
         RowKind::Context | RowKind::Raw => Style::default().fg(palette.context_body),
-        RowKind::HunkHeader => Style::default().fg(hunk_header_color(color_count)),
+        RowKind::HunkHeader => Style::default().fg(palette.hunk_header),
         RowKind::Metadata => Style::default(),
-    }
-}
-
-pub(super) fn hunk_header_color(color_count: u16) -> Color {
-    match color_count {
-        u16::MAX => Color::Rgb(100, 155, 175),
-        256.. => Color::Indexed(109),
-        _ => Color::Cyan,
-    }
-}
-
-#[derive(Clone, Copy)]
-struct LowContrastPalette {
-    addition_background: Color,
-    addition_body: Color,
-    unchanged_addition: Color,
-    deletion_background: Color,
-    deletion_body: Color,
-    unchanged_deletion: Color,
-    context_body: Color,
-    deletion_marker: Color,
-    addition_marker: Color,
-}
-
-fn low_contrast_palette(color_count: u16) -> LowContrastPalette {
-    match color_count {
-        u16::MAX => LowContrastPalette {
-            addition_background: Color::Rgb(35, 73, 43),
-            addition_body: Color::Rgb(220, 235, 220),
-            unchanged_addition: Color::Rgb(170, 185, 170),
-            deletion_background: Color::Rgb(50, 30, 30),
-            deletion_body: Color::Rgb(150, 150, 150),
-            unchanged_deletion: Color::Rgb(120, 120, 120),
-            context_body: Color::Rgb(180, 180, 180),
-            deletion_marker: Color::Rgb(206, 74, 74),
-            addition_marker: Color::Rgb(112, 195, 115),
-        },
-        256.. => LowContrastPalette {
-            addition_background: Color::Indexed(22),
-            addition_body: Color::Indexed(255),
-            unchanged_addition: Color::Indexed(250),
-            deletion_background: Color::Indexed(52),
-            deletion_body: Color::Indexed(245),
-            unchanged_deletion: Color::Indexed(242),
-            context_body: Color::Indexed(250),
-            deletion_marker: Color::Indexed(167),
-            addition_marker: Color::Indexed(71),
-        },
-        _ => LowContrastPalette {
-            addition_background: Color::Green,
-            addition_body: Color::White,
-            unchanged_addition: Color::Gray,
-            deletion_background: Color::Red,
-            deletion_body: Color::DarkGray,
-            unchanged_deletion: Color::DarkGray,
-            context_body: Color::Gray,
-            deletion_marker: Color::Red,
-            addition_marker: Color::Green,
-        },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use ratatui::style::Color;
-
-    use super::{hunk_header_color, low_contrast_palette};
-
-    #[test]
-    fn falls_back_from_truecolor_to_256_and_basic_low_contrast_colors() {
-        assert_eq!(
-            low_contrast_palette(u16::MAX).addition_background,
-            Color::Rgb(35, 73, 43)
-        );
-        assert_eq!(
-            low_contrast_palette(256).addition_marker,
-            Color::Indexed(71)
-        );
-        assert_eq!(low_contrast_palette(8).deletion_marker, Color::Red);
-    }
-
-    #[test]
-    fn falls_back_from_truecolor_to_256_and_basic_hunk_header_colors() {
-        assert_eq!(hunk_header_color(u16::MAX), Color::Rgb(100, 155, 175));
-        assert_eq!(hunk_header_color(256), Color::Indexed(109));
-        assert_eq!(hunk_header_color(8), Color::Cyan);
     }
 }

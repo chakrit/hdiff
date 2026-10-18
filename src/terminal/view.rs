@@ -10,6 +10,7 @@ use crate::{
     layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
     prepared::PreparedFile,
     styling::StyledRow,
+    theme::Theme,
 };
 
 #[cfg(test)]
@@ -33,7 +34,7 @@ struct DisplayRows<'a> {
     window: LineWindow,
     horizontal_offset: u16,
     wrap: Wrap,
-    color_count: u16,
+    theme: &'a Theme,
 }
 
 /// Screen lines of the active layout only, starting at the viewport and bounded by the
@@ -50,7 +51,7 @@ fn render_document(
     frame: &mut Frame,
     document: &DiffDocument,
     interaction: &Interaction,
-    color_count: u16,
+    theme: &Theme,
 ) {
     let prepared = PreparedDocument::prepare(document);
     let file = prepared
@@ -68,7 +69,7 @@ fn render_document(
         file,
         &extent,
         interaction,
-        color_count,
+        theme,
     );
 }
 
@@ -80,7 +81,7 @@ pub(super) fn render_prepared_frame(
     file: &PreparedFile,
     extent: &ScrollExtent,
     interaction: &Interaction,
-    color_count: u16,
+    theme: &Theme,
 ) {
     let area = frame.area();
     let row_limit = usize::from(area.height);
@@ -108,7 +109,7 @@ pub(super) fn render_prepared_frame(
         },
         horizontal_offset: viewport.horizontal_offset,
         wrap: Wrap::of(preferences, area.width),
-        color_count,
+        theme,
     };
 
     match pane_layout(area.width, area.height, preferences) {
@@ -122,7 +123,7 @@ pub(super) fn render_prepared_frame(
         }
         PaneLayout::DiffOnly => {
             render_display_layout(frame, display, area);
-            render_help_box(frame, area, color_count);
+            render_help_box(frame, area, &theme.chrome);
         }
         PaneLayout::Split {
             file_list_width,
@@ -137,14 +138,14 @@ pub(super) fn render_prepared_frame(
             ])
             .areas(area);
 
-            render_file_column(frame, file_column, tree, file.list_row(), color_count);
-            draw_outer_separator(frame.buffer_mut(), separator, color_count);
+            render_file_column(frame, file_column, tree, file.list_row(), &theme.chrome);
+            draw_outer_separator(frame.buffer_mut(), separator, &theme.chrome);
             render_display_layout(frame, display, diff);
         }
     }
 
     if let KeymapPopup::Open = interaction.keymap {
-        render_keymap_popup(frame, area, color_count);
+        render_keymap_popup(frame, area, theme);
     }
 }
 
@@ -153,7 +154,7 @@ fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
     let pane_rows = PaneRows {
         window: display.window,
         placement,
-        color_count: display.color_count,
+        theme: display.theme,
     };
 
     match display.rows {
@@ -171,13 +172,13 @@ fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
 }
 
 /// Draws one pane's lines inside its continuity-marker frame.
-struct PaneRows<P> {
+struct PaneRows<'a, P> {
     window: LineWindow,
     placement: P,
-    color_count: u16,
+    theme: &'a Theme,
 }
 
-impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
+impl<P: Fn(usize) -> RowPlacement> PaneRows<'_, P> {
     fn render<'a>(
         &self,
         frame: &mut Frame,
@@ -197,12 +198,12 @@ impl<P: Fn(usize) -> RowPlacement> PaneRows<P> {
                 row_area,
                 line.row,
                 (self.placement)(line.line),
-                self.color_count,
+                self.theme,
             );
             clipped = clipped.union(clip);
         }
-        pane.draw_side_markers(buffer, clipped, self.color_count);
-        pane.draw_window_markers(buffer, self.window, self.color_count);
+        pane.draw_side_markers(buffer, clipped, &self.theme.chrome);
+        pane.draw_window_markers(buffer, self.window, &self.theme.chrome);
     }
 }
 
@@ -210,7 +211,7 @@ fn render_vertical_rows(
     frame: &mut Frame,
     lines: Vec<VisibleLine<VisibleSideBySideRow>>,
     area: Rect,
-    pane_rows: PaneRows<impl Fn(usize) -> RowPlacement>,
+    pane_rows: PaneRows<'_, impl Fn(usize) -> RowPlacement>,
 ) {
     let [before_pane, separator, after_pane] = RatatuiLayout::horizontal([
         Constraint::Percentage(50),
@@ -225,7 +226,7 @@ fn render_vertical_rows(
     let content = before_pane.content();
     let shown = before_lines.len().min(content.height.into()) as u16;
     let separator = Rect::new(separator.x, content.y, separator.width, shown);
-    draw_inner_separator(frame.buffer_mut(), separator, "│", pane_rows.color_count);
+    draw_inner_separator(frame.buffer_mut(), separator, "│", &pane_rows.theme.chrome);
 
     pane_rows.render(frame, before_pane, before_lines);
     pane_rows.render(frame, after_pane, after_lines);
@@ -235,7 +236,7 @@ fn render_stacked_rows(
     frame: &mut Frame,
     lines: Vec<VisibleLine<VisibleSideBySideRow>>,
     area: Rect,
-    pane_rows: PaneRows<impl Fn(usize) -> RowPlacement>,
+    pane_rows: PaneRows<'_, impl Fn(usize) -> RowPlacement>,
 ) {
     let pane_height = pane_height(usize::from(area.height), DiffLayout::Stacked);
     let pane_height = u16::try_from(pane_height).expect("pane height fits the area");
@@ -248,7 +249,7 @@ fn render_stacked_rows(
     .areas(area);
     let (before_lines, after_lines) = split_panes(lines);
 
-    draw_inner_separator(frame.buffer_mut(), separator, "─", pane_rows.color_count);
+    draw_inner_separator(frame.buffer_mut(), separator, "─", &pane_rows.theme.chrome);
     pane_rows.render(frame, ContinuityFrame::diff_pane(before_pane), before_lines);
     pane_rows.render(frame, ContinuityFrame::diff_pane(after_pane), after_lines);
 }
@@ -299,7 +300,10 @@ mod tests {
         },
         parser::parse_unified_diff,
         prepared::PreparedDocument,
+        theme::{ColorDepth, Theme},
     };
+
+    const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
     #[test]
     fn renders_compact_file_and_diff_panes_with_one_separator() {
@@ -316,7 +320,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -337,8 +341,8 @@ mod tests {
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
-        assert_eq!(rendered[(2, 1)].fg, Color::Rgb(160, 160, 160), "file name");
-        assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "help hint");
+        assert_eq!(rendered[(2, 1)].fg, THEME.chrome.file_name, "file name");
+        assert_eq!(rendered[(0, 9)].fg, THEME.chrome.hint, "help hint");
     }
 
     #[test]
@@ -354,7 +358,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -377,7 +381,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -394,7 +398,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(78, 5)].bg,
-            Color::Rgb(35, 73, 43),
+            THEME.rows.addition_background,
             "alignment peer retains addition background"
         );
         assert!(
@@ -403,7 +407,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(53, 4)].fg,
-            Color::Rgb(95, 95, 95),
+            THEME.chrome.dim_separator,
             "inner separator is dimmer than the outer separator"
         );
     }
@@ -425,7 +429,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -434,7 +438,7 @@ mod tests {
             .iter()
             .find(|cell| cell.symbol() == "▾")
             .expect("lines continue below");
-        assert_eq!(marker.fg, Color::Rgb(95, 95, 95));
+        assert_eq!(marker.fg, THEME.chrome.dim_separator);
     }
 
     #[test]
@@ -455,7 +459,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -478,7 +482,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -490,7 +494,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(51, 5)].bg,
-            Color::Rgb(50, 30, 30),
+            THEME.rows.deletion_background,
             "deletion peer reaches the before pane edge"
         );
         assert!(
@@ -514,7 +518,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -533,7 +537,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(78, alignment_peer_row)].bg,
-            Color::Rgb(35, 73, 43),
+            THEME.rows.addition_background,
             "alignment peer retains addition background"
         );
         assert!(
@@ -559,7 +563,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -575,50 +579,50 @@ mod tests {
         let expected_styles = [
             (
                 (30, 4),
-                Color::Rgb(180, 180, 180),
+                THEME.rows.context_body,
                 Color::Reset,
                 "context payload",
             ),
             (
                 (28, 5),
-                Color::Rgb(206, 74, 74),
-                Color::Rgb(50, 30, 30),
+                THEME.rows.deletion_marker,
+                THEME.rows.deletion_background,
                 "deletion marker",
             ),
             (
                 (28, 6),
-                Color::Rgb(112, 195, 115),
-                Color::Rgb(35, 73, 43),
+                THEME.rows.addition_marker,
+                THEME.rows.addition_background,
                 "addition marker",
             ),
             (
                 (30, 5),
-                Color::Rgb(86, 156, 214),
-                Color::Rgb(50, 30, 30),
+                THEME.syntax.keyword,
+                THEME.rows.deletion_background,
                 "deletion keyword",
             ),
             (
                 (30, 6),
-                Color::Rgb(86, 156, 214),
-                Color::Rgb(35, 73, 43),
+                THEME.syntax.keyword,
+                THEME.rows.addition_background,
                 "addition keyword",
             ),
             (
                 (55, 6),
-                Color::Rgb(206, 145, 120),
-                Color::Rgb(35, 73, 43),
+                THEME.syntax.string,
+                THEME.rows.addition_background,
                 "addition string",
             ),
             (
                 (78, 5),
-                Color::Rgb(150, 150, 150),
-                Color::Rgb(50, 30, 30),
+                THEME.rows.deletion_body,
+                THEME.rows.deletion_background,
                 "deletion background reaches the diff pane edge",
             ),
             (
                 (78, 6),
-                Color::Rgb(220, 235, 220),
-                Color::Rgb(35, 73, 43),
+                THEME.rows.addition_body,
+                THEME.rows.addition_background,
                 "addition background reaches the diff pane edge",
             ),
         ];
@@ -655,7 +659,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -671,8 +675,8 @@ mod tests {
             selected_row_end.bg, selected_label.bg,
             "the highlight spans the whole row"
         );
-        assert_eq!(rendered[(31, 4)].fg, Color::Rgb(206, 74, 74));
-        assert_eq!(rendered[(31, 5)].fg, Color::Rgb(112, 195, 115));
+        assert_eq!(rendered[(31, 4)].fg, THEME.rows.deletion_marker);
+        assert_eq!(rendered[(31, 5)].fg, THEME.rows.addition_marker);
         assert!(
             !rendered[(31, 4)].modifier.contains(Modifier::DIM),
             "changed deletion span is not dimmed"
@@ -683,12 +687,12 @@ mod tests {
         );
         assert_eq!(
             rendered[(30, 4)].fg,
-            Color::Rgb(120, 120, 120),
+            THEME.rows.unchanged_deletion,
             "unchanged deletion text is one step below the deletion body"
         );
         assert_eq!(
             rendered[(30, 5)].fg,
-            Color::Rgb(170, 185, 170),
+            THEME.rows.unchanged_addition,
             "unchanged addition text is one step below the addition body"
         );
     }
@@ -742,16 +746,16 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
         terminal
-            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &interaction, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &interaction, THEME))
             .expect("render line mode");
         let line_rendered = terminal.backend().buffer().clone();
         let payloads = [
-            ("fn removed() {}", Color::Rgb(206, 74, 74)),
-            ("fn added() {}", Color::Rgb(112, 195, 115)),
+            ("fn removed() {}", THEME.rows.deletion_marker),
+            ("fn added() {}", THEME.rows.addition_marker),
         ];
         for (payload, _) in payloads {
             let cells = unique_payload_cells(&line_rendered, payload);
-            assert_eq!(cells[0].fg, Color::Rgb(86, 156, 214), "Rust keyword");
+            assert_eq!(cells[0].fg, THEME.syntax.keyword, "Rust keyword");
         }
 
         let Transition::RedrawInteraction(character) =
@@ -762,7 +766,7 @@ mod tests {
         assert_eq!(character.selected_file, interaction.selected_file);
         assert_eq!(character.viewport, interaction.viewport);
         terminal
-            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &character, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &character, THEME))
             .expect("render character mode");
 
         // architecture.md: unmatched source payloads contain no unchanged characters.
@@ -779,7 +783,7 @@ mod tests {
             panic!("line toggle redraws interaction");
         };
         terminal
-            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &line, u16::MAX))
+            .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &line, THEME))
             .expect("restore line mode from the same prepared file");
 
         assert_eq!(line, interaction, "toggle preserves the reader position");
@@ -814,7 +818,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &document, &interaction, THEME))
             .expect("render frame");
 
         let rendered = terminal.backend().buffer();
@@ -822,7 +826,7 @@ mod tests {
             let hunk_header = &rendered[(30, y)];
 
             assert_eq!(hunk_header.symbol(), "@");
-            assert_eq!(hunk_header.fg, Color::Rgb(100, 155, 175));
+            assert_eq!(hunk_header.fg, THEME.rows.hunk_header);
             assert_eq!(hunk_header.bg, Color::Reset);
         }
         assert_eq!(
@@ -843,7 +847,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &two_file_document(), interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &two_file_document(), interaction, THEME))
             .expect("render frame");
         terminal.backend().buffer().clone()
     }

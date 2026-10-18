@@ -556,8 +556,9 @@ draw errors, Ctrl-C, and broken pipes.
 - Preserve unknown diff lines rather than silently dropping them.
 - Reject malformed or truncated input with context before entering the interactive TUI.
 - Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when the
-  terminal supports it, falling back by capability. `SyntaxTheme` owns the mapping from semantic
-  syntax classes to colors, so user-configurable themes can replace that built-in palette later.
+  terminal supports it, falling back by capability. The color depth is decided once per
+  session, and one `Theme` per depth owns every syntax, row, and chrome color, so
+  user-configurable themes can replace that built-in palette later.
 
 ## Terminal lifecycle
 
