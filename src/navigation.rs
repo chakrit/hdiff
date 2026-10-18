@@ -120,7 +120,8 @@ impl Navigation {
                 let source = pane_line(&self.view, anchor);
                 let target = pane_line(&view, anchor);
                 let offset = current.vertical.saturating_add(source);
-                // None when the lines end above the anchor line, since the view then fits.
+                // None only for a page without lines, since every in-bounds offset names
+                // a line.
                 self.extent
                     .reanchor(document, settings, offset)
                     .map_or(ScreenLines::ZERO, |line| line.saturating_sub(target))
@@ -156,11 +157,13 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
 }
 
 /// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
+/// The vertical offset always names a line, even when a too-short screen shows no pane.
 fn bounds_of(extent: &DisplayExtent, view: &EffectiveView) -> DisplayBounds {
     let content = view.pane_content();
+    let shown_lines = content.height.max(ScreenLines::ONE);
 
     DisplayBounds::new(
-        extent.line_count().saturating_sub(content.height),
+        extent.line_count().saturating_sub(shown_lines),
         extent.width().saturating_sub(content.width),
         content.height,
     )

@@ -28,7 +28,8 @@ matrix!(
     keymap_popup,
     half_page_movement,
     key_before_resize_event,
-    stale_resize_event
+    stale_resize_event,
+    bottom_on_too_short_screen
 );
 
 fn vertical_movement(mode: Mode) {
@@ -211,6 +212,24 @@ fn stale_resize_event(mode: Mode) {
         live.buffer(),
         expected,
         "a stale resize event keeps the view at the bottom"
+    );
+}
+
+/// architecture.md (Viewport coordinates): the vertical offset indexes the screen lines, so
+/// `G` on a screen too short for panes still names the last line when the screen regrows.
+fn bottom_on_too_short_screen(mode: Mode) {
+    let mut full = Live::load(&long_patch(), mode);
+    full.press('G');
+    let expected = full.buffer();
+
+    let mut live = Live::load(&long_patch(), mode);
+    live.resize(WIDTH, 2);
+    live.press('G');
+    live.resize(WIDTH, HEIGHT);
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "regrowing after G keeps the view at the bottom"
     );
 }
 
