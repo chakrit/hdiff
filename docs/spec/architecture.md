@@ -531,8 +531,8 @@ the line it starts with. Cell columns and screen lines are distinct units, held 
 width and narrowed only where a frame is drawn, so no offset type caps how far a row
 reaches. One screen geometry, derived from the screen size and view preferences, serves
 both navigation bounds and drawing, and a scroll extent carries the wrap width and pane
-shape it was built with. A frame whose size differs from the interaction's screen waits
-for the resize event that follows it.
+shape it was built with. Each frame adopts the size it is drawn at before it draws, so a
+key that arrives before its resize event still draws a full frame.
 
 ### Eager prepared rendering
 

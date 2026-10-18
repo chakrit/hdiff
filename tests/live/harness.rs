@@ -52,7 +52,7 @@ impl Live {
     fn start(prepared: PreparedDocument, mode: Mode, size: Size) -> Self {
         let mut terminal =
             Terminal::new(TestBackend::new(size.width, size.height)).expect("test terminal");
-        let tui = Tui::new(prepared, size, ColorDepth::TrueColor);
+        let mut tui = Tui::new(prepared, size, ColorDepth::TrueColor);
         tui.draw(&mut terminal).expect("initial frame");
 
         let mut live = Self { tui, terminal };
@@ -78,8 +78,13 @@ impl Live {
     }
 
     pub fn resize(&mut self, width: u16, height: u16) -> Step {
-        self.terminal.backend_mut().resize(width, height);
+        self.resize_backend_only(width, height);
         self.event(Event::Resize(width, height))
+    }
+
+    /// Changes the terminal's size without sending the resize event that follows it.
+    pub fn resize_backend_only(&mut self, width: u16, height: u16) {
+        self.terminal.backend_mut().resize(width, height);
     }
 
     pub fn event(&mut self, event: Event) -> Step {

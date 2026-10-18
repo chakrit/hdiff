@@ -38,11 +38,6 @@ pub(super) fn render_prepared_frame(
 ) {
     let geometry = interaction.display().geometry();
     let screen = geometry.screen();
-    // Bounds and drawing share the interaction's geometry, so a frame of another size waits
-    // for the resize event that follows it.
-    if frame.area() != screen {
-        return;
-    }
     let shape = extent.shape();
     if let Some(too_small) = geometry.too_small(shape) {
         frame.render_widget(Paragraph::new(too_small_message(too_small)), screen);

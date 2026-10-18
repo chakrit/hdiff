@@ -21,7 +21,8 @@ matrix!(
     quit,
     bottom_past_hidden_context,
     keymap_popup,
-    half_page_movement
+    half_page_movement,
+    key_before_resize_event
 );
 
 fn vertical_movement(mode: Mode) {
@@ -160,6 +161,31 @@ fn resize(mode: Mode) {
         live.buffer(),
         start,
         "restoring the size restores the frame"
+    );
+}
+
+/// architecture.md (Viewport coordinates): each frame adopts the size it is drawn at, so a
+/// key that arrives between a size change and its resize event draws a full frame.
+fn key_before_resize_event(mode: Mode) {
+    let mut resized = Live::load(MIXED_LANGUAGES, mode);
+    resized.resize(80, 20);
+    resized.press('j');
+    let expected = resized.buffer();
+
+    let mut live = Live::load(MIXED_LANGUAGES, mode);
+    live.resize_backend_only(80, 20);
+    live.press('j');
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "the key draws the frame at the new size"
+    );
+
+    live.resize(80, 20);
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "the resize event that follows changes nothing"
     );
 }
 

@@ -7,7 +7,7 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    interaction::{Interaction, Transition},
+    interaction::{Event, Interaction, Transition},
     navigation::Navigation,
     preferences::ViewPreferences,
     prepared::PreparedDocument,
@@ -110,6 +110,13 @@ impl Tui {
         else {
             return Ok(Step::Continue);
         };
+        let screen = next_frame_size(terminal)?;
+        adopt_screen(
+            &self.document,
+            &mut self.interaction,
+            &mut self.navigation,
+            screen,
+        );
 
         match self
             .navigation
@@ -124,22 +131,53 @@ impl Tui {
         }
     }
 
-    pub fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
-        let page = self.document.page(self.interaction.page());
-        let tree = self.document.file_tree();
+    /// Draws the interaction, first adopting the size of the frame it draws, so bounds and
+    /// drawing always read one screen size.
+    pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
+        let Self {
+            document,
+            interaction,
+            navigation,
+            theme,
+        } = self;
 
         terminal
             .draw(|frame| {
+                adopt_screen(document, interaction, navigation, frame.area().as_size());
+
                 view::render_prepared_frame(
                     frame,
-                    tree,
-                    page,
-                    self.navigation.extent(),
-                    &self.interaction,
-                    self.theme,
+                    document.file_tree(),
+                    document.page(interaction.page()),
+                    navigation.extent(),
+                    interaction,
+                    theme,
                 )
             })
             .map(|_| ())
+    }
+}
+
+/// The size `terminal` draws its next frame at.
+fn next_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
+    terminal.autoresize()?;
+    Ok(terminal.get_frame().area().as_size())
+}
+
+/// Resizes `interaction` to `screen` when the screen it shows has another size.
+fn adopt_screen(
+    document: &PreparedDocument,
+    interaction: &mut Interaction,
+    navigation: &mut Navigation,
+    screen: Size,
+) {
+    if screen == interaction.display().geometry().screen().as_size() {
+        return;
+    }
+    if let Transition::Redraw(resized) =
+        navigation.step(document, interaction, Event::Resize(screen))
+    {
+        *interaction = resized;
     }
 }
 
