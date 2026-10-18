@@ -1,6 +1,8 @@
 //! The parsed document: surrounding text and file diffs in input order. Contract:
 //! docs/spec/architecture.md#core-model.
 
+use std::marker::PhantomData;
+
 use crate::{
     compact::Count,
     file_identity::FileIdentity,
@@ -96,14 +98,15 @@ impl DiffFile {
     /// The values `entries` gives each of the file's records, gathered hunk by hunk: a
     /// record no entry names maps to no values, and a file without hunks maps no records.
     ///
-    /// Panics when an entry names a position outside the hunk it was given for.
-    pub fn record_map<E, Entries>(
+    /// Each call of `entries` receives one hunk's [`HunkRecords`] under a fresh brand, so
+    /// the positions it returns can only name records of that hunk.
+    pub fn record_map<E>(
         &self,
-        mut entries: impl FnMut(&UnifiedBody, &Hunk) -> Entries,
-    ) -> RecordMap<Vec<E>>
-    where
-        Entries: IntoIterator<Item = (RecordPosition, E)>,
-    {
+        mut entries: impl for<'h> FnMut(
+            &BySide<FileHeader>,
+            HunkRecords<'_, 'h>,
+        ) -> Vec<(RecordPosition<'h>, E)>,
+    ) -> RecordMap<Vec<E>> {
         let FileBody::Unified(body) = &self.body else {
             return RecordMap::empty();
         };
@@ -117,8 +120,8 @@ impl DiffFile {
                     .iter()
                     .map(|_| Vec::new())
                     .collect::<Box<[_]>>();
-                for (position, entry) in entries(body, hunk) {
-                    values[position.0].push(entry);
+                for (position, entry) in entries(&body.headers, HunkRecords::of(hunk)) {
+                    values[position.index].push(entry);
                 }
                 values
             })
@@ -144,32 +147,85 @@ pub struct UnifiedBody {
     pub hunks: Box<[Hunk]>,
 }
 
+impl UnifiedBody {
+    /// Each hunk with the address of each of its records; the only source of
+    /// [`RecordAddress`]es.
+    pub fn addressed_hunks(&self) -> impl Iterator<Item = AddressedHunk<'_>> {
+        self.hunks
+            .iter()
+            .enumerate()
+            .map(|(index, hunk)| AddressedHunk { index, hunk })
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Hunk {
     pub header: SourceLine,
     pub records: Box<[Record]>,
 }
 
-impl Hunk {
-    /// The hunk's records, each with its position among them.
-    pub fn positioned_records(&self) -> impl Iterator<Item = (RecordPosition, &Record)> {
-        self.records
+/// A hunk with its place among its file's hunks.
+#[derive(Clone, Copy)]
+pub struct AddressedHunk<'a> {
+    index: usize,
+    pub hunk: &'a Hunk,
+}
+
+impl<'a> AddressedHunk<'a> {
+    /// The hunk's records, each with its address in the file.
+    pub fn records(self) -> impl Iterator<Item = (RecordAddress, &'a Record)> {
+        let hunk = self.index;
+        self.hunk
+            .records
             .iter()
             .enumerate()
-            .map(|(index, record)| (RecordPosition(index), record))
+            .map(move |(record, value)| (RecordAddress::new(hunk, record), value))
     }
 }
 
-/// A record's position among its hunk's records. Only [`Hunk::positioned_records`] hands
-/// positions out, so a position names a record of the hunk it came from.
+/// One hunk's records under the brand `'h` of a single [`DiffFile::record_map`] call.
+#[derive(Clone, Copy)]
+pub struct HunkRecords<'a, 'h> {
+    hunk: &'a Hunk,
+    brand: Brand<'h>,
+}
+
+impl<'a, 'h> HunkRecords<'a, 'h> {
+    fn of(hunk: &'a Hunk) -> Self {
+        Self {
+            hunk,
+            brand: Brand(PhantomData),
+        }
+    }
+
+    /// The hunk's records, each with its branded position among them.
+    pub fn positioned(self) -> impl Iterator<Item = (RecordPosition<'h>, &'a Record)> {
+        self.hunk
+            .records
+            .iter()
+            .enumerate()
+            .map(move |(index, record)| {
+                let position = RecordPosition {
+                    index,
+                    brand: self.brand,
+                };
+                (position, record)
+            })
+    }
+}
+
+/// A record's position among the records of the hunk whose [`HunkRecords`] carries the
+/// brand `'h`; positions from another hunk carry another brand and do not type-check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RecordPosition(usize);
-
-impl RecordPosition {
-    pub fn get(self) -> usize {
-        self.0
-    }
+pub struct RecordPosition<'h> {
+    index: usize,
+    brand: Brand<'h>,
 }
+
+/// An invariant lifetime marker: `'h` can neither grow nor shrink, so two brands unify
+/// only when they are the same brand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Brand<'h>(PhantomData<fn(&'h ()) -> &'h ()>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Record {
@@ -244,7 +300,7 @@ impl RecordAddress {
     /// The record at position `record` of hunk `hunk`.
     ///
     /// Panics when either position does not fit in a [`Count`].
-    pub fn new(hunk: usize, record: usize) -> Self {
+    fn new(hunk: usize, record: usize) -> Self {
         Self {
             hunk: Count::of(hunk),
             record: Count::of(record),
