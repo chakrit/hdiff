@@ -289,17 +289,18 @@ fn parse_hunk(
     expected: BySide<usize>,
     lines: &mut Lines<'_>,
 ) -> Result<Hunk, ParseError> {
-    let mut seen = BySide::<usize>::default();
+    let exhausted = BySide::<usize>::default();
+    let mut remaining = expected;
     let mut records = Vec::new();
     while let Some(line) =
-        lines.next_if(|text| seen != expected || text.starts_with(NO_NEWLINE_MARKER))
+        lines.next_if(|text| remaining != exhausted || text.starts_with(NO_NEWLINE_MARKER))
     {
         let record = lines.at_last_line(parse_record(line))?;
-        seen = seen.map_sides(|side, count| count + usize::from(record.kind.on_side(side)));
+        remaining = lines.at_last_line(count_record(remaining, record.kind))?;
         records.push(record);
     }
 
-    if seen != expected {
+    if remaining != exhausted {
         return Err(lines.next_line_error(Malformed::TruncatedHunk));
     }
     if lines
@@ -312,6 +313,20 @@ fn parse_hunk(
         header,
         records: records.into_boxed_slice(),
     })
+}
+
+/// The counts `remaining` after one record of `kind`; a record on a side whose declared
+/// count is already used up is the first excess record.
+fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usize>, Malformed> {
+    let counted = remaining.map_sides(|side, count| match kind.on_side(side) {
+        true => count.checked_sub(1),
+        false => Some(count),
+    });
+
+    match (counted.old, counted.new) {
+        (Some(old), Some(new)) => Ok(BySide { old, new }),
+        _ => Err(Malformed::ExcessRecords),
+    }
 }
 
 fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
@@ -535,6 +550,20 @@ mod tests {
             assert_eq!(
                 parse_patch(input.as_bytes()),
                 malformed(6, Malformed::ExcessRecords),
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_the_record_that_overshoots_one_side_of_a_hunk() {
+        let overfull = "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n-b\n+c\n";
+        for suffix in ["", "--- a/g\n+++ b/g\n@@ -1 +1 @@\n-x\n+y\n"] {
+            let input = format!("{overfull}{suffix}");
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(5, Malformed::ExcessRecords),
                 "{suffix}"
             );
         }
