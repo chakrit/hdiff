@@ -21,7 +21,7 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoDiff => formatter.write_str("line 1: input contains no diff"),
+            Self::NoDiff => formatter.write_str("input contains no diff"),
             Self::Malformed { line, reason } => {
                 write!(formatter, "line {line}: {}", reason.label())
             }

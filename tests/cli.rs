@@ -272,7 +272,7 @@ fn patch_file_holding_only_text_is_an_error() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "hdiff: line 1: input contains no diff\n"
+        "hdiff: input contains no diff\n"
     );
 }
 
