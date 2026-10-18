@@ -104,6 +104,7 @@ fn prepare(
 
     let content = source.read().map_err(Error::Input)?;
     let input_finished = Instant::now();
+    let bytes = content.bytes().len();
     let document = content.parse().map_err(Error::Parse)?;
     let parse_finished = Instant::now();
     let prepared = PreparedDocument::prepare_observed(&document, observer);
@@ -114,7 +115,7 @@ fn prepare(
         parse: parse_finished.duration_since(input_finished),
         preparation: ready.duration_since(parse_finished),
         ready: ready.duration_since(started),
-        bytes: content.bytes().len(),
+        bytes,
     };
     Ok((startup, prepared))
 }
