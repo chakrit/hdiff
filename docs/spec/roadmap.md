@@ -63,6 +63,13 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   [input and terminal boundary](architecture.md#input-and-terminal-boundary): drawing goes
   to `/dev/tty` through a staged session restored in reverse order; human check passed on
   2026-10-16.
+- Interactive-loop input and mode refactor: session events (interrupt, resize) are
+  separate from bound commands, so no mode can intercept them; one exhaustive transition
+  consumes the destination a terminal-independent navigation unit builds per event; the
+  keymap popup is drawn from the key bindings; and bounds and drawing share one pane
+  geometry, per the [core model](architecture.md#core-model) and
+  [viewport coordinates](architecture.md#viewport-coordinates). Every existing unit and
+  live test passed with its assertions unchanged.
 
 Automated checks (formatting, Clippy, `cargo test --locked` including the `live` target)
 and human terminal checks passed for every delivered slice. Historical delivery plans
@@ -132,37 +139,27 @@ implementation remains unapproved.
    and other keys except `Ctrl-C` do nothing, and close it with `?`, `Esc`, and `q`
    without exiting.
 
-2. Refactor pass on the interactive loop's input and mode abstractions: re-analyze how key
-   events become inputs, how modal state such as the keymap popup filters them, and how
-   transitions, preferences, and derived layout fit together, then reshape them so each
-   concern has one owner and no mode needs per-input exceptions. Known finding:
-   `KeymapPopup::admit` must special-case `Interrupt` and `Resize` because session events
-   and bound keys share one `Input` type; no mode should be able to intercept session
-   events. Behavior stays unchanged.
-
-   Check: every existing unit and live test passes without changes to its assertions.
-
-3. Performance pass after the code-quality audit, under the
+2. Performance pass after the code-quality audit, under the
    [performance contract](performance.md). Scope not yet planned.
 
-4. Add implicit Tree-sitter semantic strategies with textual fallback.
+3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
    Human check: open supported and unsupported source files in the same diff. Supported files
    gain semantic detail when available; unsupported files remain readable with textual diffing,
    and neither case changes the selected layout unexpectedly.
 
-5. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
+4. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
 
    Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
    across unified, vertical, and stacked layouts.
 
-6. Refine highlighting coverage and additional navigation after the core interaction is stable.
+5. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
    help hint and keymap popup match the key behavior, additions and deletions remain
    distinguishable, and low contrast remains readable without saturating the whole terminal.
 
-7. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
+6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.
 
    Human check: search a multi-file diff, verify every match is reachable in both directions with
