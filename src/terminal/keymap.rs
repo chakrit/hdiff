@@ -9,7 +9,11 @@ use ratatui::{
     widgets::{Block, Clear, Padding, Paragraph},
 };
 
-use super::chrome::{ChromePalette, chrome_palette};
+use super::{
+    chrome::{ChromePalette, chrome_palette},
+    rows::hunk_header_color,
+};
+use crate::{syntax::SyntaxClass, theme::DEFAULT_SYNTAX_THEME};
 
 /// Shortcuts that belong together, as keys and the action they take.
 struct ShortcutGroup {
@@ -76,7 +80,7 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u1
     };
     let columns = GROUPS
         .chunks(groups_per_column)
-        .map(|groups| column_lines(groups, palette))
+        .map(|groups| column_lines(groups, palette, color_count))
         .collect::<Vec<_>>();
 
     let column_count = columns.len() as u16;
@@ -105,12 +109,18 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u1
     }
 }
 
-/// Each group's heading over its shortcuts, with a blank line between groups.
-fn column_lines(groups: &[ShortcutGroup], palette: ChromePalette) -> Vec<Line<'static>> {
+/// Each group's heading over its shortcuts, with a blank line between groups. Headings take
+/// the hunk-header tone, since both head sections, and keys the syntax function color.
+fn column_lines(
+    groups: &[ShortcutGroup],
+    palette: ChromePalette,
+    color_count: u16,
+) -> Vec<Line<'static>> {
     let heading_style = Style::default()
-        .fg(palette.directory_heading)
+        .fg(hunk_header_color(color_count))
         .add_modifier(Modifier::BOLD);
-    let keys_style = Style::default().fg(palette.selected_file);
+    let keys_style =
+        Style::default().fg(DEFAULT_SYNTAX_THEME.color(SyntaxClass::Function, color_count));
     let action_style = Style::default().fg(palette.file_name);
 
     let group_lines = groups.iter().map(|group| {
@@ -132,16 +142,25 @@ fn column_lines(groups: &[ShortcutGroup], palette: ChromePalette) -> Vec<Line<'s
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        buffer::Buffer,
+        style::{Color, Modifier},
+    };
 
     use super::render_keymap_popup;
 
-    fn popup_text(width: u16) -> String {
+    fn render_popup(width: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, 30)).expect("test terminal");
         terminal
             .draw(|frame| render_keymap_popup(frame, frame.area(), u16::MAX))
             .expect("render popup");
-        let buffer = terminal.backend().buffer();
+        terminal.backend().buffer().clone()
+    }
+
+    fn popup_text(width: u16) -> String {
+        let buffer = render_popup(width);
 
         (0..buffer.area.height)
             .map(|y| {
@@ -198,5 +217,34 @@ mod tests {
                 .any(|row| row.contains("Scroll") && row.contains("View")),
             "one column when narrow"
         );
+    }
+
+    /// architecture.md (Interaction model): headings take the hunk-header tone in bold, keys
+    /// the syntax function color, and actions the file-name tone.
+    #[test]
+    fn colors_headings_keys_and_actions_from_the_existing_palettes() {
+        let buffer = render_popup(60);
+        let position = |text: &str| {
+            let symbols = text.chars().map(String::from).collect::<Vec<_>>();
+            buffer
+                .area
+                .positions()
+                .find(|start| {
+                    symbols.iter().enumerate().all(|(offset, symbol)| {
+                        let x = start.x + offset as u16;
+                        x < buffer.area.right() && buffer[(x, start.y)].symbol() == symbol
+                    })
+                })
+                .unwrap_or_else(|| panic!("{text} is drawn"))
+        };
+
+        let heading = &buffer[position("Scroll")];
+        let key = &buffer[position("^D ^U")];
+        let action = &buffer[position("half page")];
+
+        assert_eq!(heading.fg, Color::Rgb(100, 155, 175), "heading");
+        assert!(heading.modifier.contains(Modifier::BOLD), "bold heading");
+        assert_eq!(key.fg, Color::Rgb(220, 220, 170), "key");
+        assert_eq!(action.fg, Color::Rgb(160, 160, 160), "action");
     }
 }

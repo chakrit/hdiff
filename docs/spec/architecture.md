@@ -439,7 +439,8 @@ advertises a deferred shortcut.
 
 The keymap popup lists every shortcut in the table above under four headings: Scroll,
 Files, View, and Keymap and exit. The groups sit in two columns when the screen is wide
-enough and in one column otherwise.
+enough and in one column otherwise. Headings take the hunk-header tone in bold, keys the
+syntax function color, actions the file-name tone, and the border the separator tone.
 
 ## Technology direction
 

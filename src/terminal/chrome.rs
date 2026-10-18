@@ -271,13 +271,13 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 
 #[derive(Clone, Copy)]
 pub(super) struct ChromePalette {
-    pub(super) directory_heading: Color,
+    directory_heading: Color,
     pub(super) file_name: Color,
     modified_marker: Color,
     added_marker: Color,
     deleted_marker: Color,
     renamed_marker: Color,
-    pub(super) selected_file: Color,
+    selected_file: Color,
     selected_file_background: Color,
     pub(super) separator: Color,
     /// The inner separator between side-by-side panes and the continuity markers.

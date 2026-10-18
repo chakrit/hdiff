@@ -171,7 +171,7 @@ pub(super) fn row_style(row_kind: RowKind, color_count: u16) -> Style {
     }
 }
 
-fn hunk_header_color(color_count: u16) -> Color {
+pub(super) fn hunk_header_color(color_count: u16) -> Color {
     match color_count {
         u16::MAX => Color::Rgb(100, 155, 175),
         256.. => Color::Indexed(109),
