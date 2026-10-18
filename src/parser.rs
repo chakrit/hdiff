@@ -1,7 +1,10 @@
 use std::fmt;
 
 use crate::{
-    document::{DiffDocument, DiffFile, Hunk, Record, RecordKind, Section, UnifiedDiffFile},
+    document::{
+        DiffDocument, DiffFile, FileBody, FileHeader, GitHeader, Hunk, Record, RecordKind, Section,
+        UnifiedBody,
+    },
     file_identity::{FileIdentity, HeaderPath},
     source_text::SourceLine,
 };
@@ -85,12 +88,14 @@ pub fn parse_comparison_output(input: &[u8]) -> Result<DiffDocument, ParseError>
         let section = match start {
             LineStart::Text => Section::Text(parse_text(line, &mut lines)),
             LineStart::GitHeader => parse_git_section(line, &mut lines)?,
-            LineStart::OldFileHeader => Section::File(parse_unified(Vec::new(), line, &mut lines)?),
+            LineStart::OldFileHeader => Section::File(parse_unified(None, line, &mut lines)?),
         };
         sections.push(section);
     }
 
-    Ok(DiffDocument { sections })
+    Ok(DiffDocument {
+        sections: sections.into_boxed_slice(),
+    })
 }
 
 // Sections
@@ -144,17 +149,18 @@ fn parse_git_section(header: SourceLine, lines: &mut Lines<'_>) -> Result<Sectio
         metadata.extend(parse_binary_patch(lines)?);
     }
 
-    let Some(old_header) = lines.next_if(|text| text.starts_with("--- ")) else {
-        let identity = FileIdentity::of_metadata(&header, &metadata);
-        return Ok(Section::File(DiffFile::Metadata {
-            header,
-            lines: metadata,
-            identity,
-        }));
+    let git = GitHeader {
+        line: header,
+        metadata: metadata.into_boxed_slice(),
     };
-
-    let git_lines = std::iter::once(header).chain(metadata).collect();
-    Ok(Section::File(parse_unified(git_lines, old_header, lines)?))
+    let file = match lines.next_if(|text| text.starts_with("--- ")) {
+        Some(old_header) => parse_unified(Some(git), old_header, lines)?,
+        None => DiffFile {
+            identity: FileIdentity::of_metadata(git.lines()),
+            body: FileBody::Metadata(git),
+        },
+    };
+    Ok(Section::File(file))
 }
 
 fn is_git_metadata(text: &str) -> bool {
@@ -219,9 +225,9 @@ fn binary_block_size(text: &str) -> Option<&str> {
     literal.or(delta)
 }
 
-/// A section with `---` / `+++` headers, after its Git lines (empty outside Git).
+/// A section with `---` / `+++` headers, after its Git header when it has one.
 fn parse_unified(
-    metadata: Vec<SourceLine>,
+    git: Option<GitHeader>,
     old_header: SourceLine,
     lines: &mut Lines<'_>,
 ) -> Result<DiffFile, ParseError> {
@@ -240,19 +246,30 @@ fn parse_unified(
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
     }
 
-    let old_path = HeaderPath::of_field(&old_header.sanitized()[4..]);
-    let new_path = HeaderPath::of_field(&new_header.sanitized()[4..]);
-    let first_line = metadata.first().unwrap_or(&old_header);
-    let identity = FileIdentity::of_unified(&metadata, &old_path, &new_path, first_line);
-    Ok(DiffFile::Unified(Box::new(UnifiedDiffFile {
-        metadata,
+    let old = file_header(old_header);
+    let new = file_header(new_header);
+    let identity = FileIdentity::of_unified(
+        git.as_ref().map(GitHeader::lines),
+        &old.line,
+        &old.path,
+        &new.path,
+    );
+    Ok(DiffFile {
         identity,
-        old_path,
-        new_path,
-        old_header,
-        new_header,
-        hunks,
-    })))
+        body: FileBody::Unified(Box::new(UnifiedBody {
+            git,
+            old,
+            new,
+            hunks: hunks.into_boxed_slice(),
+        })),
+    })
+}
+
+/// A `---` or `+++` line, whose path follows its four-byte prefix.
+fn file_header(line: SourceLine) -> FileHeader {
+    let path = HeaderPath::of_field(&line.sanitized()[4..]);
+
+    FileHeader { line, path }
 }
 
 // Hunks
@@ -283,7 +300,10 @@ fn parse_hunk(header: SourceLine, lines: &mut Lines<'_>) -> Result<Hunk, ParseEr
     {
         return Err(lines.next_line_error(Malformed::ExcessRecords));
     }
-    Ok(Hunk { header, records })
+    Ok(Hunk {
+        header,
+        records: records.into_boxed_slice(),
+    })
 }
 
 fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
@@ -429,7 +449,7 @@ impl<'a> Lines<'a> {
 #[cfg(test)]
 mod tests {
     use super::{parse_comparison_output, parse_unified_diff};
-    use crate::document::{DiffDocument, DiffFile, Hunk};
+    use crate::document::{DiffDocument, FileBody, Hunk};
 
     #[test]
     fn preserves_surrounding_text_in_source_order() {
@@ -496,12 +516,12 @@ mod tests {
             b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
         let document = parse_unified_diff(input).expect("mode-only diff with text");
         let views = document.file_views().collect::<Vec<_>>();
-        let DiffFile::Metadata { lines, .. } = views[0].file else {
+        let FileBody::Metadata(header) = &views[0].file.body else {
             panic!("mode-only diff is metadata");
         };
 
         assert_eq!(views.len(), 1);
-        assert_eq!(lines.len(), 2);
+        assert_eq!(header.metadata.len(), 2);
         assert_eq!(views[0].leading[0].sanitized(), "message");
         assert_eq!(views[0].trailing[0].sanitized(), "footer");
         assert_eq!(crate::render::render_unified(&document), input);
@@ -512,13 +532,14 @@ mod tests {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
         let document = parse_unified_diff(input).expect("binary diff with text");
         let view = document.file_views().next().expect("binary file");
-        let DiffFile::Metadata { lines, .. } = view.file else {
+        let FileBody::Metadata(header) = &view.file.body else {
             panic!("binary diff is metadata");
         };
 
         assert_eq!(view.trailing[0].sanitized(), "footer");
         assert!(
-            lines
+            header
+                .metadata
                 .iter()
                 .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B")
         );
@@ -527,7 +548,7 @@ mod tests {
 
     fn single_unified_hunks(document: &DiffDocument) -> &[Hunk] {
         assert_eq!(document.files().count(), 1);
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture section should be unified");
         };
 
@@ -552,15 +573,21 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid Git fixture");
 
         assert_eq!(document.files().count(), 2);
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("first fixture section should be unified");
         };
-        assert_eq!(file.metadata.len(), 3);
+        assert_eq!(
+            file.git.as_ref().map(|header| header.metadata.len()),
+            Some(2)
+        );
         assert_eq!(file.hunks[0].records.len(), 3);
-        let DiffFile::Unified(file) = document.file(1).expect("second file") else {
+        let FileBody::Unified(file) = &document.files().nth(1).expect("second file").body else {
             panic!("second fixture section should be unified");
         };
-        assert_eq!(file.metadata.len(), 2);
+        assert_eq!(
+            file.git.as_ref().map(|header| header.metadata.len()),
+            Some(1)
+        );
         assert_eq!(file.hunks[0].records.len(), 4);
     }
 
@@ -571,11 +598,11 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid colored Git fixture");
 
         assert_eq!(document.files().count(), 2);
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("first fixture section should be unified");
         };
         assert_eq!(file.hunks[0].records.len(), 3);
-        let DiffFile::Unified(file) = document.file(1).expect("second file") else {
+        let FileBody::Unified(file) = &document.files().nth(1).expect("second file").body else {
             panic!("second fixture section should be unified");
         };
         assert_eq!(file.hunks[0].records.len(), 4);
@@ -588,8 +615,8 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
 
         assert!(matches!(
-            document.file(0).expect("first file"),
-            DiffFile::Metadata { .. }
+            document.files().next().expect("first file").body,
+            FileBody::Metadata(_)
         ));
     }
 
@@ -601,8 +628,8 @@ mod tests {
 
         assert_eq!(document.files().count(), 1);
         assert!(matches!(
-            document.file(0).expect("first file"),
-            DiffFile::Metadata { .. }
+            document.files().next().expect("first file").body,
+            FileBody::Metadata(_)
         ));
     }
 

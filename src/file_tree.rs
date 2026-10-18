@@ -48,7 +48,7 @@ pub struct FileTree {
 
 impl FileTree {
     pub fn build(views: &[FileView<'_>]) -> Self {
-        let identities = views.iter().map(|view| view.file.identity()).enumerate();
+        let identities = views.iter().map(|view| &view.file.identity).enumerate();
         let (top_level, nested): (Vec<_>, Vec<_>) =
             identities.partition(|(_, identity)| placement(identity).0.is_empty());
 

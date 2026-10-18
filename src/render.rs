@@ -1,5 +1,5 @@
 use crate::{
-    document::{DiffDocument, DiffFile, Section},
+    document::{DiffDocument, DiffFile, FileBody, GitHeader, Section},
     source_text::SourceLine,
 };
 
@@ -58,26 +58,24 @@ pub fn render_file(file: &DiffFile) -> Vec<u8> {
 pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     let mut rendered_lines = Vec::new();
 
-    match file {
-        DiffFile::Metadata { header, lines, .. } => {
-            for line in std::iter::once(header).chain(lines) {
-                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, "", line));
+    let header_lines = |header: &GitHeader| {
+        std::iter::once(&header.line)
+            .chain(&header.metadata)
+            .map(|line| rendered_line(RenderedLineKind::Metadata, "", line))
+            .collect::<Vec<_>>()
+    };
+
+    match &file.body {
+        FileBody::Metadata(header) => rendered_lines.extend(header_lines(header)),
+        FileBody::Unified(file) => {
+            rendered_lines.extend(file.git.iter().flat_map(header_lines));
+            for header in [&file.old, &file.new] {
+                rendered_lines.push(rendered_line(
+                    RenderedLineKind::FileHeader,
+                    "",
+                    &header.line,
+                ));
             }
-        }
-        DiffFile::Unified(file) => {
-            for line in &file.metadata {
-                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, "", line));
-            }
-            rendered_lines.push(rendered_line(
-                RenderedLineKind::FileHeader,
-                "",
-                &file.old_header,
-            ));
-            rendered_lines.push(rendered_line(
-                RenderedLineKind::FileHeader,
-                "",
-                &file.new_header,
-            ));
             for (hunk_index, hunk) in file.hunks.iter().enumerate() {
                 rendered_lines.push(rendered_line(
                     RenderedLineKind::HunkHeader,
@@ -127,7 +125,7 @@ fn rendered_line(kind: RenderedLineKind, marker: &str, line: &SourceLine) -> Ren
 #[cfg(test)]
 mod tests {
     use super::{RecordAddress, RenderedLineKind, render_file, render_file_lines, render_unified};
-    use crate::{document::DiffFile, parser::parse_unified_diff};
+    use crate::{document::FileBody, parser::parse_unified_diff};
 
     #[test]
     fn sanitizes_surrounding_text_and_preserves_line_endings() {
@@ -156,11 +154,11 @@ mod tests {
     fn classifies_metadata_file_headers_hunks_and_records() {
         let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
         let document = parse_unified_diff(input).expect("valid Git diff with two hunks");
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("expected unified file");
         };
 
-        let lines = render_file_lines(document.file(0).expect("first file"));
+        let lines = render_file_lines(document.files().next().expect("first file"));
         let kinds = lines.iter().map(|line| line.kind).collect::<Vec<_>>();
 
         assert_eq!(kinds[0], RenderedLineKind::Metadata);
@@ -273,7 +271,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n";
         let document = parse_unified_diff(input).expect("valid diff");
 
-        let rendered = render_file(document.file(0).expect("first file"));
+        let rendered = render_file(document.files().next().expect("first file"));
 
         assert_eq!(rendered, render_unified(&document));
         assert!(!rendered.contains(&b'\x1b'));

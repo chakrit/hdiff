@@ -1,7 +1,7 @@
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, RecordKind, UnifiedDiffFile},
+    document::{DiffFile, FileBody, GitHeader, RecordKind, UnifiedBody},
     file_identity::HeaderPath,
     measurement::{Observer, Stage, Unobserved, Work},
 };
@@ -43,10 +43,13 @@ impl SyntaxHighlighter {
         file: &DiffFile,
         observer: &mut impl Observer,
     ) -> Vec<Vec<SyntaxSpan>> {
-        match file {
-            DiffFile::Metadata { lines, .. } => (0..lines.len() + 1).map(|_| Vec::new()).collect(),
-            DiffFile::Unified(file) => {
-                let mut rows = (0..file.metadata.len() + 2)
+        let header_rows = |header: &GitHeader| 1 + header.metadata.len();
+
+        match &file.body {
+            FileBody::Metadata(header) => (0..header_rows(header)).map(|_| Vec::new()).collect(),
+            FileBody::Unified(file) => {
+                let file_header_rows = file.git.as_ref().map_or(0, header_rows) + 2;
+                let mut rows = (0..file_header_rows)
                     .map(|_| Vec::new())
                     .collect::<Vec<_>>();
                 for hunk_index in 0..file.hunks.len() {
@@ -60,7 +63,7 @@ impl SyntaxHighlighter {
 
     pub fn highlight_hunk(
         &mut self,
-        file: &UnifiedDiffFile,
+        file: &UnifiedBody,
         hunk_index: usize,
     ) -> Vec<Vec<SyntaxSpan>> {
         self.highlight_hunk_observed(file, hunk_index, &mut Unobserved)
@@ -68,7 +71,7 @@ impl SyntaxHighlighter {
 
     fn highlight_hunk_observed(
         &mut self,
-        file: &UnifiedDiffFile,
+        file: &UnifiedBody,
         hunk_index: usize,
         observer: &mut impl Observer,
     ) -> Vec<Vec<SyntaxSpan>> {
@@ -79,8 +82,8 @@ impl SyntaxHighlighter {
         let mut spans = (0..hunk.records.len())
             .map(|_| Vec::new())
             .collect::<Vec<_>>();
-        let old_language = Language::for_header(&file.old_path);
-        let new_language = Language::for_header(&file.new_path);
+        let old_language = Language::for_header(&file.old.path);
+        let new_language = Language::for_header(&file.new.path);
         let (old_projection, new_projection) = observer.measure(Stage::Projection, |observer| {
             let old = Projection::from_hunk(file, hunk_index, Side::Old);
             let new = Projection::from_hunk(file, hunk_index, Side::New);
@@ -304,7 +307,7 @@ struct Projection {
 }
 
 impl Projection {
-    fn from_hunk(file: &UnifiedDiffFile, hunk_index: usize, side: Side) -> Option<Self> {
+    fn from_hunk(file: &UnifiedBody, hunk_index: usize, side: Side) -> Option<Self> {
         let hunk = file.hunks.get(hunk_index)?;
         let mut source = Vec::new();
         let mut records = Vec::new();
@@ -424,7 +427,7 @@ impl SyntaxClass {
 #[cfg(test)]
 mod tests {
     use super::{Projection, SyntaxClass, SyntaxHighlighter};
-    use crate::{document::DiffFile, parser::parse_unified_diff};
+    use crate::{document::FileBody, parser::parse_unified_diff};
     use tree_sitter::{InputEdit, Point};
 
     #[test]
@@ -457,7 +460,7 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n",
         )
         .expect("valid Rust diff");
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture should contain a unified file");
         };
         let mut highlighter = SyntaxHighlighter::default();
@@ -475,7 +478,7 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         )
         .expect("valid Rust diff with changing comment context");
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture should contain a unified file");
         };
         let mut highlighter = SyntaxHighlighter::default();
@@ -511,7 +514,7 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n",
         )
         .expect("valid Rust diff");
-        let DiffFile::Unified(file) = document.file(0).expect("first file") else {
+        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture should contain a unified file");
         };
         let new_projection =

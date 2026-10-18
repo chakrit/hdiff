@@ -20,27 +20,36 @@ pub enum FileIdentity {
     Unknown { header: String },
 }
 
+/// A Git section's `diff --git` line and the extended header lines after it.
+#[derive(Clone, Copy)]
+pub struct GitLines<'a> {
+    pub header: &'a SourceLine,
+    pub metadata: &'a [SourceLine],
+}
+
 impl FileIdentity {
-    /// A section with `---` / `+++` headers; `metadata` is empty outside Git and otherwise
-    /// starts with its `diff --git` line.
+    /// A section with `---` / `+++` headers, after its Git lines when it has them.
     pub fn of_unified(
-        metadata: &[SourceLine],
+        git: Option<GitLines<'_>>,
+        old_header: &SourceLine,
         old_path: &HeaderPath,
         new_path: &HeaderPath,
-        first_line: &SourceLine,
     ) -> Self {
-        let git_header = metadata.first();
+        let git_header = git.map(|git| git.header);
+        let metadata = git.map_or(&[][..], |git| git.metadata);
         let located = git_change(metadata)
             .and_then(|change| locate_unified(change, git_header, old_path, new_path));
 
+        let first_line = git_header.unwrap_or(old_header);
         Self::located_or_unknown(located, first_line)
     }
 
     /// A Git section without `---` / `+++` headers.
-    pub fn of_metadata(header: &SourceLine, lines: &[SourceLine]) -> Self {
-        let located = git_change(lines).and_then(|change| locate_metadata(change, header));
+    pub fn of_metadata(git: GitLines<'_>) -> Self {
+        let located =
+            git_change(git.metadata).and_then(|change| locate_metadata(change, git.header));
 
-        Self::located_or_unknown(located, header)
+        Self::located_or_unknown(located, git.header)
     }
 
     fn located_or_unknown(located: Option<(FileState, String)>, first_line: &SourceLine) -> Self {
@@ -284,7 +293,7 @@ mod tests {
         let document = parse_unified_diff(input.as_bytes()).expect("valid diff");
         let file = document.files().next().expect("one file");
 
-        file.identity().clone()
+        file.identity.clone()
     }
 
     fn path(state: FileState, path: &str) -> FileIdentity {

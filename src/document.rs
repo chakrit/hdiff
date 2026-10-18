@@ -1,11 +1,14 @@
+//! The parsed document: surrounding text and file diffs in input order. Contract:
+//! docs/spec/architecture.md#core-model.
+
 use crate::{
-    file_identity::{FileIdentity, HeaderPath},
+    file_identity::{FileIdentity, GitLines, HeaderPath},
     source_text::SourceLine,
 };
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
-    pub sections: Vec<Section>,
+    pub sections: Box<[Section]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,10 +38,6 @@ impl DiffDocument {
             Section::Text(lines) => lines.as_ref(),
             Section::File(_) => &[],
         })
-    }
-
-    pub fn file(&self, index: usize) -> Option<&DiffFile> {
-        self.files().nth(index)
     }
 
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
@@ -72,42 +71,57 @@ impl DiffDocument {
     }
 }
 
+/// One file's diff: which file it names, and its lines.
 #[derive(Debug, PartialEq, Eq)]
-pub enum DiffFile {
-    /// A Git section without unified headers: its `diff --git` line and the metadata
-    /// lines that follow it.
-    Metadata {
-        header: SourceLine,
-        lines: Vec<SourceLine>,
-        identity: FileIdentity,
-    },
-    Unified(Box<UnifiedDiffFile>),
+pub struct DiffFile {
+    pub identity: FileIdentity,
+    pub body: FileBody,
 }
 
-impl DiffFile {
-    pub fn identity(&self) -> &FileIdentity {
-        match self {
-            Self::Metadata { identity, .. } => identity,
-            Self::Unified(file) => &file.identity,
+#[derive(Debug, PartialEq, Eq)]
+pub enum FileBody {
+    /// A Git section without unified headers, such as a rename, mode change, or binary
+    /// change.
+    Metadata(GitHeader),
+    Unified(Box<UnifiedBody>),
+}
+
+/// A `diff --git` line and the extended header lines after it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct GitHeader {
+    pub line: SourceLine,
+    pub metadata: Box<[SourceLine]>,
+}
+
+impl GitHeader {
+    pub fn lines(&self) -> GitLines<'_> {
+        GitLines {
+            header: &self.line,
+            metadata: &self.metadata,
         }
     }
 }
 
+/// A section with `---` / `+++` headers and hunks, after its Git header when it has one.
 #[derive(Debug, PartialEq, Eq)]
-pub struct UnifiedDiffFile {
-    pub metadata: Vec<SourceLine>,
-    pub identity: FileIdentity,
-    pub old_path: HeaderPath,
-    pub new_path: HeaderPath,
-    pub old_header: SourceLine,
-    pub new_header: SourceLine,
-    pub hunks: Vec<Hunk>,
+pub struct UnifiedBody {
+    pub git: Option<GitHeader>,
+    pub old: FileHeader,
+    pub new: FileHeader,
+    pub hunks: Box<[Hunk]>,
+}
+
+/// A `---` or `+++` line and the path it names.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileHeader {
+    pub line: SourceLine,
+    pub path: HeaderPath,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Hunk {
     pub header: SourceLine,
-    pub records: Vec<Record>,
+    pub records: Box<[Record]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
