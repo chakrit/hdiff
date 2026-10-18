@@ -1,6 +1,8 @@
 //! The file list: top-level files first, then files under directory headings, each part
 //! in input order. Contract: docs/spec/architecture.md#file-tree.
 
+use std::num::NonZeroUsize;
+
 use crate::{
     document::FileView,
     file_identity::{FileIdentity, FileState},
@@ -42,17 +44,24 @@ impl TreeRowIndex {
         self.0
     }
 
-    /// The first row of the `height`-row window that ends at this row, or at the list's top.
-    pub fn window_start(self, height: usize) -> Self {
-        Self((self.0 + 1).saturating_sub(height))
-    }
+    /// The `height`-row window that ends at this row, or starts at the list's top when
+    /// this row is within the first `height` rows.
+    pub fn window(self, height: NonZeroUsize) -> RowWindow {
+        let selected_offset = self.0.min(height.get() - 1);
 
-    /// Rows from `first`, at or above this row, down to this row.
-    pub fn offset_from(self, first: Self) -> usize {
-        self.0
-            .checked_sub(first.0)
-            .expect("the window's first row is at or above this row")
+        RowWindow {
+            first: Self(self.0 - selected_offset),
+            selected_offset,
+        }
     }
+}
+
+/// A window of file-list rows that shows one selected row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RowWindow {
+    pub first: TreeRowIndex,
+    /// Rows from `first` down to the selected row.
+    pub selected_offset: usize,
 }
 
 /// A file in list order, with the tree row that shows it.
@@ -154,8 +163,30 @@ impl<'a> Placed<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ListedTree, TreeRow};
+    use std::num::NonZeroUsize;
+
+    use super::{ListedTree, RowWindow, TreeRow, TreeRowIndex};
     use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
+
+    #[test]
+    fn a_window_ends_at_its_selection_or_starts_at_the_top() {
+        let height = NonZeroUsize::new(3).expect("nonzero height");
+
+        assert_eq!(
+            TreeRowIndex(1).window(height),
+            RowWindow {
+                first: TreeRowIndex(0),
+                selected_offset: 1,
+            }
+        );
+        assert_eq!(
+            TreeRowIndex(7).window(height),
+            RowWindow {
+                first: TreeRowIndex(5),
+                selected_offset: 2,
+            }
+        );
+    }
 
     fn document(input: &str) -> DiffDocument {
         parse_patch(input.as_bytes()).expect("valid diff")

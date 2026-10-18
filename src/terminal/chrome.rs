@@ -1,6 +1,8 @@
 //! Frame chrome around the diff panes: the file list, the `? help` hint, separators, and
 //! continuity markers.
 
+use std::num::NonZeroUsize;
+
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -196,9 +198,13 @@ fn render_file_list(
 ) {
     let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
-    let height = usize::from(content.height);
+    let Some(height) = NonZeroUsize::new(usize::from(content.height)) else {
+        return;
+    };
+
+    let selection = selected_row.map(|row| row.window(height));
     // Without a selected row, the list shows from its top.
-    let first = selected_row.map_or(TreeRowIndex::FIRST, |row| row.window_start(height));
+    let first = selection.map_or(TreeRowIndex::FIRST, |window| window.first);
     let window = LineWindow {
         first: ScreenLines::new(first.get()),
         total: ScreenLines::new(tree.rows().len()),
@@ -207,7 +213,7 @@ fn render_file_list(
     let items = tree
         .rows_from(first)
         .iter()
-        .take(height)
+        .take(height.get())
         .map(|row| tree_item(row, palette));
     let file_list = List::new(items).highlight_style(
         Style::default()
@@ -215,7 +221,7 @@ fn render_file_list(
             .bg(palette.selected_file_background),
     );
     let mut state =
-        ListState::default().with_selected(selected_row.map(|row| row.offset_from(first)));
+        ListState::default().with_selected(selection.map(|window| window.selected_offset));
 
     frame.render_stateful_widget(file_list, content, &mut state);
     list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
