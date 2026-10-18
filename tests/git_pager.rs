@@ -6,6 +6,7 @@ use std::{
 };
 
 use common::{TestEnv, assert_trouble};
+use hdiff::shell_words;
 
 #[test]
 fn install_backs_up_and_configures_the_global_diff_pager() {
@@ -30,7 +31,7 @@ fn install_backs_up_and_configures_the_global_diff_pager() {
         original_config
     );
     let pager = configured_value(&env, "gitconfig", "pager.diff");
-    assert!(pager.contains(env!("CARGO_BIN_EXE_hdiff")));
+    assert_eq!(pager, shell_words::quote(env!("CARGO_BIN_EXE_hdiff")));
 }
 
 /// architecture.md#input-contract: `--install` prints the `cp` and `git config` commands

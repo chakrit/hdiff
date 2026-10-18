@@ -23,9 +23,10 @@ pub fn quote(word: &str) -> Cow<'_, str> {
     }
 }
 
-/// Characters that mean nothing to a POSIX shell outside a command's first word.
+/// Characters that mean nothing to a POSIX shell in any word, including a command name,
+/// where `=` makes an assignment and a leading `%` names a job.
 fn is_inert(character: char) -> bool {
-    character.is_ascii_alphanumeric() || "%+,-./:=@_".contains(character)
+    character.is_ascii_alphanumeric() || "+,-./:@_".contains(character)
 }
 
 #[cfg(test)]
@@ -39,6 +40,12 @@ mod tests {
         assert_eq!(quote(""), "''");
         assert_eq!(quote("it's"), r"'it'\''s'");
         assert_eq!(quote("$HOME"), "'$HOME'");
+    }
+
+    #[test]
+    fn quotes_words_that_change_meaning_as_a_command_name() {
+        assert_eq!(quote("x=y/hdiff"), "'x=y/hdiff'");
+        assert_eq!(quote("%1"), "'%1'");
     }
 
     #[test]
