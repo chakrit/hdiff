@@ -230,6 +230,12 @@ Other argument combinations fall through to operand selection, where `-r` is the
 option. hdiff has no general unknown-option rejection or `--` option terminator;
 unrecognized arguments are treated as paths, subject to the operand-count limit.
 
+### Error output
+
+Errors write their message to standard error with every line prefixed `hdiff: ` and exit
+with status 2, `diff`'s status for trouble. Unreadable files are named in the message;
+a failed comparison reports `diff`'s own standard error.
+
 ## Interaction model
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main

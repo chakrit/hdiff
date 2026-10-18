@@ -104,7 +104,7 @@ fn version_identifies_the_package_and_source_commit() {
 }
 
 #[test]
-fn profile_rejects_install_even_when_that_patch_filename_exists() {
+fn bench_rejects_install_even_when_that_patch_filename_exists() {
     let directory = tempfile::tempdir().expect("fixture directory");
     std::fs::write(
         directory.path().join("--install"),
@@ -268,7 +268,70 @@ fn patch_file_holding_only_text_is_an_error() {
     std::fs::write(&patch, "Binary files a and b differ\n").expect("text-only patch");
     let output = hdiff(patch.to_str().expect("fixture path is UTF-8"));
 
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("input contains no diff"));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "hdiff: line 1: input contains no diff\n"
+    );
+}
+
+#[test]
+fn usage_errors_name_the_program_on_one_stderr_line() {
+    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        .args(["a", "b", "c"])
+        .env_clear()
+        .env("PATH", TEST_PATH)
+        .output()
+        .expect("run hdiff with too many operands");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "hdiff: expected zero, one, or two operands\n"
+    );
+}
+
+#[test]
+fn failed_comparisons_report_each_diff_error_line() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        .args(["missing-before", "missing-after"])
+        .current_dir(directory.path())
+        .env_clear()
+        .env("PATH", TEST_PATH)
+        .output()
+        .expect("run comparison of missing files");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let lines = stderr.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2, "{stderr}");
+    assert!(
+        lines[0].starts_with("hdiff: diff: missing-before"),
+        "{stderr}"
+    );
+    assert!(
+        lines[1].starts_with("hdiff: diff: missing-after"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn unreadable_patch_files_are_named_in_the_error() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        .arg("missing.patch")
+        .current_dir(directory.path())
+        .env_clear()
+        .env("PATH", TEST_PATH)
+        .output()
+        .expect("run hdiff on a missing patch");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.starts_with("hdiff: missing.patch: "), "{stderr}");
+    assert_eq!(stderr.matches('\n').count(), 1, "{stderr}");
 }

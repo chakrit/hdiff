@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::{
-    input::InputSource,
+    input,
     interaction::ViewPreferences,
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
     prepared::PreparedDocument,
@@ -40,7 +40,7 @@ impl Driver {
     }
 
     /// Reads, parses, and prepares `source`, runs the driver, and returns its report.
-    pub fn run(self, source: InputSource) -> Result<String, Error> {
+    pub fn run(self, source: input::Source) -> Result<String, Error> {
         match self {
             Self::Prepare => {
                 let (startup, prepared) = prepare(source, &mut Unobserved)?;
@@ -95,14 +95,16 @@ struct Startup {
 }
 
 fn prepare(
-    source: InputSource,
+    source: input::Source,
     observer: &mut impl Observer,
 ) -> Result<(Startup, PreparedDocument), Error> {
     let started = Instant::now();
 
-    let input = source.read().map_err(Error::Input)?;
+    let input = source
+        .read()
+        .map_err(|error| Error::Input(error.to_string()))?;
     let input_finished = Instant::now();
-    let document = input.parse().map_err(Error::Parse)?;
+    let document = input.parse().map_err(|error| Error::Parse(error.message))?;
     let parse_finished = Instant::now();
     let prepared = PreparedDocument::prepare_observed(&document, observer);
     let ready = Instant::now();

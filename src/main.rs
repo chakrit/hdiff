@@ -1,61 +1,80 @@
 #![deny(warnings)]
 
-use hdiff::{actions, document, input, prepared, render, terminal};
+use std::{
+    env, fmt,
+    io::{self, IsTerminal},
+    process::ExitCode,
+};
 
-fn main() -> Result<(), String> {
-    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let stdin = input::StdinState::inspect().map_err(|error| error.to_string())?;
-    let command = input::select_command(&arguments, stdin).map_err(|error| error.0)?;
+use hdiff::{
+    actions::{
+        git_config::{GitConfigEnvironment, InstallGitDiffPager, InstallGitDiffPagerContext},
+        write_output::{OutputContext, WriteOutput},
+    },
+    bench,
+    cli::{self, Command, UsageError},
+    document::DiffDocument,
+    input::{self, StdinState},
+    parser::ParseError,
+    prepared::PreparedDocument,
+    render, terminal,
+};
 
-    match command {
-        input::Command::Help => write_stdout(input::HELP.as_bytes())?,
-        input::Command::Install => {
-            let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-            let mut context = actions::git_config::InstallGitDiffPagerContext {
-                environment: actions::git_config::GitConfigEnvironment::of_process(),
-            };
+/// The exit status for every error, following `diff`'s status for trouble.
+/// Contract: docs/spec/architecture.md#error-output.
+const ERROR_STATUS: u8 = 2;
 
-            let report = actions::git_config::InstallGitDiffPager { executable }
-                .run(&mut context)
-                .map_err(|error| error.to_string())?;
-            let output = format!("{}\n", report.completed_commands.join("\n"));
-            write_stdout(output.as_bytes())?;
-        }
-        input::Command::Version => write_stdout(input::VERSION.as_bytes())?,
-        input::Command::Bench { driver, source } => {
-            let report = driver.run(source).map_err(|error| error.to_string())?;
-            write_stdout(report.as_bytes())?;
-        }
-        input::Command::View { source } => view(source)?,
-    }
-
-    Ok(())
-}
-
-fn write_stdout(bytes: &[u8]) -> Result<(), String> {
-    let mut stdout = std::io::stdout();
-    let mut context = actions::write_output::OutputContext {
-        writer: &mut stdout,
+fn main() -> ExitCode {
+    let Err(error) = run() else {
+        return ExitCode::SUCCESS;
     };
 
-    actions::write_output::WriteOutput { bytes }
-        .run(&mut context)
-        .map_err(|error| error.to_string())
+    report(&error);
+    ExitCode::from(ERROR_STATUS)
 }
 
-fn view(source: input::InputSource) -> Result<(), String> {
-    let input = source.read()?;
-    if input.bytes().is_empty() {
+fn run() -> Result<(), RunError> {
+    let arguments = env::args_os().skip(1).collect::<Vec<_>>();
+    let stdin = StdinState::inspect()?;
+    let command = cli::select_command(&arguments, stdin)?;
+
+    match command {
+        Command::Help => write_stdout(cli::HELP.as_bytes()),
+        Command::Install => install(),
+        Command::Version => write_stdout(cli::VERSION.as_bytes()),
+        Command::Bench { driver, source } => {
+            let report = driver.run(source).map_err(RunError::Bench)?;
+            write_stdout(report.as_bytes())
+        }
+        Command::View { source } => view(source),
+    }
+}
+
+fn install() -> Result<(), RunError> {
+    let executable = env::current_exe().map_err(RunError::Executable)?;
+
+    let report = InstallGitDiffPager { executable }
+        .run(&mut InstallGitDiffPagerContext {
+            environment: GitConfigEnvironment::of_process(),
+        })
+        .map_err(RunError::Install)?;
+
+    let output = format!("{}\n", report.completed_commands.join("\n"));
+    write_stdout(output.as_bytes())
+}
+
+fn view(source: input::Source) -> Result<(), RunError> {
+    let content = source.read()?;
+    if content.bytes().is_empty() {
         return Ok(());
     }
 
-    let document = input.parse()?;
+    let document = content.parse()?;
     render_document(&document)
 }
 
-fn render_document(document: &document::DiffDocument) -> Result<(), String> {
-    let output_mode =
-        terminal::mode_for_output(std::io::IsTerminal::is_terminal(&std::io::stdout()));
+fn render_document(document: &DiffDocument) -> Result<(), RunError> {
+    let output_mode = terminal::mode_for_output(io::stdout().is_terminal());
 
     match output_mode {
         terminal::OutputMode::Finite => write_stdout(&render::render_unified(document)),
@@ -63,10 +82,85 @@ fn render_document(document: &document::DiffDocument) -> Result<(), String> {
             let Some(controlling_terminal) = terminal::open_controlling_terminal() else {
                 return write_stdout(&render::render_unified(document));
             };
-            let prepared = prepared::PreparedDocument::prepare(document);
-            terminal::run_interactive(controlling_terminal, prepared)
-                .map_err(|error| error.to_string())
+            let prepared = PreparedDocument::prepare(document);
+            terminal::run_interactive(controlling_terminal, prepared).map_err(RunError::Terminal)
         }
+    }
+}
+
+fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
+    WriteOutput { bytes }
+        .run(&mut OutputContext {
+            writer: &mut io::stdout(),
+        })
+        .map_err(RunError::Output)
+}
+
+/// Writes `error` to standard error with every line naming the program.
+fn report(error: &RunError) {
+    let message = error
+        .to_string()
+        .lines()
+        .map(|line| format!("hdiff: {line}\n"))
+        .collect::<String>();
+
+    let written = WriteOutput {
+        bytes: message.as_bytes(),
+    }
+    .run(&mut OutputContext {
+        writer: &mut io::stderr(),
+    });
+
+    // A failed error report has nowhere left to go; the exit status still reports failure.
+    match written {
+        Ok(()) | Err(_) => {}
+    }
+}
+
+#[derive(Debug)]
+enum RunError {
+    Usage(UsageError),
+    Input(input::Error),
+    Parse(ParseError),
+    Executable(io::Error),
+    Install(io::Error),
+    Bench(bench::Error),
+    Output(io::Error),
+    Terminal(io::Error),
+}
+
+impl fmt::Display for RunError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Usage(error) => write!(formatter, "{error}"),
+            Self::Input(error) => write!(formatter, "{error}"),
+            Self::Parse(error) => formatter.write_str(&error.message),
+            Self::Executable(error) => {
+                write!(formatter, "cannot locate the hdiff executable: {error}")
+            }
+            Self::Install(error) => write!(formatter, "--install: {error}"),
+            Self::Bench(error) => write!(formatter, "{error}"),
+            Self::Output(error) => write!(formatter, "standard output: {error}"),
+            Self::Terminal(error) => write!(formatter, "terminal: {error}"),
+        }
+    }
+}
+
+impl From<UsageError> for RunError {
+    fn from(error: UsageError) -> Self {
+        Self::Usage(error)
+    }
+}
+
+impl From<input::Error> for RunError {
+    fn from(error: input::Error) -> Self {
+        Self::Input(error)
+    }
+}
+
+impl From<ParseError> for RunError {
+    fn from(error: ParseError) -> Self {
+        Self::Parse(error)
     }
 }
 
