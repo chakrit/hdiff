@@ -11,71 +11,97 @@ pub struct DetailSpan {
     pub end: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChangedPairDetail {
     pub before: Vec<DetailSpan>,
     pub after: Vec<DetailSpan>,
 }
 
+/// One row's character-detail spans.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RowDetail {
+    pub row: usize,
+    pub spans: Vec<DetailSpan>,
+}
+
+/// The character detail of each `layout` row that has changed spans: a paired row marks
+/// the spans that differ from its peer, and an unmatched row is changed as a whole.
+pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
+    let payload = |row: usize| layout.diff_lines[row].payload();
+    let mut details = Vec::new();
+
+    for row in &layout.side_by_side_rows {
+        match row {
+            SideBySideRow::Paired { before, after } => {
+                let pair = changed_pair_detail(payload(*before), payload(*after));
+                details.push(RowDetail {
+                    row: *before,
+                    spans: pair.before,
+                });
+                details.push(RowDetail {
+                    row: *after,
+                    spans: pair.after,
+                });
+            }
+            SideBySideRow::BeforeOnly(row) | SideBySideRow::AfterOnly(row) => {
+                let mut spans = Vec::new();
+                add_span(&mut spans, 0, payload(*row).len());
+                details.push(RowDetail { row: *row, spans });
+            }
+            SideBySideRow::Shared(_) => {}
+        }
+    }
+
+    details.retain(|detail| detail.spans.iter().any(|span| span.start < span.end));
+    details
+}
+
+/// The spans that differ between a changed pair's payloads, found by diffing their
+/// tokens.
 pub fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
     let before_tokens = tokens(before);
     let after_tokens = tokens(after);
-    let changes = diff_slices(Algorithm::Myers, &before_tokens, &after_tokens);
+    let mut changes = diff_slices(Algorithm::Myers, &before_tokens, &after_tokens)
+        .into_iter()
+        .peekable();
     let mut before_offset = 0;
     let mut after_offset = 0;
-    let mut detail = ChangedPairDetail {
-        before: Vec::new(),
-        after: Vec::new(),
-    };
+    let mut detail = ChangedPairDetail::default();
 
-    let mut changes = changes.into_iter().peekable();
     while let Some((tag, tokens)) = changes.next() {
-        match tag {
+        let replacement = match tag {
             ChangeTag::Equal => {
                 let width = tokens_width(tokens);
                 before_offset += width;
                 after_offset += width;
+                continue;
             }
-            ChangeTag::Delete => {
-                let replacement = changes
-                    .next_if(|(next_tag, _)| *next_tag == ChangeTag::Insert)
-                    .map(|(_, replacement)| replacement);
-                add_replacement_detail(
-                    &mut detail,
-                    Some(tokens),
-                    replacement,
-                    before_offset,
-                    after_offset,
-                );
-                before_offset += tokens_width(tokens);
-                after_offset += replacement
-                    .as_ref()
-                    .map_or(0, |tokens| tokens_width(tokens));
-            }
-            ChangeTag::Insert => {
-                let replacement = changes
-                    .next_if(|(next_tag, _)| *next_tag == ChangeTag::Delete)
-                    .map(|(_, replacement)| replacement);
-                add_replacement_detail(
-                    &mut detail,
-                    replacement,
-                    Some(tokens),
-                    before_offset,
-                    after_offset,
-                );
-                before_offset += replacement
-                    .as_ref()
-                    .map_or(0, |tokens| tokens_width(tokens));
-                after_offset += tokens_width(tokens);
-            }
-        }
+            ChangeTag::Delete => match changes.next_if(|(next, _)| *next == ChangeTag::Insert) {
+                Some((_, inserted)) => Replacement::Replaced {
+                    deleted: tokens,
+                    inserted,
+                },
+                None => Replacement::Deleted(tokens),
+            },
+            ChangeTag::Insert => match changes.next_if(|(next, _)| *next == ChangeTag::Delete) {
+                Some((_, deleted)) => Replacement::Replaced {
+                    deleted,
+                    inserted: tokens,
+                },
+                None => Replacement::Inserted(tokens),
+            },
+        };
+        replacement.mark(&mut detail, before_offset, after_offset);
+        before_offset += replacement.deleted_width();
+        after_offset += replacement.inserted_width();
     }
 
     coalesce_tiny_equal_islands(&mut detail.before, before);
     coalesce_tiny_equal_islands(&mut detail.after, after);
-
     detail
 }
+
+// Tokens
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum TokenKind {
@@ -130,88 +156,87 @@ fn token_kind(character: char) -> TokenKind {
     }
 }
 
-fn add_replacement_detail(
-    detail: &mut ChangedPairDetail,
-    before: Option<&[Token<'_>]>,
-    after: Option<&[Token<'_>]>,
-    before_offset: usize,
-    after_offset: usize,
-) {
-    let Some(before_tokens) = before else {
-        let Some(after_tokens) = after else {
-            return;
-        };
-        add_span(&mut detail.after, after_offset, tokens_width(after_tokens));
-        return;
-    };
-    let Some(after_tokens) = after else {
-        add_span(
-            &mut detail.before,
-            before_offset,
-            tokens_width(before_tokens),
-        );
-        return;
-    };
-    let [before] = before_tokens else {
-        add_span(
-            &mut detail.before,
-            before_offset,
-            tokens_width(before_tokens),
-        );
-        add_span(&mut detail.after, after_offset, tokens_width(after_tokens));
-        return;
-    };
-    let [after] = after_tokens else {
-        add_span(
-            &mut detail.before,
-            before_offset,
-            tokens_width(before_tokens),
-        );
-        add_span(&mut detail.after, after_offset, tokens_width(after_tokens));
-        return;
-    };
-    if before.kind == TokenKind::Word
-        && after.kind == TokenKind::Word
-        && similar_words(before.text, after.text)
-    {
-        let detail_spans = grapheme_detail(before.text, after.text);
-        add_offset_spans(&mut detail.before, &detail_spans.before, before_offset);
-        add_offset_spans(&mut detail.after, &detail_spans.after, after_offset);
-        return;
-    }
-
-    add_span(&mut detail.before, before_offset, before.text.len());
-    add_span(&mut detail.after, after_offset, after.text.len());
-}
-
 fn tokens_width(tokens: &[Token<'_>]) -> usize {
     tokens.iter().map(|token| token.text.len()).sum()
 }
 
-fn similar_words(before: &str, after: &str) -> bool {
-    let before_graphemes = before.graphemes(true).collect::<Vec<_>>();
-    let after_graphemes = after.graphemes(true).collect::<Vec<_>>();
-    let common = diff_slices(Algorithm::Myers, &before_graphemes, &after_graphemes)
+// Replacements
+
+/// A run of changed tokens: deleted only, inserted only, or deleted and replaced.
+enum Replacement<'t, 'a> {
+    Deleted(&'t [Token<'a>]),
+    Inserted(&'t [Token<'a>]),
+    Replaced {
+        deleted: &'t [Token<'a>],
+        inserted: &'t [Token<'a>],
+    },
+}
+
+impl Replacement<'_, '_> {
+    /// Marks the changed text. A word replaced by one similar word marks only the
+    /// graphemes that differ; any other change is marked whole.
+    fn mark(&self, detail: &mut ChangedPairDetail, before_offset: usize, after_offset: usize) {
+        match self {
+            Self::Deleted(deleted) => {
+                add_span(&mut detail.before, before_offset, tokens_width(deleted));
+            }
+            Self::Inserted(inserted) => {
+                add_span(&mut detail.after, after_offset, tokens_width(inserted));
+            }
+            Self::Replaced { deleted, inserted } => match similar_word_detail(deleted, inserted) {
+                Some(words) => {
+                    add_offset_spans(&mut detail.before, &words.before, before_offset);
+                    add_offset_spans(&mut detail.after, &words.after, after_offset);
+                }
+                None => {
+                    add_span(&mut detail.before, before_offset, tokens_width(deleted));
+                    add_span(&mut detail.after, after_offset, tokens_width(inserted));
+                }
+            },
+        }
+    }
+
+    fn deleted_width(&self) -> usize {
+        match self {
+            Self::Deleted(deleted) | Self::Replaced { deleted, .. } => tokens_width(deleted),
+            Self::Inserted(_) => 0,
+        }
+    }
+
+    fn inserted_width(&self) -> usize {
+        match self {
+            Self::Inserted(inserted) | Self::Replaced { inserted, .. } => tokens_width(inserted),
+            Self::Deleted(_) => 0,
+        }
+    }
+}
+
+/// The graphemes that differ when one word replaces one similar word: one sharing at
+/// least half of the shorter word's graphemes. Any other replacement has none.
+fn similar_word_detail(deleted: &[Token<'_>], inserted: &[Token<'_>]) -> Option<ChangedPairDetail> {
+    let ([before], [after]) = (deleted, inserted) else {
+        return None;
+    };
+    if before.kind != TokenKind::Word || after.kind != TokenKind::Word {
+        return None;
+    }
+    let before_graphemes = before.text.graphemes(true).collect::<Vec<_>>();
+    let after_graphemes = after.text.graphemes(true).collect::<Vec<_>>();
+    let changes = diff_slices(Algorithm::Myers, &before_graphemes, &after_graphemes);
+
+    let common = changes
         .iter()
         .filter(|(tag, _)| *tag == ChangeTag::Equal)
         .map(|(_, graphemes)| graphemes.len())
         .sum::<usize>();
     let shortest = before_graphemes.len().min(after_graphemes.len());
+    if common.saturating_mul(2) < shortest {
+        return None;
+    }
 
-    common.saturating_mul(2) >= shortest
-}
-
-fn grapheme_detail(before: &str, after: &str) -> ChangedPairDetail {
-    let before_graphemes = before.graphemes(true).collect::<Vec<_>>();
-    let after_graphemes = after.graphemes(true).collect::<Vec<_>>();
-    let changes = diff_slices(Algorithm::Myers, &before_graphemes, &after_graphemes);
     let mut before_offset = 0;
     let mut after_offset = 0;
-    let mut detail = ChangedPairDetail {
-        before: Vec::new(),
-        after: Vec::new(),
-    };
-
+    let mut detail = ChangedPairDetail::default();
     for (tag, graphemes) in changes {
         let width = graphemes
             .iter()
@@ -232,8 +257,16 @@ fn grapheme_detail(before: &str, after: &str) -> ChangedPairDetail {
             }
         }
     }
+    Some(detail)
+}
 
-    detail
+// Spans
+
+fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
+    target.push(DetailSpan {
+        start,
+        end: start + width,
+    });
 }
 
 fn add_offset_spans(target: &mut Vec<DetailSpan>, spans: &[DetailSpan], offset: usize) {
@@ -260,52 +293,6 @@ fn coalesce_tiny_equal_islands(spans: &mut Vec<DetailSpan>, text: &str) {
     }
 
     *spans = coalesced;
-}
-
-fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
-    target.push(DetailSpan {
-        start,
-        end: start + width,
-    });
-}
-
-/// One row's character-detail spans.
-#[derive(Debug, PartialEq, Eq)]
-pub struct RowDetail {
-    pub row: usize,
-    pub spans: Vec<DetailSpan>,
-}
-
-/// The character detail of each `layout` row that has changed spans: a paired row marks
-/// the spans that differ from its peer, and an unmatched row is changed as a whole.
-pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
-    let payload = |row: usize| layout.diff_lines[row].payload();
-    let mut details = Vec::new();
-
-    for row in &layout.side_by_side_rows {
-        match row {
-            SideBySideRow::Paired { before, after } => {
-                let pair = changed_pair_detail(payload(*before), payload(*after));
-                details.push(RowDetail {
-                    row: *before,
-                    spans: pair.before,
-                });
-                details.push(RowDetail {
-                    row: *after,
-                    spans: pair.after,
-                });
-            }
-            SideBySideRow::BeforeOnly(row) | SideBySideRow::AfterOnly(row) => {
-                let mut spans = Vec::new();
-                add_span(&mut spans, 0, payload(*row).len());
-                details.push(RowDetail { row: *row, spans });
-            }
-            SideBySideRow::Shared(_) => {}
-        }
-    }
-
-    details.retain(|detail| detail.spans.iter().any(|span| span.start < span.end));
-    details
 }
 
 #[cfg(test)]
