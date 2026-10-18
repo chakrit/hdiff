@@ -21,44 +21,80 @@ const COLUMN_GAP: u16 = 3;
 const FRAME_WIDTH: u16 = 4;
 /// A border row above and below.
 const FRAME_HEIGHT: u16 = 2;
-const TWO_COLUMN_WIDTH: u16 = 2 * COLUMN_WIDTH + COLUMN_GAP + FRAME_WIDTH;
+
+/// How many columns of groups the popup lays out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Columns {
+    One,
+    Two,
+}
+
+impl Columns {
+    /// Two columns when they fit `width`, one otherwise.
+    fn of(width: u16) -> Self {
+        match width >= Self::Two.width() {
+            true => Self::Two,
+            false => Self::One,
+        }
+    }
+
+    fn count(self) -> u16 {
+        match self {
+            Self::One => 1,
+            Self::Two => 2,
+        }
+    }
+
+    fn groups_per_column(self) -> usize {
+        GROUPS.len().div_ceil(usize::from(self.count()))
+    }
+
+    /// The framed popup's width: its columns and the gaps between them.
+    fn width(self) -> u16 {
+        match self {
+            Self::One => COLUMN_WIDTH + FRAME_WIDTH,
+            Self::Two => 2 * COLUMN_WIDTH + COLUMN_GAP + FRAME_WIDTH,
+        }
+    }
+}
 
 /// The popup, centered over `area` and clipped to it: two columns of groups when they fit
 /// the width, one otherwise.
 pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let (column_count, groups_per_column) = match area.width >= TWO_COLUMN_WIDTH {
-        true => (2, GROUPS.len().div_ceil(2)),
-        false => (1, GROUPS.len()),
-    };
+    let columns = Columns::of(area.width);
     let styles = PopupStyles::of(theme);
-    let columns = GROUPS
-        .chunks(groups_per_column)
+    let group_columns = GROUPS
+        .chunks(columns.groups_per_column())
         .map(|groups| column_lines(groups, &styles))
         .collect::<Vec<_>>();
-    let tallest = columns.iter().map(Vec::len).max().unwrap_or(0);
+    let tallest = group_columns
+        .iter()
+        .map(Vec::len)
+        .max()
+        .expect("the keymap has groups");
 
-    let popup = popup_area(area, column_count, tallest);
+    let popup = popup_area(area, columns, tallest);
     let border = Block::bordered()
         .border_style(Style::default().fg(theme.chrome.separator))
         .padding(Padding::horizontal(1));
     let column_areas = Layout::horizontal(vec![
         Constraint::Length(COLUMN_WIDTH);
-        usize::from(column_count)
+        usize::from(columns.count())
     ])
     .spacing(COLUMN_GAP)
     .split(border.inner(popup));
 
     frame.render_widget(Clear, popup);
     frame.render_widget(border, popup);
-    for (lines, column_area) in columns.into_iter().zip(column_areas.iter()) {
+    for (lines, column_area) in group_columns.into_iter().zip(column_areas.iter()) {
         frame.render_widget(Paragraph::new(lines), *column_area);
     }
 }
 
-/// The framed popup of `column_count` columns, the tallest `tallest` lines, centered over
-/// `area` and clipped to it.
-fn popup_area(area: Rect, column_count: u16, tallest: usize) -> Rect {
-    let width = column_count * COLUMN_WIDTH + (column_count - 1) * COLUMN_GAP + FRAME_WIDTH;
+/// The framed popup of `columns`, the tallest `tallest` lines, centered over `area` and
+/// clipped to it.
+fn popup_area(area: Rect, columns: Columns, tallest: usize) -> Rect {
+    let width = columns.width();
     let height =
         u16::try_from(tallest).expect("the keymap fits a terminal's height") + FRAME_HEIGHT;
 

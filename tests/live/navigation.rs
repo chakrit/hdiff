@@ -1,9 +1,13 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    preferences::{DiffLayout, ViewPreferences},
-    terminal::Step,
+    parser::parse_patch,
+    preferences::{DiffGranularity, DiffLayout, FileList},
+    prepared::PreparedDocument,
+    terminal::{Step, Tui},
+    theme::ColorDepth,
 };
+use ratatui::layout::Size;
 
 use crate::{
     fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
@@ -245,11 +249,21 @@ fn context_changes_keep_the_middle_row() {
     assert_eq!(live.rows()[middle_line], middle, "- keeps the middle row");
 }
 
+/// A session starts in unified line mode. architecture.md (Interaction model): the file list
+/// starts shown; (View model) three context records show on either side of a change.
 #[test]
 fn preferences_start_in_unified_line_mode() {
-    let live = Live::load(MIXED_LANGUAGES, Mode::line(DiffLayout::Unified));
+    let tui = Tui::new(
+        PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
+        Size::new(WIDTH, HEIGHT),
+        ColorDepth::TrueColor,
+    );
+    let start = tui.preferences();
 
-    assert_eq!(live.tui.preferences(), ViewPreferences::INITIAL);
+    assert_eq!(start.layout, DiffLayout::Unified);
+    assert_eq!(start.granularity, DiffGranularity::Line);
+    assert_eq!(start.file_list, FileList::Shown);
+    assert_eq!(start.context_lines, 3);
 }
 
 /// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,

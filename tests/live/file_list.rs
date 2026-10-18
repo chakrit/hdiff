@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 
 use crate::{
-    fixtures::{TREE_PATCH, paired_patch},
+    fixtures::{TREE_PATCH, files_in_directories, many_files, paired_patch},
     harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
 };
 
@@ -11,12 +11,7 @@ matrix!(file_list_toggle);
 
 #[test]
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
-    let patch = (0..40)
-        .map(|file| {
-            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
-        })
-        .collect::<String>();
-    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
+    let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
 
     for _ in 0..36 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -126,12 +121,7 @@ fn colors_markers_by_state() {
 
 #[test]
 fn marks_files_beyond_the_file_list() {
-    let patch = (0..40)
-        .map(|file| {
-            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
-        })
-        .collect::<String>();
-    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
+    let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
     let markers = |live: &Live| {
         let list = live.file_list().join("");
         (list.matches('▴').count(), list.matches('▾').count())
@@ -154,13 +144,7 @@ fn marks_files_beyond_the_file_list() {
 
 #[test]
 fn keeps_a_selection_below_its_headings_visible() {
-    let patch = (0..30)
-        .map(|file| {
-            let path = format!("dir_{file:02}/file_{file:02}.rs");
-            format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
-        })
-        .collect::<String>();
-    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
+    let mut live = Live::load(&files_in_directories(30), Mode::line(DiffLayout::Unified));
 
     for _ in 0..20 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));

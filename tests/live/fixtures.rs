@@ -5,6 +5,25 @@ pub const MIXED_LANGUAGES: &str = include_str!("../fixtures/mixed-language-layou
 pub const INDENTED: &str = "--- a/indent.rs\n+++ b/indent.rs\n@@ -1 +1,3 @@\n-removed\n\
                         +added_flush\n+    added_spaces\n+\tadded_tab\n";
 
+/// `count` one-change files, `file_00.rs` onward, at the top level.
+pub fn many_files(count: usize) -> String {
+    (0..count)
+        .map(|file| {
+            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
+        })
+        .collect()
+}
+
+/// `count` one-change files, each `file_NN.rs` in its own `dir_NN/` directory.
+pub fn files_in_directories(count: usize) -> String {
+    (0..count)
+        .map(|file| {
+            let path = format!("dir_{file:02}/file_{file:02}.rs");
+            format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
+        })
+        .collect()
+}
+
 /// 200 added rows with one row wider than every pane.
 pub fn long_patch() -> String {
     let rows = (0..200)
