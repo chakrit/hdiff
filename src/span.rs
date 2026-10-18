@@ -51,8 +51,8 @@ impl PayloadSpan {
     /// that ends no earlier.
     pub fn through(self, later: Self) -> Self {
         assert!(
-            self.start <= later.end,
-            "a payload span starts before it ends"
+            later.end >= self.end,
+            "a payload span extends only through a span that ends no earlier"
         );
 
         Self {
