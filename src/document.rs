@@ -92,15 +92,17 @@ pub struct DiffFile {
 }
 
 impl DiffFile {
-    /// One value for each of the file's records, built hunk by hunk from `values`; a
-    /// file without hunks maps no records.
+    /// The values `entries` gives each of the file's records, gathered hunk by hunk: a
+    /// record no entry names maps to no values, and a file without hunks maps no records.
     ///
-    /// Panics when `values` gives a hunk a different number of values than it has
-    /// records.
-    pub fn record_map<T>(
+    /// Panics when an entry names a position outside the hunk it was given for.
+    pub fn record_map<E, Entries>(
         &self,
-        mut values: impl FnMut(&UnifiedBody, &Hunk) -> Box<[T]>,
-    ) -> RecordMap<T> {
+        mut entries: impl FnMut(&UnifiedBody, &Hunk) -> Entries,
+    ) -> RecordMap<Vec<E>>
+    where
+        Entries: IntoIterator<Item = (RecordPosition, E)>,
+    {
         let FileBody::Unified(body) = &self.body else {
             return RecordMap::empty();
         };
@@ -109,13 +111,15 @@ impl DiffFile {
             .hunks
             .iter()
             .map(|hunk| {
-                let hunk_values = values(body, hunk);
-                assert_eq!(
-                    hunk_values.len(),
-                    hunk.records.len(),
-                    "one value for each record of the hunk"
-                );
-                hunk_values
+                let mut values = hunk
+                    .records
+                    .iter()
+                    .map(|_| Vec::new())
+                    .collect::<Box<[_]>>();
+                for (position, entry) in entries(body, hunk) {
+                    values[position.0].push(entry);
+                }
+                values
             })
             .collect();
 
@@ -144,6 +148,27 @@ pub struct UnifiedBody {
 pub struct Hunk {
     pub header: SourceLine,
     pub records: Box<[Record]>,
+}
+
+impl Hunk {
+    /// The hunk's records, each with its position among them.
+    pub fn positioned_records(&self) -> impl Iterator<Item = (RecordPosition, &Record)> {
+        self.records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| (RecordPosition(index), record))
+    }
+}
+
+/// A record's position among its hunk's records. Only [`Hunk::positioned_records`] hands
+/// positions out, so a position names a record of the hunk it came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordPosition(usize);
+
+impl RecordPosition {
+    pub fn get(self) -> usize {
+        self.0
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
