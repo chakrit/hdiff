@@ -249,7 +249,8 @@ minimum layout shows the hint row and one content line in each diff pane.
 The selected layout is never silently replaced by another layout.
 
 `?` opens a centered, bordered popup over the diff that lists every shortcut. While it is
-open, `?`, `Esc`, and `q` close it, `q` without exiting, and every other key does nothing;
+open, `?`, `Esc`, and `q` close it, `q` without exiting, `Ctrl-C` exits, and every other
+key does nothing;
 closing it restores the view. The pager-first model and live shortcut-driven settings are
 settled product requirements.
 

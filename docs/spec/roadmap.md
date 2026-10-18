@@ -123,8 +123,8 @@ implementation remains unapproved.
 
    Human check: in every layout, hide and show the file list with `e` and confirm the diff
    widens and narrows while the middle line stays put; confirm the hint row stays on the
-   bottom row; open the popup with `?`, confirm other keys do nothing, and close it with
-   `?`, `Esc`, and `q` without exiting.
+   bottom row; open the popup with `?`, confirm other keys except `Ctrl-C` do nothing, and
+   close it with `?`, `Esc`, and `q` without exiting.
 
 2. Add implicit Tree-sitter semantic strategies with textual fallback.
 

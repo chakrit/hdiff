@@ -34,7 +34,7 @@ pub enum KeymapPopup {
 
 impl KeymapPopup {
     /// The input this popup lets through: while open, only its close keys act, all closing
-    /// it, and resizes still apply.
+    /// it, and interrupts and resizes still apply.
     pub fn admit(self, input: Input) -> Option<Input> {
         match (self, input) {
             (Self::Closed, Input::CloseKeymap) => None,
@@ -42,7 +42,7 @@ impl KeymapPopup {
             (Self::Open, Input::OpenKeymap | Input::CloseKeymap | Input::Quit) => {
                 Some(Input::CloseKeymap)
             }
-            (Self::Open, input @ Input::Resize { .. }) => Some(input),
+            (Self::Open, input @ (Input::Interrupt | Input::Resize { .. })) => Some(input),
             (Self::Open, _) => None,
         }
     }
@@ -845,9 +845,9 @@ mod tests {
     }
 
     /// architecture.md (Interaction model): while the keymap popup is open, `?`, `Esc`,
-    /// and `q` close it without exiting, and every other key does nothing.
+    /// and `q` close it without exiting, `Ctrl-C` exits, and every other key does nothing.
     #[test]
-    fn admits_only_closing_keys_and_resizes_while_the_keymap_is_open() {
+    fn admits_only_closing_keys_interrupts_and_resizes_while_the_keymap_is_open() {
         let open = KeymapPopup::Open;
         let resize = || Input::Resize {
             width: 80,
@@ -862,10 +862,10 @@ mod tests {
             Input::NextFile,
             Input::NextLayout,
             Input::ToggleFileList,
-            Input::Interrupt,
         ] {
             assert_eq!(open.admit(ignored), None);
         }
+        assert_eq!(open.admit(Input::Interrupt), Some(Input::Interrupt));
         assert_eq!(open.admit(resize()), Some(resize()));
         assert_eq!(KeymapPopup::Closed.admit(Input::Quit), Some(Input::Quit));
         assert_eq!(KeymapPopup::Closed.admit(Input::CloseKeymap), None);

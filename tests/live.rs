@@ -942,7 +942,8 @@ fn file_list_toggle(mode: Mode) {
 }
 
 /// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,
-/// `?`, `Esc`, and `q` close it without exiting, and every other key does nothing.
+/// `?`, `Esc`, and `q` close it without exiting, `Ctrl-C` exits, and every other key does
+/// nothing.
 fn keymap_popup(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     let start = live.buffer();
@@ -959,7 +960,6 @@ fn keymap_popup(mode: Mode) {
         for key in ['j', 'G', 'v', 'c', 'w', '+', 'e', 'x'] {
             assert_eq!(live.press(key), Step::Continue);
         }
-        assert_eq!(live.send(interrupt), Step::Continue);
         assert_eq!(live.buffer(), open, "other keys do nothing while open");
         assert_eq!(live.tui.preferences().layout, mode.layout);
 
@@ -970,4 +970,11 @@ fn keymap_popup(mode: Mode) {
     live.press('?');
     live.send(escape);
     assert_eq!(live.buffer(), start, "Esc closes the popup");
+
+    live.press('?');
+    assert_eq!(
+        live.send(interrupt),
+        Step::Exit,
+        "Ctrl-C exits from the popup"
+    );
 }
