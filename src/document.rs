@@ -115,15 +115,17 @@ impl DiffFile {
             .hunks
             .iter()
             .map(|hunk| {
-                let mut values = hunk
-                    .records
-                    .iter()
-                    .map(|_| Vec::new())
-                    .collect::<Box<[_]>>();
-                for (position, entry) in entries(&body.headers, HunkRecords::of(hunk)) {
-                    values[position.index].push(entry);
-                }
-                values
+                hunk.with_records(|records| {
+                    let mut values = hunk
+                        .records
+                        .iter()
+                        .map(|_| Vec::new())
+                        .collect::<Box<[_]>>();
+                    for (position, entry) in entries(&body.headers, records) {
+                        values[position.index].push(entry);
+                    }
+                    values
+                })
             })
             .collect();
 
@@ -164,6 +166,14 @@ pub struct Hunk {
     pub records: Box<[Record]>,
 }
 
+impl Hunk {
+    /// `visit` applied to the hunk's records under a fresh brand, so the positions it
+    /// sees can only name records of this hunk and cannot leave the call.
+    pub fn with_records<T>(&self, visit: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+        visit(HunkRecords::of(self))
+    }
+}
+
 /// A hunk with its place among its file's hunks.
 #[derive(Clone, Copy)]
 pub struct AddressedHunk<'a> {
@@ -183,7 +193,7 @@ impl<'a> AddressedHunk<'a> {
     }
 }
 
-/// One hunk's records under the brand `'h` of a single [`DiffFile::record_map`] call.
+/// One hunk's records under the brand `'h` of a single [`Hunk::with_records`] call.
 #[derive(Clone, Copy)]
 pub struct HunkRecords<'a, 'h> {
     hunk: &'a Hunk,

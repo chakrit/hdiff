@@ -631,16 +631,11 @@ mod tests {
     fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
         let document = parse_patch(patch).expect("valid diff");
         let file = document.files().next().expect("first file");
-        let mut test = Some(test);
-        let mut result = None;
+        let FileBody::Unified(body) = &file.body else {
+            panic!("fixture should contain a unified file");
+        };
 
-        file.record_map::<()>(|_, hunk| {
-            if let Some(test) = test.take() {
-                result = Some(test(hunk));
-            }
-            Vec::new()
-        });
-        result.expect("fixture should contain a unified file with a hunk")
+        body.hunks.first().expect("first hunk").with_records(test)
     }
 
     /// `test` applied to the new-side projection of a hunk adding `lines`.
