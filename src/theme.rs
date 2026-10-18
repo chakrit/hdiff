@@ -262,8 +262,6 @@ static BASIC: Theme = Theme {
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
-
     use ratatui::style::Color;
 
     use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
@@ -299,16 +297,15 @@ mod tests {
         }
     }
 
-    /// Every color depth, from the deepest down; each depth names the next in an
-    /// exhaustive match, so a new depth does not compile until the walk visits it.
-    fn every_depth() -> impl Iterator<Item = ColorDepth> {
-        let next = |depth: &ColorDepth| match depth {
-            ColorDepth::TrueColor => Some(ColorDepth::Indexed),
-            ColorDepth::Indexed => Some(ColorDepth::Basic),
-            ColorDepth::Basic => None,
-        };
+    /// Every depth a session can draw with: `from_color_count` is the only constructor a
+    /// session uses, so its image over every color count is every reachable depth.
+    fn every_depth() -> Vec<ColorDepth> {
+        let mut depths = (0..=u16::MAX)
+            .map(ColorDepth::from_color_count)
+            .collect::<Vec<_>>();
+        depths.dedup();
 
-        iter::successors(Some(ColorDepth::TrueColor), next)
+        depths
     }
 
     /// Every color of `theme`; destructured so a new color cannot be left out.
