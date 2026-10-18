@@ -19,7 +19,7 @@ use crate::{
     interaction::{Command, Movement},
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
     parser::ParseError,
-    preferences::{PreferenceChange, ViewPreferences},
+    preferences::PreferenceChange,
     prepared::PreparedDocument,
     terminal::{self, Tui},
     theme::ColorDepth,
@@ -248,26 +248,11 @@ const MOVEMENTS: [Movement; 4] = [
 ];
 const MOVEMENT_ROUNDS: usize = 4;
 
-/// A change that cycles one preference, and how to tell the cycle has come back around.
-struct ModeCycle {
-    change: PreferenceChange,
-    same: fn(ViewPreferences, ViewPreferences) -> bool,
-}
-
-/// Every preference the movement driver crosses, outermost first.
-const MODE_CYCLES: [ModeCycle; 3] = [
-    ModeCycle {
-        change: PreferenceChange::ToggleWrapping,
-        same: |a, b| a.wrapping == b.wrapping,
-    },
-    ModeCycle {
-        change: PreferenceChange::NextLayout,
-        same: |a, b| a.layout == b.layout,
-    },
-    ModeCycle {
-        change: PreferenceChange::ToggleGranularity,
-        same: |a, b| a.granularity == b.granularity,
-    },
+/// Every preference change the movement driver cycles through, outermost first.
+const MODE_CYCLES: [PreferenceChange; 3] = [
+    PreferenceChange::ToggleWrapping,
+    PreferenceChange::NextLayout,
+    PreferenceChange::ToggleGranularity,
 ];
 
 fn movement(prepared: PreparedDocument) -> io::Result<String> {
@@ -285,18 +270,19 @@ fn movement(prepared: PreparedDocument) -> io::Result<String> {
 }
 
 /// Measures movement once per combination of the modes `cycles` step through. Each cycle
-/// presses its key after every visit until its preference returns to where it started, so
-/// the visits cover every mode without restating how many there are.
+/// presses its key after every visit until the preferences return to where they started.
+/// Every inner cycle has come back around by then, so the visits cover every mode without
+/// restating how many there are or which preference each change moves.
 fn visit_modes<B: Backend>(
     tui: &mut Tui,
     terminal: &mut Terminal<B>,
-    cycles: &[ModeCycle],
+    cycles: &[PreferenceChange],
     report: &mut String,
 ) -> Result<(), B::Error> {
-    let [cycle, inner @ ..] = cycles else {
+    let [change, inner @ ..] = cycles else {
         return measure_movement(tui, terminal, report);
     };
-    let key = bound_character(Command::Preference(cycle.change));
+    let key = bound_character(Command::Preference(*change));
     let start = tui.preferences();
 
     loop {
@@ -304,11 +290,12 @@ fn visit_modes<B: Backend>(
         let before = tui.preferences();
         tui.step(terminal, key_event(key))?;
 
-        assert!(
-            !(cycle.same)(tui.preferences(), before),
+        assert_ne!(
+            tui.preferences(),
+            before,
             "{key} must change the preference it cycles"
         );
-        if (cycle.same)(tui.preferences(), start) {
+        if tui.preferences() == start {
             return Ok(());
         }
     }
