@@ -226,17 +226,14 @@ fn write_preparation(
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     report.push_str("profile version=1\n");
 
-    for parent in Parent::ALL {
+    for (parent, children) in Stage::families() {
         let total = match parent {
             Parent::Preparation => preparation,
             Parent::Syntax => profile.duration(Stage::Syntax),
         };
-        let children = Stage::ALL
-            .into_iter()
-            .filter(|stage| stage.parent() == parent);
 
         let mut attributed = Duration::ZERO;
-        for stage in children {
+        for &stage in children {
             let duration = profile.duration(stage);
             attributed += duration;
             write_stage(report, stage.label(), parent, duration);

@@ -7,7 +7,6 @@ use std::{
 };
 
 use common::{TestEnv, assert_trouble, fixture};
-use hdiff::bench::Driver;
 
 fn hdiff(arguments: &[&str]) -> Output {
     TestEnv::new()
@@ -65,7 +64,7 @@ fn compare(env: &TestEnv, arguments: &[&str]) -> String {
 fn help_describes_the_cli_without_reading_diff_input() {
     let help = hdiff(&["--help"]);
     let text = String::from_utf8(help.stdout).expect("help is UTF-8");
-    let drivers = Driver::ALL.map(Driver::label);
+    let drivers = ["prepare", "stages", "movement"];
 
     assert!(help.status.success());
     assert!(help.stderr.is_empty());

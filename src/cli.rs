@@ -158,7 +158,7 @@ fn operand(argument: &OsStr) -> Operand {
 #[cfg(test)]
 mod tests {
     use super::{
-        Comparison, Depth, Driver, HELP, Invocation, Operand, Source, StdinState, UsageError,
+        Comparison, Depth, Driver, Invocation, Operand, Source, StdinState, UsageError,
         select_input, select_invocation,
     };
     use std::{ffi::OsString, path::PathBuf};
@@ -256,13 +256,6 @@ mod tests {
             invocation_unpiped(&["--bench", "a.patch"].map(OsString::from)),
             Err(UsageError::UnknownBenchDriver(OsString::from("a.patch")))
         );
-    }
-
-    #[test]
-    fn help_names_every_bench_driver() {
-        for driver in Driver::ALL {
-            assert!(HELP.contains(driver.label()), "{}", driver.label());
-        }
     }
 
     #[test]

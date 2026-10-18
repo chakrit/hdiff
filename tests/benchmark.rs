@@ -7,10 +7,9 @@ use std::{
 };
 
 use common::{TestEnv, assert_trouble};
-use hdiff::{
-    bench::Driver,
-    measurement::{Parent, Stage},
-};
+
+/// performance.md#benchmark-drivers: the drivers `--bench` accepts.
+const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
@@ -82,16 +81,15 @@ fn stage_record(line: &str) -> ((&str, &str), u128) {
     ((parent, name), duration)
 }
 
-/// Every stage under its parent, plus each parent's unattributed remainder.
+/// performance.md#stages: every stage under its parent, plus each parent's unattributed
+/// remainder.
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
-    let stages = Stage::ALL
-        .into_iter()
-        .map(|stage| (stage.parent().label(), stage.label()));
-    let remainders = Parent::ALL
-        .into_iter()
-        .map(|parent| (parent.label(), "unattributed"));
+    let preparation =
+        ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));
+    let syntax =
+        ["language", "projection", "parse", "query", "unattributed"].map(|name| ("syntax", name));
 
-    stages.chain(remainders).collect()
+    preparation.into_iter().chain(syntax).collect()
 }
 
 #[test]
@@ -131,16 +129,15 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
 
 #[test]
 fn malformed_input_never_emits_success_measurements() {
-    for driver in Driver::ALL {
-        let output = run(driver.label(), "not a patch\n");
+    for driver in DRIVERS {
+        let output = run(driver, "not a patch\n");
 
         assert_trouble(&output);
         assert!(output.stdout.is_empty());
         assert_eq!(
             String::from_utf8_lossy(&output.stderr),
             "hdiff: input contains no diff\n",
-            "{}",
-            driver.label()
+            "{driver}"
         );
     }
 }

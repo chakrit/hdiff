@@ -13,17 +13,16 @@ pub enum Stage {
 }
 
 impl Stage {
-    /// Every stage, in report order.
-    pub const ALL: [Self; 8] = [
-        Self::Labels,
-        Self::Layout,
-        Self::Syntax,
-        Self::Detail,
-        Self::Language,
-        Self::Projection,
-        Self::Parse,
-        Self::Query,
-    ];
+    /// Every stage, in report order, read from the one field each stage has in
+    /// [`ByStage`], so a stage cannot exist without appearing here.
+    pub const ALL: [Self; 8] = ByStage::STAGES.into_array();
+
+    /// The stages grouped under their parents, in report order.
+    pub fn families() -> impl Iterator<Item = (Parent, &'static [Stage])> {
+        Self::ALL
+            .chunk_by(|stage, next| stage.parent() == next.parent())
+            .map(|stages| (stages[0].parent(), stages))
+    }
 
     pub const fn label(self) -> &'static str {
         match self {
@@ -55,9 +54,6 @@ pub enum Parent {
 }
 
 impl Parent {
-    /// Every parent, in report order.
-    pub const ALL: [Self; 2] = [Self::Preparation, Self::Syntax];
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::Preparation => "preparation",
@@ -93,13 +89,13 @@ impl Observer for Unobserved {
 /// Accumulated stage durations and work counts from one observed preparation.
 #[derive(Default)]
 pub struct Profile {
-    durations: StageDurations,
+    durations: ByStage<Duration>,
     work: WorkCounts,
 }
 
 impl Profile {
     pub fn duration(&self, stage: Stage) -> Duration {
-        *self.durations.slot(stage)
+        *self.durations.get(stage)
     }
 
     pub fn work(&self) -> &WorkCounts {
@@ -111,7 +107,7 @@ impl Observer for Profile {
     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
         let started = Instant::now();
         let result = operation(self);
-        *self.durations.slot_mut(stage) += started.elapsed();
+        *self.durations.get_mut(stage) += started.elapsed();
         result
     }
 
@@ -133,21 +129,56 @@ pub struct WorkCounts {
     pub projected_bytes: usize,
 }
 
-/// One accumulated duration per stage; a new stage does not compile until it has a slot.
+/// One value per stage. A new stage does not compile until it has a field here, a
+/// `get` arm, a value in [`ByStage::STAGES`], and a place in [`ByStage::into_array`].
 #[derive(Default)]
-struct StageDurations {
-    labels: Duration,
-    layout: Duration,
-    syntax: Duration,
-    detail: Duration,
-    language: Duration,
-    projection: Duration,
-    parse: Duration,
-    query: Duration,
+struct ByStage<T> {
+    labels: T,
+    layout: T,
+    syntax: T,
+    detail: T,
+    language: T,
+    projection: T,
+    parse: T,
+    query: T,
 }
 
-impl StageDurations {
-    fn slot(&self, stage: Stage) -> &Duration {
+impl ByStage<Stage> {
+    /// Each field holding its own stage.
+    const STAGES: Self = Self {
+        labels: Stage::Labels,
+        layout: Stage::Layout,
+        syntax: Stage::Syntax,
+        detail: Stage::Detail,
+        language: Stage::Language,
+        projection: Stage::Projection,
+        parse: Stage::Parse,
+        query: Stage::Query,
+    };
+}
+
+impl<T: Copy> ByStage<T> {
+    /// The values in report order.
+    const fn into_array(self) -> [T; 8] {
+        let Self {
+            labels,
+            layout,
+            syntax,
+            detail,
+            language,
+            projection,
+            parse,
+            query,
+        } = self;
+
+        [
+            labels, layout, syntax, detail, language, projection, parse, query,
+        ]
+    }
+}
+
+impl<T> ByStage<T> {
+    fn get(&self, stage: Stage) -> &T {
         match stage {
             Stage::Labels => &self.labels,
             Stage::Layout => &self.layout,
@@ -160,7 +191,7 @@ impl StageDurations {
         }
     }
 
-    fn slot_mut(&mut self, stage: Stage) -> &mut Duration {
+    fn get_mut(&mut self, stage: Stage) -> &mut T {
         match stage {
             Stage::Labels => &mut self.labels,
             Stage::Layout => &mut self.layout,
@@ -171,5 +202,34 @@ impl StageDurations {
             Stage::Parse => &mut self.parse,
             Stage::Query => &mut self.query,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::{ByStage, Parent, Stage};
+
+    #[test]
+    fn every_stage_holds_its_own_field() {
+        let distinct = Stage::ALL
+            .iter()
+            .map(|stage| stage.label())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(distinct.len(), Stage::ALL.len());
+        for stage in Stage::ALL {
+            assert_eq!(*ByStage::STAGES.get(stage), stage);
+        }
+    }
+
+    #[test]
+    fn each_parent_owns_one_contiguous_family() {
+        let parents = Stage::families()
+            .map(|(parent, _)| parent)
+            .collect::<Vec<_>>();
+
+        assert_eq!(parents, [Parent::Preparation, Parent::Syntax]);
     }
 }
