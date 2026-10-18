@@ -1,4 +1,5 @@
 //! The file list: its order, selection, markers, and showing and hiding it.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 

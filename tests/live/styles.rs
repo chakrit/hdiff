@@ -1,5 +1,6 @@
 //! How rows look: change backgrounds and dimming, alignment peers, syntax and character
 //! detail colors, hunk headers, and continuity markers.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 use ratatui::{

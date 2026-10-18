@@ -1,4 +1,5 @@
 //! Indentation, continuity markers, frames, and the minimum layout.
+
 use hdiff::preferences::DiffLayout;
 
 use crate::{

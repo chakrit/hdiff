@@ -1,5 +1,6 @@
 //! Where a frame puts its parts: the file list, separators, diff panes, the help box, and
 //! surrounding text.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;

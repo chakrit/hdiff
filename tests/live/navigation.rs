@@ -1,4 +1,5 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
+
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     parser::parse_patch,

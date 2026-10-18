@@ -1,4 +1,5 @@
 //! Row wrapping and the positions it keeps.
+
 use hdiff::preferences::DiffLayout;
 
 use crate::{
