@@ -3,6 +3,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
+    effective_view::EffectiveView,
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout},
     prepared::PreparedDocument,
@@ -164,6 +165,14 @@ impl Live {
             .iter()
             .filter(|row| change_label(row).is_some_and(|label| label.starts_with("old_")))
             .count()
+    }
+
+    /// The screen row of the diff pane's middle line, where anchored rows stay: the pane's
+    /// first content line plus half the lines the current view gives each diff pane.
+    pub fn pane_middle_line(&self) -> usize {
+        let screen = self.terminal.backend().buffer().area.as_size();
+        let view = EffectiveView::of(self.tui.preferences(), screen);
+        FIRST_CONTENT_LINE + view.pane_content().height.half().get()
     }
 
     /// Cell position of the first occurrence of `text`.

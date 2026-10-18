@@ -241,7 +241,7 @@ fn context_changes_keep_the_middle_row() {
         live.press('j');
     }
     // architecture.md: context changes keep the middle row on the middle line.
-    let middle_line = usize::from(HEIGHT / 2);
+    let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
 
     live.press('+');

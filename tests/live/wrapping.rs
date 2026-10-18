@@ -4,7 +4,7 @@ use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::long_patch,
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, diff_pane},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, diff_pane},
 };
 
 matrix!(wrapping);
@@ -101,7 +101,7 @@ fn toggling_wrapping_keeps_the_middle_row() {
         live.press('j');
     }
     // architecture.md: toggling wrapping keeps the middle row on the middle line.
-    let middle_line = usize::from(HEIGHT / 2);
+    let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
 
     live.press('w');

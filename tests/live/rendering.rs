@@ -99,7 +99,7 @@ fn frame_cells_never_hold_diff_content() {
         "the top frame row precedes the content"
     );
     assert!(
-        rows[0].chars().skip(27).all(|cell| cell == ' '),
+        rows[0].contains('│') && diff_pane(&rows[0]).chars().all(|cell| cell == ' '),
         "the top frame row holds no content: {:?}",
         rows[0]
     );

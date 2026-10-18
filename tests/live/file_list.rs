@@ -170,7 +170,7 @@ fn file_list_toggle(mode: Mode) {
         live.press('j');
     }
     let start = live.buffer();
-    let middle_line = FIRST_CONTENT_LINE + live.old_label_lines() / 2;
+    let middle_line = live.pane_middle_line();
     let middle = change_label(&live.rows()[middle_line]);
     assert!(middle.is_some(), "a labeled row on the middle line");
     assert!(live.shows("pairs.rs"), "the file list starts shown");
