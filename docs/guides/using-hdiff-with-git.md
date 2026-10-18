@@ -6,11 +6,11 @@ Install hdiff as the current user's `git diff` pager:
 hdiff --install
 ```
 
-The command copies the exact global Git configuration file Git will edit to a sibling `.bak`
-file, then configures `pager.diff` to start the current hdiff executable. It overwrites only
-`pager.diff`; general Git paging through `core.pager` remains unchanged.
-Afterward, it prints a shell-safe `cp` command when it created a backup and the `git config`
-command it applied.
+The command copies the exact global Git configuration file Git will edit to a sibling
+`.bak` file, then configures `pager.diff` to start the current hdiff executable. It
+overwrites only `pager.diff`; general Git paging through `core.pager` remains unchanged.
+Afterward, it prints a shell-safe `cp` command when it created a backup and the
+`git config` command it applied.
 
 Run `git diff` to review every changed file in one hdiff session:
 
