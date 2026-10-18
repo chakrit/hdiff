@@ -46,7 +46,8 @@ fn run() -> Result<(), RunError> {
     }
 }
 
-/// Reads and parses like [`view`], timing each phase for the driver's report.
+/// Reads and parses the input as [`view`] does, including empty input, timing each phase
+/// for the driver's report.
 fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
     let clock = bench::InputClock::start();
     let content = source.read().map_err(RunError::Input)?;
@@ -54,9 +55,7 @@ fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
     let document = content.parse().map_err(RunError::Parse)?;
     let clock = clock.parsed();
 
-    let report = driver
-        .run(clock, &document)
-        .map_err(RunError::BenchTerminal)?;
+    let report = driver.run(clock, &document).map_err(RunError::Bench)?;
     write_stdout(report.as_bytes())
 }
 
@@ -134,7 +133,7 @@ enum RunError {
     Parse(ParseError),
     Executable(io::Error),
     Install(install_git_diff_pager::Error),
-    BenchTerminal(io::Error),
+    Bench(io::Error),
     Output(io::Error),
     Terminal(terminal::SessionError),
 }
@@ -149,7 +148,7 @@ impl fmt::Display for RunError {
                 write!(formatter, "cannot locate the hdiff executable: {error}")
             }
             Self::Install(error) => write!(formatter, "--install: {error}"),
-            Self::BenchTerminal(error) => write!(formatter, "{error}"),
+            Self::Bench(error) => write!(formatter, "--bench: {error}"),
             Self::Output(error) => write!(formatter, "standard output: {error}"),
             Self::Terminal(error) => write!(formatter, "terminal: {error}"),
         }
