@@ -158,4 +158,67 @@ impl RecordKind {
             Self::Raw => "",
         }
     }
+
+    /// Whether the record is a line of `side`'s file; a raw line belongs to neither.
+    pub fn on_side(self, side: Side) -> bool {
+        match (self, side) {
+            (Self::Context, _) | (Self::Deletion, Side::Old) | (Self::Addition, Side::New) => true,
+            (Self::Deletion, Side::New) | (Self::Addition, Side::Old) | (Self::Raw, _) => false,
+        }
+    }
+}
+
+/// One of the two files a diff compares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Old,
+    New,
+}
+
+/// A record's place in its file: its hunk, then its position among the hunk's records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordAddress {
+    pub hunk_index: usize,
+    pub record_index: usize,
+}
+
+/// One value for each record of a file, looked up by [`RecordAddress`].
+#[derive(Debug, PartialEq, Eq)]
+pub struct RecordMap<T> {
+    hunks: Box<[Box<[T]>]>,
+}
+
+impl<T> RecordMap<T> {
+    /// A map holding `value()` for every record of `file`.
+    pub fn for_file(file: &DiffFile, mut value: impl FnMut() -> T) -> Self {
+        let hunks: &[Hunk] = match &file.body {
+            FileBody::Metadata(_) => &[],
+            FileBody::Unified(body) => &body.hunks,
+        };
+
+        Self::from_hunks(
+            hunks
+                .iter()
+                .map(|hunk| hunk.records.iter().map(|_| value()).collect()),
+        )
+    }
+
+    /// A map from each hunk's values, in record order.
+    pub fn from_hunks(hunks: impl IntoIterator<Item = Box<[T]>>) -> Self {
+        Self {
+            hunks: hunks.into_iter().collect(),
+        }
+    }
+
+    /// The value of the record at `address`.
+    ///
+    /// Panics when `address` names no record of the map's file.
+    pub fn get(&self, address: RecordAddress) -> &T {
+        &self.hunks[address.hunk_index][address.record_index]
+    }
+
+    /// Panics when `address` names no record of the map's file.
+    pub fn get_mut(&mut self, address: RecordAddress) -> &mut T {
+        &mut self.hunks[address.hunk_index][address.record_index]
+    }
 }

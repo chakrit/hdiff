@@ -289,10 +289,7 @@ pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<Det
                 let after_line = layout
                     .rendered_line(*after)
                     .expect("side-by-side after index belongs to the layout");
-                let pair = changed_pair_detail(
-                    record_payload(&before_line.bytes),
-                    record_payload(&after_line.bytes),
-                );
+                let pair = changed_pair_detail(before_line.payload(), after_line.payload());
                 details[*before] = pair.before;
                 details[*after] = pair.after;
             }
@@ -300,7 +297,7 @@ pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<Det
                 let line = layout
                     .rendered_line(*index)
                     .expect("unmatched row index belongs to the layout");
-                let payload = record_payload(&line.bytes);
+                let payload = line.payload();
                 if !payload.is_empty() {
                     add_span(&mut details[*index], 0, payload.len());
                 }
@@ -310,16 +307,6 @@ pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<Det
     }
 
     details
-}
-
-fn record_payload(bytes: &[u8]) -> &str {
-    let payload = bytes.get(1..).unwrap_or_default();
-    let without_ending = payload
-        .strip_suffix(b"\r\n")
-        .or_else(|| payload.strip_suffix(b"\n"))
-        .unwrap_or(payload);
-
-    std::str::from_utf8(without_ending).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -357,9 +344,7 @@ mod tests {
             let details = detail_rows(&layout, DiffGranularity::Character);
 
             for (line, spans) in layout.diff_lines.iter().zip(details) {
-                let wanted = expected
-                    .iter()
-                    .find(|(text, _, _)| text.as_bytes() == line.bytes.as_ref());
+                let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
                 let wanted = wanted.map(|(_, start, end)| DetailSpan {
                     start: *start,
                     end: *end,
@@ -368,7 +353,7 @@ mod tests {
                     spans,
                     wanted.into_iter().collect::<Vec<_>>(),
                     "{hunk}: {:?}",
-                    line.bytes
+                    line.text()
                 );
             }
             assert!(

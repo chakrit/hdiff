@@ -462,8 +462,8 @@ records into separate bounded virtual source buffers, maps returned spans back t
 record payloads, and leaves unsupported languages and highlighting failures as plain text.
 Projection records are ordered by virtual source range, so span mapping visits only records that
 overlap the returned source span.
-Safe rendering is the single source of display rows: each rendered record row retains its hunk
-and record address plus its payload range. Layout derives geometry and navigation offsets from
+Safe rendering is the single source of display rows: each rendered record row retains its kind,
+hunk and record address, and payload range. Layout derives geometry and navigation offsets from
 those rows without syntax state. Preparation computes syntax and character-detail spans before
 the terminal loop begins, then the terminal renders only the prepared active viewport. Additions
 use the new path's language and deletions use the old path's language; context records remain

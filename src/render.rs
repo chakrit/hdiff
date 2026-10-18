@@ -1,27 +1,115 @@
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, GitHeader, Section},
+    document::{
+        DiffDocument, DiffFile, FileBody, GitHeader, RecordAddress, RecordKind, Section, Side,
+    },
     source_text::SourceLine,
 };
 
+/// What a rendered line shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecordAddress {
-    pub hunk_index: usize,
-    pub record_index: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RenderedLineKind {
+pub enum LineKind {
     Text,
     Metadata,
     FileHeader,
     HunkHeader,
-    Record(RecordAddress),
+    Record {
+        address: RecordAddress,
+        kind: RecordKind,
+    },
 }
 
+impl LineKind {
+    /// The record's kind; a line that is not a record has none.
+    pub fn record_kind(self) -> Option<RecordKind> {
+        match self {
+            Self::Record { kind, .. } => Some(kind),
+            Self::Text | Self::Metadata | Self::FileHeader | Self::HunkHeader => None,
+        }
+    }
+
+    /// The side a changed record removes from or adds to; other lines change neither.
+    pub fn changed_side(self) -> Option<Side> {
+        match self.record_kind()? {
+            RecordKind::Deletion => Some(Side::Old),
+            RecordKind::Addition => Some(Side::New),
+            RecordKind::Context | RecordKind::Raw => None,
+        }
+    }
+
+    fn marker(self) -> &'static str {
+        self.record_kind().map_or("", RecordKind::marker)
+    }
+}
+
+/// A line's sanitized text: its record marker, its payload, and its source line ending.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RenderedLine {
-    pub bytes: Box<[u8]>,
-    pub kind: RenderedLineKind,
+    text: Box<str>,
+    kind: LineKind,
+    ending: LineEnding,
+}
+
+impl RenderedLine {
+    fn new(kind: LineKind, line: &SourceLine) -> Self {
+        let ending = LineEnding::of(line.bytes());
+        let marker = kind.marker();
+        let payload = line.sanitized();
+        let mut text = String::with_capacity(marker.len() + payload.len() + ending.text().len());
+
+        text.push_str(marker);
+        text.push_str(payload);
+        text.push_str(ending.text());
+
+        Self {
+            text: text.into_boxed_str(),
+            kind,
+            ending,
+        }
+    }
+
+    pub fn kind(&self) -> LineKind {
+        self.kind
+    }
+
+    /// The whole line as finite output writes it.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The text between the record marker and the line ending.
+    pub fn payload(&self) -> &str {
+        let start = self.kind.marker().len();
+        let end = self.text.len() - self.ending.text().len();
+
+        &self.text[start..end]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineEnding {
+    None,
+    Lf,
+    CrLf,
+}
+
+impl LineEnding {
+    fn of(source: &[u8]) -> Self {
+        if source.ends_with(b"\r\n") {
+            Self::CrLf
+        } else if source.ends_with(b"\n") {
+            Self::Lf
+        } else {
+            Self::None
+        }
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+        }
+    }
 }
 
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
@@ -32,7 +120,7 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
             Section::File(file) => output.extend_from_slice(&render_file(file)),
             Section::Text(lines) => {
                 for line in render_text_lines(lines) {
-                    output.extend_from_slice(&line.bytes);
+                    output.extend_from_slice(line.text().as_bytes());
                 }
             }
         }
@@ -44,14 +132,14 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 pub fn render_text_lines<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Vec<RenderedLine> {
     lines
         .into_iter()
-        .map(|line| rendered_line(RenderedLineKind::Text, "", line))
+        .map(|line| RenderedLine::new(LineKind::Text, line))
         .collect()
 }
 
 pub fn render_file(file: &DiffFile) -> Vec<u8> {
     render_file_lines(file)
         .into_iter()
-        .flat_map(|line| line.bytes.into_vec())
+        .flat_map(|line| line.text.into_string().into_bytes())
         .collect()
 }
 
@@ -61,7 +149,7 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     let header_lines = |header: &GitHeader| {
         std::iter::once(&header.line)
             .chain(&header.metadata)
-            .map(|line| rendered_line(RenderedLineKind::Metadata, "", line))
+            .map(|line| RenderedLine::new(LineKind::Metadata, line))
             .collect::<Vec<_>>()
     };
 
@@ -70,28 +158,19 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
         FileBody::Unified(file) => {
             rendered_lines.extend(file.git.iter().flat_map(header_lines));
             for header in [&file.old, &file.new] {
-                rendered_lines.push(rendered_line(
-                    RenderedLineKind::FileHeader,
-                    "",
-                    &header.line,
-                ));
+                rendered_lines.push(RenderedLine::new(LineKind::FileHeader, &header.line));
             }
             for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-                rendered_lines.push(rendered_line(
-                    RenderedLineKind::HunkHeader,
-                    "",
-                    &hunk.header,
-                ));
+                rendered_lines.push(RenderedLine::new(LineKind::HunkHeader, &hunk.header));
                 for (record_index, record) in hunk.records.iter().enumerate() {
-                    let address = RecordAddress {
-                        hunk_index,
-                        record_index,
+                    let kind = LineKind::Record {
+                        address: RecordAddress {
+                            hunk_index,
+                            record_index,
+                        },
+                        kind: record.kind,
                     };
-                    rendered_lines.push(rendered_line(
-                        RenderedLineKind::Record(address),
-                        record.kind.marker(),
-                        &record.payload,
-                    ));
+                    rendered_lines.push(RenderedLine::new(kind, &record.payload));
                 }
             }
         }
@@ -100,32 +179,13 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     rendered_lines
 }
 
-fn rendered_line(kind: RenderedLineKind, marker: &str, line: &SourceLine) -> RenderedLine {
-    let source = line.bytes();
-    let line_ending: &[u8] = if source.ends_with(b"\r\n") {
-        b"\r\n"
-    } else if source.ends_with(b"\n") {
-        b"\n"
-    } else {
-        b""
-    };
-    let final_length = marker.len() + line.sanitized().len() + line_ending.len();
-    let mut bytes = Vec::with_capacity(final_length);
-
-    bytes.extend_from_slice(marker.as_bytes());
-    bytes.extend_from_slice(line.sanitized().as_bytes());
-    bytes.extend_from_slice(line_ending);
-
-    RenderedLine {
-        bytes: bytes.into_boxed_slice(),
-        kind,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{RecordAddress, RenderedLineKind, render_file, render_file_lines, render_unified};
-    use crate::{document::FileBody, parser::parse_unified_diff};
+    use super::{LineKind, render_file, render_file_lines, render_unified};
+    use crate::{
+        document::{FileBody, RecordAddress, RecordKind},
+        parser::parse_unified_diff,
+    };
 
     #[test]
     fn sanitizes_surrounding_text_and_preserves_line_endings() {
@@ -159,29 +219,60 @@ mod tests {
         };
 
         let lines = render_file_lines(document.files().next().expect("first file"));
-        let kinds = lines.iter().map(|line| line.kind).collect::<Vec<_>>();
+        let kinds = lines.iter().map(|line| line.kind()).collect::<Vec<_>>();
 
-        assert_eq!(kinds[0], RenderedLineKind::Metadata);
-        assert_eq!(kinds[1], RenderedLineKind::Metadata);
-        assert_eq!(kinds[2], RenderedLineKind::FileHeader);
-        assert_eq!(kinds[3], RenderedLineKind::FileHeader);
-        assert_eq!(kinds[4], RenderedLineKind::HunkHeader);
-        assert_eq!(kinds[7], RenderedLineKind::HunkHeader);
+        assert_eq!(kinds[0], LineKind::Metadata);
+        assert_eq!(kinds[1], LineKind::Metadata);
+        assert_eq!(kinds[2], LineKind::FileHeader);
+        assert_eq!(kinds[3], LineKind::FileHeader);
+        assert_eq!(kinds[4], LineKind::HunkHeader);
+        assert_eq!(kinds[7], LineKind::HunkHeader);
         assert_eq!(
             kinds[5],
-            RenderedLineKind::Record(RecordAddress {
-                hunk_index: 0,
-                record_index: 0,
-            })
+            LineKind::Record {
+                address: RecordAddress {
+                    hunk_index: 0,
+                    record_index: 0,
+                },
+                kind: RecordKind::Deletion,
+            }
         );
         assert_eq!(
             kinds[8],
-            RenderedLineKind::Record(RecordAddress {
-                hunk_index: 1,
-                record_index: 0,
-            })
+            LineKind::Record {
+                address: RecordAddress {
+                    hunk_index: 1,
+                    record_index: 0,
+                },
+                kind: RecordKind::Deletion,
+            }
         );
         assert_eq!(file.hunks.len(), 2);
+    }
+
+    #[test]
+    fn payloads_exclude_the_record_marker_and_line_ending() {
+        let input =
+            b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file";
+        let document = parse_unified_diff(input).expect("valid diff");
+        let view = document.file_views().next().expect("first file");
+
+        let text = super::render_text_lines(view.leading);
+        let lines = render_file_lines(view.file);
+        let payloads = lines.iter().map(|line| line.payload()).collect::<Vec<_>>();
+
+        assert_eq!(text[0].payload(), "before");
+        assert_eq!(
+            payloads,
+            [
+                "--- a/file",
+                "+++ b/file",
+                "@@ -1 +1 @@",
+                "old",
+                "new",
+                "\\ No newline at end of file"
+            ]
+        );
     }
 
     #[test]

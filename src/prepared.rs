@@ -7,7 +7,7 @@ use crate::{
     layout::{Layout, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
     preferences::DiffGranularity,
-    render::RenderedLineKind,
+    render::LineKind,
     styling::{StyledLayout, StyledRow},
     syntax::{SyntaxHighlighter, SyntaxSpan},
 };
@@ -146,7 +146,7 @@ impl PreparedPage {
         self.layout()
             .diff_lines
             .iter()
-            .filter(|line| matches!(line.kind, RenderedLineKind::Record(_)))
+            .filter(|line| matches!(line.kind(), LineKind::Record { .. }))
             .count()
     }
 }
@@ -177,7 +177,7 @@ mod tests {
                 .layout()
                 .diff_lines
                 .iter()
-                .flat_map(|line| line.bytes.iter().copied())
+                .flat_map(|line| line.text().bytes())
                 .collect();
             assert_eq!(rendered, expected.as_bytes());
             assert!(

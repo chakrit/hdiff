@@ -247,11 +247,13 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
+        document::RecordKind,
         interaction::Viewport,
         layout::Wrap,
         parser::parse_unified_diff,
         preferences::{DiffGranularity, DiffLayout},
         prepared::PreparedDocument,
+        styling::RowKind,
         terminal::rows::{PaneRow, visible_diff_rows},
         theme::{ColorDepth, Theme},
     };
@@ -397,7 +399,7 @@ mod tests {
     #[test]
     fn fills_an_alignment_peer_with_its_change_style_only() {
         let buffer = write(
-            PaneRow::AlignmentPeer(crate::styling::RowKind::Deletion),
+            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Deletion)),
             4,
             0,
         );

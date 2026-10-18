@@ -1,7 +1,7 @@
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, FileBody, GitHeader, RecordKind, UnifiedBody},
+    document::{DiffFile, FileBody, GitHeader, RecordKind, Side, UnifiedBody},
     file_identity::HeaderPath,
     measurement::{Observer, Stage, Unobserved, Work},
 };
@@ -195,12 +195,6 @@ impl SyntaxHighlighter {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Side {
-    Old,
-    New,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum Language {
     Rust,
     JavaScript,
@@ -312,11 +306,7 @@ impl Projection {
         let mut source = Vec::new();
         let mut records = Vec::new();
         for (record_index, record) in hunk.records.iter().enumerate() {
-            let belongs = match side {
-                Side::Old => record.kind != RecordKind::Addition && record.kind != RecordKind::Raw,
-                Side::New => record.kind != RecordKind::Deletion && record.kind != RecordKind::Raw,
-            };
-            if belongs {
+            if record.kind.on_side(side) {
                 let start = source.len();
                 source.extend_from_slice(record.payload.sanitized().as_bytes());
                 let owns_styling = match side {
@@ -518,7 +508,7 @@ mod tests {
             panic!("fixture should contain a unified file");
         };
         let new_projection =
-            Projection::from_hunk(file, 0, super::Side::New).expect("new projection");
+            Projection::from_hunk(file, 0, crate::document::Side::New).expect("new projection");
         let mut incremental = SyntaxHighlighter::default();
         let incremental_spans = incremental.highlight_hunk(file, 0);
         let mut full = SyntaxHighlighter::default();

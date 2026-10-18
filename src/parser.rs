@@ -3,7 +3,7 @@ use std::fmt;
 use crate::{
     document::{
         DiffDocument, DiffFile, FileBody, FileHeader, GitHeader, Hunk, Record, RecordKind, Section,
-        UnifiedBody,
+        Side, UnifiedBody,
     },
     file_identity::{FileIdentity, HeaderPath},
     source_text::SourceLine,
@@ -358,15 +358,8 @@ impl SideCounts {
     }
 
     fn count(&mut self, kind: RecordKind) {
-        match kind {
-            RecordKind::Context => {
-                self.old += 1;
-                self.new += 1;
-            }
-            RecordKind::Deletion => self.old += 1,
-            RecordKind::Addition => self.new += 1,
-            RecordKind::Raw => {}
-        }
+        self.old += usize::from(kind.on_side(Side::Old));
+        self.new += usize::from(kind.on_side(Side::New));
     }
 }
 

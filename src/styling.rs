@@ -2,9 +2,10 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
     detail::DetailSpan,
+    document::RecordKind,
     layout::Layout,
     preferences::DiffGranularity,
-    render::{RenderedLine, RenderedLineKind},
+    render::LineKind,
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
@@ -23,7 +24,7 @@ impl StyledLayout {
             .iter()
             .zip(syntax)
             .zip(details)
-            .map(|((line, syntax), details)| RowStyles::new(payload(line), syntax, details))
+            .map(|((line, syntax), details)| RowStyles::new(line.payload(), syntax, details))
             .collect();
 
         Self { layout, rows }
@@ -42,36 +43,27 @@ impl StyledLayout {
         };
 
         StyledRow {
-            kind: RowKind::of(line),
-            text: payload(line),
+            kind: RowKind::of(line.kind()),
+            text: line.payload(),
             partition,
         }
     }
 }
 
+/// What a row's styling distinguishes: the record kind, a hunk header, or any other line.
 #[derive(Clone, Copy)]
 pub enum RowKind {
-    Metadata,
+    Record(RecordKind),
     HunkHeader,
-    Context,
-    Raw,
-    Addition,
-    Deletion,
+    Metadata,
 }
 
 impl RowKind {
-    fn of(line: &RenderedLine) -> Self {
-        match line.kind {
-            RenderedLineKind::HunkHeader => Self::HunkHeader,
-            RenderedLineKind::Record(_) => match line.bytes.first() {
-                Some(b'+') => Self::Addition,
-                Some(b'-') => Self::Deletion,
-                Some(b' ') => Self::Context,
-                _ => Self::Raw,
-            },
-            RenderedLineKind::Text | RenderedLineKind::Metadata | RenderedLineKind::FileHeader => {
-                Self::Metadata
-            }
+    fn of(kind: LineKind) -> Self {
+        match kind {
+            LineKind::Record { kind, .. } => Self::Record(kind),
+            LineKind::HunkHeader => Self::HunkHeader,
+            LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Metadata,
         }
     }
 }
@@ -98,18 +90,6 @@ impl<'a> StyledRow<'a> {
             offset = boundary.end;
             Some((text, boundary.style))
         })
-    }
-}
-
-pub fn payload(line: &RenderedLine) -> &str {
-    let text = std::str::from_utf8(&line.bytes).expect("rendered rows contain sanitized UTF-8");
-    let text = text
-        .strip_suffix("\r\n")
-        .or_else(|| text.strip_suffix('\n'))
-        .unwrap_or(text);
-    match RowKind::of(line) {
-        RowKind::Addition | RowKind::Deletion | RowKind::Context => &text[1..],
-        RowKind::Metadata | RowKind::HunkHeader | RowKind::Raw => text,
     }
 }
 
@@ -230,6 +210,7 @@ mod tests {
     use super::{RowKind, RowStyles, StyledRow, TextStyle};
     use crate::{
         detail::DetailSpan,
+        document::RecordKind,
         syntax::{SyntaxClass, SyntaxSpan},
     };
 
@@ -258,7 +239,7 @@ mod tests {
         ];
         let styles = RowStyles::new(text, &syntax, &[]);
         let row = StyledRow {
-            kind: RowKind::Context,
+            kind: RowKind::Record(RecordKind::Context),
             text,
             partition: &styles.syntax,
         };
@@ -286,7 +267,7 @@ mod tests {
         let details = [DetailSpan { start: 2, end: 6 }];
         let styles = RowStyles::new(text, &syntax, &details);
         let row = StyledRow {
-            kind: RowKind::Addition,
+            kind: RowKind::Record(RecordKind::Addition),
             text,
             partition: styles.character.as_ref().expect("character presentation"),
         };
@@ -320,7 +301,7 @@ mod tests {
         ];
         let styles = RowStyles::new(text, &syntax, &[]);
         let row = StyledRow {
-            kind: RowKind::Context,
+            kind: RowKind::Record(RecordKind::Context),
             text,
             partition: &styles.syntax,
         };

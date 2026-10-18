@@ -1,6 +1,7 @@
 use ratatui::style::{Modifier, Style};
 
 use crate::{
+    document::RecordKind,
     interaction::Viewport,
     layout::{ScrollExtent, SideBySideRow},
     preferences::DiffGranularity,
@@ -33,10 +34,10 @@ pub(super) fn aligned_pair<'a>(
         (Some(before), Some(after)) => Some((PaneRow::Text(before), PaneRow::Text(after))),
         (Some(before), None) => Some((
             PaneRow::Text(before),
-            PaneRow::AlignmentPeer(RowKind::Addition),
+            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Addition)),
         )),
         (None, Some(after)) => Some((
-            PaneRow::AlignmentPeer(RowKind::Deletion),
+            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Deletion)),
             PaneRow::Text(after),
         )),
         (None, None) => None,
@@ -111,11 +112,15 @@ pub(super) fn gutter(row_kind: RowKind, palette: &RowPalette) -> [(&'static str,
     let spacing = (" ", Style::default());
 
     match row_kind {
-        RowKind::Addition => [("+", Style::default().fg(palette.addition_marker)), spacing],
-        RowKind::Deletion => [("-", Style::default().fg(palette.deletion_marker)), spacing],
-        RowKind::Context | RowKind::Raw | RowKind::Metadata | RowKind::HunkHeader => {
-            [spacing, spacing]
+        RowKind::Record(RecordKind::Addition) => {
+            [("+", Style::default().fg(palette.addition_marker)), spacing]
         }
+        RowKind::Record(RecordKind::Deletion) => {
+            [("-", Style::default().fg(palette.deletion_marker)), spacing]
+        }
+        RowKind::Record(RecordKind::Context | RecordKind::Raw)
+        | RowKind::Metadata
+        | RowKind::HunkHeader => [spacing, spacing],
     }
 }
 
@@ -130,11 +135,11 @@ pub(super) fn segment_style(row_kind: RowKind, text_style: TextStyle, theme: &Th
 
 fn detail_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     let color = match row_kind {
-        RowKind::Addition => palette.addition_marker,
-        RowKind::Deletion => palette.deletion_marker,
-        RowKind::Context | RowKind::Raw | RowKind::HunkHeader | RowKind::Metadata => {
-            palette.context_body
-        }
+        RowKind::Record(RecordKind::Addition) => palette.addition_marker,
+        RowKind::Record(RecordKind::Deletion) => palette.deletion_marker,
+        RowKind::Record(RecordKind::Context | RecordKind::Raw)
+        | RowKind::HunkHeader
+        | RowKind::Metadata => palette.context_body,
     };
 
     Style::default().fg(color).remove_modifier(Modifier::DIM)
@@ -142,11 +147,11 @@ fn detail_style(row_kind: RowKind, palette: &RowPalette) -> Style {
 
 fn unchanged_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     let color = match row_kind {
-        RowKind::Addition => palette.unchanged_addition,
-        RowKind::Deletion => palette.unchanged_deletion,
-        RowKind::Context | RowKind::Raw | RowKind::HunkHeader | RowKind::Metadata => {
-            palette.context_body
-        }
+        RowKind::Record(RecordKind::Addition) => palette.unchanged_addition,
+        RowKind::Record(RecordKind::Deletion) => palette.unchanged_deletion,
+        RowKind::Record(RecordKind::Context | RecordKind::Raw)
+        | RowKind::HunkHeader
+        | RowKind::Metadata => palette.context_body,
     };
 
     Style::default().fg(color)
@@ -154,14 +159,16 @@ fn unchanged_style(row_kind: RowKind, palette: &RowPalette) -> Style {
 
 pub(super) fn row_style(row_kind: RowKind, palette: &RowPalette) -> Style {
     match row_kind {
-        RowKind::Addition => Style::default()
+        RowKind::Record(RecordKind::Addition) => Style::default()
             .bg(palette.addition_background)
             .fg(palette.addition_body),
-        RowKind::Deletion => Style::default()
+        RowKind::Record(RecordKind::Deletion) => Style::default()
             .bg(palette.deletion_background)
             .fg(palette.deletion_body)
             .add_modifier(Modifier::DIM),
-        RowKind::Context | RowKind::Raw => Style::default().fg(palette.context_body),
+        RowKind::Record(RecordKind::Context | RecordKind::Raw) => {
+            Style::default().fg(palette.context_body)
+        }
         RowKind::HunkHeader => Style::default().fg(palette.hunk_header),
         RowKind::Metadata => Style::default(),
     }

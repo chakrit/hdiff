@@ -1,10 +1,9 @@
 use crate::{
-    document::FileView,
+    document::{FileView, RecordAddress, RecordKind, Side},
     line_breaks::wrapped_line_count,
     preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-    render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
+    render::{LineKind, RenderedLine, render_file_lines, render_text_lines},
     source_text::SourceLine,
-    styling::payload,
     tab_stops::expanded_width,
 };
 
@@ -148,7 +147,7 @@ impl Layout {
             .zip(&diff_lines)
             .map(|(visibility, line)| LineMetrics {
                 visibility,
-                width: u32::try_from(expanded_width(payload(line)) + MARKER_GUTTER_WIDTH)
+                width: u32::try_from(expanded_width(line.payload()) + MARKER_GUTTER_WIDTH)
                     .expect("rendered line widths fit in u32"),
             })
             .collect();
@@ -268,7 +267,7 @@ impl Layout {
             return 1;
         }
 
-        wrapped_line_count(payload(&self.diff_lines[index]), payload_width, cells)
+        wrapped_line_count(self.diff_lines[index].payload(), payload_width, cells)
     }
 }
 
@@ -422,8 +421,7 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
     let mut index = 0;
 
     while index < rendered_lines.len() {
-        let line = &rendered_lines[index];
-        if !is_changed_line(line) {
+        if rendered_lines[index].kind().changed_side().is_none() {
             rows.push(SideBySideRow::Shared(index));
             index += 1;
             continue;
@@ -431,12 +429,13 @@ fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {
 
         let mut before = Vec::new();
         let mut after = Vec::new();
-        while index < rendered_lines.len() && is_changed_line(&rendered_lines[index]) {
-            let line = &rendered_lines[index];
-            match line.bytes.first() {
-                Some(b'-') => before.push(index),
-                Some(b'+') => after.push(index),
-                _ => unreachable!("changed rows have a change marker"),
+        while let Some(side) = rendered_lines
+            .get(index)
+            .and_then(|line| line.kind().changed_side())
+        {
+            match side {
+                Side::Old => before.push(index),
+                Side::New => after.push(index),
             }
             index += 1;
         }
@@ -489,10 +488,10 @@ fn distances_from_previous_change<'a>(
 
     lines
         .map(|line| {
-            let RenderedLineKind::Record(address) = line.kind else {
+            let LineKind::Record { address, .. } = line.kind() else {
                 return None;
             };
-            if is_changed_line(line) {
+            if line.kind().changed_side().is_some() {
                 last_change = Some(address);
             }
 
@@ -507,12 +506,7 @@ fn distances_from_previous_change<'a>(
 }
 
 fn is_context_line(line: &RenderedLine) -> bool {
-    matches!(line.kind, RenderedLineKind::Record(_)) && line.bytes.first() == Some(&b' ')
-}
-
-fn is_changed_line(line: &RenderedLine) -> bool {
-    matches!(line.kind, RenderedLineKind::Record(_))
-        && matches!(line.bytes.first(), Some(b'+') | Some(b'-'))
+    line.kind().record_kind() == Some(RecordKind::Context)
 }
 
 #[cfg(test)]
@@ -524,7 +518,7 @@ mod tests {
     use crate::{
         parser::parse_unified_diff,
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-        render::RenderedLineKind,
+        render::LineKind,
     };
 
     #[test]
@@ -534,12 +528,12 @@ mod tests {
         )
         .expect("valid multi-file diff");
         let view = file_layout(&document.file_views().nth(1).expect("second file"));
-        assert_eq!(view.diff_lines[2].kind, RenderedLineKind::HunkHeader);
-        assert_eq!(view.diff_lines[5].kind, RenderedLineKind::HunkHeader);
+        assert_eq!(view.diff_lines[2].kind(), LineKind::HunkHeader);
+        assert_eq!(view.diff_lines[5].kind(), LineKind::HunkHeader);
         assert_eq!(
             view.diff_lines
                 .iter()
-                .map(|line| line.bytes.as_ref())
+                .map(|line| line.text().as_bytes())
                 .collect::<Vec<_>>(),
             vec![
                 &b"--- a/second\n"[..],
@@ -563,12 +557,12 @@ mod tests {
         assert!(
             view.diff_lines
                 .iter()
-                .all(|line| matches!(line.kind, RenderedLineKind::Metadata))
+                .all(|line| matches!(line.kind(), LineKind::Metadata))
         );
         assert_eq!(
             view.diff_lines
                 .iter()
-                .map(|line| line.bytes.as_ref())
+                .map(|line| line.text().as_bytes())
                 .collect::<Vec<_>>(),
             include_bytes!("../tests/fixtures/git-rename-only.patch")
                 .split_inclusive(|byte| *byte == b'\n')
@@ -592,13 +586,13 @@ mod tests {
             SideBySideRow::Paired {
                 before,
                 after,
-            } if view.diff_lines[*before].bytes.as_ref() == b"-old first\n"
-                && view.diff_lines[*after].bytes.as_ref() == b"+new first\n"
+            } if view.diff_lines[*before].text().as_bytes() == b"-old first\n"
+                && view.diff_lines[*after].text().as_bytes() == b"+new first\n"
         ));
         assert!(matches!(
             &view.side_by_side_rows[4],
             SideBySideRow::BeforeOnly(before)
-                if view.diff_lines[*before].bytes.as_ref() == b"-old second\n"
+                if view.diff_lines[*before].text().as_bytes() == b"-old second\n"
         ));
     }
 
@@ -612,7 +606,10 @@ mod tests {
         let shown = |context_lines| {
             view.scroll_extent(DiffLayout::Unified, context_lines, Wrap::Off)
                 .lines(0, usize::MAX)
-                .map(|line| String::from_utf8_lossy(&view.diff_lines[line.row].bytes).into_owned())
+                .map(|line| {
+                    String::from_utf8_lossy(view.diff_lines[line.row].text().as_bytes())
+                        .into_owned()
+                })
                 .collect::<String>()
         };
 
@@ -741,8 +738,8 @@ mod tests {
             .rendered_line(*source_index)
             .expect("side-by-side row should resolve through the layout");
 
-        assert_eq!(line.bytes.as_ref(), b"--- a/file\n");
-        assert_eq!(line.kind, RenderedLineKind::FileHeader);
+        assert_eq!(line.text().as_bytes(), b"--- a/file\n");
+        assert_eq!(line.kind(), LineKind::FileHeader);
     }
 
     #[test]
