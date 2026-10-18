@@ -142,24 +142,27 @@ implementation remains unapproved.
 
    Check: every existing unit and live test passes without changes to its assertions.
 
-3. Add implicit Tree-sitter semantic strategies with textual fallback.
+3. Performance pass after the code-quality audit, under the
+   [performance contract](performance.md). Scope not yet planned.
+
+4. Add implicit Tree-sitter semantic strategies with textual fallback.
 
    Human check: open supported and unsupported source files in the same diff. Supported files
    gain semantic detail when available; unsupported files remain readable with textual diffing,
    and neither case changes the selected layout unexpectedly.
 
-4. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
+5. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
 
    Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
    across unified, vertical, and stacked layouts.
 
-5. Refine highlighting coverage and additional navigation after the core interaction is stable.
+6. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
    help hint and keymap popup match the key behavior, additions and deletions remain
    distinguishable, and low contrast remains readable without saturating the whole terminal.
 
-6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
+7. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.
 
    Human check: search a multi-file diff, verify every match is reachable in both directions with
