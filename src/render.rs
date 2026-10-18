@@ -1,7 +1,6 @@
 use crate::{
-    document::{
-        DiffDocument, DiffFile, FileBody, GitHeader, RecordAddress, RecordKind, Section, Side,
-    },
+    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind, Section, Side},
+    headers::GitHeader,
     source_text::SourceLine,
 };
 

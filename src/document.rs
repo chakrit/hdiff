@@ -3,7 +3,8 @@
 
 use crate::{
     compact::{narrow, widen},
-    file_identity::{FileIdentity, GitLines, HeaderPath},
+    file_identity::FileIdentity,
+    headers::{FileHeader, GitHeader},
     source_text::SourceLine,
 };
 
@@ -87,22 +88,6 @@ pub enum FileBody {
     Unified(Box<UnifiedBody>),
 }
 
-/// A `diff --git` line and the extended header lines after it.
-#[derive(Debug, PartialEq, Eq)]
-pub struct GitHeader {
-    pub line: SourceLine,
-    pub metadata: Box<[SourceLine]>,
-}
-
-impl GitHeader {
-    pub fn lines(&self) -> GitLines<'_> {
-        GitLines {
-            header: &self.line,
-            metadata: &self.metadata,
-        }
-    }
-}
-
 /// A section with `---` / `+++` headers and hunks, after its Git header when it has one.
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnifiedBody {
@@ -110,13 +95,6 @@ pub struct UnifiedBody {
     pub old: FileHeader,
     pub new: FileHeader,
     pub hunks: Box<[Hunk]>,
-}
-
-/// A `---` or `+++` line and the path it names.
-#[derive(Debug, PartialEq, Eq)]
-pub struct FileHeader {
-    pub line: SourceLine,
-    pub path: HeaderPath,
 }
 
 #[derive(Debug, PartialEq, Eq)]

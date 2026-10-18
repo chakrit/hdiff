@@ -2,10 +2,10 @@ use std::fmt;
 
 use crate::{
     document::{
-        DiffDocument, DiffFile, FileBody, FileHeader, GitHeader, Hunk, Record, RecordKind, Section,
-        Side, UnifiedBody,
+        DiffDocument, DiffFile, FileBody, Hunk, Record, RecordKind, Section, Side, UnifiedBody,
     },
-    file_identity::{FileIdentity, HeaderPath},
+    file_identity::FileIdentity,
+    headers::{FileHeader, GitHeader, HeaderPath},
     source_text::SourceLine,
 };
 
@@ -68,7 +68,7 @@ impl Malformed {
     }
 }
 
-/// Parses viewer input, rejecting nonempty input that holds no file diff.
+/// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
 pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let document = parse_comparison_output(input)?;
 
@@ -88,7 +88,13 @@ pub fn parse_comparison_output(input: &[u8]) -> Result<DiffDocument, ParseError>
         let section = match start {
             LineStart::Text => Section::Text(parse_text(line, &mut lines)),
             LineStart::GitHeader => parse_git_section(line, &mut lines)?,
-            LineStart::OldFileHeader => Section::File(parse_unified(None, line, &mut lines)?),
+            LineStart::OldFileHeader(field) => {
+                let old = FileHeader {
+                    path: HeaderPath::of_field(field),
+                    line,
+                };
+                Section::File(parse_unified(None, old, &mut lines)?)
+            }
         };
         sections.push(section);
     }
@@ -102,23 +108,31 @@ pub fn parse_comparison_output(input: &[u8]) -> Result<DiffDocument, ParseError>
 
 /// How a line outside a file section starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LineStart {
+enum LineStart<'a> {
     Text,
     GitHeader,
-    OldFileHeader,
+    /// A `---` line, with its field after the prefix.
+    OldFileHeader(&'a str),
 }
 
-fn line_start(text: &str) -> Result<LineStart, Malformed> {
+fn line_start(text: &str) -> Result<LineStart<'_>, Malformed> {
     reject_unsupported_header(text)?;
 
-    let start = if text.starts_with("diff --git ") {
-        LineStart::GitHeader
-    } else if text.starts_with("--- ") {
-        LineStart::OldFileHeader
-    } else {
-        LineStart::Text
-    };
+    if text.starts_with("diff --git ") {
+        return Ok(LineStart::GitHeader);
+    }
+    let start = header_field(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
     Ok(start)
+}
+
+/// The field of a `---` (old) or `+++` (new) file header line.
+fn header_field(text: &str, side: Side) -> Option<&str> {
+    let prefix = match side {
+        Side::Old => "--- ",
+        Side::New => "+++ ",
+    };
+
+    text.strip_prefix(prefix)
 }
 
 fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
@@ -153,10 +167,10 @@ fn parse_git_section(header: SourceLine, lines: &mut Lines<'_>) -> Result<Sectio
         line: header,
         metadata: metadata.into_boxed_slice(),
     };
-    let file = match lines.next_if(|text| text.starts_with("--- ")) {
-        Some(old_header) => parse_unified(Some(git), old_header, lines)?,
+    let file = match lines.next_file_header(Side::Old) {
+        Some(old) => parse_unified(Some(git), old, lines)?,
         None => DiffFile {
-            identity: FileIdentity::of_metadata(git.lines()),
+            identity: FileIdentity::of_metadata(&git),
             body: FileBody::Metadata(git),
         },
     };
@@ -188,10 +202,10 @@ fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseErr
     let mut patch = Vec::new();
     let mut blocks = 0;
 
-    while let Some(header) = lines.next_if(|text| binary_block_size(text).is_some()) {
-        let valid_size =
-            binary_block_size(header.sanitized()).is_some_and(|size| size.parse::<usize>().is_ok());
-        if !valid_size {
+    while let Some((header, declared_size)) =
+        lines.next_if_map(|text| binary_block_size(text).map(|size| size.parse::<usize>()))
+    {
+        if declared_size.is_err() {
             return Err(lines.last_line_error(Malformed::InvalidBinaryPatchHeader));
         }
         patch.push(header);
@@ -228,32 +242,30 @@ fn binary_block_size(text: &str) -> Option<&str> {
 /// A section with `---` / `+++` headers, after its Git header when it has one.
 fn parse_unified(
     git: Option<GitHeader>,
-    old_header: SourceLine,
+    old: FileHeader,
     lines: &mut Lines<'_>,
 ) -> Result<DiffFile, ParseError> {
-    let Some(new_header) = lines.next() else {
-        return Err(lines.last_line_error(Malformed::MissingNewFileHeader));
+    let Some(new) = lines.next_file_header(Side::New) else {
+        let error = match lines.peek() {
+            None => lines.last_line_error(Malformed::MissingNewFileHeader),
+            Some(_) => lines.next_line_error(Malformed::ExpectedNewFileHeader),
+        };
+        return Err(error);
     };
-    if !new_header.sanitized().starts_with("+++ ") {
-        return Err(lines.last_line_error(Malformed::ExpectedNewFileHeader));
-    }
 
     let mut hunks = Vec::new();
-    while let Some(header) = lines.next_if(|text| text.starts_with("@@ ")) {
-        hunks.push(parse_hunk(header, lines)?);
+    while let Some((header, declared)) = lines.next_if_map(|text| {
+        text.starts_with("@@ ")
+            .then(|| SideCounts::of_header(text).ok_or(Malformed::InvalidHunkHeader))
+    }) {
+        let expected = declared.map_err(|reason| lines.last_line_error(reason))?;
+        hunks.push(parse_hunk(header, expected, lines)?);
     }
     if hunks.is_empty() {
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
     }
 
-    let old = file_header(old_header);
-    let new = file_header(new_header);
-    let identity = FileIdentity::of_unified(
-        git.as_ref().map(GitHeader::lines),
-        &old.line,
-        &old.path,
-        &new.path,
-    );
+    let identity = FileIdentity::of_unified(git.as_ref(), &old, &new);
     Ok(DiffFile {
         identity,
         body: FileBody::Unified(Box::new(UnifiedBody {
@@ -265,22 +277,16 @@ fn parse_unified(
     })
 }
 
-/// A `---` or `+++` line, whose path follows its four-byte prefix.
-fn file_header(line: SourceLine) -> FileHeader {
-    let path = HeaderPath::of_field(&line.sanitized()[4..]);
-
-    FileHeader { line, path }
-}
-
 // Hunks
 
 const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file";
 
-fn parse_hunk(header: SourceLine, lines: &mut Lines<'_>) -> Result<Hunk, ParseError> {
-    let Some(expected) = SideCounts::of_header(header.sanitized()) else {
-        return Err(lines.last_line_error(Malformed::InvalidHunkHeader));
-    };
-
+/// The records after a hunk `header` that declares `expected` counts.
+fn parse_hunk(
+    header: SourceLine,
+    expected: SideCounts,
+    lines: &mut Lines<'_>,
+) -> Result<Hunk, ParseError> {
     let mut seen = SideCounts::default();
     let mut records = Vec::new();
     while let Some(line) =
@@ -417,9 +423,25 @@ impl<'a> Lines<'a> {
 
     /// Takes the next line when its sanitized text satisfies `accepts`.
     fn next_if(&mut self, accepts: impl FnOnce(&str) -> bool) -> Option<SourceLine> {
-        let accepted = self.peek().is_some_and(|line| accepts(line.sanitized()));
+        self.next_if_map(|text| accepts(text).then_some(()))
+            .map(|(line, ())| line)
+    }
 
-        accepted.then(|| self.next()).flatten()
+    /// Takes the next line when `extract` reads a value from its sanitized text, with
+    /// that value.
+    fn next_if_map<T>(
+        &mut self,
+        extract: impl FnOnce(&str) -> Option<T>,
+    ) -> Option<(SourceLine, T)> {
+        let extracted = self.peek().and_then(|line| extract(line.sanitized()))?;
+
+        self.next().map(|line| (line, extracted))
+    }
+
+    /// Takes the next line when it is `side`'s file header.
+    fn next_file_header(&mut self, side: Side) -> Option<FileHeader> {
+        self.next_if_map(|text| header_field(text, side).map(HeaderPath::of_field))
+            .map(|(line, path)| FileHeader { line, path })
     }
 
     /// An error at the line most recently taken.
@@ -442,7 +464,10 @@ impl<'a> Lines<'a> {
 #[cfg(test)]
 mod tests {
     use super::{Malformed, ParseError, parse_comparison_output, parse_unified_diff};
-    use crate::document::{DiffDocument, FileBody, Hunk};
+    use crate::{
+        document::{DiffDocument, FileBody, Hunk, RecordKind},
+        render::render_unified,
+    };
 
     fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, ParseError> {
         Err(ParseError::Malformed { line, reason })
@@ -454,7 +479,7 @@ mod tests {
 
         let document = parse_unified_diff(input).expect("diff with surrounding text");
 
-        assert_eq!(crate::render::render_unified(&document), input);
+        assert_eq!(render_unified(&document), input);
     }
 
     #[test]
@@ -471,7 +496,7 @@ mod tests {
 
         let document = parse_comparison_output(input).expect("text-only comparison output");
 
-        assert_eq!(crate::render::render_unified(&document), input);
+        assert_eq!(render_unified(&document), input);
     }
 
     #[test]
@@ -536,7 +561,7 @@ mod tests {
         assert_eq!(header.metadata.len(), 2);
         assert_eq!(views[0].leading[0].sanitized(), "message");
         assert_eq!(views[0].trailing[0].sanitized(), "footer");
-        assert_eq!(crate::render::render_unified(&document), input);
+        assert_eq!(render_unified(&document), input);
     }
 
     #[test]
@@ -555,7 +580,7 @@ mod tests {
                 .iter()
                 .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B")
         );
-        assert_eq!(crate::render::render_unified(&document), input);
+        assert_eq!(render_unified(&document), input);
     }
 
     fn single_unified_hunks(document: &DiffDocument) -> &[Hunk] {
@@ -690,7 +715,7 @@ mod tests {
             let document = parse_unified_diff(&input).expect("valid deletion");
             let record = &single_unified_hunks(&document)[0].records[0];
 
-            assert_eq!(record.kind, crate::document::RecordKind::Deletion);
+            assert_eq!(record.kind, RecordKind::Deletion);
             assert_eq!(record.payload.bytes(), payload, "{line:?}");
         }
     }
@@ -702,7 +727,7 @@ mod tests {
         let document = parse_unified_diff(input).expect("valid deletion record");
         let record = &single_unified_hunks(&document)[0].records[0];
 
-        assert_eq!(record.kind, crate::document::RecordKind::Deletion);
+        assert_eq!(record.kind, RecordKind::Deletion);
         assert_eq!(record.payload.sanitized(), "-- filename");
     }
 }

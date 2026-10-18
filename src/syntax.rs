@@ -4,7 +4,7 @@ use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterato
 
 use crate::{
     document::{DiffFile, FileBody, Hunk, RecordMap, Side, UnifiedBody},
-    file_identity::HeaderPath,
+    headers::HeaderPath,
     measurement::{Observer, Stage, Work},
     render::PayloadSpan,
 };

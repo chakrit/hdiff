@@ -1,9 +1,10 @@
 //! Which file a diff section names and how it changed, decoded from Git metadata and
 //! `---` / `+++` headers. Contract: docs/spec/architecture.md#file-tree.
 
-use std::str::CharIndices;
-
-use crate::source_text::SourceLine;
+use crate::{
+    headers::{FileHeader, GitHeader, HeaderPath, quoted_or_plain, unquote},
+    source_text::SourceLine,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileState {
@@ -16,80 +17,33 @@ pub enum FileState {
 /// A file located by its path, or a section whose path cannot be determined.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileIdentity {
-    Path { state: FileState, path: String },
-    Unknown { header: String },
-}
-
-/// A Git section's `diff --git` line and the extended header lines after it.
-#[derive(Clone, Copy)]
-pub struct GitLines<'a> {
-    pub header: &'a SourceLine,
-    pub metadata: &'a [SourceLine],
+    Path { state: FileState, path: Box<str> },
+    Unknown { header: Box<str> },
 }
 
 impl FileIdentity {
-    /// A section with `---` / `+++` headers, after its Git lines when it has them.
-    pub fn of_unified(
-        git: Option<GitLines<'_>>,
-        old_header: &SourceLine,
-        old_path: &HeaderPath,
-        new_path: &HeaderPath,
-    ) -> Self {
-        let git_header = git.map(|git| git.header);
-        let metadata = git.map_or(&[][..], |git| git.metadata);
+    /// A section with `---` / `+++` headers, after its Git header when it has one.
+    pub fn of_unified(git: Option<&GitHeader>, old: &FileHeader, new: &FileHeader) -> Self {
+        let git_line = git.map(|git| &git.line);
+        let metadata = git.map_or(&[][..], |git| &git.metadata);
         let located = git_change(metadata)
-            .and_then(|change| locate_unified(change, git_header, old_path, new_path));
+            .and_then(|change| locate_unified(change, git_line, &old.path, &new.path));
 
-        let first_line = git_header.unwrap_or(old_header);
-        Self::located_or_unknown(located, first_line)
+        let first_line = git_line.unwrap_or(&old.line);
+        located.unwrap_or_else(|| Self::unknown(first_line))
     }
 
     /// A Git section without `---` / `+++` headers.
-    pub fn of_metadata(git: GitLines<'_>) -> Self {
+    pub fn of_metadata(git: &GitHeader) -> Self {
         let located =
-            git_change(git.metadata).and_then(|change| locate_metadata(change, git.header));
+            git_change(&git.metadata).and_then(|change| locate_metadata(change, &git.line));
 
-        Self::located_or_unknown(located, git.header)
+        located.unwrap_or_else(|| Self::unknown(&git.line))
     }
 
-    fn located_or_unknown(located: Option<(FileState, String)>, first_line: &SourceLine) -> Self {
-        match located {
-            Some((state, path)) => Self::Path { state, path },
-            None => Self::Unknown {
-                header: first_line.sanitized().to_owned(),
-            },
-        }
-    }
-}
-
-/// The path a `---` / `+++` header names, decoded, with its comparison-root prefix.
-#[derive(Debug, PartialEq, Eq)]
-pub enum HeaderPath {
-    DevNull,
-    Path(String),
-    Undecodable,
-}
-
-impl HeaderPath {
-    /// Reads a header's field after `--- ` or `+++ `, without its timestamp.
-    pub fn of_field(field: &str) -> Self {
-        let decoded = match field.starts_with('"') {
-            true => unquote(field).map(|(path, _)| path),
-            false => Some(
-                field
-                    .split_once('\t')
-                    .map_or(field, |(path, _)| path)
-                    .to_owned(),
-            ),
-        };
-
-        let Some(path) = decoded else {
-            return Self::Undecodable;
-        };
-
-        match path == "/dev/null" {
-            true => Self::DevNull,
-            false => Self::Path(path),
+    fn unknown(first_line: &SourceLine) -> Self {
+        Self::Unknown {
+            header: first_line.sanitized().into(),
         }
     }
 }
@@ -101,21 +55,21 @@ enum GitChange {
     Unmarked,
     Added,
     Deleted,
-    Renamed(String),
-    Copied(String),
+    Renamed(Box<str>),
+    Copied(Box<str>),
 }
 
 fn locate_unified(
     change: GitChange,
-    git_header: Option<&SourceLine>,
+    git_line: Option<&SourceLine>,
     old_path: &HeaderPath,
     new_path: &HeaderPath,
-) -> Option<(FileState, String)> {
+) -> Option<FileIdentity> {
     // A `/dev/null` side leaves one header path, so Git sections name the file from
     // their `diff --git` line; plain diffs show the path as written.
-    let one_sided = |path: &String| match git_header {
-        Some(header) => git_header_path(header),
-        None => Some(path.clone()),
+    let one_sided = |path: &str| match git_line {
+        Some(line) => git_header_path(line),
+        None => Some(path.into()),
     };
     let (header_state, named_path) = match (old_path, new_path) {
         (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => return None,
@@ -123,30 +77,30 @@ fn locate_unified(
         (HeaderPath::DevNull, HeaderPath::Path(new)) => (FileState::Added, one_sided(new)?),
         (HeaderPath::Path(old), HeaderPath::DevNull) => (FileState::Deleted, one_sided(old)?),
         (HeaderPath::Path(old), HeaderPath::Path(new)) => {
-            (FileState::Modified, shared_name(old, new).to_owned())
+            (FileState::Modified, shared_name(old, new).into())
         }
     };
 
-    let located = match change {
+    let (state, path) = match change {
         GitChange::Unmarked => (header_state, named_path),
         GitChange::Added => (FileState::Added, named_path),
         GitChange::Deleted => (FileState::Deleted, named_path),
         GitChange::Renamed(destination) => (FileState::Renamed, destination),
         GitChange::Copied(destination) => (FileState::Added, destination),
     };
-    Some(located)
+    Some(FileIdentity::Path { state, path })
 }
 
-fn locate_metadata(change: GitChange, header: &SourceLine) -> Option<(FileState, String)> {
-    let located = match change {
-        GitChange::Unmarked => (FileState::Modified, git_header_path(header)?),
-        GitChange::Added => (FileState::Added, git_header_path(header)?),
-        GitChange::Deleted => (FileState::Deleted, git_header_path(header)?),
+fn locate_metadata(change: GitChange, git_line: &SourceLine) -> Option<FileIdentity> {
+    let (state, path) = match change {
+        GitChange::Unmarked => (FileState::Modified, git_header_path(git_line)?),
+        GitChange::Added => (FileState::Added, git_header_path(git_line)?),
+        GitChange::Deleted => (FileState::Deleted, git_header_path(git_line)?),
         GitChange::Renamed(destination) => (FileState::Renamed, destination),
         GitChange::Copied(destination) => (FileState::Added, destination),
     };
 
-    Some(located)
+    Some(FileIdentity::Path { state, path })
 }
 
 /// `None` when a destination's quoting cannot be decoded.
@@ -173,7 +127,7 @@ fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
 }
 
 /// The name a `diff --git <old> <new>` line gives: the path suffix its halves share.
-fn git_header_path(line: &SourceLine) -> Option<String> {
+fn git_header_path(line: &SourceLine) -> Option<Box<str>> {
     let names = line.sanitized().strip_prefix("diff --git ")?;
     if !names.starts_with('"') {
         return unquoted_git_name(names);
@@ -181,18 +135,18 @@ fn git_header_path(line: &SourceLine) -> Option<String> {
 
     let (old, rest) = unquote(names)?;
     let new = quoted_or_plain(rest.strip_prefix(' ')?)?;
-    shared_suffix(&old, &new).map(str::to_owned)
+    shared_suffix(&old, &new).map(Box::from)
 }
 
 /// Unquoted names may contain spaces; the halves split at the one space whose sides
 /// share a path suffix.
-fn unquoted_git_name(names: &str) -> Option<String> {
+fn unquoted_git_name(names: &str) -> Option<Box<str>> {
     let mut named = names
         .match_indices(' ')
         .filter_map(|(space, _)| shared_suffix(&names[..space], &names[space + 1..]));
     let name = named.next()?;
 
-    named.next().is_none().then(|| name.to_owned())
+    named.next().is_none().then(|| name.into())
 }
 
 // Naming a file from two paths
@@ -225,68 +179,9 @@ fn shared_suffix<'a>(old: &str, new: &'a str) -> Option<&'a str> {
     Some(&new[new.len() - length..])
 }
 
-// Git's C-style quoting
-
-fn quoted_or_plain(field: &str) -> Option<String> {
-    match field.starts_with('"') {
-        true => unquote(field).map(|(path, _)| path),
-        false => Some(field.to_owned()),
-    }
-}
-
-/// Decodes Git's C-style quoting at the start of `field`, returning the decoded text
-/// (bytes as lossy UTF-8) and what follows the closing quote.
-fn unquote(field: &str) -> Option<(String, &str)> {
-    let body = field.strip_prefix('"')?;
-    let mut bytes = Vec::new();
-    let mut characters = body.char_indices();
-
-    while let Some((index, character)) = characters.next() {
-        match character {
-            '"' => {
-                let decoded = String::from_utf8_lossy(&bytes).into_owned();
-                return Some((decoded, &body[index + 1..]));
-            }
-            '\\' => bytes.push(escaped_byte(&mut characters)?),
-            _ => bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes()),
-        }
-    }
-
-    None
-}
-
-fn escaped_byte(characters: &mut CharIndices) -> Option<u8> {
-    let (_, escape) = characters.next()?;
-
-    match escape {
-        'a' => Some(0x07),
-        'b' => Some(0x08),
-        't' => Some(b'\t'),
-        'n' => Some(b'\n'),
-        'v' => Some(0x0b),
-        'f' => Some(0x0c),
-        'r' => Some(b'\r'),
-        '"' => Some(b'"'),
-        '\\' => Some(b'\\'),
-        '0'..='3' => {
-            let high = octal_digit(escape)?;
-            let middle = octal_digit(characters.next()?.1)?;
-            let low = octal_digit(characters.next()?.1)?;
-            Some(high << 6 | middle << 3 | low)
-        }
-        _ => None,
-    }
-}
-
-fn octal_digit(character: char) -> Option<u8> {
-    character
-        .to_digit(8)
-        .and_then(|digit| u8::try_from(digit).ok())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{FileIdentity, FileState, HeaderPath};
+    use super::{FileIdentity, FileState};
     use crate::parser::parse_unified_diff;
 
     fn identity(input: &str) -> FileIdentity {
@@ -299,13 +194,13 @@ mod tests {
     fn path(state: FileState, path: &str) -> FileIdentity {
         FileIdentity::Path {
             state,
-            path: path.to_owned(),
+            path: path.into(),
         }
     }
 
     fn unknown(header: &str) -> FileIdentity {
         FileIdentity::Unknown {
-            header: header.to_owned(),
+            header: header.into(),
         }
     }
 
@@ -390,16 +285,6 @@ mod tests {
             ),
             path(FileState::Deleted, "src/gone")
         );
-    }
-
-    #[test]
-    fn header_paths_drop_timestamps_and_keep_their_prefix() {
-        assert_eq!(
-            HeaderPath::of_field("b/x.rs\t2026-09-27 23:45:10"),
-            HeaderPath::Path("b/x.rs".to_owned())
-        );
-        assert_eq!(HeaderPath::of_field("/dev/null"), HeaderPath::DevNull);
-        assert_eq!(HeaderPath::of_field("\"b/open"), HeaderPath::Undecodable);
     }
 
     #[test]

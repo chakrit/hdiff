@@ -11,6 +11,7 @@ pub mod extent;
 pub mod file_identity;
 pub mod file_tree;
 pub mod geometry;
+pub mod headers;
 pub mod input;
 pub mod interaction;
 pub mod line_breaks;
