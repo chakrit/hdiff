@@ -37,7 +37,7 @@ pub const VERSION: &str = concat!(
 );
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Command {
+pub enum Invocation {
     Help,
     Install,
     Version,
@@ -81,23 +81,26 @@ impl fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
-pub fn select_command(arguments: &[OsString], stdin: StdinState) -> Result<Command, UsageError> {
+pub fn select_invocation(
+    arguments: &[OsString],
+    stdin: StdinState,
+) -> Result<Invocation, UsageError> {
     if arguments.iter().any(|argument| argument == "--install") {
         return match arguments {
-            [_] => Ok(Command::Install),
+            [_] => Ok(Invocation::Install),
             _ => Err(UsageError::InstallWithOperands),
         };
     }
 
     match arguments {
-        [argument] if argument == "--help" => Ok(Command::Help),
-        [argument] if argument == "--version" => Ok(Command::Version),
+        [argument] if argument == "--help" => Ok(Invocation::Help),
+        [argument] if argument == "--version" => Ok(Invocation::Version),
         [flag, rest @ ..] if flag == "--bench" => select_bench(rest, stdin),
-        operands => select_input(operands, stdin).map(|source| Command::View { source }),
+        operands => select_input(operands, stdin).map(|source| Invocation::View { source }),
     }
 }
 
-fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Command, UsageError> {
+fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, UsageError> {
     let Some((name, operands)) = arguments.split_first() else {
         return Err(UsageError::MissingBenchDriver);
     };
@@ -105,7 +108,7 @@ fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Command, Us
         return Err(UsageError::UnknownBenchDriver(name.clone()));
     };
 
-    select_input(operands, stdin).map(|source| Command::Bench { driver, source })
+    select_input(operands, stdin).map(|source| Invocation::Bench { driver, source })
 }
 
 fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, UsageError> {
@@ -128,16 +131,18 @@ fn select_source(arguments: &[OsString]) -> Result<Source, UsageError> {
         .into_iter()
         .map(|argument| operand(argument))
         .collect::<Vec<_>>();
+    let operands = match <[Operand; 2]>::try_from(operands) {
+        Ok(operands) => return Ok(Source::Comparison(Comparison { operands, depth })),
+        Err(operands) => operands,
+    };
 
-    match (operands.as_slice(), depth) {
-        ([] | [Operand::Stdin], Depth::TopLevel) => Ok(Source::Stdin),
-        ([Operand::Path(path)], Depth::TopLevel) => Ok(Source::DiffFile(path.clone())),
-        ([before, after], depth) => Ok(Source::Comparison(Comparison {
-            operands: [before.clone(), after.clone()],
-            depth,
-        })),
-        ([] | [_], Depth::Recursive) => Err(UsageError::RecursionWithoutComparison),
-        _ => Err(UsageError::TooManyOperands),
+    // Any number but two operands remains, so a second one means more than two.
+    let mut operands = operands.into_iter();
+    match (operands.next(), operands.next(), depth) {
+        (_, Some(_), _) => Err(UsageError::TooManyOperands),
+        (_, None, Depth::Recursive) => Err(UsageError::RecursionWithoutComparison),
+        (None | Some(Operand::Stdin), None, Depth::TopLevel) => Ok(Source::Stdin),
+        (Some(Operand::Path(path)), None, Depth::TopLevel) => Ok(Source::PatchFile(path)),
     }
 }
 
@@ -153,39 +158,37 @@ fn operand(argument: &OsStr) -> Operand {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Comparison, Depth, Driver, HELP, Operand, Source, StdinState, UsageError,
-        select_command, select_input,
+        Comparison, Depth, Driver, HELP, Invocation, Operand, Source, StdinState, UsageError,
+        select_input, select_invocation,
     };
     use std::{ffi::OsString, path::PathBuf};
 
-    fn command_unpiped(arguments: &[OsString]) -> Result<Command, UsageError> {
-        select_command(arguments, StdinState::Unpiped)
+    fn invocation_unpiped(arguments: &[OsString]) -> Result<Invocation, UsageError> {
+        select_invocation(arguments, StdinState::Unpiped)
     }
 
     fn select_unpiped(arguments: &[OsString]) -> Result<Source, UsageError> {
         select_input(arguments, StdinState::Unpiped)
     }
 
+    fn arguments(words: &[&str]) -> Vec<OsString> {
+        words.iter().map(OsString::from).collect()
+    }
+
     #[test]
     fn piped_stdin_is_accepted_only_where_an_operand_reads_it() {
-        let reading = [vec![], vec!["-"], vec!["-", "after"], vec!["before", "-"]];
-        for arguments in reading {
-            let arguments = arguments
-                .into_iter()
-                .map(OsString::from)
-                .collect::<Vec<_>>();
+        let reading: [&[&str]; 4] = [&[], &["-"], &["-", "after"], &["before", "-"]];
+        for words in reading {
+            let arguments = arguments(words);
             assert!(
                 select_input(&arguments, StdinState::Piped).is_ok(),
                 "{arguments:?}"
             );
         }
 
-        let ignoring = [vec!["change.patch"], vec!["before", "after"]];
-        for arguments in ignoring {
-            let arguments = arguments
-                .into_iter()
-                .map(OsString::from)
-                .collect::<Vec<_>>();
+        let ignoring: [&[&str]; 2] = [&["change.patch"], &["before", "after"]];
+        for words in ignoring {
+            let arguments = arguments(words);
             assert_eq!(
                 select_input(&arguments, StdinState::Piped),
                 Err(UsageError::PipedStdinIgnored),
@@ -199,7 +202,7 @@ mod tests {
         let arguments = ["--bench", "prepare", "change.patch"].map(OsString::from);
 
         assert_eq!(
-            select_command(&arguments, StdinState::Piped),
+            select_invocation(&arguments, StdinState::Piped),
             Err(UsageError::PipedStdinIgnored)
         );
     }
@@ -207,8 +210,8 @@ mod tests {
     #[test]
     fn selects_install_without_input_operands() {
         assert_eq!(
-            command_unpiped(&[OsString::from("--install")]).expect("install command"),
-            Command::Install
+            invocation_unpiped(&[OsString::from("--install")]).expect("install invocation"),
+            Invocation::Install
         );
     }
 
@@ -217,7 +220,7 @@ mod tests {
         let arguments = [OsString::from("--install"), OsString::from("change.patch")];
 
         assert_eq!(
-            command_unpiped(&arguments),
+            invocation_unpiped(&arguments),
             Err(UsageError::InstallWithOperands)
         );
     }
@@ -226,8 +229,8 @@ mod tests {
     fn selects_bench_driver_before_input_operands() {
         let arguments = [OsString::from("--bench"), OsString::from("stages")];
         assert_eq!(
-            command_unpiped(&arguments).expect("bench command"),
-            Command::Bench {
+            invocation_unpiped(&arguments).expect("bench invocation"),
+            Invocation::Bench {
                 driver: Driver::Stages,
                 source: Source::Stdin,
             }
@@ -235,10 +238,10 @@ mod tests {
 
         let arguments = ["--bench", "movement", "change.patch"].map(OsString::from);
         assert_eq!(
-            command_unpiped(&arguments).expect("bench command"),
-            Command::Bench {
+            invocation_unpiped(&arguments).expect("bench invocation"),
+            Invocation::Bench {
                 driver: Driver::Movement,
-                source: Source::DiffFile(PathBuf::from("change.patch")),
+                source: Source::PatchFile(PathBuf::from("change.patch")),
             }
         );
     }
@@ -246,11 +249,11 @@ mod tests {
     #[test]
     fn rejects_bench_without_a_known_driver() {
         assert_eq!(
-            command_unpiped(&[OsString::from("--bench")]),
+            invocation_unpiped(&[OsString::from("--bench")]),
             Err(UsageError::MissingBenchDriver)
         );
         assert_eq!(
-            command_unpiped(&["--bench", "a.patch"].map(OsString::from)),
+            invocation_unpiped(&["--bench", "a.patch"].map(OsString::from)),
             Err(UsageError::UnknownBenchDriver(OsString::from("a.patch")))
         );
     }
@@ -265,9 +268,9 @@ mod tests {
     #[test]
     fn treats_unknown_dash_arguments_as_paths() {
         assert_eq!(
-            command_unpiped(&[OsString::from("--unknown")]).expect("view command"),
-            Command::View {
-                source: Source::DiffFile(PathBuf::from("--unknown")),
+            invocation_unpiped(&[OsString::from("--unknown")]).expect("view invocation"),
+            Invocation::View {
+                source: Source::PatchFile(PathBuf::from("--unknown")),
             }
         );
     }

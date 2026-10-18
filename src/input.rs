@@ -17,7 +17,7 @@ use crate::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum Source {
     Stdin,
-    DiffFile(PathBuf),
+    PatchFile(PathBuf),
     Comparison(Comparison),
 }
 
@@ -25,7 +25,7 @@ impl Source {
     pub fn reads_stdin(&self) -> bool {
         match self {
             Self::Stdin => true,
-            Self::DiffFile(_) => false,
+            Self::PatchFile(_) => false,
             Self::Comparison(comparison) => comparison.operands.contains(&Operand::Stdin),
         }
     }
@@ -37,9 +37,9 @@ impl Source {
                 io::stdin().read_to_end(&mut bytes).map_err(Error::Stdin)?;
                 Ok(Content::Patch(bytes))
             }
-            Self::DiffFile(path) => match fs::read(&path) {
+            Self::PatchFile(path) => match fs::read(&path) {
                 Ok(bytes) => Ok(Content::Patch(bytes)),
-                Err(source) => Err(Error::DiffFile { path, source }),
+                Err(source) => Err(Error::PatchFile { path, source }),
             },
             Self::Comparison(comparison) => CompareFiles {
                 comparison: &comparison,
@@ -103,7 +103,7 @@ impl Content {
 #[derive(Debug)]
 pub enum Error {
     Stdin(io::Error),
-    DiffFile { path: PathBuf, source: io::Error },
+    PatchFile { path: PathBuf, source: io::Error },
     Comparison(compare_files::Error),
 }
 
@@ -111,7 +111,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Stdin(error) => write!(formatter, "standard input: {error}"),
-            Self::DiffFile { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::PatchFile { path, source } => write!(formatter, "{}: {source}", path.display()),
             Self::Comparison(error) => write!(formatter, "{error}"),
         }
     }

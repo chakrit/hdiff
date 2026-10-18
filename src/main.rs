@@ -14,7 +14,7 @@ use hdiff::{
         write_output::{OutputContext, WriteOutput},
     },
     bench,
-    cli::{self, Command, UsageError},
+    cli::{self, Invocation, UsageError},
     document::DiffDocument,
     input::{self, StdinState},
     parser::ParseError,
@@ -38,17 +38,17 @@ fn main() -> ExitCode {
 fn run() -> Result<(), RunError> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
     let stdin = StdinState::inspect()?;
-    let command = cli::select_command(&arguments, stdin)?;
+    let invocation = cli::select_invocation(&arguments, stdin)?;
 
-    match command {
-        Command::Help => write_stdout(cli::HELP.as_bytes()),
-        Command::Install => install(),
-        Command::Version => write_stdout(cli::VERSION.as_bytes()),
-        Command::Bench { driver, source } => {
+    match invocation {
+        Invocation::Help => write_stdout(cli::HELP.as_bytes()),
+        Invocation::Install => install(),
+        Invocation::Version => write_stdout(cli::VERSION.as_bytes()),
+        Invocation::Bench { driver, source } => {
             let report = driver.run(source).map_err(RunError::Bench)?;
             write_stdout(report.as_bytes())
         }
-        Command::View { source } => view(source),
+        Invocation::View { source } => view(source),
     }
 }
 
