@@ -303,24 +303,24 @@ mod tests {
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
         for (hunk, records, expected) in [
-            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café\r\n", 0, 5)]),
-            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café\r\n", 0, 5)]),
+            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", 0, 5)]),
+            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", 0, 5)]),
             (
                 "-1 +1,2",
                 "-let café = old;\n+let café = new;\n+café\n",
                 vec![
-                    ("-let café = old;\n", 12, 15),
-                    ("+let café = new;\n", 12, 15),
-                    ("+café\n", 0, 5),
+                    ("-let café = old;", 12, 15),
+                    ("+let café = new;", 12, 15),
+                    ("+café", 0, 5),
                 ],
             ),
             (
                 "-1,2 +1",
                 "-let café = old;\n-café\n+let café = new;\n",
                 vec![
-                    ("-let café = old;\n", 12, 15),
-                    ("-café\n", 0, 5),
-                    ("+let café = new;\n", 12, 15),
+                    ("-let café = old;", 12, 15),
+                    ("-café", 0, 5),
+                    ("+let café = new;", 12, 15),
                 ],
             ),
         ] {
@@ -334,13 +334,13 @@ mod tests {
                     .get(row)
                     .as_ref()
                     .map_or(&[][..], |detail| detail.spans());
-                let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
+                let shown = format!("{}{}", line.kind().marker(), line.payload());
+                let wanted = expected.iter().find(|(text, _, _)| *text == shown);
                 let wanted = wanted.map(|(_, start, end)| (*start, *end));
                 assert_eq!(
                     found,
                     spans(line.payload(), wanted.as_slice()),
-                    "{hunk}: {:?}",
-                    line.text()
+                    "{hunk}: {shown:?}"
                 );
             }
         }

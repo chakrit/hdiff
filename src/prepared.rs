@@ -203,12 +203,12 @@ mod tests {
             format!("first message\n{patch}"),
             format!("second message\n{patch}trailer\n"),
         ]) {
-            let rendered: Vec<u8> = file
+            let rendered: String = file
                 .rows()
                 .lines()
-                .flat_map(|(_, line)| line.text().bytes())
+                .map(|(_, line)| format!("{}{}\n", line.kind().marker(), line.payload()))
                 .collect();
-            assert_eq!(rendered, expected.as_bytes());
+            assert_eq!(rendered, expected);
             assert!(
                 file.row(file.rows().line_index(0), DiffGranularity::Line)
                     .segments()

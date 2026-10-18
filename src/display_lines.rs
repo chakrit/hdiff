@@ -48,27 +48,32 @@ pub struct DisplayLine<'a> {
     pub source: &'a SourceLine,
 }
 
-impl DisplayLine<'_> {
+impl<'a> DisplayLine<'a> {
+    /// The sanitized text between the record marker and the line ending.
+    pub fn payload(self) -> &'a str {
+        self.source.sanitized()
+    }
+
     /// Appends the line's text to `text`: its record marker, its sanitized payload, and
     /// its source line ending. Sanitized text holds no line ending, so the text ends in
     /// exactly the source's.
     pub fn write_text(self, text: &mut String) {
         text.push_str(self.kind.marker());
-        text.push_str(self.source.sanitized());
+        text.push_str(self.payload());
         text.push_str(LineEnding::of(self.source.bytes()).text());
     }
 }
 
-/// The line ending a source line or its displayed text ends with.
+/// The line ending a source line ends with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineEnding {
+enum LineEnding {
     None,
     Lf,
     CrLf,
 }
 
 impl LineEnding {
-    pub fn of(text: &[u8]) -> Self {
+    fn of(text: &[u8]) -> Self {
         if text.ends_with(b"\r\n") {
             Self::CrLf
         } else if text.ends_with(b"\n") {
@@ -78,7 +83,7 @@ impl LineEnding {
         }
     }
 
-    pub fn text(self) -> &'static str {
+    fn text(self) -> &'static str {
         match self {
             Self::None => "",
             Self::Lf => "\n",

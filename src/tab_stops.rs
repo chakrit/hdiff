@@ -1,7 +1,7 @@
 //! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
 //! rendering) for the 2-column tab-stop rule.
 
-use crate::screen::Cells;
+use crate::{compact::Count, screen::Cells};
 
 const TAB_WIDTH: usize = 2;
 
@@ -60,17 +60,43 @@ impl<'a> MeasuredPayload<'a> {
         }
     }
 
-    /// `text`, which an earlier measurement found to cover `cells`.
-    pub fn measured(text: &'a str, cells: Cells) -> Self {
-        Self { text, cells }
-    }
-
     pub fn text(self) -> &'a str {
         self.text
     }
 
     pub fn cells(self) -> Cells {
         self.cells
+    }
+}
+
+/// A payload kept with the terminal cells it covers once its tabs are expanded; only
+/// measuring the text builds one, so the two cannot disagree.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MeasuredText {
+    text: Box<str>,
+    cells: Count,
+}
+
+impl MeasuredText {
+    /// `text`, measured once its tabs are expanded.
+    pub fn new(text: &str) -> Self {
+        let cells = MeasuredPayload::new(text).cells();
+
+        Self {
+            text: text.into(),
+            cells: Count::of(cells.get()),
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn as_payload(&self) -> MeasuredPayload<'_> {
+        MeasuredPayload {
+            text: &self.text,
+            cells: Cells::new(self.cells.get()),
+        }
     }
 }
 

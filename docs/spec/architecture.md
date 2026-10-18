@@ -479,13 +479,14 @@ record payloads, and leaves unsupported languages as plain text. Every bundled g
 highlight query load; the bundled-grammar test checks each one.
 Projection records are ordered by virtual source range, so span mapping visits only records that
 overlap the returned source span.
-Safe rendering is the single source of display rows: each rendered record row retains its kind,
-hunk and record address, and payload range. Page rows and their scroll extents derive geometry
-and navigation offsets from those rows without syntax state. Preparation computes syntax and
-character-detail spans before the terminal loop begins, then the terminal renders only the
-prepared active viewport. Additions use the new path's language and deletions use the old
-path's language; context records remain textual when the paths select different languages.
-Headers, metadata, raw records, and diff markers remain textual.
+Safe rendering is the single source of display rows: each rendered record row retains its
+kind, hunk and record address, and its sanitized payload with the cells it covers. Page rows
+and their scroll extents derive geometry and navigation offsets from those rows without
+syntax state. Preparation computes syntax and character-detail spans before the terminal
+loop begins, then the terminal renders only the prepared active viewport. Additions use the
+new path's language and deletions use the old path's language; context records remain
+textual when the paths select different languages. Headers, metadata, raw records, and diff
+markers remain textual.
 
 When both paths select the same language, only the new projection supplies context
 styling. Both projections retain context text for parsing. Overlapping syntax captures

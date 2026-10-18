@@ -382,11 +382,13 @@ mod tests {
         DisplayExtent::of(document, PageIndex::FIRST, shape, context_lines, wrap)
     }
 
-    fn texts(document: &PreparedDocument, lines: impl Iterator<Item = LineIndex>) -> Vec<&[u8]> {
+    /// Each line as a reader sees it: its record marker, its payload, then a newline.
+    fn texts(document: &PreparedDocument, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
         let rows = document.page(PageIndex::FIRST).rows();
 
         lines
-            .map(|line| rows.line(line).text().as_bytes())
+            .map(|line| rows.line(line))
+            .map(|line| format!("{}{}\n", line.kind().marker(), line.payload()))
             .collect()
     }
 
@@ -420,7 +422,7 @@ mod tests {
             let lines = extent
                 .lines(ScreenLines::ZERO, lines(usize::MAX))
                 .map(|line| line.row);
-            String::from_utf8(texts(&document, lines).concat()).expect("UTF-8 fixture")
+            texts(&document, lines).concat()
         };
 
         assert_eq!(

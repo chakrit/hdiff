@@ -2,13 +2,18 @@
 //! each line's visibility and width derive from. Rules: `docs/spec/architecture.md`
 //! (Core model, Viewport coordinates).
 
+use std::{
+    iter::{self, Chain, Once},
+    option,
+};
+
 use crate::{
     compact::Count,
-    display_lines::{self, DisplayLine, LineEnding, LineKind},
+    display_lines::{self, DisplayLine, LineKind},
     document::{BySide, FileView, RecordAddress, RecordKind, Side},
     screen::Cells,
     source_text::SourceLine,
-    tab_stops::MeasuredPayload,
+    tab_stops::{MeasuredPayload, MeasuredText},
 };
 
 /// The position of a rendered line among its page's lines.
@@ -69,16 +74,13 @@ impl<T> SideBySideRow<T> {
     }
 
     /// The row's lines in display order: one, or the old line then the new line.
-    pub(crate) fn lines(self) -> impl Iterator<Item = T> + Clone
-    where
-        T: Clone,
-    {
+    pub(crate) fn lines(self) -> Chain<Once<T>, option::IntoIter<T>> {
         let (first, second) = match self {
             Self::Paired(lines) => (lines.old, Some(lines.new)),
             Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => (line, None),
         };
 
-        std::iter::once(first).chain(second)
+        iter::once(first).chain(second)
     }
 
     /// The line the row starts with, which names the row across layouts.
@@ -90,20 +92,17 @@ impl<T> SideBySideRow<T> {
     }
 }
 
-/// A displayed line as page rows retain it: its kind and its whole text.
+/// A displayed line as page rows retain it: its kind and its measured payload.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RenderedLine {
-    text: Box<str>,
+    payload: MeasuredText,
     kind: LineKind,
 }
 
 impl RenderedLine {
     fn new(line: DisplayLine<'_>) -> Self {
-        let mut text = String::new();
-        line.write_text(&mut text);
-
         Self {
-            text: text.into_boxed_str(),
+            payload: MeasuredText::new(line.payload()),
             kind: line.kind,
         }
     }
@@ -112,17 +111,14 @@ impl RenderedLine {
         self.kind
     }
 
-    /// The whole line as finite output writes it.
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-
     /// The text between the record marker and the line ending.
     pub fn payload(&self) -> &str {
-        let start = self.kind.marker().len();
-        let end = self.text.len() - LineEnding::of(self.text.as_bytes()).text().len();
+        self.payload.text()
+    }
 
-        &self.text[start..end]
+    /// The payload with the cells it covers once its tabs are expanded.
+    pub(crate) fn measured_payload(&self) -> MeasuredPayload<'_> {
+        self.payload.as_payload()
     }
 }
 
@@ -146,15 +142,8 @@ pub struct PageRows {
     pairs: Box<[SideBySideRow<LineIndex>]>,
     /// The pair holding each line.
     pair_of_line: LineMap<PairIndex>,
-    line_metrics: LineMap<LineMetrics>,
-}
-
-/// Per-line facts derived once so bounds and visibility never rescan the file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LineMetrics {
-    visibility: RowVisibility,
-    /// Terminal cells of the line's payload, without the marker gutter.
-    payload_width: Count,
+    /// Derived once so visibility never rescans the file.
+    visibility: LineMap<RowVisibility>,
 }
 
 /// When a rendered line shows.
@@ -184,20 +173,13 @@ impl PageRows {
     fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
         let lines = lines.map(RenderedLine::new).collect::<Vec<_>>();
         let (pairs, pair_of_line) = side_by_side_rows(&lines);
-        let line_metrics = row_visibility(&lines)
-            .into_iter()
-            .zip(&lines)
-            .map(|(visibility, line)| LineMetrics {
-                visibility,
-                payload_width: Count::of(MeasuredPayload::new(line.payload()).cells().get()),
-            })
-            .collect();
+        let visibility = LineMap(row_visibility(&lines).into_boxed_slice());
 
         Self {
             lines: lines.into_boxed_slice(),
             pairs: pairs.into_boxed_slice(),
             pair_of_line,
-            line_metrics: LineMap(line_metrics),
+            visibility,
         }
     }
 
@@ -266,7 +248,7 @@ impl PageRows {
     /// Context rows show within `context_lines` records of a change in their own hunk;
     /// every other row always shows.
     pub(crate) fn shows_line(&self, index: LineIndex, context_lines: usize) -> bool {
-        match self.line_metrics.get(index).visibility {
+        match self.visibility.get(index) {
             RowVisibility::Always => true,
             RowVisibility::NearChange(distance) => distance.get() <= context_lines,
             RowVisibility::Never => false,
@@ -281,12 +263,12 @@ impl PageRows {
 
     /// Terminal cells of the line's payload, without the marker gutter.
     pub(crate) fn payload_width(&self, index: LineIndex) -> Cells {
-        Cells::new(self.line_metrics.get(index).payload_width.get())
+        self.measured_payload(index).cells()
     }
 
     /// The line's payload with the width measured when the rows were built.
     pub(crate) fn measured_payload(&self, index: LineIndex) -> MeasuredPayload<'_> {
-        MeasuredPayload::measured(self.line(index).payload(), self.payload_width(index))
+        self.line(index).measured_payload()
     }
 }
 
@@ -349,12 +331,16 @@ fn block_rows(block: &[(LineIndex, Option<Side>)]) -> Vec<SideBySideRow<LineInde
             .chain(std::iter::repeat(None))
     };
 
-    match block.first() {
-        Some((_, None)) => block
+    let [(_, first_side), ..] = block else {
+        unreachable!("chunk_by yields only nonempty blocks");
+    };
+
+    match first_side {
+        None => block
             .iter()
             .map(|(line, _)| SideBySideRow::Shared(*line))
             .collect(),
-        Some((_, Some(_))) => side_lines(Side::Old)
+        Some(_) => side_lines(Side::Old)
             .zip(side_lines(Side::New))
             .map_while(|lines| match lines {
                 (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
@@ -363,7 +349,6 @@ fn block_rows(block: &[(LineIndex, Option<Side>)]) -> Vec<SideBySideRow<LineInde
                 (None, None) => None,
             })
             .collect(),
-        None => Vec::new(),
     }
 }
 
@@ -416,7 +401,7 @@ fn is_context_line(line: &RenderedLine) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{LineIndex, PageRows, SideBySideRow};
+    use super::{LineIndex, PageRows, RenderedLine, SideBySideRow};
     use crate::{display_lines::LineKind, parser::parse_patch};
 
     fn rows_of(patch: &[u8]) -> PageRows {
@@ -424,10 +409,13 @@ mod tests {
         PageRows::of_file(&document.file_views().next().expect("first file"))
     }
 
-    fn texts(rows: &PageRows, lines: impl Iterator<Item = LineIndex>) -> Vec<&[u8]> {
-        lines
-            .map(|line| rows.line(line).text().as_bytes())
-            .collect()
+    /// The line as a reader sees it: its record marker, then its payload.
+    fn shown(line: &RenderedLine) -> String {
+        format!("{}{}", line.kind().marker(), line.payload())
+    }
+
+    fn shown_lines(rows: &PageRows, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
+        lines.map(|line| shown(rows.line(line))).collect()
     }
 
     #[test]
@@ -466,32 +454,31 @@ mod tests {
         assert_eq!(view.line(view.line_index(2)).kind(), LineKind::HunkHeader);
         assert_eq!(view.line(view.line_index(5)).kind(), LineKind::HunkHeader);
         assert_eq!(
-            texts(&view, view.line_indices()),
-            vec![
-                &b"--- a/second\n"[..],
-                &b"+++ b/second\n"[..],
-                &b"@@ -1 +1 @@\n"[..],
-                &b"-old\n"[..],
-                &b"+new\n"[..],
-                &b"@@ -1 +1 @@\n"[..],
-                &b"-old-again\n"[..],
-                &b"+new-again\n"[..],
+            shown_lines(&view, view.line_indices()),
+            [
+                "--- a/second",
+                "+++ b/second",
+                "@@ -1 +1 @@",
+                "-old",
+                "+new",
+                "@@ -1 +1 @@",
+                "-old-again",
+                "+new-again",
             ]
         );
     }
 
     #[test]
     fn lays_out_a_metadata_only_file() {
-        let view = rows_of(include_bytes!("../tests/fixtures/git-rename-only.patch"));
+        let patch = include_str!("../tests/fixtures/git-rename-only.patch");
+        let view = rows_of(patch.as_bytes());
         assert!(
             view.lines()
                 .all(|(_, line)| matches!(line.kind(), LineKind::Metadata))
         );
         assert_eq!(
-            texts(&view, view.line_indices()),
-            include_bytes!("../tests/fixtures/git-rename-only.patch")
-                .split_inclusive(|byte| *byte == b'\n')
-                .collect::<Vec<_>>()
+            shown_lines(&view, view.line_indices()),
+            patch.lines().collect::<Vec<_>>()
         );
     }
 
@@ -500,18 +487,18 @@ mod tests {
         let view = rows_of(
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         );
-        let text = |line| view.line(line).text().as_bytes();
+        let text = |line| shown(view.line(line));
 
         assert_eq!(view.pairs().len(), 6);
         assert_eq!(view.lines().count(), 7);
         assert!(matches!(
             view.pairs()[3],
             SideBySideRow::Paired(lines)
-                if text(lines.old) == b"-old first\n" && text(lines.new) == b"+new first\n"
+                if text(lines.old) == "-old first" && text(lines.new) == "+new first"
         ));
         assert!(matches!(
             view.pairs()[4],
-            SideBySideRow::OldOnly(old) if text(old) == b"-old second\n"
+            SideBySideRow::OldOnly(old) if text(old) == "-old second"
         ));
     }
 }
