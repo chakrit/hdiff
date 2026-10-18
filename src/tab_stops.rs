@@ -44,14 +44,15 @@ impl TabStops {
     }
 }
 
-/// A payload and the terminal cells it covers once its tabs are expanded.
+/// A borrowed [`MeasuredText`]: a payload and the terminal cells it covers once its tabs
+/// are expanded.
 #[derive(Clone, Copy, Debug)]
-pub struct MeasuredPayload<'a> {
+pub struct MeasuredTextRef<'a> {
     text: &'a str,
     cells: Cells,
 }
 
-impl<'a> MeasuredPayload<'a> {
+impl<'a> MeasuredTextRef<'a> {
     /// `text`, measured once its tabs are expanded.
     pub fn new(text: &'a str) -> Self {
         let mut tab_stops = TabStops::default();
@@ -83,7 +84,7 @@ pub struct MeasuredText {
 impl MeasuredText {
     /// `text`, measured once its tabs are expanded.
     pub fn new(text: &str) -> Self {
-        let cells = MeasuredPayload::new(text).cells();
+        let cells = MeasuredTextRef::new(text).cells();
 
         Self {
             text: text.into(),
@@ -95,8 +96,8 @@ impl MeasuredText {
         &self.text
     }
 
-    pub fn as_payload(&self) -> MeasuredPayload<'_> {
-        MeasuredPayload {
+    pub fn borrowed(&self) -> MeasuredTextRef<'_> {
+        MeasuredTextRef {
             text: &self.text,
             cells: Cells::new(self.cells.get()),
         }
@@ -105,7 +106,7 @@ impl MeasuredText {
 
 #[cfg(test)]
 mod tests {
-    use super::{MeasuredPayload, TabStops};
+    use super::{MeasuredTextRef, TabStops};
     use crate::screen::Cells;
 
     #[test]
@@ -114,8 +115,8 @@ mod tests {
         TabStops::default().expand_into("ｶﾞ\tx", &mut expanded);
 
         // Terminals draw U+FF9E in its own cell, so `ｶﾞ` covers two cells.
-        assert_eq!(MeasuredPayload::new("ｶﾞ").cells(), Cells::new(2));
+        assert_eq!(MeasuredTextRef::new("ｶﾞ").cells(), Cells::new(2));
         assert_eq!(expanded, "ｶﾞ  x");
-        assert_eq!(MeasuredPayload::new("ｶﾞ\tx").cells(), Cells::new(5));
+        assert_eq!(MeasuredTextRef::new("ｶﾞ\tx").cells(), Cells::new(5));
     }
 }

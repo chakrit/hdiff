@@ -5,9 +5,9 @@ use crate::{
     document::{DiffDocument, FileView, RecordMap},
     file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
-    page_rows::{LineIndex, LineMap, PageRows},
+    page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
-    styling::{RowStyles, StyledRow, row_styles},
+    styling::{StyledRow, StyledRows},
     syntax::SyntaxHighlighter,
 };
 
@@ -22,8 +22,7 @@ pub struct PreparedDocument {
 /// text of a document that holds no file.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
-    rows: PageRows,
-    styles: LineMap<RowStyles>,
+    rows: StyledRows,
     kind: PageKind,
 }
 
@@ -144,8 +143,7 @@ impl PreparedPage {
         let details = observer.measure(Stage::Detail, |_| character_details(&rows));
 
         Self {
-            styles: row_styles(&rows, &syntax, &details),
-            rows,
+            rows: StyledRows::new(rows, &syntax, &details),
             kind: PageKind::File { row },
         }
     }
@@ -153,10 +151,10 @@ impl PreparedPage {
     /// Surrounding text has no syntax or character detail.
     fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(document.text()));
+        let details = rows.map_lines(|_, _| None);
 
         Self {
-            styles: row_styles(&rows, &RecordMap::empty(), &rows.sparse_map([])),
-            rows,
+            rows: StyledRows::new(rows, &RecordMap::empty(), &details),
             kind: PageKind::Text,
         }
     }
@@ -166,18 +164,16 @@ impl PreparedPage {
     }
 
     pub fn rows(&self) -> &PageRows {
-        &self.rows
+        self.rows.rows()
     }
 
     /// Row `index` with the styles `granularity` presents.
     pub fn row(&self, index: LineIndex, granularity: DiffGranularity) -> StyledRow<'_> {
-        self.styles
-            .get(index)
-            .row(self.rows.line(index), granularity)
+        self.rows.row(index, granularity)
     }
 
     fn record_count(&self) -> usize {
-        self.rows.record_count()
+        self.rows.rows().record_count()
     }
 }
 

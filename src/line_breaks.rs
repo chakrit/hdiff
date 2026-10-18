@@ -5,7 +5,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     screen::{Cells, NonZeroCells, ScreenLines},
-    tab_stops::{MeasuredPayload, TabStops},
+    tab_stops::{MeasuredTextRef, TabStops},
 };
 
 /// Places grapheme clusters on lines `width` cells wide, in order: a cluster that does
@@ -48,7 +48,7 @@ impl LineBreaks {
 }
 
 /// Lines `payload` wraps to at `width` cells once its tabs are expanded.
-pub fn wrapped_line_count(payload: MeasuredPayload<'_>, width: NonZeroCells) -> ScreenLines {
+pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> ScreenLines {
     let text = payload.text();
     if text.bytes().all(|byte| matches!(byte, b'\t' | b' '..=b'~')) {
         // Every cluster is one cell, so every line but the last is full.
@@ -71,7 +71,7 @@ mod tests {
     use super::{LineBreaks, wrapped_line_count};
     use crate::{
         screen::{Cells, NonZeroCells, ScreenLines},
-        tab_stops::MeasuredPayload,
+        tab_stops::MeasuredTextRef,
     };
 
     fn width(cells: usize) -> NonZeroCells {
@@ -79,7 +79,7 @@ mod tests {
     }
 
     fn line_count(text: &str, cells: usize) -> usize {
-        wrapped_line_count(MeasuredPayload::new(text), width(cells)).get()
+        wrapped_line_count(MeasuredTextRef::new(text), width(cells)).get()
     }
 
     fn placed(line: usize) -> Option<ScreenLines> {
@@ -129,7 +129,7 @@ mod tests {
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
         let mut breaks = LineBreaks::new(width(3));
-        for _ in 0..MeasuredPayload::new(text).cells().get() {
+        for _ in 0..MeasuredTextRef::new(text).cells().get() {
             breaks.place("a");
         }
 

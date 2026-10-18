@@ -14,33 +14,37 @@ const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
 /// The character-detail spans of each `page_rows` line that has changed spans: a paired
 /// row marks the spans that differ from its peer, and an unmatched row is changed as a
-/// whole.
+/// whole. Each changed line takes its side's detail from the pair holding it.
 pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
     let payload = |line: LineIndex| page_rows.line(line).payload();
-    let whole = |side, line| {
-        let spans = Box::new([PayloadSpan::whole(payload(line))]);
-        (line, ChangedDetail { side, spans })
-    };
-    let paired = |lines: BySide<LineIndex>| {
-        let spans = changed_pair_spans(lines.map(payload));
-        let [old, new] = lines.zip(spans).into_sides().map(|(side, (line, spans))| {
-            let spans = spans.into_boxed_slice();
-            (line, ChangedDetail { side, spans })
-        });
-        BySide { old, new }
-    };
+    let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
 
-    let row_details = page_rows.pairs().iter().filter_map(|row| match *row {
-        SideBySideRow::Paired(lines) => Some(SideBySideRow::Paired(paired(lines))),
-        SideBySideRow::OldOnly(line) => Some(SideBySideRow::OldOnly(whole(Side::Old, line))),
-        SideBySideRow::NewOnly(line) => Some(SideBySideRow::NewOnly(whole(Side::New, line))),
-        SideBySideRow::Shared(_) => None,
+    let mut pair_details = page_rows.map_pairs(|_, row| match row {
+        SideBySideRow::Paired(lines) => {
+            let spans = changed_pair_spans(lines.map(payload));
+            BySide {
+                old: ChangedDetail::of(Side::Old, spans.old.into_boxed_slice()),
+                new: ChangedDetail::of(Side::New, spans.new.into_boxed_slice()),
+            }
+        }
+        SideBySideRow::OldOnly(line) => BySide {
+            old: ChangedDetail::of(Side::Old, whole(line)),
+            new: None,
+        },
+        SideBySideRow::NewOnly(line) => BySide {
+            old: None,
+            new: ChangedDetail::of(Side::New, whole(line)),
+        },
+        SideBySideRow::Shared(_) => BySide::default(),
     });
-    let changed = row_details
-        .flat_map(SideBySideRow::lines)
-        .filter(|(_, detail)| detail.spans.iter().any(|span| !span.is_empty()));
 
-    page_rows.sparse_map(changed)
+    page_rows.map_lines(|index, line| {
+        let side = line.kind().changed_side()?;
+        pair_details
+            .get_mut(page_rows.pair_of(index))
+            .get_mut(side)
+            .take()
+    })
 }
 
 /// The changed spans of a line that changes `side`.
@@ -51,6 +55,13 @@ pub struct ChangedDetail {
 }
 
 impl ChangedDetail {
+    /// The detail of a line that changes `side`, when any of `spans` is not empty.
+    fn of(side: Side, spans: Box<[PayloadSpan]>) -> Option<Self> {
+        let changes_text = spans.iter().any(|span| !span.is_empty());
+
+        changes_text.then_some(Self { side, spans })
+    }
+
     pub fn side(&self) -> Side {
         self.side
     }

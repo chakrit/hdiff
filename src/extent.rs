@@ -392,7 +392,7 @@ fn line_height(rows: &PageRows, index: LineIndex, wrap: WrapWidth) -> ScreenLine
     let WrapWidth::At(cells) = wrap else {
         return ScreenLines::ONE;
     };
-    let payload = rows.measured_payload(index);
+    let payload = rows.measured_text(index);
     if payload.cells() <= cells.get() {
         return ScreenLines::ONE;
     }

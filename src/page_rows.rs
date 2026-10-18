@@ -14,7 +14,7 @@ use crate::{
     screen::Cells,
     side::{BySide, Side},
     source_text::SourceLine,
-    tab_stops::{MeasuredPayload, MeasuredText},
+    tab_stops::{MeasuredText, MeasuredTextRef},
 };
 
 /// The position of a rendered line among its page's lines.
@@ -120,8 +120,8 @@ impl RenderedLine {
     }
 
     /// The payload with the cells it covers once its tabs are expanded.
-    pub(crate) fn measured_payload(&self) -> MeasuredPayload<'_> {
-        self.payload.as_payload()
+    pub(crate) fn measured_text(&self) -> MeasuredTextRef<'_> {
+        self.payload.borrowed()
     }
 }
 
@@ -136,6 +136,20 @@ impl<T> LineMap<T> {
     /// Panics when `index` names no line of the rows this map was built from.
     pub fn get(&self, index: LineIndex) -> &T {
         &self.0[index.get()]
+    }
+}
+
+/// One value for each side-by-side row of a page's rows, looked up by [`PairIndex`]; only
+/// those rows build one.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PairMap<T>(Box<[T]>);
+
+impl<T> PairMap<T> {
+    /// The value of pair `index`, to change.
+    ///
+    /// Panics when `index` names no pair of the rows this map was built from.
+    pub fn get_mut(&mut self, index: PairIndex) -> &mut T {
+        &mut self.0[index.get()]
     }
 }
 
@@ -214,21 +228,17 @@ impl PageRows {
         LineMap(values.collect())
     }
 
-    /// The value `entries` gives each line it names, and `None` for every other line.
-    ///
-    /// Panics when `entries` names a line twice or names a line not in these rows.
-    pub fn sparse_map<T>(
+    /// One value for each side-by-side row, computed from the row and its index, in row
+    /// order.
+    pub fn map_pairs<T>(
         &self,
-        entries: impl IntoIterator<Item = (LineIndex, T)>,
-    ) -> LineMap<Option<T>> {
-        let mut values = self.lines.iter().map(|_| None).collect::<Box<[_]>>();
-        for (index, value) in entries {
-            let slot = &mut values[index.get()];
-            assert!(slot.is_none(), "each line takes one value");
-            *slot = Some(value);
-        }
+        mut value: impl FnMut(PairIndex, SideBySideRow<LineIndex>) -> T,
+    ) -> PairMap<T> {
+        let values = self
+            .pair_indices()
+            .map(|index| value(index, self.pair(index)));
 
-        LineMap(values)
+        PairMap(values.collect())
     }
 
     pub fn pairs(&self) -> &[SideBySideRow<LineIndex>] {
@@ -266,12 +276,12 @@ impl PageRows {
 
     /// Terminal cells of the line's payload, without the marker gutter.
     pub(crate) fn payload_width(&self, index: LineIndex) -> Cells {
-        self.measured_payload(index).cells()
+        self.measured_text(index).cells()
     }
 
     /// The line's payload with the width measured when the rows were built.
-    pub(crate) fn measured_payload(&self, index: LineIndex) -> MeasuredPayload<'_> {
-        self.line(index).measured_payload()
+    pub(crate) fn measured_text(&self, index: LineIndex) -> MeasuredTextRef<'_> {
+        self.line(index).measured_text()
     }
 }
 
@@ -301,49 +311,67 @@ fn side_by_side_rows(
         .enumerate()
         .map(|(position, line)| (LineIndex::at(position), line.kind().changed_side()))
         .collect::<Vec<_>>();
-    let rows = sides
+    let blocks = sides
         .chunk_by(|(_, earlier), (_, later)| earlier.is_some() == later.is_some())
-        .flat_map(block_rows)
+        .map(BlockRows::of)
         .collect::<Vec<_>>();
 
-    let mut pair_of_line = rows
+    let pair_of_line = blocks
         .iter()
-        .enumerate()
-        .flat_map(|(pair, row)| row.lines().map(move |line| (line, PairIndex::at(pair))))
-        .collect::<Vec<_>>();
-    pair_of_line.sort_unstable_by_key(|(line, _)| *line);
-    assert!(
-        pair_of_line
-            .iter()
-            .map(|(line, _)| line.get())
-            .eq(0..rendered_lines.len()),
-        "every line is in exactly one pair"
-    );
+        .scan(0, |first_pair, block| {
+            let base = *first_pair;
+            *first_pair += block.rows.len();
+            Some(
+                block
+                    .row_of_line
+                    .iter()
+                    .map(move |row| PairIndex::at(base + row)),
+            )
+        })
+        .flatten()
+        .collect();
+    let rows = blocks.into_iter().flat_map(|block| block.rows).collect();
 
-    let pairs = pair_of_line.into_iter().map(|(_, pair)| pair).collect();
-    (rows, LineMap(pairs))
+    (rows, LineMap(pair_of_line))
 }
 
-/// The rows of one block of lines that are all changed or all unchanged.
-fn block_rows(block: &[(LineIndex, Option<Side>)]) -> Vec<SideBySideRow<LineIndex>> {
-    let side_lines = |side| {
-        block
-            .iter()
-            .filter(move |(_, changed)| *changed == Some(side))
-            .map(|(line, _)| Some(*line))
-            .chain(std::iter::repeat(None))
-    };
+/// The rows of one block of lines that are all changed or all unchanged, and the row of
+/// the block holding each of its lines, in line order.
+struct BlockRows {
+    rows: Vec<SideBySideRow<LineIndex>>,
+    row_of_line: Vec<usize>,
+}
 
-    let [(_, first_side), ..] = block else {
-        unreachable!("chunk_by yields only nonempty blocks");
-    };
-
-    match first_side {
-        None => block
+impl BlockRows {
+    fn of(block: &[(LineIndex, Option<Side>)]) -> Self {
+        // A block is uniform, so its lines all carry a side exactly when it is changed.
+        let changed = block
             .iter()
-            .map(|(line, _)| SideBySideRow::Shared(*line))
-            .collect(),
-        Some(_) => side_lines(Side::Old)
+            .map(|(line, side)| side.map(|side| (*line, side)))
+            .collect::<Option<Vec<_>>>();
+
+        match changed {
+            None => Self {
+                rows: block
+                    .iter()
+                    .map(|(line, _)| SideBySideRow::Shared(*line))
+                    .collect(),
+                row_of_line: (0..block.len()).collect(),
+            },
+            Some(changed) => Self::changed(&changed),
+        }
+    }
+
+    /// A changed block pairs its *i*th old line with its *i*th new line in row *i*.
+    fn changed(block: &[(LineIndex, Side)]) -> Self {
+        let side_lines = |side| {
+            block
+                .iter()
+                .filter(move |(_, changed)| *changed == side)
+                .map(|(line, _)| Some(*line))
+                .chain(iter::repeat(None))
+        };
+        let rows = side_lines(Side::Old)
             .zip(side_lines(Side::New))
             .map_while(|lines| match lines {
                 (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
@@ -351,7 +379,18 @@ fn block_rows(block: &[(LineIndex, Option<Side>)]) -> Vec<SideBySideRow<LineInde
                 (None, Some(new)) => Some(SideBySideRow::NewOnly(new)),
                 (None, None) => None,
             })
-            .collect(),
+            .collect();
+
+        let row_of_line = block
+            .iter()
+            .scan(BySide::<usize>::default(), |seen, (_, side)| {
+                let row = *seen.get(*side);
+                *seen.get_mut(*side) += 1;
+                Some(row)
+            })
+            .collect();
+
+        Self { rows, row_of_line }
     }
 }
 
@@ -382,18 +421,16 @@ fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
 fn distances_from_previous_change<'a>(
     lines: impl Iterator<Item = &'a RenderedLine>,
 ) -> Vec<Option<Count>> {
-    let mut last_change: Option<RecordAddress> = None;
-
     lines
-        .map(|line| {
-            let LineKind::Record { address, .. } = line.kind() else {
-                return None;
+        .scan(None, |last_change: &mut Option<RecordAddress>, line| {
+            let LineKind::Record { address, kind } = line.kind() else {
+                return Some(None);
             };
-            if line.kind().changed_side().is_some() {
-                last_change = Some(address);
+            if kind.changed_side().is_some() {
+                *last_change = Some(address);
             }
 
-            last_change.and_then(|change| change.records_from(address))
+            Some(last_change.and_then(|change| change.records_from(address)))
         })
         .collect()
 }

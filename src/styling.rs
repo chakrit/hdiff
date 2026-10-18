@@ -7,35 +7,69 @@ use crate::{
     detail::ChangedDetail,
     display_lines::LineKind,
     document::RecordMap,
-    page_rows::{LineMap, PageRows, RenderedLine},
+    page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
     side::Side,
     span::PayloadSpan,
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
-/// The styles of each `page_rows` line: the syntax spans of its record, looked up by
-/// address, and its character detail when `details` gives it some.
-pub fn row_styles(
-    page_rows: &PageRows,
-    syntax: &RecordMap<Vec<SyntaxSpan>>,
-    details: &LineMap<Option<ChangedDetail>>,
-) -> LineMap<RowStyles> {
-    page_rows.map_lines(|index, line| {
-        let text = line.payload();
-        let spans: &[SyntaxSpan] = match line.kind() {
-            LineKind::Record { address, .. } => syntax.get(address),
-            LineKind::Text | LineKind::Metadata | LineKind::FileHeader | LineKind::HunkHeader => {
-                &[]
-            }
-        };
-        let character = details.get(index).as_ref();
+/// A page's rows kept with the styles of each line, so a line can only be styled with
+/// its own styles.
+#[derive(Debug, PartialEq, Eq)]
+pub struct StyledRows {
+    rows: PageRows,
+    styles: LineMap<RowStyles>,
+}
 
-        RowStyles {
-            syntax: syntax_partition(text, spans),
-            character: character.map(|detail| character_partition(text, detail)),
+impl StyledRows {
+    /// The styles of each line of `rows`: the syntax spans of its record, looked up by
+    /// address, and its character detail when `details` gives it some.
+    pub fn new(
+        rows: PageRows,
+        syntax: &RecordMap<Vec<SyntaxSpan>>,
+        details: &LineMap<Option<ChangedDetail>>,
+    ) -> Self {
+        let styles = rows.map_lines(|index, line| {
+            let text = line.payload();
+            let spans: &[SyntaxSpan] = match line.kind() {
+                LineKind::Record { address, .. } => syntax.get(address),
+                LineKind::Text
+                | LineKind::Metadata
+                | LineKind::FileHeader
+                | LineKind::HunkHeader => &[],
+            };
+            let character = details.get(index).as_ref();
+
+            RowStyles {
+                syntax: syntax_partition(text, spans),
+                character: character.map(|detail| character_partition(text, detail)),
+            }
+        });
+
+        Self { rows, styles }
+    }
+
+    pub fn rows(&self) -> &PageRows {
+        &self.rows
+    }
+
+    /// Line `index` styled as `granularity` presents it; a row without character detail
+    /// keeps its syntax styles.
+    pub fn row(&self, index: LineIndex, granularity: DiffGranularity) -> StyledRow<'_> {
+        let line = self.rows.line(index);
+        let styles = self.styles.get(index);
+        let partition = match granularity {
+            DiffGranularity::Line => &styles.syntax,
+            DiffGranularity::Character => styles.character.as_ref().unwrap_or(&styles.syntax),
+        };
+
+        StyledRow {
+            tone: RowTone::of(line.kind()),
+            text: line.payload(),
+            partition,
         }
-    })
+    }
 }
 
 /// How a row is toned: a change to one side, an unchanged record (context or raw), a hunk
@@ -103,30 +137,9 @@ pub enum DetailStyle {
 
 /// A row's syntax partition, and its character-detail partition when it has detail.
 #[derive(Debug, PartialEq, Eq)]
-pub struct RowStyles {
+struct RowStyles {
     syntax: Partition,
     character: Option<Partition>,
-}
-
-impl RowStyles {
-    /// `line` styled as `granularity` presents it; a row without character detail keeps
-    /// its syntax styles.
-    pub fn row<'a>(
-        &'a self,
-        line: &'a RenderedLine,
-        granularity: DiffGranularity,
-    ) -> StyledRow<'a> {
-        let partition = match granularity {
-            DiffGranularity::Line => &self.syntax,
-            DiffGranularity::Character => self.character.as_ref().unwrap_or(&self.syntax),
-        };
-
-        StyledRow {
-            tone: RowTone::of(line.kind()),
-            text: line.payload(),
-            partition,
-        }
-    }
 }
 
 fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
