@@ -3,6 +3,7 @@
 //! (Core model, Viewport coordinates).
 
 use crate::{
+    compact::{narrow, widen},
     document::{FileView, RecordAddress, RecordKind, Side},
     render::{LineKind, RenderedLine, render_file_lines, render_text_lines},
     source_text::SourceLine,
@@ -18,7 +19,7 @@ pub struct LineIndex(u32);
 pub struct PairIndex(u32);
 
 impl LineIndex {
-    pub fn get(self) -> usize {
+    fn get(self) -> usize {
         widen(self.0)
     }
 
@@ -83,13 +84,27 @@ impl<T> SideBySideRow<T> {
     }
 }
 
+/// One value for each line of a page's rows, looked up by [`LineIndex`]; only those rows
+/// build one.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LineMap<T>(Box<[T]>);
+
+impl<T> LineMap<T> {
+    /// The value of line `index`.
+    ///
+    /// Panics when `index` names no line of the rows this map was built from.
+    pub fn get(&self, index: LineIndex) -> &T {
+        &self.0[index.get()]
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct PageRows {
     lines: Box<[RenderedLine]>,
     pairs: Box<[SideBySideRow<LineIndex>]>,
     /// The pair holding each line.
-    pair_of_line: Box<[PairIndex]>,
-    line_metrics: Box<[LineMetrics]>,
+    pair_of_line: LineMap<PairIndex>,
+    line_metrics: LineMap<LineMetrics>,
 }
 
 /// Per-line facts derived once so bounds and visibility never rescan the file.
@@ -133,8 +148,7 @@ impl PageRows {
             .zip(&lines)
             .map(|(visibility, line)| LineMetrics {
                 visibility,
-                payload_width: u32::try_from(expanded_width(line.payload()))
-                    .expect("rendered line widths fit in u32"),
+                payload_width: narrow(expanded_width(line.payload())),
             })
             .collect();
 
@@ -142,7 +156,7 @@ impl PageRows {
             lines: lines.into_boxed_slice(),
             pairs: pairs.into_boxed_slice(),
             pair_of_line,
-            line_metrics,
+            line_metrics: LineMap(line_metrics),
         }
     }
 
@@ -154,20 +168,35 @@ impl PageRows {
         &self.lines[index.get()]
     }
 
-    /// The index of the line at `position`.
-    ///
-    /// Panics when `position` is not below the line count.
-    pub fn line_index(&self, position: usize) -> LineIndex {
-        assert!(
-            position < self.lines.len(),
-            "line {position} is in the page rows"
-        );
-
-        LineIndex(narrow(position))
-    }
-
     pub fn line_indices(&self) -> impl Iterator<Item = LineIndex> + use<> {
         (0..narrow(self.lines.len())).map(LineIndex)
+    }
+
+    /// One value for each line, computed from the line and its index, in line order.
+    pub fn map_lines<T>(&self, mut value: impl FnMut(LineIndex, &RenderedLine) -> T) -> LineMap<T> {
+        let values = self
+            .line_indices()
+            .zip(&self.lines)
+            .map(|(index, line)| value(index, line));
+
+        LineMap(values.collect())
+    }
+
+    /// The value `entries` gives each line it names, and `None` for every other line.
+    ///
+    /// Panics when `entries` names a line twice or names a line not in these rows.
+    pub fn sparse_map<T>(
+        &self,
+        entries: impl IntoIterator<Item = (LineIndex, T)>,
+    ) -> LineMap<Option<T>> {
+        let mut values = self.lines.iter().map(|_| None).collect::<Box<[_]>>();
+        for (index, value) in entries {
+            let slot = &mut values[index.get()];
+            assert!(slot.is_none(), "each line takes one value");
+            *slot = Some(value);
+        }
+
+        LineMap(values)
     }
 
     pub fn pairs(&self) -> &[SideBySideRow<LineIndex>] {
@@ -184,17 +213,15 @@ impl PageRows {
 
     /// The pair holding `line`.
     pub(crate) fn pair_of(&self, line: LineIndex) -> PairIndex {
-        self.pair_of_line[line.get()]
+        *self.pair_of_line.get(line)
     }
 
     /// Context rows show within `context_lines` records of a change in their own hunk;
     /// every other row always shows.
     pub(crate) fn shows_line(&self, index: LineIndex, context_lines: usize) -> bool {
-        match self.line_metrics[index.get()].visibility {
+        match self.line_metrics.get(index).visibility {
             RowVisibility::Always => true,
-            RowVisibility::NearChange(distance) => {
-                usize::try_from(distance).is_ok_and(|distance| distance <= context_lines)
-            }
+            RowVisibility::NearChange(distance) => widen(distance) <= context_lines,
             RowVisibility::Never => false,
         }
     }
@@ -207,22 +234,29 @@ impl PageRows {
 
     /// Terminal cells of the line's payload, without the marker gutter.
     pub(crate) fn payload_width(&self, index: LineIndex) -> usize {
-        widen(self.line_metrics[index.get()].payload_width)
+        widen(self.line_metrics.get(index).payload_width)
     }
 }
 
-pub(crate) fn widen(value: u32) -> usize {
-    usize::try_from(value).expect("u32 values fit in usize")
-}
+#[cfg(test)]
+impl PageRows {
+    /// The index of the line at `position`.
+    ///
+    /// Panics when `position` is not below the line count.
+    pub fn line_index(&self, position: usize) -> LineIndex {
+        assert!(
+            position < self.lines.len(),
+            "line {position} is in the page rows"
+        );
 
-pub(crate) fn narrow(value: usize) -> u32 {
-    u32::try_from(value).expect("row positions fit in u32")
+        LineIndex(narrow(position))
+    }
 }
 
 /// The side-by-side rows of `rendered_lines`, and the pair holding each line.
 fn side_by_side_rows(
     rendered_lines: &[RenderedLine],
-) -> (Vec<SideBySideRow<LineIndex>>, Box<[PairIndex]>) {
+) -> (Vec<SideBySideRow<LineIndex>>, LineMap<PairIndex>) {
     let mut rows = Vec::new();
     let mut index = 0;
 
@@ -266,7 +300,7 @@ fn side_by_side_rows(
             pair_of_line[line.get()] = PairIndex(narrow(pair));
         }
     }
-    (rows, pair_of_line.into_boxed_slice())
+    (rows, LineMap(pair_of_line.into_boxed_slice()))
 }
 
 fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
@@ -307,12 +341,7 @@ fn distances_from_previous_change<'a>(
                 last_change = Some(address);
             }
 
-            last_change
-                .filter(|change| change.hunk_index == address.hunk_index)
-                .map(|change| {
-                    u32::try_from(change.record_index.abs_diff(address.record_index))
-                        .expect("hunk record distances fit in u32")
-                })
+            last_change.and_then(|change| change.records_from(address))
         })
         .collect()
 }

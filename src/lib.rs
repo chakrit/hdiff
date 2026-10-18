@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod bench;
 pub mod cli;
+pub mod compact;
 pub mod detail;
 pub mod document;
 pub mod extent;

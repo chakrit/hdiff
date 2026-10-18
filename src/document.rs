@@ -2,6 +2,7 @@
 //! docs/spec/architecture.md#core-model.
 
 use crate::{
+    compact::{narrow, widen},
     file_identity::{FileIdentity, GitLines, HeaderPath},
     source_text::SourceLine,
 };
@@ -159,11 +160,18 @@ impl RecordKind {
         }
     }
 
-    /// Whether the record is a line of `side`'s file; a raw line belongs to neither.
+    /// The side a change removes from or adds to; context and raw lines change neither.
+    pub fn changed_side(self) -> Option<Side> {
+        Side::BOTH.into_iter().find(|side| side.change() == self)
+    }
+
+    /// Whether the record is a line of `side`'s file: context is a line of both sides, a
+    /// change a line of the side it changes, and a raw line a line of neither.
     pub fn on_side(self, side: Side) -> bool {
-        match (self, side) {
-            (Self::Context, _) | (Self::Deletion, Side::Old) | (Self::Addition, Side::New) => true,
-            (Self::Deletion, Side::New) | (Self::Addition, Side::Old) | (Self::Raw, _) => false,
+        match self {
+            Self::Context => true,
+            Self::Addition | Self::Deletion => self.changed_side() == Some(side),
+            Self::Raw => false,
         }
     }
 }
@@ -175,11 +183,42 @@ pub enum Side {
     New,
 }
 
+impl Side {
+    pub const BOTH: [Self; 2] = [Self::Old, Self::New];
+
+    /// The record kind that changes this side; it decides which side each change kind
+    /// changes.
+    pub fn change(self) -> RecordKind {
+        match self {
+            Self::Old => RecordKind::Deletion,
+            Self::New => RecordKind::Addition,
+        }
+    }
+}
+
 /// A record's place in its file: its hunk, then its position among the hunk's records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {
-    pub hunk_index: usize,
-    pub record_index: usize,
+    hunk: u32,
+    record: u32,
+}
+
+impl RecordAddress {
+    /// The record at position `record` of hunk `hunk`.
+    ///
+    /// Panics when either position does not fit in `u32`.
+    pub fn new(hunk: usize, record: usize) -> Self {
+        Self {
+            hunk: narrow(hunk),
+            record: narrow(record),
+        }
+    }
+
+    /// Records between this record and `other` when both are in one hunk; records of
+    /// different hunks have no distance.
+    pub fn records_from(self, other: Self) -> Option<u32> {
+        (self.hunk == other.hunk).then(|| self.record.abs_diff(other.record))
+    }
 }
 
 /// One value for each record of a file, looked up by [`RecordAddress`].
@@ -200,7 +239,7 @@ impl<T> RecordMap<T> {
     ///
     /// Panics when `address` names no record of the map's file.
     pub fn get(&self, address: RecordAddress) -> &T {
-        &self.hunks[address.hunk_index][address.record_index]
+        &self.hunks[widen(address.hunk)][widen(address.record)]
     }
 }
 

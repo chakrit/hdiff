@@ -3,8 +3,9 @@
 //! `docs/spec/architecture.md` (Viewport coordinates).
 
 use crate::{
+    compact::{narrow, widen},
     line_breaks::wrapped_line_count,
-    page_rows::{LineIndex, PageRows, PairIndex, narrow, widen},
+    page_rows::{LineIndex, PageRows, PairIndex},
     preferences::{DiffLayout, Wrapping},
 };
 

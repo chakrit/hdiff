@@ -404,10 +404,10 @@ impl Projection {
             let mapped_end = end.min(record.source.end);
             if mapped_start < mapped_end {
                 spans[record.record_index].push(SyntaxSpan {
-                    span: PayloadSpan {
-                        start: mapped_start - record.source.start,
-                        end: mapped_end - record.source.start,
-                    },
+                    span: PayloadSpan::new(
+                        mapped_start - record.source.start,
+                        mapped_end - record.source.start,
+                    ),
                     capture_length: end - start,
                     class,
                 });
@@ -513,8 +513,8 @@ mod tests {
         let highlights = highlighter.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
 
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
-        assert_eq!(highlights[1][0].span.start, 0);
-        assert_eq!(highlights[1][0].span.end, 2);
+        assert_eq!(highlights[1][0].span.start(), 0);
+        assert_eq!(highlights[1][0].span.end(), 2);
     }
 
     #[test]
@@ -605,12 +605,12 @@ mod tests {
 
         projection.map_span(2, 12, SyntaxClass::Keyword, &mut spans);
 
-        assert_eq!(spans[0][0].span.start, 2);
-        assert_eq!(spans[0][0].span.end, 4);
-        assert_eq!(spans[1][0].span.start, 0);
-        assert_eq!(spans[1][0].span.end, 4);
-        assert_eq!(spans[2][0].span.start, 0);
-        assert_eq!(spans[2][0].span.end, 2);
+        assert_eq!(spans[0][0].span.start(), 2);
+        assert_eq!(spans[0][0].span.end(), 4);
+        assert_eq!(spans[1][0].span.start(), 0);
+        assert_eq!(spans[1][0].span.end(), 4);
+        assert_eq!(spans[2][0].span.start(), 0);
+        assert_eq!(spans[2][0].span.end(), 2);
     }
 
     #[test]

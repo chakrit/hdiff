@@ -5,7 +5,7 @@ use crate::{
     document::{DiffDocument, FileView, RecordMap},
     file_tree::{FileListing, FileTree, ListedFile},
     measurement::{Observer, Stage, Unobserved},
-    page_rows::{LineIndex, PageRows},
+    page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
     render::LineKind,
     styling::{RowStyles, StyledRow, row_styles},
@@ -24,8 +24,7 @@ pub struct PreparedDocument {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
     rows: PageRows,
-    /// The styles of each row, in row order.
-    styles: Box<[RowStyles]>,
+    styles: LineMap<RowStyles>,
     list_row: Option<usize>,
 }
 
@@ -125,7 +124,7 @@ impl PreparedPage {
         let details = observer.measure(Stage::Detail, |_| character_details(&rows));
 
         Self {
-            styles: row_styles(&rows, &syntax, details),
+            styles: row_styles(&rows, &syntax, &details),
             rows,
             list_row: Some(list_row),
         }
@@ -136,7 +135,7 @@ impl PreparedPage {
         let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(document.text()));
 
         Self {
-            styles: row_styles(&rows, &RecordMap::default(), Vec::new()),
+            styles: row_styles(&rows, &RecordMap::default(), &rows.sparse_map([])),
             rows,
             list_row: None,
         }
@@ -153,7 +152,9 @@ impl PreparedPage {
 
     /// Row `index` with the styles `granularity` presents.
     pub fn row(&self, index: LineIndex, granularity: DiffGranularity) -> StyledRow<'_> {
-        self.styles[index.get()].row(self.rows.line(index), granularity)
+        self.styles
+            .get(index)
+            .row(self.rows.line(index), granularity)
     }
 
     fn record_count(&self) -> usize {

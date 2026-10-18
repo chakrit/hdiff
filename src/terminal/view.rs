@@ -379,7 +379,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(78, 5)].bg,
-            THEME.rows.addition_background,
+            THEME.rows.addition.background,
             "alignment peer retains addition background"
         );
         assert!(
@@ -476,7 +476,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(51, 5)].bg,
-            THEME.rows.deletion_background,
+            THEME.rows.deletion.background,
             "deletion peer reaches the before pane edge"
         );
         assert!(
@@ -519,7 +519,7 @@ mod tests {
         );
         assert_eq!(
             rendered[(78, alignment_peer_row)].bg,
-            THEME.rows.addition_background,
+            THEME.rows.addition.background,
             "alignment peer retains addition background"
         );
         assert!(
@@ -567,44 +567,44 @@ mod tests {
             ),
             (
                 (28, 5),
-                THEME.rows.deletion_marker,
-                THEME.rows.deletion_background,
+                THEME.rows.deletion.marker,
+                THEME.rows.deletion.background,
                 "deletion marker",
             ),
             (
                 (28, 6),
-                THEME.rows.addition_marker,
-                THEME.rows.addition_background,
+                THEME.rows.addition.marker,
+                THEME.rows.addition.background,
                 "addition marker",
             ),
             (
                 (30, 5),
                 THEME.syntax.keyword,
-                THEME.rows.deletion_background,
+                THEME.rows.deletion.background,
                 "deletion keyword",
             ),
             (
                 (30, 6),
                 THEME.syntax.keyword,
-                THEME.rows.addition_background,
+                THEME.rows.addition.background,
                 "addition keyword",
             ),
             (
                 (55, 6),
                 THEME.syntax.string,
-                THEME.rows.addition_background,
+                THEME.rows.addition.background,
                 "addition string",
             ),
             (
                 (78, 5),
-                THEME.rows.deletion_body,
-                THEME.rows.deletion_background,
+                THEME.rows.deletion.body,
+                THEME.rows.deletion.background,
                 "deletion background reaches the diff pane edge",
             ),
             (
                 (78, 6),
-                THEME.rows.addition_body,
-                THEME.rows.addition_background,
+                THEME.rows.addition.body,
+                THEME.rows.addition.background,
                 "addition background reaches the diff pane edge",
             ),
         ];
@@ -657,8 +657,8 @@ mod tests {
             selected_row_end.bg, selected_label.bg,
             "the highlight spans the whole row"
         );
-        assert_eq!(rendered[(31, 4)].fg, THEME.rows.deletion_marker);
-        assert_eq!(rendered[(31, 5)].fg, THEME.rows.addition_marker);
+        assert_eq!(rendered[(31, 4)].fg, THEME.rows.deletion.marker);
+        assert_eq!(rendered[(31, 5)].fg, THEME.rows.addition.marker);
         assert!(
             !rendered[(31, 4)].modifier.contains(Modifier::DIM),
             "changed deletion span is not dimmed"
@@ -669,12 +669,12 @@ mod tests {
         );
         assert_eq!(
             rendered[(30, 4)].fg,
-            THEME.rows.unchanged_deletion,
+            THEME.rows.deletion.unchanged,
             "unchanged deletion text is one step below the deletion body"
         );
         assert_eq!(
             rendered[(30, 5)].fg,
-            THEME.rows.unchanged_addition,
+            THEME.rows.addition.unchanged,
             "unchanged addition text is one step below the addition body"
         );
     }
@@ -740,8 +740,8 @@ mod tests {
             .expect("render line mode");
         let line_rendered = terminal.backend().buffer().clone();
         let payloads = [
-            ("fn removed() {}", THEME.rows.deletion_marker),
-            ("fn added() {}", THEME.rows.addition_marker),
+            ("fn removed() {}", THEME.rows.deletion.marker),
+            ("fn added() {}", THEME.rows.addition.marker),
         ];
         for (payload, _) in payloads {
             let cells = unique_payload_cells(&line_rendered, payload);

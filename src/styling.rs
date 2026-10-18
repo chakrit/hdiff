@@ -1,83 +1,79 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
-    detail::RowDetail,
-    document::{RecordKind, RecordMap},
-    page_rows::PageRows,
+    document::{RecordMap, Side},
+    page_rows::{LineMap, PageRows},
     preferences::DiffGranularity,
     render::{LineKind, PayloadSpan, RenderedLine},
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
-/// The styles of each `page_rows` row: syntax spans of its record, looked up by address, and
-/// the character detail of each row `details` names.
+/// The styles of each `page_rows` line: the syntax spans of its record, looked up by
+/// address, and its character detail when `details` gives it some.
 pub fn row_styles(
     page_rows: &PageRows,
     syntax: &RecordMap<Vec<SyntaxSpan>>,
-    details: Vec<RowDetail>,
-) -> Box<[RowStyles]> {
-    let mut rows = page_rows
-        .lines()
-        .iter()
-        .map(|line| {
-            let spans: &[SyntaxSpan] = match line.kind() {
-                LineKind::Record { address, .. } => syntax.get(address),
-                LineKind::Text
-                | LineKind::Metadata
-                | LineKind::FileHeader
-                | LineKind::HunkHeader => &[],
-            };
-            RowStyles::syntax(line.payload(), spans)
-        })
-        .collect::<Vec<_>>();
+    details: &LineMap<Option<Box<[PayloadSpan]>>>,
+) -> LineMap<RowStyles> {
+    page_rows.map_lines(|index, line| {
+        let text = line.payload();
+        let spans: &[SyntaxSpan] = match line.kind() {
+            LineKind::Record { address, .. } => syntax.get(address),
+            LineKind::Text | LineKind::Metadata | LineKind::FileHeader | LineKind::HunkHeader => {
+                &[]
+            }
+        };
+        let character = details.get(index).as_deref();
 
-    for detail in details {
-        let text = page_rows.line(detail.row).payload();
-        rows[detail.row.get()].character = Some(character_partition(text, &detail.spans));
-    }
-    rows.into_boxed_slice()
+        RowStyles {
+            syntax: syntax_partition(text, spans),
+            character: character.map(|spans| character_partition(text, spans)),
+        }
+    })
 }
 
-/// What a row's styling distinguishes: the record kind, a hunk header, or any other line.
-#[derive(Clone, Copy)]
-pub enum RowKind {
-    Record(RecordKind),
+/// How a row is toned: a change to one side, a context or raw record, a hunk header, or
+/// any other line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowTone {
+    Changed(Side),
+    Context,
     HunkHeader,
-    Metadata,
+    Plain,
 }
 
-impl RowKind {
+impl RowTone {
     fn of(kind: LineKind) -> Self {
         match kind {
-            LineKind::Record { kind, .. } => Self::Record(kind),
+            LineKind::Record { kind, .. } => {
+                kind.changed_side().map_or(Self::Context, Self::Changed)
+            }
             LineKind::HunkHeader => Self::HunkHeader,
-            LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Metadata,
+            LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
         }
     }
 }
 
 #[derive(Clone, Copy)]
 pub struct StyledRow<'a> {
-    pub kind: RowKind,
+    pub tone: RowTone,
     text: &'a str,
     partition: &'a Partition,
 }
 
 impl<'a> StyledRow<'a> {
     pub fn segments(&self) -> impl Iterator<Item = (&'a str, TextStyle)> + use<'a> {
-        let mut remaining = self.text;
-        let mut offset = 0;
-        let mut boundaries = self.partition.0.iter();
-        std::iter::from_fn(move || {
-            let Some(boundary) = boundaries.next() else {
-                return (!remaining.is_empty())
-                    .then(|| (std::mem::take(&mut remaining), TextStyle::Plain));
-            };
-            let (text, rest) = remaining.split_at(boundary.end - offset);
-            remaining = rest;
-            offset = boundary.end;
-            Some((text, boundary.style))
-        })
+        let text = self.text;
+
+        self.partition
+            .boundaries()
+            .iter()
+            .scan(0, move |start, boundary| {
+                let segment = &text[*start..boundary.end];
+                *start = boundary.end;
+                Some((segment, boundary.style))
+            })
+            .filter(|(segment, _)| !segment.is_empty())
     }
 }
 
@@ -99,22 +95,6 @@ pub struct RowStyles {
 }
 
 impl RowStyles {
-    fn syntax(text: &str, syntax: &[SyntaxSpan]) -> Self {
-        let annotations = syntax
-            .iter()
-            .map(|span| Annotation {
-                span: span.span,
-                priority_length: span.capture_length,
-                style: TextStyle::Syntax(span.class),
-            })
-            .collect::<Vec<_>>();
-
-        Self {
-            syntax: Partition::new(text, &annotations, TextStyle::Plain),
-            character: None,
-        }
-    }
-
     /// `line` styled as `granularity` presents it; a row without character detail keeps
     /// its syntax styles.
     pub fn row<'a>(
@@ -128,11 +108,24 @@ impl RowStyles {
         };
 
         StyledRow {
-            kind: RowKind::of(line.kind()),
+            tone: RowTone::of(line.kind()),
             text: line.payload(),
             partition,
         }
     }
+}
+
+fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
+    let annotations = syntax
+        .iter()
+        .map(|span| Annotation {
+            span: span.span,
+            priority_length: span.capture_length,
+            style: TextStyle::Syntax(span.class),
+        })
+        .collect::<Vec<_>>();
+
+    Partition::new(text, &annotations, TextStyle::Plain)
 }
 
 fn character_partition(text: &str, details: &[PayloadSpan]) -> Partition {
@@ -154,8 +147,13 @@ struct Annotation {
     style: TextStyle,
 }
 
+/// A row's text split into styled segments: one style for all of it, or the end and
+/// style of each segment in order.
 #[derive(Debug, PartialEq, Eq)]
-struct Partition(Box<[Boundary]>);
+enum Partition {
+    Uniform(Boundary),
+    Split(Box<[Boundary]>),
+}
 
 #[derive(Debug, PartialEq, Eq)]
 struct Boundary {
@@ -167,34 +165,38 @@ impl Partition {
     /// Splits `text` at annotation edges; text no annotation covers takes `uncovered`.
     fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
-            return Self(Box::new([]));
+            return Self::Uniform(Boundary {
+                end: text.len(),
+                style: uncovered,
+            });
         }
 
         let mut offsets = vec![0, text.len()];
         for annotation in annotations {
-            assert!(annotation.span.start <= annotation.span.end);
-            assert!(text.is_char_boundary(annotation.span.start));
-            assert!(text.is_char_boundary(annotation.span.end));
-            offsets.extend([annotation.span.start, annotation.span.end]);
+            let span = annotation.span;
+            assert!(text.is_char_boundary(span.start()));
+            assert!(text.is_char_boundary(span.end()));
+            offsets.extend([span.start(), span.end()]);
         }
         offsets.sort_unstable();
         offsets.dedup();
 
         let mut starts = (0..annotations.len()).collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|index| annotations[*index].span.start);
+        starts.sort_unstable_by_key(|index| annotations[*index].span.start());
         let mut starts = starts.into_iter().peekable();
         let mut active = BinaryHeap::new();
         let mut boundaries: Vec<Boundary> = Vec::new();
 
         for interval in offsets.windows(2) {
             let [start, end] = [interval[0], interval[1]];
-            while let Some(index) = starts.next_if(|index| annotations[*index].span.start <= start)
+            while let Some(index) =
+                starts.next_if(|index| annotations[*index].span.start() <= start)
             {
                 let annotation = &annotations[index];
                 active.push((Reverse(annotation.priority_length), index));
             }
             while let Some((_, index)) = active.peek()
-                && annotations[*index].span.end <= start
+                && annotations[*index].span.end() <= start
             {
                 active.pop();
             }
@@ -211,15 +213,22 @@ impl Partition {
             }
         }
 
-        Self(boundaries.into_boxed_slice())
+        Self::Split(boundaries.into_boxed_slice())
+    }
+
+    fn boundaries(&self) -> &[Boundary] {
+        match self {
+            Self::Uniform(boundary) => std::slice::from_ref(boundary),
+            Self::Split(boundaries) => boundaries,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{RowKind, RowStyles, StyledRow, TextStyle, character_partition};
+    use super::{RowTone, StyledRow, TextStyle, character_partition, syntax_partition};
     use crate::{
-        document::RecordKind,
+        document::Side,
         render::PayloadSpan,
         syntax::{SyntaxClass, SyntaxSpan},
     };
@@ -229,29 +238,30 @@ mod tests {
         let text = "αcall!";
         let syntax = [
             SyntaxSpan {
-                span: PayloadSpan { start: 0, end: 7 },
+                span: PayloadSpan::new(0, 7),
                 capture_length: 7,
                 class: SyntaxClass::String,
             },
             SyntaxSpan {
-                span: PayloadSpan { start: 2, end: 6 },
+                span: PayloadSpan::new(2, 6),
                 capture_length: 4,
                 class: SyntaxClass::Property,
             },
             SyntaxSpan {
-                span: PayloadSpan { start: 2, end: 6 },
+                span: PayloadSpan::new(2, 6),
                 capture_length: 4,
                 class: SyntaxClass::Function,
             },
         ];
-        let styles = RowStyles::syntax(text, &syntax);
+        let partition = syntax_partition(text, &syntax);
         let row = StyledRow {
-            kind: RowKind::Record(RecordKind::Context),
+            tone: RowTone::Context,
             text,
-            partition: &styles.syntax,
+            partition: &partition,
         };
 
-        // roadmap.md: overlap precedence applies styles without changing source text.
+        // architecture.md (Technology direction): overlap precedence applies styles
+        // without changing source text.
         assert_eq!(
             row.segments().collect::<Vec<_>>(),
             [
@@ -265,18 +275,12 @@ mod tests {
     #[test]
     fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
         let text = "αcall!";
-        let syntax = [SyntaxSpan {
-            span: PayloadSpan { start: 0, end: 7 },
-            capture_length: 7,
-            class: SyntaxClass::String,
-        }];
-        let details = [PayloadSpan { start: 2, end: 6 }];
-        let mut styles = RowStyles::syntax(text, &syntax);
-        styles.character = Some(character_partition(text, &details));
+        let details = [PayloadSpan::new(2, 6)];
+        let partition = character_partition(text, &details);
         let row = StyledRow {
-            kind: RowKind::Record(RecordKind::Addition),
+            tone: RowTone::Changed(Side::New),
             text,
-            partition: styles.character.as_ref().expect("character presentation"),
+            partition: &partition,
         };
 
         assert_eq!(
@@ -294,26 +298,41 @@ mod tests {
         let text = "word";
         let syntax = [
             SyntaxSpan {
-                span: PayloadSpan { start: 0, end: 4 },
+                span: PayloadSpan::new(0, 4),
                 capture_length: 4,
                 class: SyntaxClass::Keyword,
             },
             SyntaxSpan {
-                span: PayloadSpan { start: 0, end: 4 },
+                span: PayloadSpan::new(0, 4),
                 capture_length: 20,
                 class: SyntaxClass::Comment,
             },
         ];
-        let styles = RowStyles::syntax(text, &syntax);
+        let partition = syntax_partition(text, &syntax);
         let row = StyledRow {
-            kind: RowKind::Record(RecordKind::Context),
+            tone: RowTone::Context,
             text,
-            partition: &styles.syntax,
+            partition: &partition,
         };
 
         assert_eq!(
             row.segments().collect::<Vec<_>>(),
             [("word", TextStyle::Syntax(SyntaxClass::Keyword)),]
+        );
+    }
+
+    #[test]
+    fn text_without_annotations_takes_the_uncovered_style() {
+        let partition = character_partition("same", &[]);
+        let row = StyledRow {
+            tone: RowTone::Changed(Side::Old),
+            text: "same",
+            partition: &partition,
+        };
+
+        assert_eq!(
+            row.segments().collect::<Vec<_>>(),
+            [("same", TextStyle::Unchanged)]
         );
     }
 }

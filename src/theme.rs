@@ -1,9 +1,9 @@
 //! The built-in palette for each terminal color depth. Rules: `docs/spec/architecture.md`
 //! (View model, Failure and safety posture).
 
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier};
 
-use crate::{file_identity::FileState, file_tree::Marker, syntax::SyntaxClass};
+use crate::{document::Side, file_identity::FileState, file_tree::Marker, syntax::SyntaxClass};
 
 /// The colors a terminal can show, decided once when the session starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,16 +73,32 @@ impl SyntaxPalette {
 
 /// The `low` palette for diff rows.
 pub struct RowPalette {
-    pub addition_background: Color,
-    pub addition_body: Color,
-    pub unchanged_addition: Color,
-    pub deletion_background: Color,
-    pub deletion_body: Color,
-    pub unchanged_deletion: Color,
+    pub deletion: ChangeColors,
+    pub addition: ChangeColors,
     pub context_body: Color,
-    pub deletion_marker: Color,
-    pub addition_marker: Color,
     pub hunk_header: Color,
+}
+
+impl RowPalette {
+    /// The colors of rows that change `side`.
+    pub fn change(&self, side: Side) -> &ChangeColors {
+        match side {
+            Side::Old => &self.deletion,
+            Side::New => &self.addition,
+        }
+    }
+}
+
+/// The colors of rows that change one side.
+pub struct ChangeColors {
+    pub background: Color,
+    pub body: Color,
+    /// Text between the changed spans of a row with character detail.
+    pub unchanged: Color,
+    /// The gutter marker and the changed spans of a row with character detail.
+    pub marker: Color,
+    /// How the row's text is drawn besides its colors.
+    pub body_modifier: Modifier,
 }
 
 /// Colors for the file list, the help hint, separators, and continuity markers.
@@ -126,15 +142,21 @@ static TRUECOLOR: Theme = Theme {
         variable: Color::Rgb(220, 220, 220),
     },
     rows: RowPalette {
-        addition_background: Color::Rgb(35, 73, 43),
-        addition_body: Color::Rgb(220, 235, 220),
-        unchanged_addition: Color::Rgb(170, 185, 170),
-        deletion_background: Color::Rgb(50, 30, 30),
-        deletion_body: Color::Rgb(150, 150, 150),
-        unchanged_deletion: Color::Rgb(120, 120, 120),
+        deletion: ChangeColors {
+            background: Color::Rgb(50, 30, 30),
+            body: Color::Rgb(150, 150, 150),
+            unchanged: Color::Rgb(120, 120, 120),
+            marker: Color::Rgb(206, 74, 74),
+            body_modifier: Modifier::DIM,
+        },
+        addition: ChangeColors {
+            background: Color::Rgb(35, 73, 43),
+            body: Color::Rgb(220, 235, 220),
+            unchanged: Color::Rgb(170, 185, 170),
+            marker: Color::Rgb(112, 195, 115),
+            body_modifier: Modifier::empty(),
+        },
         context_body: Color::Rgb(180, 180, 180),
-        deletion_marker: Color::Rgb(206, 74, 74),
-        addition_marker: Color::Rgb(112, 195, 115),
         hunk_header: Color::Rgb(100, 155, 175),
     },
     chrome: ChromePalette {
@@ -165,15 +187,21 @@ static INDEXED: Theme = Theme {
         variable: Color::Indexed(253),
     },
     rows: RowPalette {
-        addition_background: Color::Indexed(22),
-        addition_body: Color::Indexed(255),
-        unchanged_addition: Color::Indexed(250),
-        deletion_background: Color::Indexed(52),
-        deletion_body: Color::Indexed(245),
-        unchanged_deletion: Color::Indexed(242),
+        deletion: ChangeColors {
+            background: Color::Indexed(52),
+            body: Color::Indexed(245),
+            unchanged: Color::Indexed(242),
+            marker: Color::Indexed(167),
+            body_modifier: Modifier::DIM,
+        },
+        addition: ChangeColors {
+            background: Color::Indexed(22),
+            body: Color::Indexed(255),
+            unchanged: Color::Indexed(250),
+            marker: Color::Indexed(71),
+            body_modifier: Modifier::empty(),
+        },
         context_body: Color::Indexed(250),
-        deletion_marker: Color::Indexed(167),
-        addition_marker: Color::Indexed(71),
         hunk_header: Color::Indexed(109),
     },
     chrome: ChromePalette {
@@ -204,15 +232,21 @@ static BASIC: Theme = Theme {
         variable: Color::White,
     },
     rows: RowPalette {
-        addition_background: Color::Green,
-        addition_body: Color::White,
-        unchanged_addition: Color::Gray,
-        deletion_background: Color::Red,
-        deletion_body: Color::DarkGray,
-        unchanged_deletion: Color::DarkGray,
+        deletion: ChangeColors {
+            background: Color::Red,
+            body: Color::DarkGray,
+            unchanged: Color::DarkGray,
+            marker: Color::Red,
+            body_modifier: Modifier::DIM,
+        },
+        addition: ChangeColors {
+            background: Color::Green,
+            body: Color::White,
+            unchanged: Color::Gray,
+            marker: Color::Green,
+            body_modifier: Modifier::empty(),
+        },
         context_body: Color::Gray,
-        deletion_marker: Color::Red,
-        addition_marker: Color::Green,
         hunk_header: Color::Cyan,
     },
     chrome: ChromePalette {
@@ -234,7 +268,7 @@ static BASIC: Theme = Theme {
 mod tests {
     use ratatui::style::Color;
 
-    use super::{ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
+    use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
 
     #[test]
     fn reads_crossterm_color_counts_as_depths() {
@@ -290,17 +324,21 @@ mod tests {
             variable,
         } = syntax;
         let RowPalette {
-            addition_background,
-            addition_body,
-            unchanged_addition,
-            deletion_background,
-            deletion_body,
-            unchanged_deletion,
+            deletion,
+            addition,
             context_body,
-            deletion_marker,
-            addition_marker,
             hunk_header,
         } = rows;
+        let change_colors = |colors: &ChangeColors| {
+            let ChangeColors {
+                background,
+                body,
+                unchanged,
+                marker,
+                body_modifier: _,
+            } = colors;
+            [*background, *body, *unchanged, *marker]
+        };
         let ChromePalette {
             directory_heading,
             file_name,
@@ -315,26 +353,12 @@ mod tests {
             hint,
         } = chrome;
 
-        vec![
-            *keyword,
-            *string,
-            *comment,
-            *number,
-            *function,
-            *type_name,
-            *operator,
-            *property,
+        let syntax_colors = [
+            *keyword, *string, *comment, *number, *function, *type_name, *operator, *property,
             *variable,
-            *addition_background,
-            *addition_body,
-            *unchanged_addition,
-            *deletion_background,
-            *deletion_body,
-            *unchanged_deletion,
-            *context_body,
-            *deletion_marker,
-            *addition_marker,
-            *hunk_header,
+        ];
+        let row_colors = [*context_body, *hunk_header];
+        let chrome_colors = [
             *directory_heading,
             *file_name,
             *modified_marker,
@@ -346,6 +370,14 @@ mod tests {
             *separator,
             *dim_separator,
             *hint,
-        ]
+        ];
+
+        [syntax_colors.as_slice(), &row_colors, &chrome_colors]
+            .into_iter()
+            .flatten()
+            .copied()
+            .chain(change_colors(deletion))
+            .chain(change_colors(addition))
+            .collect()
     }
 }

@@ -6,7 +6,10 @@ use std::ops::ControlFlow;
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::rows::{PaneRow, gutter, row_style, segment_style};
+use super::{
+    row_style::{gutter, row_style, segment_style},
+    rows::PaneRow,
+};
 use crate::{
     extent::{MARKER_GUTTER_WIDTH, Wrap},
     line_breaks::LineBreaks,
@@ -59,7 +62,7 @@ pub(super) fn write_row(
     placement: RowPlacement,
     theme: &Theme,
 ) -> Clip {
-    buffer.set_style(area, row_style(row.kind(), &theme.rows));
+    buffer.set_style(area, row_style(row.tone(), &theme.rows));
     let PaneRow::Text(row) = row else {
         return Clip::default();
     };
@@ -67,8 +70,8 @@ pub(super) fn write_row(
     let payload = ExpandedPayload::new(row);
     let payload_clusters = payload
         .clusters()
-        .map(|(cluster, text_style)| (cluster, segment_style(row.kind, text_style, theme)));
-    let gutter = gutter(row.kind, &theme.rows);
+        .map(|(cluster, text_style)| (cluster, segment_style(row.tone, text_style, theme)));
+    let gutter = gutter(row.tone, &theme.rows);
 
     let cursor = RowCursor {
         buffer,
@@ -245,12 +248,11 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
-        document::RecordKind,
+        document::Side,
         extent::{DisplayExtent, Wrap},
         parser::parse_unified_diff,
         preferences::{DiffGranularity, DiffLayout},
         prepared::{PageIndex, PreparedDocument},
-        styling::RowKind,
         terminal::rows::{PaneRow, visible_diff_rows},
         theme::{ColorDepth, Theme},
     };
@@ -323,7 +325,7 @@ mod tests {
         // architecture.md: a wide grapheme cut by the left pane edge renders its visible
         // cells blank, keeping later text in its column.
         assert_eq!(buffer[(0, 0)].symbol(), " ");
-        assert_eq!(buffer[(0, 0)].bg, THEME.rows.addition_background);
+        assert_eq!(buffer[(0, 0)].bg, THEME.rows.addition.background);
         assert_eq!(buffer[(1, 0)].symbol(), "x");
     }
 
@@ -337,7 +339,7 @@ mod tests {
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
-        assert_eq!(buffer[(4, 0)].bg, THEME.rows.addition_background);
+        assert_eq!(buffer[(4, 0)].bg, THEME.rows.addition.background);
     }
 
     #[test]
@@ -359,8 +361,8 @@ mod tests {
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
         assert_eq!(row_text(&past_the_end), "");
-        assert_eq!(second[(0, 0)].bg, THEME.rows.addition_background);
-        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.addition_background);
+        assert_eq!(second[(0, 0)].bg, THEME.rows.addition.background);
+        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.addition.background);
     }
 
     #[test]
@@ -395,11 +397,7 @@ mod tests {
 
     #[test]
     fn fills_an_alignment_peer_with_its_change_style_only() {
-        let buffer = write(
-            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Deletion)),
-            4,
-            0,
-        );
+        let buffer = write(PaneRow::AlignmentPeer(Side::Old), 4, 0);
 
         assert!((0..4).all(|x| buffer[(x, 0)].symbol() == " "));
         assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));

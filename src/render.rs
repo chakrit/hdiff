@@ -29,11 +29,7 @@ impl LineKind {
 
     /// The side a changed record removes from or adds to; other lines change neither.
     pub fn changed_side(self) -> Option<Side> {
-        match self.record_kind()? {
-            RecordKind::Deletion => Some(Side::Old),
-            RecordKind::Addition => Some(Side::New),
-            RecordKind::Context | RecordKind::Raw => None,
-        }
+        self.record_kind()?.changed_side()
     }
 
     fn marker(self) -> &'static str {
@@ -44,11 +40,28 @@ impl LineKind {
 /// A byte range of a rendered line's payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PayloadSpan {
-    pub start: usize,
-    pub end: usize,
+    start: usize,
+    end: usize,
 }
 
 impl PayloadSpan {
+    /// The bytes from `start` up to `end`.
+    ///
+    /// Panics when `start` is after `end`.
+    pub fn new(start: usize, end: usize) -> Self {
+        assert!(start <= end, "a payload span starts before it ends");
+
+        Self { start, end }
+    }
+
+    pub fn start(self) -> usize {
+        self.start
+    }
+
+    pub fn end(self) -> usize {
+        self.end
+    }
+
     pub fn len(self) -> usize {
         self.end - self.start
     }
@@ -64,6 +77,11 @@ impl PayloadSpan {
             end: self.end + offset,
         }
     }
+
+    /// The span from this span's start to the end of `later`, which ends no earlier.
+    pub fn through(self, later: Self) -> Self {
+        Self::new(self.start, later.end)
+    }
 }
 
 /// A line's sanitized text: its record marker, its payload, and its source line ending.
@@ -71,7 +89,6 @@ impl PayloadSpan {
 pub struct RenderedLine {
     text: Box<str>,
     kind: LineKind,
-    ending: LineEnding,
 }
 
 impl RenderedLine {
@@ -88,7 +105,6 @@ impl RenderedLine {
         Self {
             text: text.into_boxed_str(),
             kind,
-            ending,
         }
     }
 
@@ -101,10 +117,11 @@ impl RenderedLine {
         &self.text
     }
 
-    /// The text between the record marker and the line ending.
+    /// The text between the record marker and the line ending. Sanitized text holds no
+    /// line ending, so the line's text ends in exactly the source's.
     pub fn payload(&self) -> &str {
         let start = self.kind.marker().len();
-        let end = self.text.len() - self.ending.text().len();
+        let end = self.text.len() - LineEnding::of(self.text.as_bytes()).text().len();
 
         &self.text[start..end]
     }
@@ -137,20 +154,17 @@ impl LineEnding {
     }
 }
 
+/// The document as finite output: every rendered line, in input order.
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
+    let lines = document.sections.iter().flat_map(|section| match section {
+        Section::File(file) => render_file_lines(file),
+        Section::Text(lines) => render_text_lines(lines),
+    });
+
     let mut output = Vec::new();
-
-    for section in &document.sections {
-        match section {
-            Section::File(file) => output.extend_from_slice(&render_file(file)),
-            Section::Text(lines) => {
-                for line in render_text_lines(lines) {
-                    output.extend_from_slice(line.text().as_bytes());
-                }
-            }
-        }
+    for line in lines {
+        output.extend_from_slice(line.text().as_bytes());
     }
-
     output
 }
 
@@ -161,16 +175,7 @@ pub fn render_text_lines<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) ->
         .collect()
 }
 
-pub fn render_file(file: &DiffFile) -> Vec<u8> {
-    render_file_lines(file)
-        .into_iter()
-        .flat_map(|line| line.text.into_string().into_bytes())
-        .collect()
-}
-
 pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
-    let mut rendered_lines = Vec::new();
-
     let header_lines = |header: &GitHeader| {
         std::iter::once(&header.line)
             .chain(&header.metadata)
@@ -179,36 +184,37 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     };
 
     match &file.body {
-        FileBody::Metadata(header) => rendered_lines.extend(header_lines(header)),
+        FileBody::Metadata(header) => header_lines(header),
         FileBody::Unified(file) => {
-            rendered_lines.extend(file.git.iter().flat_map(header_lines));
-            for header in [&file.old, &file.new] {
-                rendered_lines.push(RenderedLine::new(LineKind::FileHeader, &header.line));
-            }
-            for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-                rendered_lines.push(RenderedLine::new(LineKind::HunkHeader, &hunk.header));
-                for (record_index, record) in hunk.records.iter().enumerate() {
-                    let kind = LineKind::Record {
-                        address: RecordAddress {
-                            hunk_index,
-                            record_index,
-                        },
-                        kind: record.kind,
-                    };
-                    rendered_lines.push(RenderedLine::new(kind, &record.payload));
-                }
-            }
+            let git_header = file.git.iter().flat_map(header_lines);
+            let file_headers = [&file.old, &file.new]
+                .map(|header| RenderedLine::new(LineKind::FileHeader, &header.line));
+            let hunks = file
+                .hunks
+                .iter()
+                .enumerate()
+                .flat_map(|(hunk_index, hunk)| {
+                    let header = RenderedLine::new(LineKind::HunkHeader, &hunk.header);
+                    let records = hunk.records.iter().enumerate().map(move |(index, record)| {
+                        let kind = LineKind::Record {
+                            address: RecordAddress::new(hunk_index, index),
+                            kind: record.kind,
+                        };
+                        RenderedLine::new(kind, &record.payload)
+                    });
+                    std::iter::once(header).chain(records)
+                });
+
+            git_header.chain(file_headers).chain(hunks).collect()
         }
     }
-
-    rendered_lines
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{LineKind, render_file, render_file_lines, render_unified};
+    use super::{LineKind, render_file_lines, render_unified};
     use crate::{
-        document::{FileBody, RecordAddress, RecordKind},
+        document::{RecordAddress, RecordKind},
         parser::parse_unified_diff,
     };
 
@@ -239,9 +245,6 @@ mod tests {
     fn classifies_metadata_file_headers_hunks_and_records() {
         let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
         let document = parse_unified_diff(input).expect("valid Git diff with two hunks");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("expected unified file");
-        };
 
         let lines = render_file_lines(document.files().next().expect("first file"));
         let kinds = lines.iter().map(|line| line.kind()).collect::<Vec<_>>();
@@ -255,24 +258,17 @@ mod tests {
         assert_eq!(
             kinds[5],
             LineKind::Record {
-                address: RecordAddress {
-                    hunk_index: 0,
-                    record_index: 0,
-                },
+                address: RecordAddress::new(0, 0),
                 kind: RecordKind::Deletion,
             }
         );
         assert_eq!(
             kinds[8],
             LineKind::Record {
-                address: RecordAddress {
-                    hunk_index: 1,
-                    record_index: 0,
-                },
+                address: RecordAddress::new(1, 0),
                 kind: RecordKind::Deletion,
             }
         );
-        assert_eq!(file.hunks.len(), 2);
     }
 
     #[test]
@@ -387,7 +383,10 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n";
         let document = parse_unified_diff(input).expect("valid diff");
 
-        let rendered = render_file(document.files().next().expect("first file"));
+        let rendered = render_file_lines(document.files().next().expect("first file"))
+            .iter()
+            .flat_map(|line| line.text().bytes())
+            .collect::<Vec<_>>();
 
         assert_eq!(rendered, render_unified(&document));
         assert!(!rendered.contains(&b'\x1b'));

@@ -2,60 +2,46 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    page_rows::{LineIndex, PageRows, SideBySideRow},
+    page_rows::{LineIndex, LineMap, PageRows, SideBySideRow},
     render::PayloadSpan,
 };
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ChangedPairDetail {
-    pub before: Vec<PayloadSpan>,
-    pub after: Vec<PayloadSpan>,
-}
+/// The character-detail spans of each `page_rows` line that has changed spans: a paired
+/// row marks the spans that differ from its peer, and an unmatched row is changed as a
+/// whole.
+pub fn character_details(page_rows: &PageRows) -> LineMap<Option<Box<[PayloadSpan]>>> {
+    let payload = |line: LineIndex| page_rows.line(line).payload();
+    let whole = |line: LineIndex| vec![PayloadSpan::new(0, payload(line).len())];
 
-/// One row's character-detail spans.
-#[derive(Debug, PartialEq, Eq)]
-pub struct RowDetail {
-    pub row: LineIndex,
-    pub spans: Vec<PayloadSpan>,
-}
-
-/// The character detail of each `page_rows` row that has changed spans: a paired row marks
-/// the spans that differ from its peer, and an unmatched row is changed as a whole.
-pub fn character_details(page_rows: &PageRows) -> Vec<RowDetail> {
-    let payload = |row: LineIndex| page_rows.line(row).payload();
-    let mut details = Vec::new();
-
-    for row in page_rows.pairs() {
-        match row {
-            SideBySideRow::Paired { before, after } => {
-                let pair = changed_pair_detail(payload(*before), payload(*after));
-                details.push(RowDetail {
-                    row: *before,
-                    spans: pair.before,
-                });
-                details.push(RowDetail {
-                    row: *after,
-                    spans: pair.after,
-                });
-            }
-            SideBySideRow::BeforeOnly(row) | SideBySideRow::AfterOnly(row) => {
-                let mut spans = Vec::new();
-                add_span(&mut spans, 0, payload(*row).len());
-                details.push(RowDetail { row: *row, spans });
-            }
-            SideBySideRow::Shared(_) => {}
+    let row_details = page_rows.pairs().iter().flat_map(|row| match *row {
+        SideBySideRow::Paired { before, after } => {
+            let pair = changed_pair_detail(payload(before), payload(after));
+            [Some((before, pair.before)), Some((after, pair.after))]
         }
-    }
+        SideBySideRow::BeforeOnly(line) | SideBySideRow::AfterOnly(line) => {
+            [Some((line, whole(line))), None]
+        }
+        SideBySideRow::Shared(_) => [None, None],
+    });
+    let changed = row_details
+        .flatten()
+        .filter(|(_, spans)| spans.iter().any(|span| !span.is_empty()))
+        .map(|(line, spans)| (line, spans.into_boxed_slice()));
 
-    details.retain(|detail| detail.spans.iter().any(|span| !span.is_empty()));
-    details
+    page_rows.sparse_map(changed)
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ChangedPairDetail {
+    before: Vec<PayloadSpan>,
+    after: Vec<PayloadSpan>,
 }
 
 /// The spans that differ between a changed pair's payloads, found by diffing their
 /// tokens.
-pub fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
+fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
     let before_tokens = tokens(before);
     let after_tokens = tokens(after);
     let mut changes = diff_slices(Algorithm::Myers, &before_tokens, &after_tokens)
@@ -260,10 +246,7 @@ fn similar_word_detail(deleted: &[Token<'_>], inserted: &[Token<'_>]) -> Option<
 // Spans
 
 fn add_span(target: &mut Vec<PayloadSpan>, start: usize, width: usize) {
-    target.push(PayloadSpan {
-        start,
-        end: start + width,
-    });
+    target.push(PayloadSpan::new(start, start + width));
 }
 
 fn add_offset_spans(target: &mut Vec<PayloadSpan>, spans: &[PayloadSpan], offset: usize) {
@@ -278,9 +261,9 @@ fn coalesce_tiny_equal_islands(spans: &mut Vec<PayloadSpan>, text: &str) {
             coalesced.push(span);
             continue;
         };
-        let island = &text[previous.end..span.start];
+        let island = &text[previous.end()..span.start()];
         if island.graphemes(true).count() <= MAX_EQUAL_ISLAND_GRAPHEMES {
-            previous.end = span.end;
+            *previous = previous.through(span);
         } else {
             coalesced.push(span);
         }
@@ -324,15 +307,9 @@ mod tests {
             let details = character_details(&page_rows);
 
             for (row, line) in page_rows.line_indices().zip(page_rows.lines()) {
-                let spans = details
-                    .iter()
-                    .find(|detail| detail.row == row)
-                    .map_or(&[][..], |detail| detail.spans.as_slice());
+                let spans = details.get(row).as_deref().unwrap_or_default();
                 let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
-                let wanted = wanted.map(|(_, start, end)| PayloadSpan {
-                    start: *start,
-                    end: *end,
-                });
+                let wanted = wanted.map(|(_, start, end)| PayloadSpan::new(*start, *end));
                 assert_eq!(
                     spans,
                     wanted.into_iter().collect::<Vec<_>>(),
@@ -350,8 +327,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![PayloadSpan { start: 12, end: 15 }],
-                after: vec![PayloadSpan { start: 12, end: 15 }],
+                before: vec![PayloadSpan::new(12, 15)],
+                after: vec![PayloadSpan::new(12, 15)],
             }
         );
     }
@@ -363,8 +340,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![PayloadSpan { start: 0, end: 10 }],
-                after: vec![PayloadSpan { start: 0, end: 15 }],
+                before: vec![PayloadSpan::new(0, 10)],
+                after: vec![PayloadSpan::new(0, 15)],
             }
         );
     }
@@ -376,8 +353,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![PayloadSpan { start: 6, end: 10 }],
-                after: vec![PayloadSpan { start: 6, end: 10 }],
+                before: vec![PayloadSpan::new(6, 10)],
+                after: vec![PayloadSpan::new(6, 10)],
             }
         );
     }
@@ -389,8 +366,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![PayloadSpan { start: 0, end: 12 }],
-                after: vec![PayloadSpan { start: 0, end: 14 }],
+                before: vec![PayloadSpan::new(0, 12)],
+                after: vec![PayloadSpan::new(0, 14)],
             }
         );
     }

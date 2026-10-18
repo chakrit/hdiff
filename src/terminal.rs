@@ -13,6 +13,7 @@ use crate::{
 
 mod chrome;
 mod keymap;
+mod row_style;
 mod row_writer;
 mod rows;
 mod session;
