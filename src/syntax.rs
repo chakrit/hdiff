@@ -1,7 +1,7 @@
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, FileBody, GitHeader, RecordKind, Side, UnifiedBody},
+    document::{DiffFile, FileBody, RecordKind, RecordMap, Side, UnifiedBody},
     file_identity::HeaderPath,
     measurement::{Observer, Stage, Unobserved, Work},
 };
@@ -34,29 +34,19 @@ pub struct SyntaxHighlighter {
 }
 
 impl SyntaxHighlighter {
-    pub fn highlight_file(&mut self, file: &DiffFile) -> Vec<Vec<SyntaxSpan>> {
-        self.highlight_file_observed(file, &mut Unobserved)
-    }
-
-    pub fn highlight_file_observed(
+    /// The syntax spans of each record of `file`.
+    pub fn highlight_file(
         &mut self,
         file: &DiffFile,
         observer: &mut impl Observer,
-    ) -> Vec<Vec<SyntaxSpan>> {
-        let header_rows = |header: &GitHeader| 1 + header.metadata.len();
-
+    ) -> RecordMap<Vec<SyntaxSpan>> {
         match &file.body {
-            FileBody::Metadata(header) => (0..header_rows(header)).map(|_| Vec::new()).collect(),
+            FileBody::Metadata(_) => RecordMap::default(),
             FileBody::Unified(file) => {
-                let file_header_rows = file.git.as_ref().map_or(0, header_rows) + 2;
-                let mut rows = (0..file_header_rows)
-                    .map(|_| Vec::new())
-                    .collect::<Vec<_>>();
-                for hunk_index in 0..file.hunks.len() {
-                    rows.push(Vec::new());
-                    rows.extend(self.highlight_hunk_observed(file, hunk_index, observer));
-                }
-                rows
+                RecordMap::from_hunks((0..file.hunks.len()).map(|hunk_index| {
+                    self.highlight_hunk_observed(file, hunk_index, observer)
+                        .into_boxed_slice()
+                }))
             }
         }
     }

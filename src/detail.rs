@@ -1,10 +1,7 @@
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{
-    layout::{Layout, SideBySideRow},
-    preferences::DiffGranularity,
-};
+use crate::layout::{Layout, SideBySideRow};
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
@@ -272,47 +269,49 @@ fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
     });
 }
 
-pub fn detail_rows(layout: &Layout, granularity: DiffGranularity) -> Vec<Vec<DetailSpan>> {
-    let mut details = (0..layout.diff_lines.len())
-        .map(|_| Vec::new())
-        .collect::<Vec<_>>();
-    if granularity == DiffGranularity::Line {
-        return details;
-    }
+/// One row's character-detail spans.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RowDetail {
+    pub row: usize,
+    pub spans: Vec<DetailSpan>,
+}
+
+/// The character detail of each `layout` row that has changed spans: a paired row marks
+/// the spans that differ from its peer, and an unmatched row is changed as a whole.
+pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
+    let payload = |row: usize| layout.diff_lines[row].payload();
+    let mut details = Vec::new();
 
     for row in &layout.side_by_side_rows {
         match row {
             SideBySideRow::Paired { before, after } => {
-                let before_line = layout
-                    .rendered_line(*before)
-                    .expect("side-by-side before index belongs to the layout");
-                let after_line = layout
-                    .rendered_line(*after)
-                    .expect("side-by-side after index belongs to the layout");
-                let pair = changed_pair_detail(before_line.payload(), after_line.payload());
-                details[*before] = pair.before;
-                details[*after] = pair.after;
+                let pair = changed_pair_detail(payload(*before), payload(*after));
+                details.push(RowDetail {
+                    row: *before,
+                    spans: pair.before,
+                });
+                details.push(RowDetail {
+                    row: *after,
+                    spans: pair.after,
+                });
             }
-            SideBySideRow::BeforeOnly(index) | SideBySideRow::AfterOnly(index) => {
-                let line = layout
-                    .rendered_line(*index)
-                    .expect("unmatched row index belongs to the layout");
-                let payload = line.payload();
-                if !payload.is_empty() {
-                    add_span(&mut details[*index], 0, payload.len());
-                }
+            SideBySideRow::BeforeOnly(row) | SideBySideRow::AfterOnly(row) => {
+                let mut spans = Vec::new();
+                add_span(&mut spans, 0, payload(*row).len());
+                details.push(RowDetail { row: *row, spans });
             }
             SideBySideRow::Shared(_) => {}
         }
     }
 
+    details.retain(|detail| detail.spans.iter().any(|span| span.start < span.end));
     details
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangedPairDetail, DetailSpan, changed_pair_detail, detail_rows};
-    use crate::{layout::file_layout, parser::parse_unified_diff, preferences::DiffGranularity};
+    use super::{ChangedPairDetail, DetailSpan, changed_pair_detail, character_details};
+    use crate::{layout::file_layout, parser::parse_unified_diff};
 
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
@@ -341,9 +340,13 @@ mod tests {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
             let document = parse_unified_diff(patch.as_bytes()).expect("valid unmatched diff");
             let layout = file_layout(&document.file_views().next().expect("first file"));
-            let details = detail_rows(&layout, DiffGranularity::Character);
+            let details = character_details(&layout);
 
-            for (line, spans) in layout.diff_lines.iter().zip(details) {
+            for (row, line) in layout.diff_lines.iter().enumerate() {
+                let spans = details
+                    .iter()
+                    .find(|detail| detail.row == row)
+                    .map_or(&[][..], |detail| detail.spans.as_slice());
                 let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
                 let wanted = wanted.map(|(_, start, end)| DetailSpan {
                     start: *start,
@@ -356,11 +359,6 @@ mod tests {
                     line.text()
                 );
             }
-            assert!(
-                detail_rows(&layout, DiffGranularity::Line)
-                    .iter()
-                    .all(Vec::is_empty)
-            );
         }
     }
 

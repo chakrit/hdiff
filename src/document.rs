@@ -189,21 +189,7 @@ pub struct RecordMap<T> {
 }
 
 impl<T> RecordMap<T> {
-    /// A map holding `value()` for every record of `file`.
-    pub fn for_file(file: &DiffFile, mut value: impl FnMut() -> T) -> Self {
-        let hunks: &[Hunk] = match &file.body {
-            FileBody::Metadata(_) => &[],
-            FileBody::Unified(body) => &body.hunks,
-        };
-
-        Self::from_hunks(
-            hunks
-                .iter()
-                .map(|hunk| hunk.records.iter().map(|_| value()).collect()),
-        )
-    }
-
-    /// A map from each hunk's values, in record order.
+    /// A map from each hunk's values, in hunk order and then record order.
     pub fn from_hunks(hunks: impl IntoIterator<Item = Box<[T]>>) -> Self {
         Self {
             hunks: hunks.into_iter().collect(),
@@ -216,9 +202,13 @@ impl<T> RecordMap<T> {
     pub fn get(&self, address: RecordAddress) -> &T {
         &self.hunks[address.hunk_index][address.record_index]
     }
+}
 
-    /// Panics when `address` names no record of the map's file.
-    pub fn get_mut(&mut self, address: RecordAddress) -> &mut T {
-        &mut self.hunks[address.hunk_index][address.record_index]
+/// The map of a file without records.
+impl<T> Default for RecordMap<T> {
+    fn default() -> Self {
+        Self {
+            hunks: Box::new([]),
+        }
     }
 }

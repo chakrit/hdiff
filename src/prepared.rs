@@ -1,15 +1,15 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    detail::detail_rows,
-    document::{DiffDocument, FileView},
+    detail::character_details,
+    document::{DiffDocument, FileView, RecordMap},
     file_tree::{FileListing, FileTree, ListedFile},
     layout::{Layout, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
     preferences::DiffGranularity,
     render::LineKind,
-    styling::{StyledLayout, StyledRow},
-    syntax::{SyntaxHighlighter, SyntaxSpan},
+    styling::{RowStyles, StyledRow, row_styles},
+    syntax::SyntaxHighlighter,
 };
 
 /// A document ready to draw: at least one page, and the file list.
@@ -21,8 +21,11 @@ pub struct PreparedDocument {
 
 /// What one selection shows: a file occurrence with its surrounding text, or all the
 /// text of a document that holds no file.
+#[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
-    rows: StyledLayout,
+    layout: Layout,
+    /// The styles of each layout row, in row order.
+    styles: Box<[RowStyles]>,
     list_row: Option<usize>,
 }
 
@@ -95,19 +98,14 @@ impl PreparedPage {
         observer: &mut impl Observer,
     ) -> Self {
         let layout = observer.measure(Stage::Layout, |_| file_layout(&file));
-        let syntax: Vec<Vec<SyntaxSpan>> = observer.measure(Stage::Syntax, |observer| {
-            let leading = std::iter::repeat_with(Vec::new).take(file.leading.len());
-            let highlighted = syntax.highlight_file_observed(file.file, observer);
-            let trailing = std::iter::repeat_with(Vec::new).take(file.trailing.len());
-
-            leading.chain(highlighted).chain(trailing).collect()
+        let syntax = observer.measure(Stage::Syntax, |observer| {
+            syntax.highlight_file(file.file, observer)
         });
-        let character_details = observer.measure(Stage::Detail, |_| {
-            detail_rows(&layout, DiffGranularity::Character)
-        });
+        let details = observer.measure(Stage::Detail, |_| character_details(&layout));
 
         Self {
-            rows: StyledLayout::new(layout, &syntax, &character_details),
+            styles: row_styles(&layout, &syntax, details),
+            layout,
             list_row: Some(list_row),
         }
     }
@@ -115,16 +113,10 @@ impl PreparedPage {
     /// Surrounding text has no syntax or character detail.
     fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let layout = observer.measure(Stage::Layout, |_| text_layout(document.text()));
-        let row_count = layout.diff_lines.len();
-        let syntax = std::iter::repeat_with(Vec::new)
-            .take(row_count)
-            .collect::<Vec<_>>();
-        let details = std::iter::repeat_with(Vec::new)
-            .take(row_count)
-            .collect::<Vec<_>>();
 
         Self {
-            rows: StyledLayout::new(layout, &syntax, &details),
+            styles: row_styles(&layout, &RecordMap::default(), Vec::new()),
+            layout,
             list_row: None,
         }
     }
@@ -135,15 +127,16 @@ impl PreparedPage {
     }
 
     pub fn layout(&self) -> &Layout {
-        self.rows.layout()
+        &self.layout
     }
 
+    /// Layout row `index` with the styles `granularity` presents.
     pub fn row(&self, index: usize, granularity: DiffGranularity) -> StyledRow<'_> {
-        self.rows.row(index, granularity)
+        self.styles[index].row(&self.layout.diff_lines[index], granularity)
     }
 
     fn record_count(&self) -> usize {
-        self.layout()
+        self.layout
             .diff_lines
             .iter()
             .filter(|line| matches!(line.kind(), LineKind::Record { .. }))
@@ -207,7 +200,7 @@ mod tests {
         assert_eq!(ordinary.file_tree(), observed.file_tree());
         assert_eq!(ordinary.record_count(), observed.record_count());
         for (ordinary, observed) in ordinary.pages().zip(observed.pages()) {
-            assert_eq!(ordinary.rows, observed.rows);
+            assert_eq!(ordinary, observed);
         }
     }
 

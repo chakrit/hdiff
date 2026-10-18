@@ -1,53 +1,41 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
-    detail::DetailSpan,
-    document::RecordKind,
+    detail::{DetailSpan, RowDetail},
+    document::{RecordKind, RecordMap},
     layout::Layout,
     preferences::DiffGranularity,
-    render::LineKind,
+    render::{LineKind, RenderedLine},
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct StyledLayout {
-    layout: Layout,
-    rows: Box<[RowStyles]>,
-}
+/// The styles of each `layout` row: syntax spans of its record, looked up by address, and
+/// the character detail of each row `details` names.
+pub fn row_styles(
+    layout: &Layout,
+    syntax: &RecordMap<Vec<SyntaxSpan>>,
+    details: Vec<RowDetail>,
+) -> Box<[RowStyles]> {
+    let mut rows = layout
+        .diff_lines
+        .iter()
+        .map(|line| {
+            let spans: &[SyntaxSpan] = match line.kind() {
+                LineKind::Record { address, .. } => syntax.get(address),
+                LineKind::Text
+                | LineKind::Metadata
+                | LineKind::FileHeader
+                | LineKind::HunkHeader => &[],
+            };
+            RowStyles::syntax(line.payload(), spans)
+        })
+        .collect::<Vec<_>>();
 
-impl StyledLayout {
-    pub fn new(layout: Layout, syntax: &[Vec<SyntaxSpan>], details: &[Vec<DetailSpan>]) -> Self {
-        assert_eq!(layout.diff_lines.len(), syntax.len());
-        assert_eq!(layout.diff_lines.len(), details.len());
-        let rows = layout
-            .diff_lines
-            .iter()
-            .zip(syntax)
-            .zip(details)
-            .map(|((line, syntax), details)| RowStyles::new(line.payload(), syntax, details))
-            .collect();
-
-        Self { layout, rows }
+    for detail in details {
+        let text = layout.diff_lines[detail.row].payload();
+        rows[detail.row].character = Some(character_partition(text, &detail.spans));
     }
-
-    pub fn layout(&self) -> &Layout {
-        &self.layout
-    }
-
-    pub fn row(&self, index: usize, granularity: DiffGranularity) -> StyledRow<'_> {
-        let line = &self.layout.diff_lines[index];
-        let styles = &self.rows[index];
-        let partition = match granularity {
-            DiffGranularity::Line => &styles.syntax,
-            DiffGranularity::Character => styles.character.as_ref().unwrap_or(&styles.syntax),
-        };
-
-        StyledRow {
-            kind: RowKind::of(line.kind()),
-            text: line.payload(),
-            partition,
-        }
-    }
+    rows.into_boxed_slice()
 }
 
 /// What a row's styling distinguishes: the record kind, a hunk header, or any other line.
@@ -103,15 +91,16 @@ pub enum TextStyle {
     Unchanged,
 }
 
+/// A row's syntax partition, and its character-detail partition when it has detail.
 #[derive(Debug, PartialEq, Eq)]
-struct RowStyles {
+pub struct RowStyles {
     syntax: Partition,
     character: Option<Partition>,
 }
 
 impl RowStyles {
-    fn new(text: &str, syntax: &[SyntaxSpan], details: &[DetailSpan]) -> Self {
-        let syntax = syntax
+    fn syntax(text: &str, syntax: &[SyntaxSpan]) -> Self {
+        let annotations = syntax
             .iter()
             .map(|span| Annotation {
                 start: span.start,
@@ -120,24 +109,45 @@ impl RowStyles {
                 style: TextStyle::Syntax(span.class),
             })
             .collect::<Vec<_>>();
-        let character = (!details.is_empty()).then(|| {
-            let annotations = details
-                .iter()
-                .map(|span| Annotation {
-                    start: span.start,
-                    end: span.end,
-                    priority_length: span.end - span.start,
-                    style: TextStyle::Detail,
-                })
-                .collect::<Vec<_>>();
-            Partition::new(text, &annotations, TextStyle::Unchanged)
-        });
 
         Self {
-            syntax: Partition::new(text, &syntax, TextStyle::Plain),
-            character,
+            syntax: Partition::new(text, &annotations, TextStyle::Plain),
+            character: None,
         }
     }
+
+    /// `line` styled as `granularity` presents it; a row without character detail keeps
+    /// its syntax styles.
+    pub fn row<'a>(
+        &'a self,
+        line: &'a RenderedLine,
+        granularity: DiffGranularity,
+    ) -> StyledRow<'a> {
+        let partition = match granularity {
+            DiffGranularity::Line => &self.syntax,
+            DiffGranularity::Character => self.character.as_ref().unwrap_or(&self.syntax),
+        };
+
+        StyledRow {
+            kind: RowKind::of(line.kind()),
+            text: line.payload(),
+            partition,
+        }
+    }
+}
+
+fn character_partition(text: &str, details: &[DetailSpan]) -> Partition {
+    let annotations = details
+        .iter()
+        .map(|span| Annotation {
+            start: span.start,
+            end: span.end,
+            priority_length: span.end - span.start,
+            style: TextStyle::Detail,
+        })
+        .collect::<Vec<_>>();
+
+    Partition::new(text, &annotations, TextStyle::Unchanged)
 }
 
 struct Annotation {
@@ -207,7 +217,7 @@ impl Partition {
 
 #[cfg(test)]
 mod tests {
-    use super::{RowKind, RowStyles, StyledRow, TextStyle};
+    use super::{RowKind, RowStyles, StyledRow, TextStyle, character_partition};
     use crate::{
         detail::DetailSpan,
         document::RecordKind,
@@ -237,7 +247,7 @@ mod tests {
                 class: SyntaxClass::Function,
             },
         ];
-        let styles = RowStyles::new(text, &syntax, &[]);
+        let styles = RowStyles::syntax(text, &syntax);
         let row = StyledRow {
             kind: RowKind::Record(RecordKind::Context),
             text,
@@ -265,7 +275,8 @@ mod tests {
             class: SyntaxClass::String,
         }];
         let details = [DetailSpan { start: 2, end: 6 }];
-        let styles = RowStyles::new(text, &syntax, &details);
+        let mut styles = RowStyles::syntax(text, &syntax);
+        styles.character = Some(character_partition(text, &details));
         let row = StyledRow {
             kind: RowKind::Record(RecordKind::Addition),
             text,
@@ -299,7 +310,7 @@ mod tests {
                 class: SyntaxClass::Comment,
             },
         ];
-        let styles = RowStyles::new(text, &syntax, &[]);
+        let styles = RowStyles::syntax(text, &syntax);
         let row = StyledRow {
             kind: RowKind::Record(RecordKind::Context),
             text,
