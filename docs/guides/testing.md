@@ -12,6 +12,11 @@ sh tests/benchmark-runner.sh
 `cargo test` runs the unit tests, the CLI and benchmark-report integration tests, and the
 `live` interaction tests. None of them assert timing.
 
+Integration tests that start the `hdiff` executable or Git build them through
+`TestEnv` in `tests/common/mod.rs`: each test gets its own temporary directory, and the
+process runs there with only `HOME`, `PATH`, and `TERM` set. Name repository fixtures with
+`common::fixture`, which works from any sandbox.
+
 ## Live interaction tests
 
 The `live` target in `tests/live/` drives the interactive loop in-process, without

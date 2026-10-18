@@ -167,18 +167,3 @@ impl From<ParseError> for RunError {
         Self::Parse(error)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use hdiff::{parser::parse_unified_diff, render::render_unified};
-
-    #[test]
-    fn turns_diff_input_into_finite_safe_output() {
-        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
-
-        let document = parse_unified_diff(input).expect("valid diff");
-        let output = render_unified(&document);
-
-        assert_eq!(output, input);
-    }
-}

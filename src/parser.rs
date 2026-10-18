@@ -441,8 +441,12 @@ impl<'a> Lines<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_comparison_output, parse_unified_diff};
+    use super::{Malformed, ParseError, parse_comparison_output, parse_unified_diff};
     use crate::document::{DiffDocument, FileBody, Hunk};
+
+    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, ParseError> {
+        Err(ParseError::Malformed { line, reason })
+    }
 
     #[test]
     fn preserves_surrounding_text_in_source_order() {
@@ -456,7 +460,7 @@ mod tests {
     #[test]
     fn rejects_nonempty_text_only_input() {
         for input in [b"ordinary text\n".as_slice(), b" \t\r\n", b"\n"] {
-            assert!(parse_unified_diff(input).is_err());
+            assert_eq!(parse_unified_diff(input), Err(ParseError::NoDiff));
         }
         assert_eq!(parse_unified_diff(b""), Ok(DiffDocument::default()));
     }
@@ -473,16 +477,24 @@ mod tests {
     #[test]
     fn rejects_malformed_and_combined_sections_after_valid_diff() {
         let valid = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
-        for suffix in [
-            "@@ malformed\n",
-            "@@@ -1,1 -1,1 +1,1 @@@\n",
-            "diff --cc file\n",
-            "diff --combined file\n",
-            "--- a/second\nmissing header\n",
-            "+++ b/second\n",
+        for (suffix, line, reason) in [
+            ("@@ malformed\n", 6, Malformed::InvalidHunkHeader),
+            ("@@@ -1,1 -1,1 +1,1 @@@\n", 6, Malformed::CombinedDiff),
+            ("diff --cc file\n", 6, Malformed::CombinedDiff),
+            ("diff --combined file\n", 6, Malformed::CombinedDiff),
+            (
+                "--- a/second\nmissing header\n",
+                7,
+                Malformed::ExpectedNewFileHeader,
+            ),
+            ("+++ b/second\n", 6, Malformed::ExcessRecords),
         ] {
             let input = format!("{valid}{suffix}");
-            assert!(parse_unified_diff(input.as_bytes()).is_err(), "{suffix}");
+            assert_eq!(
+                parse_unified_diff(input.as_bytes()),
+                malformed(line, reason),
+                "{suffix}"
+            );
         }
     }
 
@@ -490,7 +502,10 @@ mod tests {
     fn rejects_diff_headers_inside_incomplete_hunks() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n@@ malformed\n-old\n+new\n";
 
-        assert!(parse_unified_diff(input).is_err());
+        assert_eq!(
+            parse_unified_diff(input),
+            malformed(4, Malformed::UnexpectedDiffHeader)
+        );
     }
 
     #[test]
@@ -499,7 +514,11 @@ mod tests {
         for suffix in ["-extra\n", "+extra\n", " context\n"] {
             let input = format!("{valid}{suffix}");
 
-            assert!(parse_unified_diff(input.as_bytes()).is_err(), "{suffix}");
+            assert_eq!(
+                parse_unified_diff(input.as_bytes()),
+                malformed(6, Malformed::ExcessRecords),
+                "{suffix}"
+            );
         }
     }
 
@@ -630,7 +649,10 @@ mod tests {
     fn rejects_truncated_hunk() {
         let input = "--- a/readme.txt\n+++ b/readme.txt\n@@ -1,2 +1,2 @@\n-old\n";
 
-        assert!(parse_unified_diff(input.as_bytes()).is_err());
+        assert_eq!(
+            parse_unified_diff(input.as_bytes()),
+            malformed(5, Malformed::TruncatedHunk)
+        );
     }
 
     #[test]

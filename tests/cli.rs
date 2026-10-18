@@ -1,12 +1,16 @@
-use std::process::{Command, Output};
+mod common;
 
-const TEST_PATH: &str = "/usr/bin:/bin";
+use std::{
+    fs,
+    process::{Command, Output, Stdio},
+};
 
-fn hdiff(argument: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .arg(argument)
-        .env_clear()
-        .env("PATH", TEST_PATH)
+use common::{TEST_PATH, TestEnv, fixture};
+
+fn hdiff(arguments: &[&str]) -> Output {
+    TestEnv::new()
+        .hdiff()
+        .args(arguments)
         .output()
         .expect("run hdiff")
 }
@@ -31,27 +35,23 @@ fn short_commit_hash() -> String {
         .to_owned()
 }
 
-fn comparison_tree() -> tempfile::TempDir {
-    let directory = tempfile::tempdir().expect("fixture directory");
+fn comparison_tree() -> TestEnv {
+    let env = TestEnv::new();
     for (path, text) in [
         ("before/top.txt", "old top\n"),
         ("after/top.txt", "new top\n"),
         ("before/nested/inner.txt", "old inner\n"),
         ("after/nested/inner.txt", "new inner\n"),
     ] {
-        let path = directory.path().join(path);
-        std::fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture tree");
-        std::fs::write(path, text).expect("fixture file");
+        env.write_file(path, text);
     }
-    directory
+    env
 }
 
-fn compare(directory: &std::path::Path, arguments: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+fn compare(env: &TestEnv, arguments: &[&str]) -> String {
+    let output = env
+        .hdiff()
         .args(arguments)
-        .current_dir(directory)
-        .env_clear()
-        .env("PATH", TEST_PATH)
         .output()
         .expect("run comparison");
 
@@ -61,7 +61,7 @@ fn compare(directory: &std::path::Path, arguments: &[&str]) -> String {
 
 #[test]
 fn help_describes_the_cli_without_reading_diff_input() {
-    let help = hdiff("--help");
+    let help = hdiff(&["--help"]);
 
     assert!(help.status.success());
     assert!(help.stderr.is_empty());
@@ -88,7 +88,7 @@ fn help_describes_the_cli_without_reading_diff_input() {
 
 #[test]
 fn version_identifies_the_package_and_source_commit() {
-    let version = hdiff("--version");
+    let version = hdiff(&["--version"]);
     let expected = format!(
         "hdiff {} ({})\n",
         env!("CARGO_PKG_VERSION"),
@@ -105,46 +105,36 @@ fn version_identifies_the_package_and_source_commit() {
 
 #[test]
 fn bench_rejects_install_even_when_that_patch_filename_exists() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    std::fs::write(
-        directory.path().join("--install"),
+    let env = TestEnv::new();
+    env.write_file(
+        "--install",
         "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n",
-    )
-    .expect("patch named like an installation option");
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+    );
+    let output = env
+        .hdiff()
         .args(["--bench", "stages", "--install"])
-        .current_dir(directory.path())
-        .env_clear()
-        .env("PATH", TEST_PATH)
         .output()
         .expect("bench with incompatible installation option");
 
-    assert!(
-        !output.status.success(),
-        "installation cannot be combined with measurement"
-    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert!(output.stdout.is_empty());
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("--install cannot be combined with diff input operands")
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "hdiff: --install cannot be combined with diff input operands\n"
     );
 }
 
 #[test]
 fn empty_sources_exit_silently() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let patch = directory.path().join("empty.patch");
-    let before = directory.path().join("before.txt");
-    let after = directory.path().join("after.txt");
-    std::fs::write(&patch, "").expect("empty patch");
-    std::fs::write(&before, "unchanged\n").expect("before source");
-    std::fs::write(&after, "unchanged\n").expect("after source");
+    let env = TestEnv::new();
+    let patch = env.write_file("empty.patch", "");
+    let before = env.write_file("before.txt", "unchanged\n");
+    let after = env.write_file("after.txt", "unchanged\n");
 
     for operands in [vec![], vec![&patch], vec![&before, &after]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+        let output = env
+            .hdiff()
             .args(&operands)
-            .env_clear()
-            .env("PATH", TEST_PATH)
             .output()
             .expect("run empty viewer input");
 
@@ -156,7 +146,8 @@ fn empty_sources_exit_silently() {
 
 #[test]
 fn metadata_only_input_remains_visible() {
-    let output = hdiff("tests/fixtures/git-rename-only.patch");
+    let patch = fixture("git-rename-only.patch");
+    let output = hdiff(&[patch.to_str().expect("fixture path is UTF-8")]);
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
@@ -168,37 +159,46 @@ fn metadata_only_input_remains_visible() {
 
 #[test]
 fn truncated_patch_is_an_error() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let patch = directory.path().join("truncated.patch");
-    std::fs::write(&patch, "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n").expect("truncated patch");
-    let output = hdiff(patch.to_str().expect("fixture path is UTF-8"));
+    let env = TestEnv::new();
+    let patch = env.write_file(
+        "truncated.patch",
+        "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n",
+    );
+    let output = env
+        .hdiff()
+        .arg(patch)
+        .output()
+        .expect("run hdiff on a truncated patch");
 
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert!(output.stdout.is_empty());
-    assert!(!output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "hdiff: line 5: truncated hunk\n"
+    );
 }
+
 #[test]
 fn directory_comparison_descends_only_with_recursion() {
-    let directory = comparison_tree();
+    let env = comparison_tree();
 
-    let top_level = compare(directory.path(), &["before", "after"]);
+    let top_level = compare(&env, &["before", "after"]);
     assert!(top_level.contains("+new top\n"));
     assert!(!top_level.contains("+new inner\n"));
 
-    let recursive = compare(directory.path(), &["-r", "before", "after"]);
+    let recursive = compare(&env, &["-r", "before", "after"]);
     assert!(recursive.contains("+new top\n"));
     assert!(recursive.contains("+new inner\n"));
 }
 
 #[test]
 fn dash_operand_compares_standard_input() {
-    let directory = comparison_tree();
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+    let env = comparison_tree();
+    let before = fs::File::open(env.path("before/top.txt")).expect("stdin");
+    let output = env
+        .hdiff()
         .args(["-", "after/top.txt"])
-        .current_dir(directory.path())
-        .stdin(std::fs::File::open(directory.path().join("before/top.txt")).expect("stdin"))
-        .env_clear()
-        .env("PATH", TEST_PATH)
+        .stdin(before)
         .output()
         .expect("run stdin comparison");
 
@@ -209,52 +209,49 @@ fn dash_operand_compares_standard_input() {
 
 #[test]
 fn dash_leading_paths_remain_comparison_operands() {
-    let directory = comparison_tree();
-    std::fs::write(directory.path().join("-q"), "old top\n").expect("dash-named file");
+    let env = comparison_tree();
+    env.write_file("-q", "old top\n");
 
-    let text = compare(directory.path(), &["-q", "after/top.txt"]);
+    let text = compare(&env, &["-q", "after/top.txt"]);
     assert!(text.contains("-old top\n+new top\n"), "{text}");
 }
 
 #[test]
 fn piped_stdin_with_file_operands_is_a_usage_error() {
-    let directory = comparison_tree();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_hdiff"));
-    command
+    let env = comparison_tree();
+    let output = env
+        .hdiff()
         .args(["before/top.txt", "after/top.txt"])
-        .current_dir(directory.path())
-        .stdin(std::process::Stdio::piped())
-        .env_clear()
-        .env("PATH", TEST_PATH);
-    let output = command.output().expect("run comparison with piped stdin");
+        .stdin(Stdio::piped())
+        .output()
+        .expect("run comparison with piped stdin");
 
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
     assert!(output.stdout.is_empty());
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("piped standard input cannot be combined with file operands")
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "hdiff: piped standard input cannot be combined with file operands; name it with -\n"
     );
 }
 
 #[test]
 fn directory_comparison_renders_added_and_removed_files_as_diffs() {
-    let directory = comparison_tree();
-    std::fs::write(directory.path().join("before/removed.txt"), "gone\n").expect("removed file");
-    std::fs::write(directory.path().join("after/added.txt"), "fresh\n").expect("added file");
+    let env = comparison_tree();
+    env.write_file("before/removed.txt", "gone\n");
+    env.write_file("after/added.txt", "fresh\n");
 
-    let text = compare(directory.path(), &["before", "after"]);
+    let text = compare(&env, &["before", "after"]);
     assert!(text.contains("-gone\n"), "{text}");
     assert!(text.contains("+fresh\n"), "{text}");
 }
 
 #[test]
 fn comparison_holding_only_surrounding_text_is_shown() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    for (path, bytes) in [("before.bin", b"\0old".as_slice()), ("after.bin", b"\0new")] {
-        std::fs::write(directory.path().join(path), bytes).expect("binary fixture");
-    }
+    let env = TestEnv::new();
+    env.write_file("before.bin", b"\0old");
+    env.write_file("after.bin", b"\0new");
 
-    let text = compare(directory.path(), &["before.bin", "after.bin"]);
+    let text = compare(&env, &["before.bin", "after.bin"]);
     assert!(
         text.contains("before.bin") && text.contains("differ"),
         "{text}"
@@ -263,10 +260,13 @@ fn comparison_holding_only_surrounding_text_is_shown() {
 
 #[test]
 fn patch_file_holding_only_text_is_an_error() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let patch = directory.path().join("notes.patch");
-    std::fs::write(&patch, "Binary files a and b differ\n").expect("text-only patch");
-    let output = hdiff(patch.to_str().expect("fixture path is UTF-8"));
+    let env = TestEnv::new();
+    let patch = env.write_file("notes.patch", "Binary files a and b differ\n");
+    let output = env
+        .hdiff()
+        .arg(patch)
+        .output()
+        .expect("run hdiff on a text-only patch");
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -278,12 +278,7 @@ fn patch_file_holding_only_text_is_an_error() {
 
 #[test]
 fn usage_errors_name_the_program_on_one_stderr_line() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .args(["a", "b", "c"])
-        .env_clear()
-        .env("PATH", TEST_PATH)
-        .output()
-        .expect("run hdiff with too many operands");
+    let output = hdiff(&["a", "b", "c"]);
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -295,14 +290,7 @@ fn usage_errors_name_the_program_on_one_stderr_line() {
 
 #[test]
 fn failed_comparisons_report_each_diff_error_line() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .args(["missing-before", "missing-after"])
-        .current_dir(directory.path())
-        .env_clear()
-        .env("PATH", TEST_PATH)
-        .output()
-        .expect("run comparison of missing files");
+    let output = hdiff(&["missing-before", "missing-after"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(2));
@@ -321,14 +309,7 @@ fn failed_comparisons_report_each_diff_error_line() {
 
 #[test]
 fn unreadable_patch_files_are_named_in_the_error() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let output = Command::new(env!("CARGO_BIN_EXE_hdiff"))
-        .arg("missing.patch")
-        .current_dir(directory.path())
-        .env_clear()
-        .env("PATH", TEST_PATH)
-        .output()
-        .expect("run hdiff on a missing patch");
+    let output = hdiff(&["missing.patch"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(2));

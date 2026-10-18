@@ -1,20 +1,22 @@
+mod common;
+
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
-    process::{Command, Stdio},
+    process::{Output, Stdio},
 };
+
+use common::TestEnv;
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
-fn run(driver: &str, patch: &str) -> std::process::Output {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let path = directory.path().join("input.patch");
-    fs::write(&path, patch).expect("write patch");
-    Command::new(env!("CARGO_BIN_EXE_hdiff"))
+fn run(driver: &str, patch: &str) -> Output {
+    let env = TestEnv::new();
+    let path = env.write_file("input.patch", patch);
+
+    env.hdiff()
         .args(["--bench", driver])
         .arg(path)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
         .output()
         .expect("run measurement")
 }
@@ -91,7 +93,7 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
 fn malformed_input_never_emits_success_measurements() {
     for mode in ["prepare", "stages", "movement"] {
         let output = run(mode, "not a patch\n");
-        assert!(!output.status.success());
+        assert_eq!(output.status.code(), Some(2), "{mode}: {output:?}");
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
     }
@@ -142,13 +144,13 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
             step_ns.parse::<u128>().expect("integer step duration");
             (layout, detail, wrap)
         })
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
 
     let expected = ["layout=unified", "layout=vertical", "layout=stacked"]
         .into_iter()
         .flat_map(|layout| ["detail=line", "detail=character"].map(|detail| (layout, detail)))
         .flat_map(|(layout, detail)| ["wrap=off", "wrap=on"].map(|wrap| (layout, detail, wrap)))
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
     assert_eq!(modes, expected);
 }
 
@@ -165,14 +167,12 @@ fn unsupported_language_has_no_syntax_parser_work() {
 
 #[test]
 fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
-    let directory = tempfile::tempdir().expect("fixture directory");
-    let patch = directory.path().join("input.patch");
-    fs::write(&patch, PATCH).expect("patch");
-    let stdin = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+    let env = TestEnv::new();
+    let patch = env.write_file("input.patch", PATCH);
+    let stdin = env
+        .hdiff()
         .args(["--bench", "prepare"])
         .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
         .output()
         .expect("stdin benchmark");
     assert!(stdin.status.success());
@@ -182,16 +182,13 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
         PATCH.len() as u128
     );
 
-    let old = directory.path().join("old.rs");
-    let new = directory.path().join("new.rs");
-    fs::write(&old, "fn old() {}\n").expect("old source");
-    fs::write(&new, "fn new() {}\n").expect("new source");
-    let comparison = Command::new(env!("CARGO_BIN_EXE_hdiff"))
+    let old = env.write_file("old.rs", "fn old() {}\n");
+    let new = env.write_file("new.rs", "fn new() {}\n");
+    let comparison = env
+        .hdiff()
         .args(["--bench", "stages"])
         .arg(old)
         .arg(new)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
         .output()
         .expect("operand profile");
     assert!(comparison.status.success(), "{:?}", comparison);
