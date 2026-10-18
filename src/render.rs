@@ -41,6 +41,31 @@ impl LineKind {
     }
 }
 
+/// A byte range of a rendered line's payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PayloadSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl PayloadSpan {
+    pub fn len(self) -> usize {
+        self.end - self.start
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
+    /// The same span `offset` bytes later.
+    pub fn offset(self, offset: usize) -> Self {
+        Self {
+            start: self.start + offset,
+            end: self.end + offset,
+        }
+    }
+}
+
 /// A line's sanitized text: its record marker, its payload, and its source line ending.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RenderedLine {

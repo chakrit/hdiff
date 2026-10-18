@@ -1,11 +1,11 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
-    detail::{DetailSpan, RowDetail},
+    detail::RowDetail,
     document::{RecordKind, RecordMap},
     layout::Layout,
     preferences::DiffGranularity,
-    render::{LineKind, RenderedLine},
+    render::{LineKind, PayloadSpan, RenderedLine},
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
@@ -103,8 +103,7 @@ impl RowStyles {
         let annotations = syntax
             .iter()
             .map(|span| Annotation {
-                start: span.start,
-                end: span.end,
+                span: span.span,
                 priority_length: span.capture_length,
                 style: TextStyle::Syntax(span.class),
             })
@@ -136,13 +135,12 @@ impl RowStyles {
     }
 }
 
-fn character_partition(text: &str, details: &[DetailSpan]) -> Partition {
+fn character_partition(text: &str, details: &[PayloadSpan]) -> Partition {
     let annotations = details
         .iter()
         .map(|span| Annotation {
-            start: span.start,
-            end: span.end,
-            priority_length: span.end - span.start,
+            span: *span,
+            priority_length: span.len(),
             style: TextStyle::Detail,
         })
         .collect::<Vec<_>>();
@@ -151,8 +149,7 @@ fn character_partition(text: &str, details: &[DetailSpan]) -> Partition {
 }
 
 struct Annotation {
-    start: usize,
-    end: usize,
+    span: PayloadSpan,
     priority_length: usize,
     style: TextStyle,
 }
@@ -172,29 +169,32 @@ impl Partition {
         if annotations.is_empty() {
             return Self(Box::new([]));
         }
+
         let mut offsets = vec![0, text.len()];
         for annotation in annotations {
-            assert!(annotation.start <= annotation.end);
-            assert!(text.is_char_boundary(annotation.start));
-            assert!(text.is_char_boundary(annotation.end));
-            offsets.extend([annotation.start, annotation.end]);
+            assert!(annotation.span.start <= annotation.span.end);
+            assert!(text.is_char_boundary(annotation.span.start));
+            assert!(text.is_char_boundary(annotation.span.end));
+            offsets.extend([annotation.span.start, annotation.span.end]);
         }
         offsets.sort_unstable();
         offsets.dedup();
+
         let mut starts = (0..annotations.len()).collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|index| annotations[*index].start);
+        starts.sort_unstable_by_key(|index| annotations[*index].span.start);
         let mut starts = starts.into_iter().peekable();
         let mut active = BinaryHeap::new();
         let mut boundaries: Vec<Boundary> = Vec::new();
 
         for interval in offsets.windows(2) {
             let [start, end] = [interval[0], interval[1]];
-            while let Some(index) = starts.next_if(|index| annotations[*index].start <= start) {
+            while let Some(index) = starts.next_if(|index| annotations[*index].span.start <= start)
+            {
                 let annotation = &annotations[index];
                 active.push((Reverse(annotation.priority_length), index));
             }
             while let Some((_, index)) = active.peek()
-                && annotations[*index].end <= start
+                && annotations[*index].span.end <= start
             {
                 active.pop();
             }
@@ -219,8 +219,8 @@ impl Partition {
 mod tests {
     use super::{RowKind, RowStyles, StyledRow, TextStyle, character_partition};
     use crate::{
-        detail::DetailSpan,
         document::RecordKind,
+        render::PayloadSpan,
         syntax::{SyntaxClass, SyntaxSpan},
     };
 
@@ -229,20 +229,17 @@ mod tests {
         let text = "αcall!";
         let syntax = [
             SyntaxSpan {
-                start: 0,
-                end: 7,
+                span: PayloadSpan { start: 0, end: 7 },
                 capture_length: 7,
                 class: SyntaxClass::String,
             },
             SyntaxSpan {
-                start: 2,
-                end: 6,
+                span: PayloadSpan { start: 2, end: 6 },
                 capture_length: 4,
                 class: SyntaxClass::Property,
             },
             SyntaxSpan {
-                start: 2,
-                end: 6,
+                span: PayloadSpan { start: 2, end: 6 },
                 capture_length: 4,
                 class: SyntaxClass::Function,
             },
@@ -269,12 +266,11 @@ mod tests {
     fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
         let text = "αcall!";
         let syntax = [SyntaxSpan {
-            start: 0,
-            end: 7,
+            span: PayloadSpan { start: 0, end: 7 },
             capture_length: 7,
             class: SyntaxClass::String,
         }];
-        let details = [DetailSpan { start: 2, end: 6 }];
+        let details = [PayloadSpan { start: 2, end: 6 }];
         let mut styles = RowStyles::syntax(text, &syntax);
         styles.character = Some(character_partition(text, &details));
         let row = StyledRow {
@@ -298,14 +294,12 @@ mod tests {
         let text = "word";
         let syntax = [
             SyntaxSpan {
-                start: 0,
-                end: 4,
+                span: PayloadSpan { start: 0, end: 4 },
                 capture_length: 4,
                 class: SyntaxClass::Keyword,
             },
             SyntaxSpan {
-                start: 0,
-                end: 4,
+                span: PayloadSpan { start: 0, end: 4 },
                 capture_length: 20,
                 class: SyntaxClass::Comment,
             },

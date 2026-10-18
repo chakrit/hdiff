@@ -1,27 +1,24 @@
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::layout::{Layout, SideBySideRow};
+use crate::{
+    layout::{Layout, SideBySideRow},
+    render::PayloadSpan,
+};
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DetailSpan {
-    pub start: usize,
-    pub end: usize,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChangedPairDetail {
-    pub before: Vec<DetailSpan>,
-    pub after: Vec<DetailSpan>,
+    pub before: Vec<PayloadSpan>,
+    pub after: Vec<PayloadSpan>,
 }
 
 /// One row's character-detail spans.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RowDetail {
     pub row: usize,
-    pub spans: Vec<DetailSpan>,
+    pub spans: Vec<PayloadSpan>,
 }
 
 /// The character detail of each `layout` row that has changed spans: a paired row marks
@@ -52,7 +49,7 @@ pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
         }
     }
 
-    details.retain(|detail| detail.spans.iter().any(|span| span.start < span.end));
+    details.retain(|detail| detail.spans.iter().any(|span| !span.is_empty()));
     details
 }
 
@@ -262,21 +259,18 @@ fn similar_word_detail(deleted: &[Token<'_>], inserted: &[Token<'_>]) -> Option<
 
 // Spans
 
-fn add_span(target: &mut Vec<DetailSpan>, start: usize, width: usize) {
-    target.push(DetailSpan {
+fn add_span(target: &mut Vec<PayloadSpan>, start: usize, width: usize) {
+    target.push(PayloadSpan {
         start,
         end: start + width,
     });
 }
 
-fn add_offset_spans(target: &mut Vec<DetailSpan>, spans: &[DetailSpan], offset: usize) {
-    target.extend(spans.iter().map(|span| DetailSpan {
-        start: span.start + offset,
-        end: span.end + offset,
-    }));
+fn add_offset_spans(target: &mut Vec<PayloadSpan>, spans: &[PayloadSpan], offset: usize) {
+    target.extend(spans.iter().map(|span| span.offset(offset)));
 }
 
-fn coalesce_tiny_equal_islands(spans: &mut Vec<DetailSpan>, text: &str) {
+fn coalesce_tiny_equal_islands(spans: &mut Vec<PayloadSpan>, text: &str) {
     let mut coalesced = Vec::new();
 
     for span in spans.drain(..) {
@@ -297,7 +291,7 @@ fn coalesce_tiny_equal_islands(spans: &mut Vec<DetailSpan>, text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangedPairDetail, DetailSpan, changed_pair_detail, character_details};
+    use super::{ChangedPairDetail, PayloadSpan, changed_pair_detail, character_details};
     use crate::{layout::file_layout, parser::parse_unified_diff};
 
     #[test]
@@ -335,7 +329,7 @@ mod tests {
                     .find(|detail| detail.row == row)
                     .map_or(&[][..], |detail| detail.spans.as_slice());
                 let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
-                let wanted = wanted.map(|(_, start, end)| DetailSpan {
+                let wanted = wanted.map(|(_, start, end)| PayloadSpan {
                     start: *start,
                     end: *end,
                 });
@@ -356,8 +350,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![DetailSpan { start: 12, end: 15 }],
-                after: vec![DetailSpan { start: 12, end: 15 }],
+                before: vec![PayloadSpan { start: 12, end: 15 }],
+                after: vec![PayloadSpan { start: 12, end: 15 }],
             }
         );
     }
@@ -369,8 +363,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![DetailSpan { start: 0, end: 10 }],
-                after: vec![DetailSpan { start: 0, end: 15 }],
+                before: vec![PayloadSpan { start: 0, end: 10 }],
+                after: vec![PayloadSpan { start: 0, end: 15 }],
             }
         );
     }
@@ -382,8 +376,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![DetailSpan { start: 6, end: 10 }],
-                after: vec![DetailSpan { start: 6, end: 10 }],
+                before: vec![PayloadSpan { start: 6, end: 10 }],
+                after: vec![PayloadSpan { start: 6, end: 10 }],
             }
         );
     }
@@ -395,8 +389,8 @@ mod tests {
         assert_eq!(
             detail,
             ChangedPairDetail {
-                before: vec![DetailSpan { start: 0, end: 12 }],
-                after: vec![DetailSpan { start: 0, end: 14 }],
+                before: vec![PayloadSpan { start: 0, end: 12 }],
+                after: vec![PayloadSpan { start: 0, end: 14 }],
             }
         );
     }
