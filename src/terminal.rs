@@ -99,7 +99,7 @@ impl Tui {
         else {
             return Ok(Step::Continue);
         };
-        let screen = next_frame_size(terminal)?;
+        let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(&self.document, screen);
 
         let pages = self.document.page_count();
@@ -132,8 +132,9 @@ impl Tui {
     }
 }
 
-/// The size `terminal` draws its next frame at.
-fn next_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
+/// Resizes `terminal` to its backend's current size, which may clear the screen, and returns
+/// the size it draws its next frame at.
+fn autoresize_to_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
     terminal.autoresize()?;
     Ok(terminal.get_frame().area().as_size())
 }
