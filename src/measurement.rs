@@ -25,11 +25,6 @@ impl Stage {
         Self::Query,
     ];
 
-    /// This stage's position in `ALL`, which is its declaration order.
-    const fn slot(self) -> usize {
-        self as usize
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::Labels => "labels",
@@ -98,13 +93,13 @@ impl Observer for Unobserved {
 /// Accumulated stage durations and work counts from one observed preparation.
 #[derive(Default)]
 pub struct Profile {
-    durations: [Duration; Stage::ALL.len()],
+    durations: StageDurations,
     work: WorkCounts,
 }
 
 impl Profile {
     pub fn duration(&self, stage: Stage) -> Duration {
-        self.durations[stage.slot()]
+        *self.durations.slot(stage)
     }
 
     pub fn work(&self) -> &WorkCounts {
@@ -116,7 +111,7 @@ impl Observer for Profile {
     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
         let started = Instant::now();
         let result = operation(self);
-        self.durations[stage.slot()] += started.elapsed();
+        *self.durations.slot_mut(stage) += started.elapsed();
         result
     }
 
@@ -138,14 +133,43 @@ pub struct WorkCounts {
     pub projected_bytes: usize,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::Stage;
+/// One accumulated duration per stage; a new stage does not compile until it has a slot.
+#[derive(Default)]
+struct StageDurations {
+    labels: Duration,
+    layout: Duration,
+    syntax: Duration,
+    detail: Duration,
+    language: Duration,
+    projection: Duration,
+    parse: Duration,
+    query: Duration,
+}
 
-    #[test]
-    fn lists_every_stage_at_its_own_slot() {
-        for stage in Stage::ALL {
-            assert_eq!(Stage::ALL[stage.slot()], stage);
+impl StageDurations {
+    fn slot(&self, stage: Stage) -> &Duration {
+        match stage {
+            Stage::Labels => &self.labels,
+            Stage::Layout => &self.layout,
+            Stage::Syntax => &self.syntax,
+            Stage::Detail => &self.detail,
+            Stage::Language => &self.language,
+            Stage::Projection => &self.projection,
+            Stage::Parse => &self.parse,
+            Stage::Query => &self.query,
+        }
+    }
+
+    fn slot_mut(&mut self, stage: Stage) -> &mut Duration {
+        match stage {
+            Stage::Labels => &mut self.labels,
+            Stage::Layout => &mut self.layout,
+            Stage::Syntax => &mut self.syntax,
+            Stage::Detail => &mut self.detail,
+            Stage::Language => &mut self.language,
+            Stage::Projection => &mut self.projection,
+            Stage::Parse => &mut self.parse,
+            Stage::Query => &mut self.query,
         }
     }
 }
