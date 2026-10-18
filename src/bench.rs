@@ -21,6 +21,7 @@ use crate::{
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     terminal::Tui,
+    theme::ColorDepth,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,13 +32,29 @@ pub enum Driver {
 }
 
 impl Driver {
-    pub fn from_name(name: &OsStr) -> Option<Self> {
-        match name.to_str()? {
-            "prepare" => Some(Self::Prepare),
-            "stages" => Some(Self::Stages),
-            "movement" => Some(Self::Movement),
-            _ => None,
+    /// Every driver, in the order usage messages list them.
+    pub const ALL: [Self; 3] = [Self::Prepare, Self::Stages, Self::Movement];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Prepare => "prepare",
+            Self::Stages => "stages",
+            Self::Movement => "movement",
         }
+    }
+
+    pub fn from_name(name: &OsStr) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|driver| OsStr::new(driver.label()) == name)
+    }
+
+    /// The driver names as an English list, such as `prepare, stages, or movement`.
+    pub fn choices() -> String {
+        let labels = Self::ALL.map(Self::label);
+        let (last, leading) = labels.split_last().expect("at least one driver");
+
+        format!("{}, or {last}", leading.join(", "))
     }
 
     /// Reads, parses, and prepares `source`, runs the driver, and returns its report.
@@ -47,7 +64,12 @@ impl Driver {
                 let (startup, prepared) = prepare(source, &mut Unobserved)?;
 
                 let mut report = String::new();
-                write_preparation(&mut report, "preparation", &startup, &prepared);
+                write_preparation(
+                    &mut report,
+                    PreparationRecord::Preparation,
+                    &startup,
+                    &prepared,
+                );
                 Ok(report)
             }
             Self::Stages => {
@@ -55,7 +77,12 @@ impl Driver {
                 let (startup, prepared) = prepare(source, &mut profile)?;
 
                 let mut report = String::new();
-                write_preparation(&mut report, "diagnostic", &startup, &prepared);
+                write_preparation(
+                    &mut report,
+                    PreparationRecord::Diagnostic,
+                    &startup,
+                    &prepared,
+                );
                 write_profile(&mut report, &profile, startup.preparation);
                 Ok(report)
             }
@@ -78,9 +105,9 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Input(error) => error.fmt(formatter),
+            Self::Input(error) => write!(formatter, "{error}"),
             Self::Parse(error) => write!(formatter, "{error}"),
-            Self::Terminal(error) => error.fmt(formatter),
+            Self::Terminal(error) => write!(formatter, "{error}"),
         }
     }
 }
@@ -122,15 +149,32 @@ fn prepare(
 
 // reports
 
+/// The first report line's record name: plain preparation, or preparation under a profile.
+#[derive(Clone, Copy)]
+enum PreparationRecord {
+    Preparation,
+    Diagnostic,
+}
+
+impl PreparationRecord {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Preparation => "preparation",
+            Self::Diagnostic => "diagnostic",
+        }
+    }
+}
+
 fn write_preparation(
     report: &mut String,
-    record: &str,
+    record: PreparationRecord,
     startup: &Startup,
     prepared: &PreparedDocument,
 ) {
     writeln!(
         report,
-        "{record} duration_ns={} files={} records={}",
+        "{} duration_ns={} files={} records={}",
+        record.label(),
         startup.preparation.as_nanos(),
         prepared.file_count(),
         prepared.record_count()
@@ -198,56 +242,60 @@ const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
 const MOVEMENT_KEYS: [char; 4] = ['l', 'h', 'j', 'k'];
 const MOVEMENT_ROUNDS: usize = 4;
 
+/// A key that cycles one preference, and how to tell the cycle has come back around.
+struct ModeCycle {
+    key: char,
+    same: fn(ViewPreferences, ViewPreferences) -> bool,
+}
+
+/// Every preference the movement driver crosses, outermost first.
+const MODE_CYCLES: [ModeCycle; 3] = [
+    ModeCycle {
+        key: 'w',
+        same: |a, b| a.wrapping == b.wrapping,
+    },
+    ModeCycle {
+        key: 'v',
+        same: |a, b| a.layout == b.layout,
+    },
+    ModeCycle {
+        key: 'c',
+        same: |a, b| a.granularity == b.granularity,
+    },
+];
+
 fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let backend = CrosstermBackend::new(io::sink());
     let options = TerminalOptions {
         viewport: Viewport::Fixed(MOVEMENT_AREA),
     };
     let mut terminal = Terminal::with_options(backend, options)?;
-    let mut tui = Tui::new(
-        prepared,
-        Size::from(MOVEMENT_AREA),
-        crate::theme::ColorDepth::TrueColor,
-    );
+    let mut tui = Tui::new(prepared, Size::from(MOVEMENT_AREA), ColorDepth::TrueColor);
     let mut report = String::new();
 
     tui.draw(&mut terminal)?;
-    visit_every_mode(
-        &mut tui,
-        &mut terminal,
-        'w',
-        |p| p.wrapping,
-        &mut |tui, terminal| {
-            visit_every_mode(tui, terminal, 'v', |p| p.layout, &mut |tui, terminal| {
-                visit_every_mode(
-                    tui,
-                    terminal,
-                    'c',
-                    |p| p.granularity,
-                    &mut |tui, terminal| measure_movement(tui, terminal, &mut report),
-                )
-            })
-        },
-    )?;
+    visit_modes(&mut tui, &mut terminal, &MODE_CYCLES, &mut report)?;
     Ok(report)
 }
 
-/// Runs `visit` once per mode that `key` cycles through, pressing `key` after each visit
-/// until `mode` returns to where it started. Deriving the visits from the cycle covers
-/// every mode the interaction offers without restating how many there are.
-fn visit_every_mode<B: Backend, M: PartialEq>(
+/// Measures movement once per combination of the modes `cycles` step through. Each cycle
+/// presses its key after every visit until its preference returns to where it started, so
+/// the visits cover every mode without restating how many there are.
+fn visit_modes<B: Backend>(
     tui: &mut Tui,
     terminal: &mut Terminal<B>,
-    key: char,
-    mode: fn(ViewPreferences) -> M,
-    visit: &mut impl FnMut(&mut Tui, &mut Terminal<B>) -> Result<(), B::Error>,
+    cycles: &[ModeCycle],
+    report: &mut String,
 ) -> Result<(), B::Error> {
-    let start = mode(tui.preferences());
+    let [cycle, inner @ ..] = cycles else {
+        return measure_movement(tui, terminal, report);
+    };
+    let start = tui.preferences();
 
     loop {
-        visit(tui, terminal)?;
-        tui.step(terminal, key_event(key))?;
-        if mode(tui.preferences()) == start {
+        visit_modes(tui, terminal, inner, report)?;
+        tui.step(terminal, key_event(cycle.key))?;
+        if (cycle.same)(tui.preferences(), start) {
             return Ok(());
         }
     }

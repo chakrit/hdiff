@@ -64,8 +64,9 @@ impl fmt::Display for UsageError {
             Self::MissingBenchDriver => formatter.write_str("--bench requires a driver"),
             Self::UnknownBenchDriver(name) => write!(
                 formatter,
-                "unknown --bench driver {}; expected prepare, stages, or movement",
-                name.to_string_lossy()
+                "unknown --bench driver {}; expected {}",
+                name.to_string_lossy(),
+                Driver::choices()
             ),
             Self::PipedStdinIgnored => formatter.write_str(
                 "piped standard input cannot be combined with file operands; name it with -",
@@ -152,7 +153,7 @@ fn operand(argument: &OsStr) -> Operand {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Comparison, Depth, Driver, Operand, Source, StdinState, UsageError,
+        Command, Comparison, Depth, Driver, HELP, Operand, Source, StdinState, UsageError,
         select_command, select_input,
     };
     use std::{ffi::OsString, path::PathBuf};
@@ -255,11 +256,18 @@ mod tests {
     }
 
     #[test]
-    fn treats_profile_as_an_operand() {
+    fn help_names_every_bench_driver() {
+        for driver in Driver::ALL {
+            assert!(HELP.contains(driver.label()), "{}", driver.label());
+        }
+    }
+
+    #[test]
+    fn treats_unknown_dash_arguments_as_paths() {
         assert_eq!(
-            command_unpiped(&[OsString::from("--profile")]).expect("view command"),
+            command_unpiped(&[OsString::from("--unknown")]).expect("view command"),
             Command::View {
-                source: Source::DiffFile(PathBuf::from("--profile")),
+                source: Source::DiffFile(PathBuf::from("--unknown")),
             }
         );
     }
