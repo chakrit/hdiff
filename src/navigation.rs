@@ -9,7 +9,6 @@ use crate::{
     extent::{DisplayExtent, RowAnchor, WrapWidth},
     geometry::PaneShape,
     interaction::{AnchorLine, Effect, Interaction, Movement, Placement, ScrollPosition},
-    page_rows::PageRows,
     preferences::ViewPreferences,
     prepared::{PageIndex, PreparedDocument},
     screen::{Cells, ScreenLines},
@@ -71,10 +70,9 @@ impl Navigation {
                 placement,
             } => {
                 let page = interaction.page();
-                let rows = document.page(page).rows();
                 // An anchored row is found among the lines shown now.
                 let focus = match placement {
-                    Placement::Anchor(anchor) => self.focus(anchor, current, rows),
+                    Placement::Anchor(anchor) => self.focus(document, anchor, current),
                     Placement::Keep => None,
                 };
 
@@ -82,7 +80,7 @@ impl Navigation {
 
                 let vertical = match (placement, focus) {
                     (Placement::Keep, _) => current.vertical,
-                    (Placement::Anchor(_), Some(focus)) => focus.offset_in(rows, &self.extent),
+                    (Placement::Anchor(_), Some(focus)) => focus.offset_in(document, &self.extent),
                     (Placement::Anchor(_), None) => ScreenLines::ZERO,
                 };
                 let start = ScrollPosition {
@@ -117,9 +115,14 @@ impl Navigation {
         DisplayBounds::of(&self.extent, &self.view)
     }
 
-    /// The row of `rows` on the diff-pane line `anchor` names, scrolled to `scroll`; none
-    /// when the lines end above that line, since the view then fits the pane.
-    fn focus(&self, anchor: AnchorLine, scroll: ScrollPosition, rows: &PageRows) -> Option<Focus> {
+    /// The row on the diff-pane line `anchor` names, scrolled to `scroll`; none when the
+    /// lines end above that line, since the view then fits the pane.
+    fn focus(
+        &self,
+        document: &PreparedDocument,
+        anchor: AnchorLine,
+        scroll: ScrollPosition,
+    ) -> Option<Focus> {
         let pane_line = match anchor {
             AnchorLine::PaneTop => ScreenLines::ZERO,
             AnchorLine::PaneMiddle => self.view.pane_content().height.half(),
@@ -127,7 +130,7 @@ impl Navigation {
         let offset = scroll.vertical.saturating_add(pane_line);
 
         self.extent
-            .anchor_at(rows, offset)
+            .anchor_at(document, offset)
             .map(|row| Focus { row, pane_line })
     }
 }
@@ -207,7 +210,8 @@ impl ExtentKey {
 
     fn build(self, document: &PreparedDocument) -> DisplayExtent {
         DisplayExtent::of(
-            document.page(self.page).rows(),
+            document,
+            self.page,
             self.shape,
             self.context_lines,
             self.wrap,
@@ -224,9 +228,9 @@ struct Focus {
 
 impl Focus {
     /// The vertical offset in `extent` that puts the focused row back on its pane line.
-    fn offset_in(&self, rows: &PageRows, extent: &DisplayExtent) -> ScreenLines {
+    fn offset_in(&self, document: &PreparedDocument, extent: &DisplayExtent) -> ScreenLines {
         extent
-            .offset_of(rows, self.row)
+            .offset_of(document, self.row)
             .saturating_sub(self.pane_line)
     }
 }

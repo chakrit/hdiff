@@ -532,7 +532,8 @@ several. The frame shows the lines from that offset, and scroll limits count lin
 visible rows, their lines, and their widest row are derived once per selected page,
 layout, context count, and wrap width, and not on movement. Unified rows are lines and
 side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
-the line it starts with. Cell columns and screen lines are distinct units, held at full
+the line it starts with. A scroll extent and its anchors belong to the page they were built
+from, so their indexes reach only that page's rows. Cell columns and screen lines are distinct units, held at full
 width and narrowed only where a frame is drawn, so no offset type caps how far a row
 reaches. One effective view, derived from the screen size and view preferences, serves
 both navigation bounds and drawing, and a scroll extent carries the wrap width and pane

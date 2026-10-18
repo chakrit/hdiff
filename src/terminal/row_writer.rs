@@ -247,7 +247,7 @@ mod tests {
     use super::{Clip, RowPlacement, write_row};
     use crate::{
         document::Side,
-        extent::{DisplayExtent, WrapWidth},
+        extent::{DisplayExtent, PaneExtent, WrapWidth},
         geometry::PaneShape,
         parser::parse_patch,
         preferences::DiffGranularity,
@@ -441,13 +441,18 @@ mod tests {
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
         let file = prepared.page(PageIndex::FIRST);
-        let DisplayExtent::Single(extent) =
-            DisplayExtent::of(file.rows(), PaneShape::Single, 3, WrapWidth::Unbounded)
-        else {
+        let shown = DisplayExtent::of(
+            prepared,
+            PageIndex::FIRST,
+            PaneShape::Single,
+            3,
+            WrapWidth::Unbounded,
+        );
+        let PaneExtent::Single(extent) = shown.panes() else {
             panic!("a single pane shows lines");
         };
         let all = ScreenLines::new(usize::MAX);
-        let rows = visible_rows(&extent, ScreenLines::ZERO, all, |line| {
+        let rows = visible_rows(extent, ScreenLines::ZERO, all, |line| {
             file.row(line, DiffGranularity::Line)
         });
 

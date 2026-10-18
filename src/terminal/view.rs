@@ -6,13 +6,12 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::TooSmall,
-    extent::{DisplayExtent, ScreenLine, WrapWidth},
-    file_tree::FileTree,
+    extent::{PaneExtent, ScreenLine, WrapWidth},
     geometry::{SplitDirection, SplitPanes},
     interaction::{Interaction, KeymapPopup},
     navigation::Navigation,
     page_rows::SideBySideRow,
-    prepared::PreparedPage,
+    prepared::PreparedDocument,
     screen::{Cells, ScreenLines},
     styling::StyledRow,
     theme::Theme,
@@ -28,12 +27,11 @@ use super::{
     rows::{PaneRow, visible_rows},
 };
 
-/// Draws `page` as `navigation` shows `interaction`: through its effective view and
-/// scroll extent, beside the file list of `tree`.
+/// Draws `document` as `navigation` shows `interaction`: the page of its scroll extent
+/// through its effective view, beside the file list.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
-    tree: &FileTree,
-    page: &PreparedPage,
+    document: &PreparedDocument,
     navigation: &Navigation,
     interaction: &Interaction,
     theme: &Theme,
@@ -47,6 +45,7 @@ pub(super) fn render_prepared_frame(
     }
 
     let extent = navigation.extent();
+    let page = document.page(extent.page());
     let scroll = interaction.scroll();
     let granularity = interaction.preferences().granularity;
     let pane_lines = view.pane_content().height;
@@ -59,8 +58,8 @@ pub(super) fn render_prepared_frame(
         horizontal_offset: scroll.horizontal,
         theme,
     };
-    match extent {
-        DisplayExtent::Single(lines) => {
+    match extent.panes() {
+        PaneExtent::Single(lines) => {
             let lines = visible_rows(lines, scroll.vertical, pane_lines, |line| {
                 page.row(line, granularity)
             });
@@ -71,7 +70,7 @@ pub(super) fn render_prepared_frame(
                 lines.into_iter().map(|line| line.map(PaneRow::Text)),
             );
         }
-        DisplayExtent::Split { direction, extent } => {
+        PaneExtent::Split { direction, extent } => {
             let lines = visible_rows(extent, scroll.vertical, pane_lines, |pair| {
                 page.rows()
                     .pair(pair)
@@ -84,6 +83,7 @@ pub(super) fn render_prepared_frame(
 
     match geometry.file_column() {
         Some(column) => {
+            let tree = document.file_tree();
             render_file_column(frame, column.list, tree, page.kind(), &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
@@ -134,14 +134,14 @@ impl PaneRows<'_> {
         pane.draw_window_markers(buffer, self.window, &self.theme.chrome);
     }
 
-    fn placement(&self, wrapped_line: usize) -> RowPlacement {
+    fn placement(&self, wrapped_line: ScreenLines) -> RowPlacement {
         match self.wrap {
             // An unbounded row is one line, which only the horizontal offset places.
             WrapWidth::Unbounded => RowPlacement::Scrolled {
                 horizontal_offset: self.horizontal_offset,
             },
             WrapWidth::At(width) => RowPlacement::Wrapped {
-                line: ScreenLines::new(wrapped_line),
+                line: wrapped_line,
                 width,
             },
         }

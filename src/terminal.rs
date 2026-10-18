@@ -136,14 +136,7 @@ impl Tui {
             .draw(|frame| {
                 adopt_screen(document, interaction, navigation, frame.area().as_size());
 
-                view::render_prepared_frame(
-                    frame,
-                    document.file_tree(),
-                    document.page(interaction.page()),
-                    navigation,
-                    interaction,
-                    theme,
-                )
+                view::render_prepared_frame(frame, document, navigation, interaction, theme)
             })
             .map(|_| ())
     }
