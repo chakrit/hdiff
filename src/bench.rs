@@ -2,7 +2,7 @@
 
 use std::{
     ffi::OsStr,
-    fmt::Write,
+    fmt::{self, Write},
     io,
     time::{Duration, Instant},
 };
@@ -10,13 +10,14 @@ use std::{
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Terminal, TerminalOptions, Viewport,
-    backend::CrosstermBackend,
+    backend::{Backend, CrosstermBackend},
     layout::{Rect, Size},
 };
 
 use crate::{
     input::InputSource,
-    measurement::{self, Observer, Profile, Startup, Unobserved},
+    interaction::ViewPreferences,
+    measurement::{Observer, Parent, Profile, Stage, Unobserved},
     prepared::PreparedDocument,
     terminal::Tui,
 };
@@ -39,41 +40,74 @@ impl Driver {
     }
 
     /// Reads, parses, and prepares `source`, runs the driver, and returns its report.
-    pub fn run(self, source: InputSource) -> Result<String, String> {
+    pub fn run(self, source: InputSource) -> Result<String, Error> {
         match self {
             Self::Prepare => {
                 let (startup, prepared) = prepare(source, &mut Unobserved)?;
-                Ok(preparation_report("preparation", &startup, &prepared))
+
+                let mut report = String::new();
+                write_preparation(&mut report, "preparation", &startup, &prepared);
+                Ok(report)
             }
             Self::Stages => {
                 let mut profile = Profile::default();
                 let (startup, prepared) = prepare(source, &mut profile)?;
 
-                let mut report = preparation_report("diagnostic", &startup, &prepared);
-                report.push_str(&profile.report(startup.preparation));
+                let mut report = String::new();
+                write_preparation(&mut report, "diagnostic", &startup, &prepared);
+                write_profile(&mut report, &profile, startup.preparation);
                 Ok(report)
             }
             Self::Movement => {
                 let (_, prepared) = prepare(source, &mut Unobserved)?;
-                movement(prepared).map_err(|error| error.to_string())
+                movement(prepared).map_err(Error::Terminal)
             }
         }
     }
 }
 
+/// Why a driver produced no report.
+#[derive(Debug)]
+pub enum Error {
+    Input(String),
+    Parse(String),
+    Terminal(io::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Input(message) | Self::Parse(message) => formatter.write_str(message),
+            Self::Terminal(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// Durations from the start of the run until the prepared document is ready.
+struct Startup {
+    input: Duration,
+    parse: Duration,
+    preparation: Duration,
+    ready: Duration,
+    bytes: usize,
+}
+
 fn prepare(
     source: InputSource,
     observer: &mut impl Observer,
-) -> Result<(Startup, PreparedDocument), String> {
+) -> Result<(Startup, PreparedDocument), Error> {
     let started = Instant::now();
-    let input = source.read()?;
+
+    let input = source.read().map_err(Error::Input)?;
     let input_finished = Instant::now();
-    let document = input.parse()?;
+    let document = input.parse().map_err(Error::Parse)?;
     let parse_finished = Instant::now();
     let prepared = PreparedDocument::prepare_observed(&document, observer);
     let ready = Instant::now();
 
-    let startup = measurement::Startup {
+    let startup = Startup {
         input: input_finished.duration_since(started),
         parse: parse_finished.duration_since(input_finished),
         preparation: ready.duration_since(parse_finished),
@@ -83,23 +117,83 @@ fn prepare(
     Ok((startup, prepared))
 }
 
-fn preparation_report(label: &str, startup: &Startup, prepared: &PreparedDocument) -> String {
-    let mut report = format!(
-        "{label} duration_ns={} files={} records={}\n",
+// reports
+
+fn write_preparation(
+    report: &mut String,
+    record: &str,
+    startup: &Startup,
+    prepared: &PreparedDocument,
+) {
+    writeln!(
+        report,
+        "{record} duration_ns={} files={} records={}",
         startup.preparation.as_nanos(),
         prepared.file_count(),
         prepared.record_count()
-    );
-    report.push_str(&startup.report());
-    report
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        report,
+        "startup version=1 input_ns={} parse_ns={} preparation_ns={} ready_ns={} bytes={}",
+        startup.input.as_nanos(),
+        startup.parse.as_nanos(),
+        startup.preparation.as_nanos(),
+        startup.ready.as_nanos(),
+        startup.bytes
+    )
+    .expect("writing to a String cannot fail");
 }
+
+fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
+    report.push_str("profile version=1\n");
+
+    for parent in Parent::ALL {
+        let total = match parent {
+            Parent::Preparation => preparation,
+            Parent::Syntax => profile.duration(Stage::Syntax),
+        };
+        let children = Stage::ALL
+            .into_iter()
+            .filter(|stage| stage.parent() == parent);
+
+        let mut attributed = Duration::ZERO;
+        for stage in children {
+            let duration = profile.duration(stage);
+            attributed += duration;
+            write_stage(report, stage.label(), parent, duration);
+        }
+
+        let unattributed = total
+            .checked_sub(attributed)
+            .expect("disjoint stage durations fit inside their parent");
+        write_stage(report, "unattributed", parent, unattributed);
+    }
+
+    let work = profile.work();
+    writeln!(
+        report,
+        "work hunks={} parse_calls={} captures={} projected_bytes={}",
+        work.hunks, work.parse_calls, work.captures, work.projected_bytes
+    )
+    .expect("writing to a String cannot fail");
+}
+
+fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Duration) {
+    writeln!(
+        report,
+        "stage name={name} parent={} duration_ns={}",
+        parent.label(),
+        duration.as_nanos()
+    )
+    .expect("writing to a String cannot fail");
+}
+
+// movement
 
 const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
 const MOVEMENT_KEYS: [char; 4] = ['l', 'h', 'j', 'k'];
 const MOVEMENT_ROUNDS: usize = 4;
-const LAYOUT_COUNT: usize = 3;
-const DETAIL_COUNT: usize = 2;
-const WRAPPING_COUNT: usize = 2;
 
 fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let backend = CrosstermBackend::new(io::sink());
@@ -111,21 +205,49 @@ fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let mut report = String::new();
 
     tui.draw(&mut terminal)?;
-    for _ in 0..WRAPPING_COUNT {
-        for _ in 0..LAYOUT_COUNT {
-            for _ in 0..DETAIL_COUNT {
-                measure_movement(&mut tui, &mut terminal, &mut report)?;
-                tui.step(&mut terminal, key_event('c'))?;
-            }
-            tui.step(&mut terminal, key_event('v'))?;
-        }
-        tui.step(&mut terminal, key_event('w'))?;
-    }
+    visit_every_mode(
+        &mut tui,
+        &mut terminal,
+        'w',
+        |p| p.wrapping,
+        &mut |tui, terminal| {
+            visit_every_mode(tui, terminal, 'v', |p| p.layout, &mut |tui, terminal| {
+                visit_every_mode(
+                    tui,
+                    terminal,
+                    'c',
+                    |p| p.granularity,
+                    &mut |tui, terminal| measure_movement(tui, terminal, &mut report),
+                )
+            })
+        },
+    )?;
     Ok(report)
 }
 
+/// Runs `visit` once per mode that `key` cycles through, pressing `key` after each visit
+/// until `mode` returns to where it started. Deriving the visits from the cycle covers
+/// every mode the interaction offers without restating how many there are.
+fn visit_every_mode<B: Backend, M: PartialEq>(
+    tui: &mut Tui,
+    terminal: &mut Terminal<B>,
+    key: char,
+    mode: fn(ViewPreferences) -> M,
+    visit: &mut impl FnMut(&mut Tui, &mut Terminal<B>) -> Result<(), B::Error>,
+) -> Result<(), B::Error> {
+    let start = mode(tui.preferences());
+
+    loop {
+        visit(tui, terminal)?;
+        tui.step(terminal, key_event(key))?;
+        if mode(tui.preferences()) == start {
+            return Ok(());
+        }
+    }
+}
+
 /// Times each movement key under the current preferences, appending one line per step.
-fn measure_movement<B: ratatui::backend::Backend>(
+fn measure_movement<B: Backend>(
     tui: &mut Tui,
     terminal: &mut Terminal<B>,
     report: &mut String,
@@ -151,7 +273,7 @@ fn measure_movement<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-fn timed_step<B: ratatui::backend::Backend>(
+fn timed_step<B: Backend>(
     tui: &mut Tui,
     terminal: &mut Terminal<B>,
     key: char,

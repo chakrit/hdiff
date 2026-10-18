@@ -23,7 +23,7 @@ fn main() -> Result<(), String> {
         }
         input::Command::Version => write_stdout(input::VERSION.as_bytes())?,
         input::Command::Bench { driver, source } => {
-            let report = driver.run(source)?;
+            let report = driver.run(source).map_err(|error| error.to_string())?;
             write_stdout(report.as_bytes())?;
         }
         input::Command::View { source } => view(source)?,
