@@ -3,10 +3,10 @@ use std::ops::Range;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, Hunk, RecordMap, RecordPosition, UnifiedBody},
-    headers::HeaderPath,
+    document::{DiffFile, HunkRecords, RecordMap, RecordPosition},
+    headers::{FileHeader, HeaderPath},
     measurement::{Observer, Stage, Work},
-    side::Side,
+    side::{BySide, Side},
     span::PayloadSpan,
 };
 
@@ -42,7 +42,7 @@ impl SyntaxClass {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxSpan {
     pub span: PayloadSpan,
     pub capture_length: usize,
@@ -63,19 +63,19 @@ impl SyntaxHighlighter {
         file: &DiffFile,
         observer: &mut impl Observer,
     ) -> RecordMap<Vec<SyntaxSpan>> {
-        file.record_map(|body, hunk| self.highlight_hunk(body, hunk, observer))
+        file.record_map(|headers, hunk| self.highlight_hunk(headers, hunk, observer))
     }
 
-    /// The syntax spans of `hunk`, a hunk of `file`, each with the record it styles.
-    fn highlight_hunk(
+    /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the record
+    /// it styles.
+    fn highlight_hunk<'h>(
         &mut self,
-        file: &UnifiedBody,
-        hunk: &Hunk,
+        headers: &BySide<FileHeader>,
+        hunk: HunkRecords<'_, 'h>,
         observer: &mut impl Observer,
-    ) -> Vec<(RecordPosition, SyntaxSpan)> {
+    ) -> Vec<(RecordPosition<'h>, SyntaxSpan)> {
         observer.count(Work::Hunk);
-        let languages = file
-            .headers
+        let languages = headers
             .as_ref()
             .map(|header| Language::for_header(&header.path));
         // architecture.md: context stays textual when the paths select different languages.
@@ -119,13 +119,13 @@ impl SyntaxHighlighter {
 
     /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A
     /// projection without styled records is not parsed.
-    fn highlight_projection(
+    fn highlight_projection<'h>(
         &mut self,
         language: Language,
-        projection: &Projection,
-        base: Option<(&Projection, Tree)>,
+        projection: &Projection<'h>,
+        base: Option<(&Projection<'h>, Tree)>,
         observer: &mut impl Observer,
-    ) -> Option<Highlighted> {
+    ) -> Option<Highlighted<'h>> {
         if projection.records.is_empty() {
             return None;
         }
@@ -155,9 +155,9 @@ impl SyntaxHighlighter {
 }
 
 /// One projection's parse tree and the spans its captures give its records.
-struct Highlighted {
+struct Highlighted<'h> {
     tree: Tree,
-    spans: Vec<(RecordPosition, SyntaxSpan)>,
+    spans: Vec<(RecordPosition<'h>, SyntaxSpan)>,
 }
 
 // Languages
@@ -278,12 +278,12 @@ impl LanguageHighlighter {
     }
 
     /// The spans the query's captures over `tree` give `projection`'s records.
-    fn highlight(
+    fn highlight<'h>(
         &mut self,
-        projection: &Projection,
+        projection: &Projection<'h>,
         tree: &Tree,
         observer: &mut impl Observer,
-    ) -> Vec<(RecordPosition, SyntaxSpan)> {
+    ) -> Vec<(RecordPosition<'h>, SyntaxSpan)> {
         let capture_names = self.query.capture_names();
         let mut captures =
             self.cursor
@@ -316,25 +316,25 @@ enum Styles {
 }
 
 /// One side's records of a hunk joined into a virtual source buffer.
-struct Projection {
+struct Projection<'h> {
     source: String,
     /// The records that take this projection's spans, in source order.
-    records: Vec<ProjectedRecord>,
+    records: Vec<ProjectedRecord<'h>>,
 }
 
 /// A record's payload range in its projection's source.
-struct ProjectedRecord {
-    record: RecordPosition,
+struct ProjectedRecord<'h> {
+    record: RecordPosition<'h>,
     source: Range<usize>,
 }
 
-impl Projection {
+impl<'h> Projection<'h> {
     /// `side`'s records of `hunk`; a side without records projects no source.
-    fn from_hunk(hunk: &Hunk, side: Side, styles: Styles) -> Self {
+    fn from_hunk(hunk: HunkRecords<'_, 'h>, side: Side, styles: Styles) -> Self {
         let mut source = String::new();
         let mut records = Vec::new();
         let side_records = hunk
-            .positioned_records()
+            .positioned()
             .filter(|(_, record)| record.kind.on_side(side));
 
         for (position, record) in side_records {
@@ -363,7 +363,7 @@ impl Projection {
         start: usize,
         end: usize,
         class: SyntaxClass,
-    ) -> impl Iterator<Item = (RecordPosition, SyntaxSpan)> + '_ {
+    ) -> impl Iterator<Item = (RecordPosition<'h>, SyntaxSpan)> + '_ {
         let first_record = self.first_overlapping_record(start);
 
         self.records
@@ -437,7 +437,7 @@ mod tests {
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{FileBody, Hunk, RecordAddress, RecordMap, UnifiedBody},
+        document::{FileBody, HunkRecords},
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
@@ -473,9 +473,9 @@ mod tests {
         let highlights =
             highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
 
-        assert_eq!(record(&highlights, 1)[0].class, SyntaxClass::Keyword);
-        assert_eq!(record(&highlights, 1)[0].span.start(), 0);
-        assert_eq!(record(&highlights, 1)[0].span.end(), 2);
+        assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
+        assert_eq!(highlights[1][0].span.start(), 0);
+        assert_eq!(highlights[1][0].span.end(), 2);
     }
 
     #[test]
@@ -486,22 +486,22 @@ mod tests {
 
         // architecture.md: matching languages use the new projection for context styling.
         assert!(
-            record(&highlights, 2)
+            highlights[2]
                 .iter()
                 .any(|span| span.class == SyntaxClass::Keyword)
         );
         assert!(
-            record(&highlights, 2)
+            highlights[2]
                 .iter()
                 .all(|span| span.class != SyntaxClass::Comment)
         );
         assert!(
-            record(&highlights, 0)
+            highlights[0]
                 .iter()
                 .any(|span| span.class == SyntaxClass::Comment)
         );
         assert!(
-            record(&highlights, 3)
+            highlights[3]
                 .iter()
                 .any(|span| span.class == SyntaxClass::Comment)
         );
@@ -512,7 +512,8 @@ mod tests {
         let patch = b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
         let incremental_spans = highlights_of(patch);
 
-        let full_spans = with_first_hunk(patch, |_, hunk| {
+        let full_spans = with_first_hunk(patch, |hunk| {
+            let (addition, _) = hunk.positioned().nth(1).expect("the added record");
             let new_projection = Projection::from_hunk(hunk, Side::New, Styles::ChangesAndContext);
             let full_pass = SyntaxHighlighter::default()
                 .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
@@ -520,13 +521,13 @@ mod tests {
             full_pass
                 .spans
                 .into_iter()
-                .filter(|(position, _)| position.get() == 1)
+                .filter(|(position, _)| *position == addition)
                 .map(|(_, span)| span)
                 .collect::<Vec<_>>()
         });
 
-        assert_eq!(*record(&incremental_spans, 1), full_spans);
-        assert_eq!(record(&incremental_spans, 1)[0].class, SyntaxClass::Keyword);
+        assert_eq!(incremental_spans[1], full_spans);
+        assert_eq!(incremental_spans[1][0].class, SyntaxClass::Keyword);
     }
 
     #[test]
@@ -544,7 +545,14 @@ mod tests {
         let spans = with_added_projection(&["aaaa", "bbbb", "cccc"], |projection| {
             projection
                 .map_span(2, 12, SyntaxClass::Keyword)
-                .map(|(record, span)| (record.get(), span.span.start(), span.span.end()))
+                .map(|(position, span)| {
+                    let record = projection
+                        .records
+                        .iter()
+                        .position(|record| record.record == position)
+                        .expect("a mapped span names a projected record");
+                    (record, span.span.start(), span.span.end())
+                })
                 .collect::<Vec<_>>()
         });
 
@@ -565,14 +573,14 @@ mod tests {
         );
 
         // architecture.md: context remains textual when the paths select different languages.
-        assert!(record(&highlights, 0).is_empty());
+        assert!(highlights[0].is_empty());
         assert!(
-            record(&highlights, 1)
+            highlights[1]
                 .iter()
                 .any(|span| span.class == SyntaxClass::Keyword)
         );
         assert!(
-            record(&highlights, 2)
+            highlights[2]
                 .iter()
                 .any(|span| span.class == SyntaxClass::Keyword)
         );
@@ -595,34 +603,44 @@ mod tests {
         assert_eq!(profile.work().parse_calls, 1);
     }
 
-    /// The syntax spans of each record of `patch`'s first file.
-    fn highlights_of(patch: &[u8]) -> RecordMap<Vec<SyntaxSpan>> {
+    /// The syntax spans of each record of the first hunk of `patch`'s first file, in
+    /// record order.
+    fn highlights_of(patch: &[u8]) -> Vec<Vec<SyntaxSpan>> {
         observed_highlights_of(patch, &mut Unobserved)
     }
 
-    fn observed_highlights_of(
-        patch: &[u8],
-        observer: &mut impl Observer,
-    ) -> RecordMap<Vec<SyntaxSpan>> {
+    fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
         let document = parse_patch(patch).expect("valid diff");
         let file = document.files().next().expect("first file");
-
-        SyntaxHighlighter::default().highlight_file(file, observer)
-    }
-
-    /// The spans of the record at `position` in the first hunk.
-    fn record(highlights: &RecordMap<Vec<SyntaxSpan>>, position: usize) -> &Vec<SyntaxSpan> {
-        highlights.get(RecordAddress::new(0, position))
-    }
-
-    /// `test` applied to the first hunk of `patch`'s first file, which must be unified.
-    fn with_first_hunk<T>(patch: &[u8], test: impl FnOnce(&UnifiedBody, &Hunk) -> T) -> T {
-        let document = parse_patch(patch).expect("valid diff");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
+        let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };
 
-        test(file, &file.hunks[0])
+        let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
+
+        body.addressed_hunks()
+            .next()
+            .expect("first hunk")
+            .records()
+            .map(|(address, _)| highlights.get(address).clone())
+            .collect()
+    }
+
+    /// `test` applied to the records of the first hunk of `patch`'s first file, which
+    /// must be unified.
+    fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+        let document = parse_patch(patch).expect("valid diff");
+        let file = document.files().next().expect("first file");
+        let mut test = Some(test);
+        let mut result = None;
+
+        file.record_map::<()>(|_, hunk| {
+            if let Some(test) = test.take() {
+                result = Some(test(hunk));
+            }
+            Vec::new()
+        });
+        result.expect("fixture should contain a unified file with a hunk")
     }
 
     /// `test` applied to the new-side projection of a hunk adding `lines`.
@@ -633,7 +651,7 @@ mod tests {
             .collect::<String>();
         let patch = format!("--- a/x\n+++ b/x\n@@ -0,0 +1,{} @@\n{added}", lines.len());
 
-        with_first_hunk(patch.as_bytes(), |_, hunk| {
+        with_first_hunk(patch.as_bytes(), |hunk| {
             test(&Projection::from_hunk(hunk, Side::New, Styles::Changes))
         })
     }
