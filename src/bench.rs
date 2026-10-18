@@ -2,7 +2,7 @@
 
 use std::{
     ffi::OsStr,
-    fmt::{self, Write},
+    fmt::Write,
     io,
     time::{Duration, Instant},
 };
@@ -15,10 +15,10 @@ use ratatui::{
 };
 
 use crate::{
+    document::DiffDocument,
     input,
     interaction::{Command, Movement},
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
-    parser::ParseError,
     preferences::PreferenceChange,
     prepared::PreparedDocument,
     terminal::{self, Tui},
@@ -58,11 +58,12 @@ impl Driver {
         format!("{}, or {last}", leading.join(", "))
     }
 
-    /// Reads, parses, and prepares `source`, runs the driver, and returns its report.
-    pub fn run(self, source: input::Source) -> Result<String, Error> {
+    /// Prepares `document`, runs the driver, and returns its report. `clock` has timed
+    /// reading and parsing the input the document came from.
+    pub fn run(self, clock: PreparationClock, document: &DiffDocument) -> io::Result<String> {
         match self {
             Self::Prepare => {
-                let (startup, prepared) = prepare(source, &mut Unobserved)?;
+                let (startup, prepared) = clock.prepare(document, &mut Unobserved);
 
                 let mut report = String::new();
                 write_preparation(
@@ -75,7 +76,7 @@ impl Driver {
             }
             Self::Stages => {
                 let mut profile = Profile::default();
-                let (startup, prepared) = prepare(source, &mut profile)?;
+                let (startup, prepared) = clock.prepare(document, &mut profile);
 
                 let mut report = String::new();
                 write_preparation(
@@ -88,32 +89,84 @@ impl Driver {
                 Ok(report)
             }
             Self::Movement => {
-                let (_, prepared) = prepare(source, &mut Unobserved)?;
-                movement(prepared).map_err(Error::Terminal)
+                let (_, prepared) = clock.prepare(document, &mut Unobserved);
+                movement(prepared)
             }
         }
     }
 }
 
-/// Why a driver produced no report.
-#[derive(Debug)]
-pub enum Error {
-    Input(input::Error),
-    Parse(ParseError),
-    Terminal(io::Error),
+// startup timing
+
+/// Times startup from the moment reading the input begins. Each later phase is marked by
+/// consuming the clock for the phase before it, so phases can only be marked in order.
+pub struct InputClock {
+    started: Instant,
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(error) => write!(formatter, "{error}"),
-            Self::Parse(error) => write!(formatter, "{error}"),
-            Self::Terminal(error) => write!(formatter, "{error}"),
+/// A startup clock whose input has been read.
+pub struct ParseClock {
+    started: Instant,
+    input_finished: Instant,
+    bytes: usize,
+}
+
+/// A startup clock whose input has been read and parsed.
+pub struct PreparationClock {
+    started: Instant,
+    input_finished: Instant,
+    parse_finished: Instant,
+    bytes: usize,
+}
+
+impl InputClock {
+    pub fn start() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+
+    /// Marks reading `content` finished.
+    pub fn input_read(self, content: &input::Content) -> ParseClock {
+        ParseClock {
+            started: self.started,
+            input_finished: Instant::now(),
+            bytes: content.bytes().len(),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl ParseClock {
+    /// Marks parsing finished.
+    pub fn parsed(self) -> PreparationClock {
+        PreparationClock {
+            started: self.started,
+            input_finished: self.input_finished,
+            parse_finished: Instant::now(),
+            bytes: self.bytes,
+        }
+    }
+}
+
+impl PreparationClock {
+    fn prepare(
+        self,
+        document: &DiffDocument,
+        observer: &mut impl Observer,
+    ) -> (Startup, PreparedDocument) {
+        let prepared = PreparedDocument::prepare_observed(document, observer);
+        let ready = Instant::now();
+
+        let startup = Startup {
+            input: self.input_finished.duration_since(self.started),
+            parse: self.parse_finished.duration_since(self.input_finished),
+            preparation: ready.duration_since(self.parse_finished),
+            ready: ready.duration_since(self.started),
+            bytes: self.bytes,
+        };
+        (startup, prepared)
+    }
+}
 
 /// Durations from the start of the run until the prepared document is ready.
 struct Startup {
@@ -122,30 +175,6 @@ struct Startup {
     preparation: Duration,
     ready: Duration,
     bytes: usize,
-}
-
-fn prepare(
-    source: input::Source,
-    observer: &mut impl Observer,
-) -> Result<(Startup, PreparedDocument), Error> {
-    let started = Instant::now();
-
-    let content = source.read().map_err(Error::Input)?;
-    let input_finished = Instant::now();
-    let bytes = content.bytes().len();
-    let document = content.parse().map_err(Error::Parse)?;
-    let parse_finished = Instant::now();
-    let prepared = PreparedDocument::prepare_observed(&document, observer);
-    let ready = Instant::now();
-
-    let startup = Startup {
-        input: input_finished.duration_since(started),
-        parse: parse_finished.duration_since(input_finished),
-        preparation: ready.duration_since(parse_finished),
-        ready: ready.duration_since(started),
-        bytes,
-    };
-    Ok((startup, prepared))
 }
 
 // reports

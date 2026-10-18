@@ -8,7 +8,7 @@ use hdiff::{
         install_git_diff_pager::{self, InstallGitDiffPager},
         write_output::{OutputContext, WriteOutput},
     },
-    bench,
+    bench::{self, Driver},
     cli::{self, Invocation, UsageError},
     document::DiffDocument,
     exit_status::DiffStatus,
@@ -41,12 +41,23 @@ fn run() -> Result<(), RunError> {
         Invocation::Help => write_stdout(cli::HELP.as_bytes()),
         Invocation::Install => install(),
         Invocation::Version => write_stdout(cli::VERSION.as_bytes()),
-        Invocation::Bench { driver, source } => {
-            let report = driver.run(source).map_err(RunError::Bench)?;
-            write_stdout(report.as_bytes())
-        }
+        Invocation::Bench { driver, source } => bench(driver, source),
         Invocation::View { source } => view(source),
     }
+}
+
+/// Reads and parses like [`view`], timing each phase for the driver's report.
+fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
+    let clock = bench::InputClock::start();
+    let content = source.read().map_err(RunError::Input)?;
+    let clock = clock.input_read(&content);
+    let document = content.parse().map_err(RunError::Parse)?;
+    let clock = clock.parsed();
+
+    let report = driver
+        .run(clock, &document)
+        .map_err(RunError::BenchTerminal)?;
+    write_stdout(report.as_bytes())
 }
 
 fn install() -> Result<(), RunError> {
@@ -123,7 +134,7 @@ enum RunError {
     Parse(ParseError),
     Executable(io::Error),
     Install(install_git_diff_pager::Error),
-    Bench(bench::Error),
+    BenchTerminal(io::Error),
     Output(io::Error),
     Terminal(terminal::SessionError),
 }
@@ -138,7 +149,7 @@ impl fmt::Display for RunError {
                 write!(formatter, "cannot locate the hdiff executable: {error}")
             }
             Self::Install(error) => write!(formatter, "--install: {error}"),
-            Self::Bench(error) => write!(formatter, "{error}"),
+            Self::BenchTerminal(error) => write!(formatter, "{error}"),
             Self::Output(error) => write!(formatter, "standard output: {error}"),
             Self::Terminal(error) => write!(formatter, "terminal: {error}"),
         }
