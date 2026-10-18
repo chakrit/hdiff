@@ -117,24 +117,33 @@ implementation remains unapproved.
 
 ### Product slices
 
-1. Add implicit Tree-sitter semantic strategies with textual fallback.
+1. Shortcuts: the always-visible hint row, `e` to show and hide the file list, and the `?`
+   keymap popup, per the [interaction model](architecture.md#interaction-model) and
+   [keyboard bindings](architecture.md#keyboard-bindings).
+
+   Human check: in every layout, hide and show the file list with `e` and confirm the diff
+   widens and narrows while the middle line stays put; confirm the hint row stays on the
+   bottom row; open the popup with `?`, confirm other keys do nothing, and close it with
+   `?`, `Esc`, and `q` without exiting.
+
+2. Add implicit Tree-sitter semantic strategies with textual fallback.
 
    Human check: open supported and unsupported source files in the same diff. Supported files
    gain semantic detail when available; unsupported files remain readable with textual diffing,
    and neither case changes the selected layout unexpectedly.
 
-2. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
+3. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
 
    Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
    across unified, vertical, and stacked layouts.
 
-3. Refine highlighting coverage and additional navigation after the core interaction is stable.
+4. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
-   footer/help text matches the key behavior, additions and deletions remain distinguishable, and
+   hint row and keymap popup match the key behavior, additions and deletions remain distinguishable, and
    low contrast remains readable without saturating the whole terminal.
 
-4. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
+5. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.
 
    Human check: search a multi-file diff, verify every match is reachable in both directions with

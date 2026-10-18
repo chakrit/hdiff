@@ -5,8 +5,8 @@ use ratatui::{Terminal, backend::Backend, layout::Size, widgets::Paragraph};
 
 use crate::{
     interaction::{
-        self, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
-        ViewPreferences, Viewport,
+        self, DiffLayout, DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds,
+        Transition, ViewPreferences, Viewport,
     },
     layout::{
         ScreenLine, ScrollExtent, Wrap, content_pane_height, content_pane_width,
@@ -56,6 +56,7 @@ impl Tui {
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(area.width, usize::from(area.height)),
+            keymap: KeymapPopup::Closed,
         };
         let extent = KeyedExtent::build(&document, ExtentKey::of(&interaction));
 
@@ -74,6 +75,7 @@ impl Tui {
             selected_file: 0,
             preferences: self.interaction.preferences,
             viewport: Viewport::new(viewport.width, viewport.height),
+            keymap: KeymapPopup::Closed,
         };
         self.document = document;
         self.extent = KeyedExtent::build(&self.document, ExtentKey::of(&self.interaction));
@@ -103,7 +105,8 @@ impl Tui {
         terminal: &mut Terminal<B>,
         event: Event,
     ) -> Result<Step, B::Error> {
-        let Some(input) = input_for_event(event) else {
+        let keymap = self.interaction.keymap;
+        let Some(input) = input_for_event(event).and_then(|input| keymap.admit(input)) else {
             return Ok(Step::Continue);
         };
 
@@ -202,7 +205,7 @@ impl ExtentKey {
             file,
             layout: preferences.layout,
             context_lines: preferences.context_lines,
-            wrap: Wrap::of(preferences.wrapping, screen_width, preferences.layout),
+            wrap: Wrap::of(preferences, screen_width),
         }
     }
 
@@ -291,10 +294,10 @@ fn navigation_bounds(
     target_extent: &ScrollExtent,
     focus: Option<Focus>,
 ) -> NavigationBounds {
-    let display_layout = interaction.preferences.after(input).layout;
+    let display_preferences = interaction.preferences.after(input);
     let (screen_width, screen_height) = target_screen(interaction, input);
-    let pane_width = content_pane_width(screen_width, display_layout);
-    let pane_height = content_pane_height(screen_height, display_layout);
+    let pane_width = content_pane_width(screen_width, display_preferences);
+    let pane_height = content_pane_height(screen_height, display_preferences.layout);
 
     NavigationBounds {
         file_count,
@@ -345,6 +348,9 @@ fn input_for_key(key: KeyEvent) -> Option<Input> {
         (KeyCode::Char('w'), _) => Some(Input::ToggleWrapping),
         (KeyCode::Char('+'), _) => Some(Input::IncreaseContext),
         (KeyCode::Char('-'), _) => Some(Input::DecreaseContext),
+        (KeyCode::Char('e'), _) => Some(Input::ToggleFileList),
+        (KeyCode::Char('?'), _) => Some(Input::OpenKeymap),
+        (KeyCode::Esc, _) => Some(Input::CloseKeymap),
         (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
         (KeyCode::Tab, _) => Some(Input::NextFile),
         (KeyCode::BackTab, _) => Some(Input::PreviousFile),
@@ -357,6 +363,7 @@ mod tests {
     use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use super::{Input, OutputMode, input_for_event, mode_for_output};
+    use crate::interaction::KeymapPopup;
 
     #[test]
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
@@ -383,6 +390,7 @@ mod tests {
                 (1, "second message", "first message", copies),
             ] {
                 let interaction = Interaction {
+                    keymap: KeymapPopup::Closed,
                     selected_file,
                     preferences: ViewPreferences::line(layout),
                     viewport: Viewport::new(120, 30),
@@ -492,6 +500,17 @@ mod tests {
             ))),
             Some(Input::PreviousFile)
         );
+        for (key, expected) in [
+            (KeyCode::Char('e'), Input::ToggleFileList),
+            (KeyCode::Char('?'), Input::OpenKeymap),
+            (KeyCode::Esc, Input::CloseKeymap),
+        ] {
+            assert_eq!(
+                input_for_event(CrosstermEvent::Key(KeyEvent::new(key, KeyModifiers::NONE))),
+                Some(expected),
+                "{key:?}"
+            );
+        }
         for key in ['{', '}'] {
             assert_eq!(
                 input_for_event(CrosstermEvent::Key(KeyEvent::new(

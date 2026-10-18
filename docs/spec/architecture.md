@@ -46,8 +46,8 @@ Shell script filenames use dashes between words.
 - Resize cleanly and redraw from retained state.
 - Cycle unified, vertical-split, and stacked-split views without silently changing the selected
   mode.
-- Provide a pager-first TUI with muted, context-sensitive shortcut hints at the bottom of the
-  file-list column.
+- Provide a pager-first TUI with a muted, always-visible shortcut hint row at the bottom of
+  the screen and a popup listing every shortcut.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
   immediately.
 - Exit cleanly on EOF, quit input, and terminal errors.
@@ -131,7 +131,7 @@ valid diff lines without data loss.
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
 - `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
 - `Layout`: retained rendered rows, split pairs, and source addresses.
-- Visible layout: derived panes, effective visibility, and footer hints.
+- Visible layout: derived panes, effective visibility, the hint row, and the keymap popup.
 
 The interaction state is a value that transitions in response to an input event. A transition
 returns a new state and a rendering request; it does not reach into the terminal or document.
@@ -233,25 +233,28 @@ unrecognized arguments are treated as paths, subject to the operand-count limit.
 ## Interaction model
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main
-viewport, and the file-list column ends with muted shortcut hints. The hints are a navigational
-aid, not a second control plane; every setting has one keyboard path, and changing it produces a
-new interaction state and immediate redraw.
+viewport, and one full-width row at the bottom of the screen holds muted shortcut hints. The
+hints are a navigational aid, not a second control plane; every setting has one keyboard path,
+and changing it produces a new interaction state and immediate redraw.
 
 The compact surface has a file list on the left, a diff view on the right, and one
-vertical separator padded by one space on each side, with no pane borders or labels.
+vertical separator padded by one space on each side, with no pane borders or labels. The hint
+row spans the screen below them.
 
-The left file list is the primary navigation pane. As width decreases it collapses before the
-diff view; a compact footer hint remains when possible. If the terminal is too narrow or too
-short for the minimum layout, the only rendered content is `screen too narrow` or
-`screen too short`. The minimum layout shows one content line in each diff pane.
+The left file list is the primary navigation pane. `e` shows and hides it; it starts shown.
+As width decreases it collapses before the diff view. The hint row stays in the same place
+whether the file list is shown or hidden. If the terminal is too narrow or too short for the
+minimum layout, the only rendered content is `screen too narrow` or `screen too short`. The
+minimum layout shows the hint row and one content line in each diff pane.
 The selected layout is never silently replaced by another layout.
 
-The file-list hints expose shortcuts relevant to the current context. A help view can expose the
-complete keymap when the compact hints cannot fit. The pager-first model and live
-shortcut-driven settings are settled product requirements.
+`?` opens a centered, bordered popup over the diff that lists every shortcut. While it is
+open, `?`, `Esc`, and `q` close it, `q` without exiting, and every other key does nothing;
+closing it restores the view. The pager-first model and live shortcut-driven settings are
+settled product requirements.
 
 Unselected file names use a medium-muted neutral tone, one level brighter than the
-separator and footer hints; their markers take their state's color, as the
+separator and hint row; their markers take their state's color, as the
 [file tree](#file-tree) defines. The selected file row applies one shared muted
 foreground/background style to its whole row and has no selection glyph.
 
@@ -338,6 +341,9 @@ side-by-side panes. When wrapping is enabled:
 - the maximum horizontal offset is zero;
 - toggling wrapping keeps the row on the diff pane's middle line on that line.
 
+Showing or hiding the file list changes the diff pane width and keeps the row on the diff
+pane's middle line on that line.
+
 ### Continuity markers
 
 Each diff pane is framed by one reserved row above and below its content and one reserved
@@ -414,6 +420,9 @@ The current keymap is pager-like:
 | `c`                       | Toggle line and character detail              |
 | `w`                       | Toggle wrapping                               |
 | `+`, `-`                  | Increase or decrease visible context          |
+| `e`                       | Show or hide the file list                    |
+| `?`                       | Open the keymap popup                         |
+| `?`, `Esc`, `q` (popup)   | Close the keymap popup                        |
 | `q`, `Ctrl-C`             | Exit                                          |
 
 Horizontal movement uses one bounded offset across content panes in every layout;
@@ -424,14 +433,9 @@ Vim semantics.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 
-The file-list footer is a compact multi-row reference for navigation, layout cycling,
-character detail, wrapping, context adjustment, and exit. It uses only the available
-footer rows and never advertises a deferred shortcut.
-
-The footer places `h`, `j`, `k`, and `l` in a centered diamond followed by `movement`. Page-up
-and page-down remain separate rows. The remaining current shortcuts use compact paired keys and
-middots: `g·G` top/bottom, `v` cycle layout, `c` character detail, `w` wrap,
-`+/-` context, `(⇧)Tab` next/previous file, and `q` exit.
+The hint row reads `hjkl move · v layout · Tab file · e files · ? help · q quit`, clipped
+to the screen width. It never advertises a deferred shortcut. The keymap popup lists every
+shortcut in the table above.
 
 ## Technology direction
 

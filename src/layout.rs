@@ -1,6 +1,6 @@
 use crate::{
     document::FileView,
-    interaction::{DiffLayout, Wrapping},
+    interaction::{DiffLayout, FileList, ViewPreferences, Wrapping},
     line_breaks::wrapped_line_count,
     render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
     styling::payload,
@@ -13,6 +13,9 @@ pub const MARKER_GUTTER_WIDTH: usize = 2;
 pub const PANE_FRAME_HEIGHT: usize = 2;
 /// Columns each diff pane's continuity-marker frame takes: one on either side.
 pub const PANE_FRAME_WIDTH: u16 = 2;
+
+/// Rows the shortcut hint row takes at the bottom of the screen.
+pub const HINT_ROW_HEIGHT: u16 = 1;
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const FILE_LIST_WIDTH: u16 = 24;
@@ -30,16 +33,17 @@ pub enum PaneLayout {
     },
 }
 
-/// The screen's panes; too short when a diff pane would have no content line.
-pub fn pane_layout(width: u16, height: u16, display_layout: DiffLayout) -> PaneLayout {
+/// The screen's panes above the hint row; too short when a diff pane would have no content
+/// line.
+pub fn pane_layout(width: u16, height: u16, preferences: ViewPreferences) -> PaneLayout {
     if width < MINIMUM_SCREEN_WIDTH {
         return PaneLayout::TooNarrow;
     }
-    if content_pane_height(usize::from(height), display_layout) == 0 {
+    if content_pane_height(usize::from(height), preferences.layout) == 0 {
         return PaneLayout::TooShort;
     }
 
-    match shows_file_list(width) {
+    match shows_file_list(width, preferences.file_list) {
         true => PaneLayout::Split {
             file_list_width: FILE_LIST_WIDTH,
             separator_padding: SEPARATOR_PADDING,
@@ -48,9 +52,15 @@ pub fn pane_layout(width: u16, height: u16, display_layout: DiffLayout) -> PaneL
     }
 }
 
-/// The file-list column, its padded separator, and at least one diff column fit.
-fn shows_file_list(width: u16) -> bool {
-    width > FILE_COLUMN_WIDTH
+/// The file list is shown, and its column, padded separator, and at least one diff column
+/// fit.
+fn shows_file_list(width: u16, file_list: FileList) -> bool {
+    let fits = width > FILE_COLUMN_WIDTH;
+
+    match file_list {
+        FileList::Shown => fits,
+        FileList::Hidden => false,
+    }
 }
 
 /// The file list and its padded separator.
@@ -58,34 +68,36 @@ const FILE_COLUMN_WIDTH: u16 =
     FILE_LIST_WIDTH + SEPARATOR_PADDING + SEPARATOR_WIDTH + SEPARATOR_PADDING;
 
 /// Columns of the narrowest diff pane's content, inside its frame.
-pub fn content_pane_width(screen_width: u16, display_layout: DiffLayout) -> u16 {
+pub fn content_pane_width(screen_width: u16, preferences: ViewPreferences) -> u16 {
     if screen_width < MINIMUM_SCREEN_WIDTH {
         return 0;
     }
-    let diff_width = match shows_file_list(screen_width) {
+    let diff_width = match shows_file_list(screen_width, preferences.file_list) {
         true => screen_width - FILE_COLUMN_WIDTH,
         false => screen_width,
     };
 
-    let pane_width = match display_layout {
+    let pane_width = match preferences.layout {
         DiffLayout::Unified | DiffLayout::Stacked => diff_width,
         DiffLayout::Vertical => diff_width.saturating_sub(SEPARATOR_WIDTH) / 2,
     };
     pane_width.saturating_sub(PANE_FRAME_WIDTH)
 }
 
-/// Rows of each diff pane, frame included; stacked panes share the height around a
-/// one-row separator.
-pub fn pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
+/// Rows of each diff pane, frame included, in a diff area `diff_height` rows tall; stacked
+/// panes share the height around a one-row separator.
+pub fn pane_height(diff_height: usize, display_layout: DiffLayout) -> usize {
     match display_layout {
-        DiffLayout::Unified | DiffLayout::Vertical => screen_height,
-        DiffLayout::Stacked => screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
+        DiffLayout::Unified | DiffLayout::Vertical => diff_height,
+        DiffLayout::Stacked => diff_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
     }
 }
 
-/// Rows of each diff pane's content, inside its frame.
+/// Rows of each diff pane's content, inside its frame, on a screen `screen_height` rows tall.
 pub fn content_pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
-    pane_height(screen_height, display_layout).saturating_sub(PANE_FRAME_HEIGHT)
+    let diff_height = screen_height.saturating_sub(usize::from(HINT_ROW_HEIGHT));
+
+    pane_height(diff_height, display_layout).saturating_sub(PANE_FRAME_HEIGHT)
 }
 
 const STACKED_SEPARATOR_HEIGHT: usize = 1;
@@ -275,12 +287,12 @@ pub enum Wrap {
 }
 
 impl Wrap {
-    /// The wrap of `display_layout` on a screen `screen_width` cells wide: both
+    /// The wrap `preferences` select on a screen `screen_width` cells wide: both
     /// side-by-side panes wrap at the narrower pane's payload width.
-    pub fn of(wrapping: Wrapping, screen_width: u16, display_layout: DiffLayout) -> Self {
-        let pane_width = usize::from(content_pane_width(screen_width, display_layout));
+    pub fn of(preferences: ViewPreferences, screen_width: u16) -> Self {
+        let pane_width = usize::from(content_pane_width(screen_width, preferences));
 
-        match wrapping {
+        match preferences.wrapping {
             Wrapping::Disabled => Self::Off,
             Wrapping::Enabled => Self::At(pane_width.saturating_sub(MARKER_GUTTER_WIDTH).max(1)),
         }
@@ -510,7 +522,7 @@ mod tests {
         file_layout, maximum_horizontal_offset, pane_layout,
     };
     use crate::{
-        interaction::{DiffLayout, Wrapping},
+        interaction::{DiffLayout, FileList, ViewPreferences, Wrapping},
         parser::parse_unified_diff,
         render::RenderedLineKind,
     };
@@ -699,20 +711,21 @@ mod tests {
         );
     }
 
+    fn preferences(layout: DiffLayout, wrapping: Wrapping, file_list: FileList) -> ViewPreferences {
+        ViewPreferences {
+            wrapping,
+            file_list,
+            ..ViewPreferences::line(layout)
+        }
+    }
+
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
-        assert_eq!(
-            Wrap::of(Wrapping::Enabled, 80, DiffLayout::Vertical),
-            Wrap::At(22)
-        );
-        assert_eq!(
-            Wrap::of(Wrapping::Enabled, 80, DiffLayout::Unified),
-            Wrap::At(49)
-        );
-        assert_eq!(
-            Wrap::of(Wrapping::Disabled, 80, DiffLayout::Unified),
-            Wrap::Off
-        );
+        let wrap = |layout, wrapping| Wrap::of(preferences(layout, wrapping, FileList::Shown), 80);
+
+        assert_eq!(wrap(DiffLayout::Vertical, Wrapping::Enabled), Wrap::At(22));
+        assert_eq!(wrap(DiffLayout::Unified, Wrapping::Enabled), Wrap::At(49));
+        assert_eq!(wrap(DiffLayout::Unified, Wrapping::Disabled), Wrap::Off);
     }
 
     #[test]
@@ -739,19 +752,20 @@ mod tests {
             separator_padding: 1,
         };
         let cases = [
-            ((19, 3), DiffLayout::Unified, PaneLayout::TooNarrow),
-            ((20, 2), DiffLayout::Unified, PaneLayout::TooShort),
-            ((27, 3), DiffLayout::Unified, PaneLayout::DiffOnly),
-            ((28, 3), DiffLayout::Unified, split),
-            ((28, 3), DiffLayout::Vertical, split),
-            ((28, 6), DiffLayout::Stacked, PaneLayout::TooShort),
-            ((28, 7), DiffLayout::Stacked, split),
+            ((19, 4), DiffLayout::Unified, PaneLayout::TooNarrow),
+            ((20, 3), DiffLayout::Unified, PaneLayout::TooShort),
+            ((27, 4), DiffLayout::Unified, PaneLayout::DiffOnly),
+            ((28, 4), DiffLayout::Unified, split),
+            ((28, 4), DiffLayout::Vertical, split),
+            ((28, 7), DiffLayout::Stacked, PaneLayout::TooShort),
+            ((28, 8), DiffLayout::Stacked, split),
         ];
 
-        // architecture.md: the minimum layout shows one content line in each diff pane.
+        // architecture.md: the minimum layout shows the hint row and one content line in each
+        // diff pane.
         for ((width, height), layout, expected) in cases {
             assert_eq!(
-                pane_layout(width, height, layout),
+                pane_layout(width, height, ViewPreferences::line(layout)),
                 expected,
                 "{width}×{height} {layout:?}"
             );
@@ -759,21 +773,33 @@ mod tests {
     }
 
     #[test]
-    fn derives_the_narrowest_content_pane_width_for_each_layout() {
-        assert_eq!(content_pane_width(80, DiffLayout::Unified), 51);
-        assert_eq!(content_pane_width(80, DiffLayout::Vertical), 24);
-        assert_eq!(content_pane_width(80, DiffLayout::Stacked), 51);
-        assert_eq!(content_pane_width(23, DiffLayout::Unified), 21);
-        assert_eq!(content_pane_width(23, DiffLayout::Vertical), 9);
+    fn gives_the_diff_the_whole_width_while_the_file_list_is_hidden() {
+        let hidden = preferences(DiffLayout::Unified, Wrapping::Enabled, FileList::Hidden);
+
+        assert_eq!(pane_layout(80, 4, hidden), PaneLayout::DiffOnly);
+        assert_eq!(content_pane_width(80, hidden), 78);
+        assert_eq!(Wrap::of(hidden, 80), Wrap::At(76));
     }
 
     #[test]
-    fn leaves_each_pane_frame_out_of_its_content_height() {
-        assert_eq!(content_pane_height(36, DiffLayout::Unified), 34);
-        assert_eq!(content_pane_height(36, DiffLayout::Vertical), 34);
+    fn derives_the_narrowest_content_pane_width_for_each_layout() {
+        let width =
+            |screen_width, layout| content_pane_width(screen_width, ViewPreferences::line(layout));
+
+        assert_eq!(width(80, DiffLayout::Unified), 51);
+        assert_eq!(width(80, DiffLayout::Vertical), 24);
+        assert_eq!(width(80, DiffLayout::Stacked), 51);
+        assert_eq!(width(23, DiffLayout::Unified), 21);
+        assert_eq!(width(23, DiffLayout::Vertical), 9);
+    }
+
+    #[test]
+    fn leaves_the_hint_row_and_each_pane_frame_out_of_its_content_height() {
+        assert_eq!(content_pane_height(36, DiffLayout::Unified), 33);
+        assert_eq!(content_pane_height(36, DiffLayout::Vertical), 33);
         assert_eq!(content_pane_height(36, DiffLayout::Stacked), 15);
-        assert_eq!(content_pane_height(2, DiffLayout::Unified), 0);
-        assert_eq!(content_pane_height(6, DiffLayout::Stacked), 0);
+        assert_eq!(content_pane_height(3, DiffLayout::Unified), 0);
+        assert_eq!(content_pane_height(7, DiffLayout::Stacked), 0);
     }
 
     #[test]

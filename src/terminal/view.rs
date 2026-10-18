@@ -6,8 +6,8 @@ use ratatui::{
 
 use crate::{
     file_tree::FileTree,
-    interaction::{DiffLayout, Interaction},
-    layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
+    interaction::{DiffLayout, Interaction, KeymapPopup},
+    layout::{HINT_ROW_HEIGHT, PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
     prepared::PreparedFile,
     styling::StyledRow,
 };
@@ -17,7 +17,8 @@ use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
     chrome::{
-        ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator, render_file_column,
+        ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator, render_file_list,
+        render_hint_row, render_keymap_popup,
     },
     row_writer::{Clip, RowPlacement, write_row},
     rows::{
@@ -55,11 +56,7 @@ fn render_document(
         .file(interaction.selected_file)
         .expect("selected prepared file");
     let preferences = interaction.preferences;
-    let wrap = Wrap::of(
-        preferences.wrapping,
-        interaction.viewport.width,
-        preferences.layout,
-    );
+    let wrap = Wrap::of(preferences, interaction.viewport.width);
     let extent = file
         .layout()
         .scroll_extent(preferences.layout, preferences.context_lines, wrap);
@@ -109,14 +106,24 @@ pub(super) fn render_prepared_frame(
             total: extent.line_count(),
         },
         horizontal_offset: viewport.horizontal_offset,
-        wrap: Wrap::of(preferences.wrapping, area.width, preferences.layout),
+        wrap: Wrap::of(preferences, area.width),
         color_count,
     };
 
-    match pane_layout(area.width, area.height, preferences.layout) {
-        PaneLayout::TooNarrow => frame.render_widget(Paragraph::new("screen too narrow"), area),
-        PaneLayout::TooShort => frame.render_widget(Paragraph::new("screen too short"), area),
-        PaneLayout::DiffOnly => render_display_layout(frame, display, area),
+    let [body, hint_row] =
+        RatatuiLayout::vertical([Constraint::Min(0), Constraint::Length(HINT_ROW_HEIGHT)])
+            .areas(area);
+
+    match pane_layout(area.width, area.height, preferences) {
+        PaneLayout::TooNarrow => {
+            frame.render_widget(Paragraph::new("screen too narrow"), area);
+            return;
+        }
+        PaneLayout::TooShort => {
+            frame.render_widget(Paragraph::new("screen too short"), area);
+            return;
+        }
+        PaneLayout::DiffOnly => render_display_layout(frame, display, body),
         PaneLayout::Split {
             file_list_width,
             separator_padding,
@@ -128,12 +135,17 @@ pub(super) fn render_prepared_frame(
                 Constraint::Length(separator_padding),
                 Constraint::Min(1),
             ])
-            .areas(area);
+            .areas(body);
 
-            render_file_column(frame, file_column, tree, file.list_row(), color_count);
+            render_file_list(frame, file_column, tree, file.list_row(), color_count);
             draw_outer_separator(frame.buffer_mut(), separator, color_count);
             render_display_layout(frame, display, diff);
         }
+    }
+
+    render_hint_row(frame.buffer_mut(), hint_row, color_count);
+    if let KeymapPopup::Open = interaction.keymap {
+        render_keymap_popup(frame, body, color_count);
     }
 }
 
@@ -283,8 +295,8 @@ mod tests {
     use super::{render_document, render_prepared_frame};
     use crate::{
         interaction::{
-            DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds, Transition,
-            ViewPreferences, Viewport, transition_interaction,
+            DiffLayout, DisplayBounds, FileList, Input, Interaction, KeymapPopup, NavigationBounds,
+            Transition, ViewPreferences, Viewport, transition_interaction,
         },
         parser::parse_unified_diff,
         prepared::PreparedDocument,
@@ -297,6 +309,7 @@ mod tests {
         )
         .expect("valid two-file diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
@@ -319,18 +332,14 @@ mod tests {
             ((0, 2), "~", "selected file's state marker"),
             ((28, 4), "-", "deletion marker"),
             ((28, 5), "+", "addition marker"),
-            ((3, 5), "k", "footer hint"),
+            ((0, 9), "h", "hint row"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
         assert_eq!(rendered[(2, 1)].fg, Color::Rgb(160, 160, 160), "file name");
-        assert_eq!(
-            rendered[(0, 9)].fg,
-            Color::Rgb(110, 110, 110),
-            "footer hint"
-        );
+        assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "hint row");
     }
 
     #[test]
@@ -338,6 +347,7 @@ mod tests {
         let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(23, 8),
@@ -360,11 +370,12 @@ mod tests {
         )
         .expect("valid asymmetric diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::new(80, 9),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
@@ -407,6 +418,7 @@ mod tests {
         let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
         let document = parse_unified_diff(patch.as_bytes()).expect("valid diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
@@ -431,6 +443,7 @@ mod tests {
         let document = parse_unified_diff(b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef\n+ABCDEF\n")
             .expect("valid diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport {
@@ -458,6 +471,7 @@ mod tests {
         )
         .expect("valid asymmetric diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport::new(80, 8),
@@ -493,6 +507,7 @@ mod tests {
         )
         .expect("valid asymmetric diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Stacked),
             viewport: Viewport::new(80, 20),
@@ -537,11 +552,12 @@ mod tests {
         )
         .expect("valid Rust diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::new(80, 9),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
@@ -629,12 +645,11 @@ mod tests {
             parse_unified_diff(b"--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n")
                 .expect("valid character diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences {
-                layout: DiffLayout::Unified,
                 granularity: crate::interaction::DiffGranularity::Character,
-                wrapping: crate::interaction::Wrapping::Disabled,
-                context_lines: 3,
+                ..ViewPreferences::line(DiffLayout::Unified)
             },
             viewport: Viewport::new(80, 8),
         };
@@ -708,6 +723,7 @@ mod tests {
             .layout()
             .scroll_extent(diff_layout, 3, crate::layout::Wrap::Off);
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 1,
             preferences: ViewPreferences::line(diff_layout),
             viewport: Viewport {
@@ -791,11 +807,12 @@ mod tests {
         )
         .expect("valid Rust diff");
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::new(80, 9),
         };
-        let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
+        let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
         terminal
             .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
@@ -816,49 +833,132 @@ mod tests {
         );
     }
 
-    #[test]
-    fn renders_current_shortcuts_in_a_multiline_footer() {
-        let document = parse_unified_diff(
+    fn two_file_document() -> crate::document::DiffDocument {
+        parse_unified_diff(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
         )
-        .expect("valid two-file diff");
-        let interaction = Interaction {
-            selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 18),
-        };
-        let mut terminal = Terminal::new(TestBackend::new(80, 18)).expect("test terminal");
+        .expect("valid two-file diff")
+    }
+
+    fn render(interaction: &Interaction, width: u16, height: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
 
         terminal
-            .draw(|frame| render_document(frame, &document, &interaction, u16::MAX))
+            .draw(|frame| render_document(frame, &two_file_document(), interaction, u16::MAX))
             .expect("render frame");
+        terminal.backend().buffer().clone()
+    }
 
-        let rendered = terminal.backend().buffer();
-        let expected = [
-            ((3, 5), "k", "upward movement"),
-            ((1, 6), "h", "leftward movement"),
-            ((3, 6), "·", "movement separator"),
-            ((5, 6), "l", "rightward movement"),
-            ((8, 6), "m", "movement label"),
-            ((3, 7), "j", "downward movement"),
-            ((2, 9), "^", "page up"),
-            ((2, 10), "^", "page down"),
-            ((2, 11), "g", "top and bottom"),
-            ((2, 12), "v", "layout cycle"),
-            ((2, 13), "c", "character detail"),
-            ((2, 14), "w", "wrapping"),
-            ((1, 15), "+", "context controls"),
-            ((0, 16), "(", "file rotation"),
-            ((3, 17), "q", "exit"),
-        ];
+    fn row_text(buffer: &Buffer, y: u16) -> String {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    }
 
-        for ((x, y), symbol, name) in expected {
-            assert_eq!(rendered[(x, y)].symbol(), symbol, "{name}");
+    fn screen_text(buffer: &Buffer) -> String {
+        (0..buffer.area.height)
+            .map(|y| row_text(buffer, y))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// architecture.md (Interaction model, Keyboard bindings): one hint row on the bottom
+    /// row, in the same place whether the file list is shown or hidden.
+    #[test]
+    fn renders_the_hint_row_on_the_bottom_row_whether_or_not_the_file_list_shows() {
+        for file_list in [FileList::Shown, FileList::Hidden] {
+            let interaction = Interaction {
+                keymap: KeymapPopup::Closed,
+                selected_file: 0,
+                preferences: ViewPreferences {
+                    file_list,
+                    ..ViewPreferences::line(DiffLayout::Unified)
+                },
+                viewport: Viewport::new(80, 10),
+            };
+
+            let rendered = render(&interaction, 80, 10);
+
             assert_eq!(
-                rendered[(x, y)].fg,
-                Color::Rgb(110, 110, 110),
-                "{name} color"
+                row_text(&rendered, 9),
+                "hjkl move · v layout · Tab file · e files · ? help · q quit",
+                "{file_list:?}"
+            );
+            assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "hint tone");
+            assert!(
+                (0..9).all(|y| !row_text(&rendered, y).contains("move")),
+                "{file_list:?}: no hints above the hint row"
             );
         }
+    }
+
+    #[test]
+    fn gives_the_diff_the_file_list_columns_while_the_file_list_is_hidden() {
+        let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
+            selected_file: 0,
+            preferences: ViewPreferences {
+                file_list: FileList::Hidden,
+                ..ViewPreferences::line(DiffLayout::Unified)
+            },
+            viewport: Viewport::new(80, 10),
+        };
+
+        let rendered = render(&interaction, 80, 10);
+
+        assert_eq!(
+            rendered[(1, 4)].symbol(),
+            "-",
+            "deletion marker at the left edge"
+        );
+        assert!(!screen_text(&rendered).contains("│"), "no outer separator");
+        assert!(!screen_text(&rendered).contains("second"), "no file list");
+    }
+
+    /// architecture.md (Interaction model): `?` opens a centered, bordered popup over the
+    /// diff that lists every shortcut.
+    #[test]
+    fn lists_every_shortcut_in_a_bordered_popup_over_the_diff() {
+        let interaction = |keymap| Interaction {
+            keymap,
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport::new(80, 24),
+        };
+
+        let open = screen_text(&render(&interaction(KeymapPopup::Open), 80, 24));
+        let closed = screen_text(&render(&interaction(KeymapPopup::Closed), 80, 24));
+
+        for action in [
+            "scroll down / up",
+            "scroll left / right",
+            "left edge",
+            "right end",
+            "half page down / up",
+            "top / bottom",
+            "next / previous file",
+            "cycle layout",
+            "character detail",
+            "wrap",
+            "more / less context",
+            "show / hide file list",
+            "close keymap",
+            "exit",
+        ] {
+            assert!(open.contains(action), "popup lists {action}");
+        }
+        assert!(open.contains('┌') && open.contains('┘'), "popup border");
+        assert!(
+            !closed.contains("cycle layout"),
+            "closed popup is not drawn"
+        );
+        assert!(
+            open.lines()
+                .last()
+                .is_some_and(|row| row.starts_with("hjkl move")),
+            "the hint row stays below the popup"
+        );
     }
 }

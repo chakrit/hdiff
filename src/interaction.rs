@@ -22,6 +22,30 @@ pub struct Interaction {
     pub selected_file: usize,
     pub preferences: ViewPreferences,
     pub viewport: Viewport,
+    pub keymap: KeymapPopup,
+}
+
+/// The popup listing every shortcut. Rules: `docs/spec/architecture.md` (Interaction model).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeymapPopup {
+    Closed,
+    Open,
+}
+
+impl KeymapPopup {
+    /// The input this popup lets through: while open, only its close keys act, all closing
+    /// it, and resizes still apply.
+    pub fn admit(self, input: Input) -> Option<Input> {
+        match (self, input) {
+            (Self::Closed, Input::CloseKeymap) => None,
+            (Self::Closed, input) => Some(input),
+            (Self::Open, Input::OpenKeymap | Input::CloseKeymap | Input::Quit) => {
+                Some(Input::CloseKeymap)
+            }
+            (Self::Open, input @ Input::Resize { .. }) => Some(input),
+            (Self::Open, _) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +79,22 @@ pub struct ViewPreferences {
     pub granularity: DiffGranularity,
     pub wrapping: Wrapping,
     pub context_lines: usize,
+    pub file_list: FileList,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileList {
+    Shown,
+    Hidden,
+}
+
+impl FileList {
+    const fn toggled(self) -> Self {
+        match self {
+            Self::Shown => Self::Hidden,
+            Self::Hidden => Self::Shown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +141,7 @@ impl ViewPreferences {
             granularity: DiffGranularity::Line,
             wrapping: Wrapping::Disabled,
             context_lines: 3,
+            file_list: FileList::Shown,
         }
     }
 
@@ -125,6 +166,10 @@ impl ViewPreferences {
             },
             Input::DecreaseContext => Self {
                 context_lines: self.context_lines.saturating_sub(1),
+                ..self
+            },
+            Input::ToggleFileList => Self {
+                file_list: self.file_list.toggled(),
                 ..self
             },
             _ => self,
@@ -176,6 +221,9 @@ pub enum Input {
     ToggleWrapping,
     IncreaseContext,
     DecreaseContext,
+    ToggleFileList,
+    OpenKeymap,
+    CloseKeymap,
     Quit,
     Interrupt,
     Resize { width: u16, height: u16 },
@@ -201,7 +249,10 @@ pub fn transition_interaction(
         Input::ToggleGranularity => {
             return redraw_preferences(interaction, preferences, viewport.clone());
         }
-        Input::ToggleWrapping | Input::IncreaseContext | Input::DecreaseContext => {
+        Input::ToggleWrapping
+        | Input::IncreaseContext
+        | Input::DecreaseContext
+        | Input::ToggleFileList => {
             let anchored = bounds.anchored_vertical_offset;
             let viewport = bounded_viewport(anchored, viewport.height, viewport, display);
             return redraw_preferences(interaction, preferences, viewport);
@@ -215,6 +266,8 @@ pub fn transition_interaction(
             let viewport = bounded_viewport(anchored, usize::from(height), &resized, display);
             return redraw_preferences(interaction, preferences, viewport);
         }
+        Input::OpenKeymap => return redraw_keymap(interaction, KeymapPopup::Open),
+        Input::CloseKeymap => return redraw_keymap(interaction, KeymapPopup::Closed),
         _ => {}
     }
 
@@ -251,6 +304,7 @@ fn redraw_selected_file(interaction: &Interaction, selected_file: usize) -> Tran
         selected_file,
         preferences: interaction.preferences,
         viewport: Viewport::new(interaction.viewport.width, interaction.viewport.height),
+        keymap: interaction.keymap,
     })
 }
 
@@ -263,6 +317,16 @@ fn redraw_preferences(
         selected_file: interaction.selected_file,
         preferences,
         viewport,
+        keymap: interaction.keymap,
+    })
+}
+
+fn redraw_keymap(interaction: &Interaction, keymap: KeymapPopup) -> Transition {
+    Transition::RedrawInteraction(Interaction {
+        selected_file: interaction.selected_file,
+        preferences: interaction.preferences,
+        viewport: interaction.viewport.clone(),
+        keymap,
     })
 }
 
@@ -299,6 +363,9 @@ fn transition(viewport: &Viewport, input: Input, bounds: DisplayBounds) -> Trans
         | Input::ToggleWrapping
         | Input::IncreaseContext
         | Input::DecreaseContext
+        | Input::ToggleFileList
+        | Input::OpenKeymap
+        | Input::CloseKeymap
         | Input::Resize { .. } => Transition::Redraw(viewport.clone()),
         Input::Down => redraw(
             viewport.vertical_offset.saturating_add(1),
@@ -384,8 +451,9 @@ fn redraw_horizontal(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffGranularity, DiffLayout, DisplayBounds, Input, Interaction, NavigationBounds,
-        Transition, ViewPreferences, Viewport, Wrapping, transition, transition_interaction,
+        DiffGranularity, DiffLayout, DisplayBounds, FileList, Input, Interaction, KeymapPopup,
+        NavigationBounds, Transition, ViewPreferences, Viewport, Wrapping, transition,
+        transition_interaction,
     };
 
     #[test]
@@ -420,6 +488,7 @@ mod tests {
     #[test]
     fn moves_and_clamps_the_horizontal_viewport() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -470,6 +539,7 @@ mod tests {
     #[test]
     fn jumps_to_horizontal_boundaries() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -529,6 +599,7 @@ mod tests {
     #[test]
     fn resize_moves_to_the_anchored_offset_clamped_for_the_new_size() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -574,6 +645,7 @@ mod tests {
     #[test]
     fn toggles_wrapping_at_the_anchored_offset() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Vertical),
             viewport: Viewport {
@@ -607,6 +679,7 @@ mod tests {
     #[test]
     fn rotates_files_and_resets_the_viewport() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -631,6 +704,7 @@ mod tests {
         assert_eq!(
             next,
             Transition::RedrawInteraction(Interaction {
+                keymap: KeymapPopup::Closed,
                 selected_file: 0,
                 preferences: ViewPreferences::line(DiffLayout::Unified),
                 viewport: Viewport {
@@ -646,6 +720,7 @@ mod tests {
     #[test]
     fn rotates_to_the_previous_file_and_resets_the_viewport() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -670,6 +745,7 @@ mod tests {
         assert_eq!(
             next,
             Transition::RedrawInteraction(Interaction {
+                keymap: KeymapPopup::Closed,
                 selected_file: 1,
                 preferences: ViewPreferences::line(DiffLayout::Unified),
                 viewport: Viewport {
@@ -685,6 +761,7 @@ mod tests {
     #[test]
     fn cycles_layouts_without_changing_the_reader_position() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -728,6 +805,7 @@ mod tests {
     #[test]
     fn toggles_detail_and_bounds_context_without_moving_the_viewport() {
         let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
             selected_file: 1,
             preferences: ViewPreferences::line(DiffLayout::Unified),
             viewport: Viewport {
@@ -764,5 +842,111 @@ mod tests {
         );
         assert_eq!(one_more_context.preferences.context_lines, 4);
         assert_eq!(one_more_context.viewport, interaction.viewport);
+    }
+
+    /// architecture.md (Interaction model): while the keymap popup is open, `?`, `Esc`,
+    /// and `q` close it without exiting, and every other key does nothing.
+    #[test]
+    fn admits_only_closing_keys_and_resizes_while_the_keymap_is_open() {
+        let open = KeymapPopup::Open;
+        let resize = || Input::Resize {
+            width: 80,
+            height: 9,
+        };
+
+        for closing in [Input::OpenKeymap, Input::CloseKeymap, Input::Quit] {
+            assert_eq!(open.admit(closing), Some(Input::CloseKeymap));
+        }
+        for ignored in [
+            Input::Down,
+            Input::NextFile,
+            Input::NextLayout,
+            Input::ToggleFileList,
+            Input::Interrupt,
+        ] {
+            assert_eq!(open.admit(ignored), None);
+        }
+        assert_eq!(open.admit(resize()), Some(resize()));
+        assert_eq!(KeymapPopup::Closed.admit(Input::Quit), Some(Input::Quit));
+        assert_eq!(KeymapPopup::Closed.admit(Input::CloseKeymap), None);
+    }
+
+    #[test]
+    fn opens_and_closes_the_keymap_without_moving_the_viewport() {
+        let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
+            selected_file: 1,
+            preferences: ViewPreferences::line(DiffLayout::Unified),
+            viewport: Viewport {
+                vertical_offset: 4,
+                horizontal_offset: 3,
+                width: 80,
+                height: 9,
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: 2,
+            target_display: DisplayBounds {
+                maximum_vertical_offset: 7,
+                maximum_horizontal_offset: 12,
+            },
+            anchored_vertical_offset: 0,
+        };
+
+        let Transition::RedrawInteraction(open) =
+            transition_interaction(&interaction, Input::OpenKeymap, &bounds)
+        else {
+            panic!("opening the keymap redraws interaction");
+        };
+        let Transition::RedrawInteraction(closed) =
+            transition_interaction(&open, Input::CloseKeymap, &bounds)
+        else {
+            panic!("closing the keymap redraws interaction");
+        };
+
+        assert_eq!(open.keymap, KeymapPopup::Open);
+        assert_eq!(open.viewport, interaction.viewport);
+        assert_eq!(closed, interaction);
+    }
+
+    /// architecture.md (View model): showing or hiding the file list keeps the row on the
+    /// diff pane's middle line on that line.
+    #[test]
+    fn toggles_the_file_list_at_the_anchored_offset() {
+        let interaction = Interaction {
+            keymap: KeymapPopup::Closed,
+            selected_file: 0,
+            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            viewport: Viewport {
+                vertical_offset: 2,
+                horizontal_offset: 9,
+                width: 80,
+                height: 9,
+            },
+        };
+        let bounds = NavigationBounds {
+            file_count: 1,
+            target_display: DisplayBounds {
+                maximum_vertical_offset: 20,
+                maximum_horizontal_offset: 4,
+            },
+            anchored_vertical_offset: 6,
+        };
+
+        let Transition::RedrawInteraction(hidden) =
+            transition_interaction(&interaction, Input::ToggleFileList, &bounds)
+        else {
+            panic!("file-list toggle redraws interaction");
+        };
+        let Transition::RedrawInteraction(shown) =
+            transition_interaction(&hidden, Input::ToggleFileList, &bounds)
+        else {
+            panic!("file-list toggle redraws interaction");
+        };
+
+        assert_eq!(hidden.preferences.file_list, FileList::Hidden);
+        assert_eq!(hidden.viewport.vertical_offset, 6);
+        assert_eq!(hidden.viewport.horizontal_offset, 4);
+        assert_eq!(shown.preferences.file_list, FileList::Shown);
     }
 }

@@ -5,6 +5,7 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     interaction::{DiffGranularity, DiffLayout, ViewPreferences},
+    layout::content_pane_height,
     parser::parse_unified_diff,
     prepared::PreparedDocument,
     terminal::{Step, Tui},
@@ -206,6 +207,8 @@ matrix!(
     wrapping,
     continuity_markers,
     no_markers_when_content_fits,
+    file_list_toggle,
+    keymap_popup,
 );
 
 fn vertical_movement(mode: Mode) {
@@ -458,10 +461,10 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
         },
     );
 
-    for _ in 0..30 {
+    for _ in 0..36 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
-    assert!(live.shows("~ file_30.rs"), "the selected file stays listed");
+    assert!(live.shows("~ file_36.rs"), "the selected file stays listed");
     assert!(
         !live.shows("file_00.rs"),
         "the list scrolls past the first file"
@@ -616,12 +619,12 @@ fn marks_files_beyond_the_file_list() {
     // architecture.md (Continuity markers): the file list marks rows past each edge.
     assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
     assert_eq!(markers(&live), (0, 1), "files below the list");
-    for _ in 0..30 {
+    for _ in 0..36 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
     assert_eq!(markers(&live), (1, 1), "files above and below");
     // Back past the first file, wrapping to the last.
-    for _ in 0..31 {
+    for _ in 0..37 {
         live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     }
     assert!(live.shows("~ file_39.rs"));
@@ -796,14 +799,14 @@ fn stacked_panes_need_room_for_one_content_line_each() {
         },
     );
 
-    live.resize(80, 6);
-    assert!(live.shows("screen too short"));
     live.resize(80, 7);
+    assert!(live.shows("screen too short"));
+    live.resize(80, 8);
     assert_eq!(live.count('▾'), 2, "each pane shows a line");
     assert!(!live.shows("screen too short"));
 }
 
-/// Count of `x` on screen; the footer's own `x` cancels out of differences.
+/// Count of `x` on screen.
 fn x_count(live: &Live) -> usize {
     live.rows().iter().map(|row| row.matches('x').count()).sum()
 }
@@ -889,4 +892,82 @@ fn diff_pane(row: &str) -> String {
         .map_or(row, |(_, pane)| pane)
         .trim_start_matches(' ')
         .to_owned()
+}
+
+/// One block of paired changes, so every layout shows a labeled row on each pane line.
+fn paired_patch() -> String {
+    let removed = (0..100)
+        .map(|row| format!("-old_{row}\n"))
+        .collect::<String>();
+    let added = (0..100)
+        .map(|row| format!("+new_{row}\n"))
+        .collect::<String>();
+    format!("--- a/pairs.rs\n+++ b/pairs.rs\n@@ -1,100 +1,100 @@\n{removed}{added}")
+}
+
+/// The first `old_N` or `new_N` label in `row`.
+fn change_label(row: &str) -> Option<String> {
+    let start = row.find("old_").or_else(|| row.find("new_"))?;
+    let label = row[start..]
+        .chars()
+        .take_while(|symbol| symbol.is_alphanumeric() || *symbol == '_')
+        .collect();
+
+    Some(label)
+}
+
+const HINTS: &str = "hjkl move · v layout · Tab file · e files · ? help · q quit";
+
+/// architecture.md (Interaction model, View model): `e` hides and shows the file list,
+/// keeping the hint row on the bottom row and the middle line's row in place.
+fn file_list_toggle(mode: Mode) {
+    let mut live = Live::load(&paired_patch(), mode);
+    for _ in 0..20 {
+        live.press('j');
+    }
+    let start = live.buffer();
+    let pane_height = content_pane_height(usize::from(HEIGHT), mode.layout);
+    let middle_line = FIRST_CONTENT_LINE + pane_height / 2;
+    let middle = change_label(&live.rows()[middle_line]);
+    assert!(middle.is_some(), "a labeled row on the middle line");
+    assert!(live.shows("pairs.rs"), "the file list starts shown");
+
+    live.press('e');
+    assert!(!live.shows("pairs.rs"), "e hides the file list");
+    assert_eq!(change_label(&live.rows()[middle_line]), middle);
+    assert!(live.rows().last().is_some_and(|row| row.starts_with(HINTS)));
+
+    live.press('e');
+    assert_eq!(live.buffer(), start, "e shows the file list again");
+}
+
+/// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,
+/// `?`, `Esc`, and `q` close it without exiting, and every other key does nothing.
+fn keymap_popup(mode: Mode) {
+    let mut live = Live::load(&long_patch(), mode);
+    let start = live.buffer();
+    let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    let interrupt = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(live.send(escape), Step::Continue);
+    assert_eq!(live.buffer(), start, "Esc does nothing without the popup");
+
+    for close in ['?', 'q'] {
+        live.press('?');
+        assert!(live.shows("cycle layout"), "? opens the popup");
+        let open = live.buffer();
+
+        for key in ['j', 'G', 'v', 'c', 'w', '+', 'e', 'x'] {
+            assert_eq!(live.press(key), Step::Continue);
+        }
+        assert_eq!(live.send(interrupt), Step::Continue);
+        assert_eq!(live.buffer(), open, "other keys do nothing while open");
+        assert_eq!(live.tui.preferences().layout, mode.layout);
+
+        assert_eq!(live.press(close), Step::Continue, "{close} does not exit");
+        assert_eq!(live.buffer(), start, "{close} closes the popup");
+    }
+
+    live.press('?');
+    live.send(escape);
+    assert_eq!(live.buffer(), start, "Esc closes the popup");
 }

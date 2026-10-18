@@ -259,7 +259,7 @@ it; the `prepare` driver does not build extents.
 #### Static frame chrome
 
 The file list renders borrowed labels, and only the window that fits around the
-selection; footer hints are static strings; separators fill buffer cells. Same
+selection; the hint row is a static string; separators fill buffer cells. Same
 measurement as [Cached layout splits](#cached-layout-splits):
 
 | Binary          | Retired instructions (three runs)             | Mean          |
