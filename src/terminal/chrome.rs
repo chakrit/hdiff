@@ -13,7 +13,7 @@ use ratatui::{
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileTree, TreeRow},
-    geometry::{PANE_FRAME_HEIGHT, between_frame_rows, pane_content},
+    geometry::{PANE_FRAME_HEIGHT, frame_interior, inside_frame_rows},
     prepared::PageKind,
     screen::ScreenLines,
     theme::ChromePalette,
@@ -113,7 +113,7 @@ impl ContinuityFrame {
     pub(super) fn diff_pane(pane: Rect) -> Self {
         Self {
             pane,
-            content: pane_content(pane),
+            content: frame_interior(pane),
         }
     }
 
@@ -121,7 +121,7 @@ impl ContinuityFrame {
     fn file_list(area: Rect) -> Self {
         Self {
             pane: area,
-            content: between_frame_rows(area),
+            content: inside_frame_rows(area),
         }
     }
 

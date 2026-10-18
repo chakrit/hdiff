@@ -1,7 +1,7 @@
 //! The screen's areas for one screen size and file-list choice: the file-list column, its
-//! separator, and the diff area, which each pane shape divides into diff panes. Navigation
-//! bounds and drawing both read this one geometry. Rules: `docs/spec/architecture.md`
-//! (Interaction model, Continuity markers, Viewport coordinates).
+//! separator, and the diff area, which each pane shape divides into diff panes. Rules:
+//! `docs/spec/architecture.md` (Interaction model, Continuity markers, Viewport
+//! coordinates).
 
 use ratatui::layout::{Constraint, Flex, Layout, Position, Rect, Size};
 
@@ -81,14 +81,6 @@ pub struct PaneContent {
     pub height: ScreenLines,
 }
 
-/// Why a screen shows only a message instead of its panes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TooSmall {
-    Narrow,
-    /// A diff pane would have no content line.
-    Short,
-}
-
 impl ScreenGeometry {
     /// The areas of a screen of `size` at the origin.
     pub fn of(size: Size, file_list: FileList) -> Self {
@@ -118,14 +110,9 @@ impl ScreenGeometry {
         self.file_column
     }
 
-    pub fn too_small(&self, shape: PaneShape) -> Option<TooSmall> {
-        if self.is_narrow() {
-            return Some(TooSmall::Narrow);
-        }
-        match self.pane_content(shape).height {
-            ScreenLines::ZERO => Some(TooSmall::Short),
-            _ => None,
-        }
+    /// Too narrow to show panes at all.
+    pub fn is_narrow(&self) -> bool {
+        self.screen.width < MINIMUM_SCREEN_WIDTH
     }
 
     /// The one diff pane of the single shape, frame included: the whole diff area.
@@ -138,12 +125,11 @@ impl ScreenGeometry {
         SplitPanes::of(self.diff, direction)
     }
 
-    /// The content each pane of `shape` shows; a too-narrow screen shows no columns.
+    /// The content each pane of `shape` shows.
     pub fn pane_content(&self, shape: PaneShape) -> PaneContent {
-        let width = match (self.is_narrow(), shape) {
-            (true, _) => 0,
-            (false, PaneShape::Single) => pane_content(self.single_pane()).width,
-            (false, PaneShape::Split(direction)) => self.split_panes(direction).content_width(),
+        let width = match shape {
+            PaneShape::Single => frame_interior(self.single_pane()).width,
+            PaneShape::Split(direction) => self.split_panes(direction).content_width(),
         };
         let height = pane_height(self.screen.height, shape).saturating_sub(PANE_FRAME_HEIGHT);
 
@@ -151,10 +137,6 @@ impl ScreenGeometry {
             width: Cells::from(width),
             height: ScreenLines::from(height),
         }
-    }
-
-    fn is_narrow(&self) -> bool {
-        self.screen.width < MINIMUM_SCREEN_WIDTH
     }
 }
 
@@ -201,15 +183,15 @@ impl SplitPanes {
     }
 
     fn content_width(self) -> u16 {
-        pane_content(self.before)
+        frame_interior(self.before)
             .width
-            .min(pane_content(self.after).width)
+            .min(frame_interior(self.after).width)
     }
 }
 
 /// The content area inside a diff pane's continuity-marker frame.
-pub fn pane_content(pane: Rect) -> Rect {
-    let rows = between_frame_rows(pane);
+pub fn frame_interior(pane: Rect) -> Rect {
+    let rows = inside_frame_rows(pane);
 
     Rect::new(
         rows.x + PANE_FRAME_WIDTH / 2,
@@ -220,7 +202,7 @@ pub fn pane_content(pane: Rect) -> Rect {
 }
 
 /// `area` without its frame rows above and below.
-pub fn between_frame_rows(area: Rect) -> Rect {
+pub fn inside_frame_rows(area: Rect) -> Rect {
     Rect::new(
         area.x,
         area.y + PANE_FRAME_HEIGHT / 2,
@@ -255,7 +237,7 @@ fn pane_height(screen_height: u16, shape: PaneShape) -> u16 {
 mod tests {
     use ratatui::layout::{Rect, Size};
 
-    use super::{FileColumn, PaneShape, ScreenGeometry, TooSmall};
+    use super::{FileColumn, PaneShape, ScreenGeometry};
     use crate::{
         preferences::{DiffLayout, FileList},
         screen::{Cells, ScreenLines},
@@ -263,54 +245,6 @@ mod tests {
 
     fn geometry(width: u16, height: u16) -> ScreenGeometry {
         ScreenGeometry::of(Size::new(width, height), FileList::Shown)
-    }
-
-    /// What a screen shows: a message, or its panes with or without the file list.
-    #[derive(Debug, PartialEq, Eq)]
-    enum Shown {
-        Message(TooSmall),
-        DiffOnly,
-        Split,
-    }
-
-    #[test]
-    fn derives_compact_pane_visibility_from_terminal_size() {
-        let cases = [
-            (
-                (19, 3),
-                DiffLayout::Unified,
-                Shown::Message(TooSmall::Narrow),
-            ),
-            (
-                (20, 2),
-                DiffLayout::Unified,
-                Shown::Message(TooSmall::Short),
-            ),
-            ((27, 3), DiffLayout::Unified, Shown::DiffOnly),
-            ((28, 3), DiffLayout::Unified, Shown::Split),
-            ((28, 3), DiffLayout::Vertical, Shown::Split),
-            (
-                (28, 6),
-                DiffLayout::Stacked,
-                Shown::Message(TooSmall::Short),
-            ),
-            ((28, 7), DiffLayout::Stacked, Shown::Split),
-        ];
-
-        // architecture.md: the minimum layout shows one content line in each diff pane.
-        for ((width, height), layout, expected) in cases {
-            let screen = geometry(width, height);
-            let shown = match (
-                screen.too_small(PaneShape::of(layout)),
-                screen.file_column(),
-            ) {
-                (Some(too_small), _) => Shown::Message(too_small),
-                (None, None) => Shown::DiffOnly,
-                (None, Some(_)) => Shown::Split,
-            };
-
-            assert_eq!(shown, expected, "{width}×{height} {layout:?}");
-        }
     }
 
     /// architecture.md (Interaction model): one vertical separator, padded by one space on

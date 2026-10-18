@@ -7,7 +7,7 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    interaction::{Event, Interaction, Transition},
+    interaction::{Interaction, Outcome},
     navigation::Navigation,
     preferences::ViewPreferences,
     prepared::PreparedDocument,
@@ -59,8 +59,8 @@ pub struct Tui {
 }
 
 impl Tui {
-    pub fn new(document: PreparedDocument, area: Size, color_depth: ColorDepth) -> Self {
-        let interaction = Interaction::start(ViewPreferences::INITIAL, area);
+    pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
+        let interaction = Interaction::start(ViewPreferences::INITIAL, screen);
         let navigation = Navigation::new(&document, &interaction);
 
         Self {
@@ -69,16 +69,6 @@ impl Tui {
             navigation,
             theme: Theme::for_depth(color_depth),
         }
-    }
-
-    /// Replaces the document, keeping the preferences and screen and starting at its first
-    /// page.
-    pub fn load(&mut self, document: PreparedDocument) {
-        let screen = self.interaction.display().geometry().screen().as_size();
-
-        self.interaction = Interaction::start(self.interaction.preferences(), screen);
-        self.document = document;
-        self.navigation = Navigation::new(&self.document, &self.interaction);
     }
 
     pub fn preferences(&self) -> ViewPreferences {
@@ -118,13 +108,12 @@ impl Tui {
             screen,
         );
 
-        match self
-            .navigation
-            .step(&self.document, &self.interaction, event)
-        {
-            Transition::Exit => Ok(Step::Exit),
-            Transition::Redraw(next) => {
-                self.interaction = next;
+        match self.interaction.respond(event, self.document.page_count()) {
+            Outcome::Exit => Ok(Step::Exit),
+            Outcome::Effect(effect) => {
+                self.interaction = self
+                    .navigation
+                    .step(&self.document, &self.interaction, effect);
                 self.draw(terminal)?;
                 Ok(Step::Continue)
             }
@@ -149,7 +138,7 @@ impl Tui {
                     frame,
                     document.file_tree(),
                     document.page(interaction.page()),
-                    navigation.extent(),
+                    navigation,
                     interaction,
                     theme,
                 )
@@ -171,14 +160,12 @@ fn adopt_screen(
     navigation: &mut Navigation,
     screen: Size,
 ) {
-    if screen == interaction.display().geometry().screen().as_size() {
+    if screen == interaction.screen() {
         return;
     }
-    if let Transition::Redraw(resized) =
-        navigation.step(document, interaction, Event::Resize(screen))
-    {
-        *interaction = resized;
-    }
+    let resized = navigation.step(document, interaction, interaction.resize(screen));
+
+    *interaction = resized;
 }
 
 /// Blocking terminal events with consecutive resizes coalesced into the latest one.

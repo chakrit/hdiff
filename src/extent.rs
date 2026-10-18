@@ -107,14 +107,6 @@ impl DisplayExtent {
         }
     }
 
-    /// The pane shape these rows were built for: the one drawing and bounds both read.
-    pub fn shape(&self) -> PaneShape {
-        match self {
-            Self::Single(_) => PaneShape::Single,
-            Self::Split { direction, .. } => PaneShape::Split(*direction),
-        }
-    }
-
     pub fn line_count(&self) -> ScreenLines {
         match self {
             Self::Single(extent) => extent.line_count(),

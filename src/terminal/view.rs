@@ -5,10 +5,12 @@
 use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
+    effective_view::TooSmall,
     extent::{DisplayExtent, ScreenLine, WrapWidth},
     file_tree::FileTree,
-    geometry::{SplitDirection, SplitPanes, TooSmall},
+    geometry::{SplitDirection, SplitPanes},
     interaction::{Interaction, KeymapPopup},
+    navigation::Navigation,
     page_rows::SideBySideRow,
     prepared::PreparedPage,
     screen::{Cells, ScreenLines},
@@ -26,27 +28,28 @@ use super::{
     rows::{PaneRow, visible_rows},
 };
 
-/// Draws `page` through `extent`, the scroll extent of the interaction's display, beside
-/// the file list of `tree`.
+/// Draws `page` as `navigation` shows `interaction`: through its effective view and
+/// scroll extent, beside the file list of `tree`.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
     tree: &FileTree,
     page: &PreparedPage,
-    extent: &DisplayExtent,
+    navigation: &Navigation,
     interaction: &Interaction,
     theme: &Theme,
 ) {
-    let geometry = interaction.display().geometry();
+    let view = navigation.view();
+    let geometry = view.geometry();
     let screen = geometry.screen();
-    let shape = extent.shape();
-    if let Some(too_small) = geometry.too_small(shape) {
+    if let Some(too_small) = view.too_small() {
         frame.render_widget(Paragraph::new(too_small_message(too_small)), screen);
         return;
     }
 
+    let extent = navigation.extent();
     let scroll = interaction.scroll();
     let granularity = interaction.preferences().granularity;
-    let pane_lines = geometry.pane_content(shape).height;
+    let pane_lines = view.pane_content().height;
     let panes = PaneRows {
         window: LineWindow {
             first: scroll.vertical,

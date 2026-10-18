@@ -88,21 +88,23 @@ directly without entering the interactive preparation and terminal path.
 document; it owns neither the terminal nor the input source.
 
 ```text
-tui.load(document)            replaces the current document
-tui.run(&mut terminal, events) draws, then steps each event until Exit
-tui.step(&mut terminal, event) event -> Event -> Interaction transition -> draw -> Continue | Exit
+Tui::new(document, screen, color depth)  starts at the first page
+tui.run(&mut terminal, events)           draws, then steps each event until Exit
+tui.step(&mut terminal, event)           event -> Event -> Exit | Effect -> Interaction -> draw
 ```
 
 Output is Ratatui's `Terminal<B: Backend>`. Input is any
 `Iterator<Item = io::Result<Event>>`.
 
-| Caller     | Terminal                                    | Events                         | Drives       |
-|------------|---------------------------------------------|--------------------------------|--------------|
-| `main`     | `CrosstermBackend<Stdout>`, `ratatui::init` | `TtyEvents` (coalesces resize) | `tui.run`    |
-| live tests | `TestBackend`                               | one key per call               | `tui.step`   |
-| `movement` | `CrosstermBackend<io::Sink>`                | fixed key sequence             | timed `step` |
+| Caller          | Terminal                                         | Events                         | Drives       |
+|-----------------|--------------------------------------------------|--------------------------------|--------------|
+| interactive run | `CrosstermBackend<File>` on `/dev/tty`, through  | `TtyEvents` (coalesces resize) | `tui.run`    |
+|                 | `TerminalSession`                                |                                |              |
+| live tests      | `TestBackend`                                    | one key per call               | `tui.step`   |
+| `movement`      | `CrosstermBackend<io::Sink>`                     | fixed key sequence             | timed `step` |
 
-`main` restores the terminal with `ratatui::restore` after `run` returns.
+`TerminalSession` restores the terminal as the
+[input and terminal boundary](#input-and-terminal-boundary) describes.
 
 No layer should inspect another layer’s internal representation. In particular, rendering must
 not parse diff text, and input handling must not mutate parsed records in place.
@@ -131,8 +133,11 @@ valid diff lines without data loss.
   visibility, and, once semantic diffing lands, a semantic strategy: the session-local
   display choices. Character presentation follows the
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
-- `Display`: the view preferences on a terminal screen size, with the screen geometry they
-  lay out.
+- `Interaction`: the selected page, view preferences, screen size, scroll position, and
+  keymap popup.
+- `EffectiveView`: the view preferences laid out on a screen size: the pane shape, the
+  screen geometry, the content each diff pane shows, the wrap width, and whether the
+  screen is too small for panes.
 - `ScrollPosition`: the vertical screen-line offset and the synchronized horizontal cell
   offset.
 - `PageRows`: retained rendered rows, split pairs, and source addresses.
@@ -325,8 +330,8 @@ View choices are orthogonal rather than one growing mode enum:
 - navigation-pane state: file list visibility and active pane;
 - display preferences: wrapping, context-line count, highlighting, and color capability.
 
-The intended `EffectiveView` derives the renderable combination from these preferences, document
-capabilities, language support, and terminal dimensions. Tree-sitter semantic diff is used when
+`EffectiveView` derives the renderable combination from these preferences and the terminal
+dimensions; document capabilities and language support join it when semantic strategies land. Tree-sitter semantic diff is used when
 the language and parser are available, with textual fallback otherwise. The user-selected
 layout is preserved through resizes; hdiff does not automatically switch between layouts. `v`
 cycles unified, vertical split, and stacked split in that order, preserving the
@@ -529,7 +534,7 @@ layout, context count, and wrap width, and not on movement. Unified rows are lin
 side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
 the line it starts with. Cell columns and screen lines are distinct units, held at full
 width and narrowed only where a frame is drawn, so no offset type caps how far a row
-reaches. One screen geometry, derived from the screen size and view preferences, serves
+reaches. One effective view, derived from the screen size and view preferences, serves
 both navigation bounds and drawing, and a scroll extent carries the wrap width and pane
 shape it was built with. Each frame adopts the size it is drawn at before it draws, so a
 key that arrives before its resize event still draws a full frame.

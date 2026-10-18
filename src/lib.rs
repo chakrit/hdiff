@@ -7,6 +7,7 @@ pub mod compact;
 pub mod detail;
 pub mod display_lines;
 pub mod document;
+pub mod effective_view;
 pub mod exit_status;
 pub mod extent;
 pub mod file_identity;
