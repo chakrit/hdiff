@@ -18,9 +18,9 @@ part of this boundary.
 Preparation is one optimized single-threaded pass. Incremental preparation is not part of
 this design unless measured preparation latency makes the eager boundary untenable.
 
-Document-wide file-list labels are derived once during preparation. Each prepared file
+Document-wide file-list labels are derived once during preparation. Each prepared page
 derives only its own rendered rows, split pairs, syntax spans, and character-detail spans.
-The prepared layout is the sole owner of each exact-sized immutable rendered-row buffer.
+A page's `PageRows` is the sole owner of each exact-sized immutable rendered-row buffer.
 Unified and side-by-side layout projections reference those buffers.
 
 ## Benchmark drivers
