@@ -94,8 +94,8 @@ impl Content {
     /// Parses the content, releasing its buffer: the document keeps every line it needs.
     pub fn parse(self) -> Result<DiffDocument, ParseError> {
         match self {
-            Self::Patch(bytes) => parser::parse_unified_diff(&bytes),
-            Self::Comparison(bytes) => parser::parse_comparison_output(&bytes),
+            Self::Patch(bytes) => parser::parse_patch(&bytes),
+            Self::Comparison(bytes) => parser::parse_comparison(&bytes),
         }
     }
 }

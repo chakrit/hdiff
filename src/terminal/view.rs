@@ -253,7 +253,7 @@ mod tests {
             Transition, Viewport, transition,
         },
         navigation::Navigation,
-        parser::parse_unified_diff,
+        parser::parse_patch,
         preferences::{DiffLayout, FileList, PreferenceChange, ViewPreferences},
         prepared::{PageIndex, PreparedDocument},
         theme::{ColorDepth, Theme},
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn renders_compact_file_and_diff_panes_with_one_separator() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
         )
         .expect("valid two-file diff");
@@ -328,8 +328,8 @@ mod tests {
 
     #[test]
     fn collapses_the_file_list_before_the_diff_pane() {
-        let document = parse_unified_diff(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n")
-            .expect("valid diff");
+        let document =
+            parse_patch(b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n").expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             page: PageIndex::FIRST,
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         )
         .expect("valid asymmetric diff");
@@ -400,7 +400,7 @@ mod tests {
             .map(|row| format!("+row_{row}\n"))
             .collect::<String>();
         let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
-        let document = parse_unified_diff(patch.as_bytes()).expect("valid diff");
+        let document = parse_patch(patch.as_bytes()).expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             page: PageIndex::FIRST,
@@ -424,8 +424,8 @@ mod tests {
 
     #[test]
     fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
-        let document = parse_unified_diff(b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef\n+ABCDEF\n")
-            .expect("valid diff");
+        let document =
+            parse_patch(b"--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef\n+ABCDEF\n").expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             page: PageIndex::FIRST,
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn renders_vertical_deletion_peers_with_deletion_background() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
         )
         .expect("valid asymmetric diff");
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn renders_stacked_alignment_peers_as_markerless_rows() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         )
         .expect("valid asymmetric diff");
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn renders_syntax_and_low_contrast_record_styles() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
         )
         .expect("valid Rust diff");
@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_files_cohesively() {
         let document =
-            parse_unified_diff(b"--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n")
+            parse_patch(b"--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n")
                 .expect("valid character diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
@@ -695,7 +695,7 @@ mod tests {
     }
 
     fn assert_unmatched_payload_toggle(diff_layout: DiffLayout) {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
               --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
               @@ -2,0 +2 @@\n+fn added() {}\n",
@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn renders_hunk_headers_as_muted_cyan_blue() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
         )
         .expect("valid Rust diff");
@@ -819,7 +819,7 @@ mod tests {
     }
 
     fn two_file_document() -> crate::document::DiffDocument {
-        parse_unified_diff(
+        parse_patch(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n",
         )
         .expect("valid two-file diff")

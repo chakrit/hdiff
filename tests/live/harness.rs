@@ -3,7 +3,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    parser::parse_unified_diff,
+    parser::parse_patch,
     preferences::{DiffGranularity, DiffLayout},
     prepared::PreparedDocument,
     terminal::{Step, Tui},
@@ -28,7 +28,7 @@ pub struct Live {
 
 impl Live {
     pub fn load(patch: &str, mode: Mode) -> Self {
-        let document = parse_unified_diff(patch.as_bytes()).expect("valid fixture patch");
+        let document = parse_patch(patch.as_bytes()).expect("valid fixture patch");
         let prepared = PreparedDocument::prepare(&document);
         let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).expect("test terminal");
         let tui = Tui::new(

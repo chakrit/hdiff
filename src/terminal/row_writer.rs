@@ -253,7 +253,7 @@ mod tests {
     use crate::{
         document::Side,
         extent::{DisplayExtent, Wrap},
-        parser::parse_unified_diff,
+        parser::parse_patch,
         preferences::{DiffGranularity, DiffLayout},
         prepared::{PageIndex, PreparedDocument},
         terminal::rows::{PaneRow, visible_diff_rows},
@@ -422,7 +422,7 @@ mod tests {
     }
 
     fn prepare(diff: &[u8]) -> PreparedDocument {
-        let document = parse_unified_diff(diff).expect("valid diff");
+        let document = parse_patch(diff).expect("valid diff");
         PreparedDocument::prepare(&document)
     }
 

@@ -256,7 +256,7 @@ mod tests {
 
     use super::render_file_column;
     use crate::{
-        parser::parse_unified_diff,
+        parser::parse_patch,
         prepared::PreparedDocument,
         theme::{ColorDepth, Theme},
     };
@@ -265,7 +265,7 @@ mod tests {
     /// list.
     #[test]
     fn ends_the_file_list_with_the_help_hint() {
-        let document = parse_unified_diff(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
+        let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");

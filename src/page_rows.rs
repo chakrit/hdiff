@@ -385,10 +385,10 @@ fn is_context_line(line: &RenderedLine) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{LineIndex, PageRows, SideBySideRow};
-    use crate::{parser::parse_unified_diff, render::LineKind};
+    use crate::{parser::parse_patch, render::LineKind};
 
     fn rows_of(patch: &[u8]) -> PageRows {
-        let document = parse_unified_diff(patch).expect("valid diff");
+        let document = parse_patch(patch).expect("valid diff");
         PageRows::of_file(&document.file_views().next().expect("first file"))
     }
 
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn lays_out_a_selected_file() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");

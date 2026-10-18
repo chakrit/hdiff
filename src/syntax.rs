@@ -458,7 +458,7 @@ mod tests {
     use crate::{
         document::{FileBody, Side},
         measurement::{Profile, Unobserved},
-        parser::parse_unified_diff,
+        parser::parse_patch,
     };
     use tree_sitter::{InputEdit, Point};
 
@@ -488,10 +488,9 @@ mod tests {
 
     #[test]
     fn highlights_added_rust_keywords_in_the_new_side() {
-        let document = parse_unified_diff(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n",
-        )
-        .expect("valid Rust diff");
+        let document =
+            parse_patch(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n")
+                .expect("valid Rust diff");
         let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture should contain a unified file");
         };
@@ -506,7 +505,7 @@ mod tests {
 
     #[test]
     fn context_uses_new_projection_syntax_when_old_context_is_a_comment() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         )
         .expect("valid Rust diff with changing comment context");
@@ -542,7 +541,7 @@ mod tests {
 
     #[test]
     fn incremental_new_projection_matches_a_full_query_pass() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n",
         )
         .expect("valid Rust diff");
@@ -615,7 +614,7 @@ mod tests {
 
     #[test]
     fn context_stays_textual_when_the_paths_select_different_languages() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
         )
         .expect("valid diff renaming Python to Rust");
@@ -657,7 +656,7 @@ mod tests {
 
     #[test]
     fn a_side_with_only_context_is_not_parsed() {
-        let document = parse_unified_diff(
+        let document = parse_patch(
             b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",
         )
         .expect("valid diff renaming Python to Rust");

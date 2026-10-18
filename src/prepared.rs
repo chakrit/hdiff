@@ -169,13 +169,13 @@ impl PreparedPage {
 #[cfg(test)]
 mod tests {
     use super::{PageIndex, PreparedDocument};
-    use crate::{parser::parse_unified_diff, preferences::DiffGranularity, styling::TextStyle};
+    use crate::{parser::parse_patch, preferences::DiffGranularity, styling::TextStyle};
 
     #[test]
     fn retains_surrounding_text_with_separate_repeated_file_views() {
         let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
         let input = format!("first message\n{patch}second message\n{patch}trailer\n");
-        let document = parse_unified_diff(input.as_bytes()).expect("diffs with messages");
+        let document = parse_patch(input.as_bytes()).expect("diffs with messages");
         let prepared = PreparedDocument::prepare(&document);
 
         assert_eq!(prepared.file_count(), 2);
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn diagnostic_observation_preserves_every_prepared_rendering_component() {
-        let document = parse_unified_diff(include_bytes!(
+        let document = parse_patch(include_bytes!(
             "../tests/fixtures/mixed-language-layout.patch"
         ))
         .expect("mixed language diff");
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn prepares_every_file_and_record() {
-        let document = parse_unified_diff(include_bytes!("../tests/fixtures/git-multiline.patch"))
+        let document = parse_patch(include_bytes!("../tests/fixtures/git-multiline.patch"))
             .expect("valid fixture");
 
         let prepared = PreparedDocument::prepare(&document);
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn prepares_character_detail_before_terminal_rendering() {
         let document =
-            parse_unified_diff(b"--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+hallo\n")
+            parse_patch(b"--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-hello\n+hallo\n")
                 .expect("valid diff");
 
         let prepared = PreparedDocument::prepare(&document);

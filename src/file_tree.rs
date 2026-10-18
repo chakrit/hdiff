@@ -113,10 +113,10 @@ fn placement(identity: &FileIdentity) -> (&str, &str) {
 #[cfg(test)]
 mod tests {
     use super::{FileListing, FileTree, TreeRow};
-    use crate::{document::FileView, parser::parse_unified_diff};
+    use crate::{document::FileView, parser::parse_patch};
 
     fn listing(input: &str) -> FileListing {
-        let document = parse_unified_diff(input.as_bytes()).expect("valid diff");
+        let document = parse_patch(input.as_bytes()).expect("valid diff");
         let views = document.file_views().collect::<Vec<FileView>>();
 
         FileTree::build(&views)

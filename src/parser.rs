@@ -69,8 +69,8 @@ impl Malformed {
 }
 
 /// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
-pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
-    let document = parse_comparison_output(input)?;
+pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
+    let document = parse_comparison(input)?;
 
     match !input.is_empty() && document.files().next().is_none() {
         true => Err(ParseError::NoDiff),
@@ -79,7 +79,7 @@ pub fn parse_unified_diff(input: &[u8]) -> Result<DiffDocument, ParseError> {
 }
 
 /// Parses `diff` output, which may hold only surrounding text such as `Binary files … differ`.
-pub fn parse_comparison_output(input: &[u8]) -> Result<DiffDocument, ParseError> {
+pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut lines = Lines::new(input);
     let mut sections = Vec::new();
 
@@ -463,7 +463,7 @@ impl<'a> Lines<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Malformed, ParseError, parse_comparison_output, parse_unified_diff};
+    use super::{Malformed, ParseError, parse_comparison, parse_patch};
     use crate::{
         document::{DiffDocument, FileBody, Hunk, RecordKind},
         render::render_unified,
@@ -477,7 +477,7 @@ mod tests {
     fn preserves_surrounding_text_in_source_order() {
         let input = b"commit message\r\n\r\n--- a/one\n+++ b/one\n@@ -1 +1 @@\n-old\n+new\n\nbetween files\n--- a/two\n+++ b/two\n@@ -1 +1 @@\n-before\n+after\ntrailing text";
 
-        let document = parse_unified_diff(input).expect("diff with surrounding text");
+        let document = parse_patch(input).expect("diff with surrounding text");
 
         assert_eq!(render_unified(&document), input);
     }
@@ -485,16 +485,16 @@ mod tests {
     #[test]
     fn rejects_nonempty_text_only_input() {
         for input in [b"ordinary text\n".as_slice(), b" \t\r\n", b"\n"] {
-            assert_eq!(parse_unified_diff(input), Err(ParseError::NoDiff));
+            assert_eq!(parse_patch(input), Err(ParseError::NoDiff));
         }
-        assert_eq!(parse_unified_diff(b""), Ok(DiffDocument::default()));
+        assert_eq!(parse_patch(b""), Ok(DiffDocument::default()));
     }
 
     #[test]
     fn keeps_comparison_output_that_holds_only_text() {
         let input = b"Binary files before.bin and after.bin differ\n";
 
-        let document = parse_comparison_output(input).expect("text-only comparison output");
+        let document = parse_comparison(input).expect("text-only comparison output");
 
         assert_eq!(render_unified(&document), input);
     }
@@ -516,7 +516,7 @@ mod tests {
         ] {
             let input = format!("{valid}{suffix}");
             assert_eq!(
-                parse_unified_diff(input.as_bytes()),
+                parse_patch(input.as_bytes()),
                 malformed(line, reason),
                 "{suffix}"
             );
@@ -528,7 +528,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n@@ malformed\n-old\n+new\n";
 
         assert_eq!(
-            parse_unified_diff(input),
+            parse_patch(input),
             malformed(4, Malformed::UnexpectedDiffHeader)
         );
     }
@@ -540,7 +540,7 @@ mod tests {
             let input = format!("{valid}{suffix}");
 
             assert_eq!(
-                parse_unified_diff(input.as_bytes()),
+                parse_patch(input.as_bytes()),
                 malformed(6, Malformed::ExcessRecords),
                 "{suffix}"
             );
@@ -551,7 +551,7 @@ mod tests {
     fn keeps_text_separate_from_metadata_only_files() {
         let input =
             b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
-        let document = parse_unified_diff(input).expect("mode-only diff with text");
+        let document = parse_patch(input).expect("mode-only diff with text");
         let views = document.file_views().collect::<Vec<_>>();
         let FileBody::Metadata(header) = &views[0].file.body else {
             panic!("mode-only diff is metadata");
@@ -567,7 +567,7 @@ mod tests {
     #[test]
     fn keeps_binary_payload_and_surrounding_text_in_order() {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
-        let document = parse_unified_diff(input).expect("binary diff with text");
+        let document = parse_patch(input).expect("binary diff with text");
         let view = document.file_views().next().expect("binary file");
         let FileBody::Metadata(header) = &view.file.body else {
             panic!("binary diff is metadata");
@@ -596,7 +596,7 @@ mod tests {
     fn parses_file_hunk_and_records() {
         let input = "--- a/readme.txt\n+++ b/readme.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
-        let document = parse_unified_diff(input.as_bytes()).expect("valid unified diff");
+        let document = parse_patch(input.as_bytes()).expect("valid unified diff");
 
         assert_eq!(document.files().count(), 1);
         assert_eq!(single_unified_hunks(&document).len(), 1);
@@ -607,7 +607,7 @@ mod tests {
     fn parses_git_fixture_with_extended_headers_and_multiline_hunks() {
         let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
-        let document = parse_unified_diff(input).expect("valid Git fixture");
+        let document = parse_patch(input).expect("valid Git fixture");
 
         assert_eq!(document.files().count(), 2);
         let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
@@ -632,7 +632,7 @@ mod tests {
     fn parses_colored_git_fixture_with_multiline_hunks() {
         let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
-        let document = parse_unified_diff(input).expect("valid colored Git fixture");
+        let document = parse_patch(input).expect("valid colored Git fixture");
 
         assert_eq!(document.files().count(), 2);
         let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
@@ -649,7 +649,7 @@ mod tests {
     fn parses_git_metadata_without_a_file_header() {
         let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
-        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+        let document = parse_patch(input).expect("valid metadata-only Git fixture");
 
         assert!(matches!(
             document.files().next().expect("first file").body,
@@ -661,7 +661,7 @@ mod tests {
     fn parses_metadata_only_git_fixture() {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
 
-        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+        let document = parse_patch(input).expect("valid metadata-only Git fixture");
 
         assert_eq!(document.files().count(), 1);
         assert!(matches!(
@@ -675,7 +675,7 @@ mod tests {
         let input = "--- a/readme.txt\n+++ b/readme.txt\n@@ -1,2 +1,2 @@\n-old\n";
 
         assert_eq!(
-            parse_unified_diff(input.as_bytes()),
+            parse_patch(input.as_bytes()),
             malformed(5, Malformed::TruncatedHunk)
         );
     }
@@ -684,7 +684,7 @@ mod tests {
     fn preserves_invalid_utf8_with_lossy_display_text() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
 
-        let document = parse_unified_diff(input).expect("structurally valid diff");
+        let document = parse_patch(input).expect("structurally valid diff");
         let payload = &single_unified_hunks(&document)[0].records[1].payload;
 
         assert_eq!(payload.bytes(), b"\xffnew\n");
@@ -695,7 +695,7 @@ mod tests {
     fn preserves_crlf_in_source_bytes() {
         let input = b"--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n";
 
-        let document = parse_unified_diff(input).expect("valid CRLF diff");
+        let document = parse_patch(input).expect("valid CRLF diff");
         let payload = &single_unified_hunks(&document)[0].records[0].payload;
 
         assert_eq!(payload.bytes(), b"old\r\n");
@@ -712,7 +712,7 @@ mod tests {
         ] {
             let input = [b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n".as_slice(), line].concat();
 
-            let document = parse_unified_diff(&input).expect("valid deletion");
+            let document = parse_patch(&input).expect("valid deletion");
             let record = &single_unified_hunks(&document)[0].records[0];
 
             assert_eq!(record.kind, RecordKind::Deletion);
@@ -724,7 +724,7 @@ mod tests {
     fn parses_deletion_payload_that_looks_like_a_file_header() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n--- filename\n";
 
-        let document = parse_unified_diff(input).expect("valid deletion record");
+        let document = parse_patch(input).expect("valid deletion record");
         let record = &single_unified_hunks(&document)[0].records[0];
 
         assert_eq!(record.kind, RecordKind::Deletion);

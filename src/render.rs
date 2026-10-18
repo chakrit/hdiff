@@ -214,13 +214,13 @@ mod tests {
     use super::{LineKind, render_file_lines, render_unified};
     use crate::{
         document::{RecordAddress, RecordKind},
-        parser::parse_unified_diff,
+        parser::parse_patch,
     };
 
     #[test]
     fn sanitizes_surrounding_text_and_preserves_line_endings() {
         let input = b"\x1b[31mmessage\x1b[0m\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\x1b]8;;https://bad\x07footer\xff";
-        let document = parse_unified_diff(input).expect("diff with surrounding text");
+        let document = parse_patch(input).expect("diff with surrounding text");
 
         let rendered = render_unified(&document);
 
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn renders_unified_structure_in_source_order() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
-        let document = parse_unified_diff(input).expect("valid diff");
+        let document = parse_patch(input).expect("valid diff");
 
         let rendered = render_unified(&document);
 
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn classifies_metadata_file_headers_hunks_and_records() {
         let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
-        let document = parse_unified_diff(input).expect("valid Git diff with two hunks");
+        let document = parse_patch(input).expect("valid Git diff with two hunks");
 
         let lines = render_file_lines(document.files().next().expect("first file"));
         let kinds = lines.iter().map(|line| line.kind()).collect::<Vec<_>>();
@@ -274,7 +274,7 @@ mod tests {
     fn payloads_exclude_the_record_marker_and_line_ending() {
         let input =
             b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file";
-        let document = parse_unified_diff(input).expect("valid diff");
+        let document = parse_patch(input).expect("valid diff");
         let view = document.file_views().next().expect("first file");
 
         let text = super::render_text_lines(view.leading);
@@ -299,7 +299,7 @@ mod tests {
     fn renders_git_fixture_in_original_order() {
         let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
-        let document = parse_unified_diff(input).expect("valid Git fixture");
+        let document = parse_patch(input).expect("valid Git fixture");
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
@@ -309,7 +309,7 @@ mod tests {
     fn renders_metadata_only_git_fixture_in_original_order() {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
 
-        let document = parse_unified_diff(input).expect("valid metadata-only Git fixture");
+        let document = parse_patch(input).expect("valid metadata-only Git fixture");
         let rendered = render_unified(&document);
 
         assert_eq!(rendered, input);
@@ -319,7 +319,7 @@ mod tests {
     fn renders_colored_git_fixture_without_terminal_controls() {
         let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
-        let document = parse_unified_diff(input).expect("valid colored Git fixture");
+        let document = parse_patch(input).expect("valid colored Git fixture");
         let rendered = render_unified(&document);
 
         assert_eq!(
@@ -332,7 +332,7 @@ mod tests {
     fn removes_control_sequences_before_a_record_marker() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n\x1b]8;;https://bad\x07+new\n";
 
-        let document = parse_unified_diff(input).expect("valid diff with a controlled record");
+        let document = parse_patch(input).expect("valid diff with a controlled record");
         let rendered = render_unified(&document);
 
         assert_eq!(
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn preserves_printable_text_and_neutralizes_terminal_controls() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+tab\t e\xcc\x81 \xe7\x95\x8c \x1b[31mred\x1b[0m \x1b]8;;https://bad\x07link\x1bPbad\x1b\\\x01\n";
-        let document = parse_unified_diff(input).expect("valid diff");
+        let document = parse_patch(input).expect("valid diff");
 
         let rendered = render_unified(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn replaces_invalid_utf8_without_losing_following_text() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
-        let document = parse_unified_diff(input).expect("valid diff");
+        let document = parse_patch(input).expect("valid diff");
 
         let rendered = render_unified(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
@@ -370,7 +370,7 @@ mod tests {
     fn preserves_raw_no_newline_marker_without_adding_a_line_ending() {
         let input =
             b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file";
-        let document = parse_unified_diff(input).expect("valid diff with raw marker");
+        let document = parse_patch(input).expect("valid diff with raw marker");
 
         let rendered = render_unified(&document);
 
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn renders_one_file_with_the_same_safe_output_as_the_document_renderer() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-\x1b[31mold\x1b[0m\n+new\n";
-        let document = parse_unified_diff(input).expect("valid diff");
+        let document = parse_patch(input).expect("valid diff");
 
         let rendered = render_file_lines(document.files().next().expect("first file"))
             .iter()

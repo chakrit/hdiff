@@ -182,7 +182,7 @@ mod tests {
     use crate::{
         extent::{DisplayExtent, Wrap},
         interaction::Interaction,
-        parser::{parse_comparison_output, parse_unified_diff},
+        parser::{parse_comparison, parse_patch},
         preferences::{DiffLayout, ViewPreferences},
         prepared::{PageIndex, PreparedDocument},
         theme::{ColorDepth, Theme},
@@ -202,7 +202,7 @@ mod tests {
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
         let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
         let input = format!("first message\n{patch}second message\n{patch}trailer\n");
-        let document = parse_unified_diff(input.as_bytes()).expect("diffs with messages");
+        let document = parse_patch(input.as_bytes()).expect("diffs with messages");
         let prepared = PreparedDocument::prepare(&document);
         let second = PageIndex::FIRST.next(prepared.page_count());
 
@@ -246,7 +246,7 @@ mod tests {
     /// surrounding text is shown).
     #[test]
     fn shows_comparison_output_that_holds_only_text() {
-        let document = parse_comparison_output(b"Binary files a.bin and b.bin differ\n")
+        let document = parse_comparison(b"Binary files a.bin and b.bin differ\n")
             .expect("text-only comparison output");
         let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
         let mut tui = Tui::new(

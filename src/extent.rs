@@ -283,12 +283,12 @@ mod tests {
     use super::{DisplayExtent, ScreenLine, ScrollExtent, Wrap};
     use crate::{
         page_rows::{LineIndex, PageRows, PairIndex},
-        parser::parse_unified_diff,
+        parser::parse_patch,
         preferences::{DiffLayout, Wrapping},
     };
 
     fn rows_of(patch: &[u8]) -> PageRows {
-        let document = parse_unified_diff(patch).expect("valid diff");
+        let document = parse_patch(patch).expect("valid diff");
         PageRows::of_file(&document.file_views().next().expect("first file"))
     }
 

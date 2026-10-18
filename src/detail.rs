@@ -275,7 +275,7 @@ fn coalesce_tiny_equal_islands(spans: &mut Vec<PayloadSpan>, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::{ChangedPairDetail, PayloadSpan, changed_pair_detail, character_details};
-    use crate::{page_rows::PageRows, parser::parse_unified_diff};
+    use crate::{page_rows::PageRows, parser::parse_patch};
 
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
@@ -302,7 +302,7 @@ mod tests {
             ),
         ] {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
-            let document = parse_unified_diff(patch.as_bytes()).expect("valid unmatched diff");
+            let document = parse_patch(patch.as_bytes()).expect("valid unmatched diff");
             let page_rows = PageRows::of_file(&document.file_views().next().expect("first file"));
             let details = character_details(&page_rows);
 

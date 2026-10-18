@@ -182,10 +182,10 @@ fn shared_suffix<'a>(old: &str, new: &'a str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::{FileIdentity, FileState};
-    use crate::parser::parse_unified_diff;
+    use crate::parser::parse_patch;
 
     fn identity(input: &str) -> FileIdentity {
-        let document = parse_unified_diff(input.as_bytes()).expect("valid diff");
+        let document = parse_patch(input.as_bytes()).expect("valid diff");
         let file = document.files().next().expect("one file");
 
         file.identity.clone()
