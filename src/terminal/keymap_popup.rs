@@ -35,18 +35,9 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
         .chunks(groups_per_column)
         .map(|groups| column_lines(groups, &styles))
         .collect::<Vec<_>>();
-
-    let width = column_count * COLUMN_WIDTH + (column_count - 1) * COLUMN_GAP + FRAME_WIDTH;
     let tallest = columns.iter().map(Vec::len).max().unwrap_or(0);
-    let height =
-        u16::try_from(tallest).expect("the keymap fits a terminal's height") + FRAME_HEIGHT;
-    let popup = Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
-    .intersection(area);
+
+    let popup = popup_area(area, column_count, tallest);
     let border = Block::bordered()
         .border_style(Style::default().fg(theme.chrome.separator))
         .padding(Padding::horizontal(1));
@@ -62,6 +53,22 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
     for (lines, column_area) in columns.into_iter().zip(column_areas.iter()) {
         frame.render_widget(Paragraph::new(lines), *column_area);
     }
+}
+
+/// The framed popup of `column_count` columns, the tallest `tallest` lines, centered over
+/// `area` and clipped to it.
+fn popup_area(area: Rect, column_count: u16, tallest: usize) -> Rect {
+    let width = column_count * COLUMN_WIDTH + (column_count - 1) * COLUMN_GAP + FRAME_WIDTH;
+    let height =
+        u16::try_from(tallest).expect("the keymap fits a terminal's height") + FRAME_HEIGHT;
+
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
+    .intersection(area)
 }
 
 /// Headings take the hunk-header tone, since both head sections, and keys the syntax

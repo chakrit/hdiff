@@ -30,7 +30,7 @@ fn event_for_key(key: KeyEvent) -> Option<Event> {
 fn event_bound_to(key: Key) -> Option<Event> {
     all_bindings()
         .find(|binding| binding.key == key)
-        .map(|binding| binding.event)
+        .map(|binding| binding.action.event())
 }
 
 fn all_bindings() -> impl Iterator<Item = Binding> {
@@ -42,8 +42,8 @@ fn all_bindings() -> impl Iterator<Item = Binding> {
 
 /// The first plain character, in table order, bound to `command`.
 pub(crate) fn character_for(command: Command) -> Option<char> {
-    all_bindings().find_map(|binding| match (binding.key, binding.event) {
-        (Key::Char(character), Event::Command(bound)) if bound == command => Some(character),
+    all_bindings().find_map(|binding| match (binding.key, binding.action) {
+        (Key::Char(character), KeyAction::Command(bound)) if bound == command => Some(character),
         _ => None,
     })
 }
@@ -54,9 +54,9 @@ pub(super) fn keymap_closing_keys() -> impl Iterator<Item = Key> {
     let close = Command::Keymap(KeymapCommand::Close);
 
     all_bindings()
-        .filter(move |binding| match binding.event {
-            Event::Command(command) => KeymapPopup::Open.admit(command) == Some(close),
-            Event::Interrupt | Event::Resize(_) => false,
+        .filter(move |binding| match binding.action {
+            KeyAction::Command(command) => KeymapPopup::Open.admit(command) == Some(close),
+            KeyAction::Interrupt => false,
         })
         .map(|binding| binding.key)
 }
@@ -108,11 +108,27 @@ impl Key {
     }
 }
 
-/// A key and the event it stands for.
+/// A key and the action it takes.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Binding {
     pub(super) key: Key,
-    event: Event,
+    action: KeyAction,
+}
+
+/// What a key can stand for: a command, or the interrupt. A resize is never a key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyAction {
+    Command(Command),
+    Interrupt,
+}
+
+impl KeyAction {
+    const fn event(self) -> Event {
+        match self {
+            Self::Command(command) => Event::Command(command),
+            Self::Interrupt => Event::Interrupt,
+        }
+    }
 }
 
 /// One row of the popup: its keys and the action they take.
@@ -180,7 +196,7 @@ pub(super) struct ShortcutGroup {
 const fn binds(key: Key, command: Command) -> Binding {
     Binding {
         key,
-        event: Event::Command(command),
+        action: KeyAction::Command(command),
     }
 }
 
@@ -299,7 +315,7 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
                     binds(Key::Char('q'), Command::Quit),
                     Binding {
                         key: Key::Control('c'),
-                        event: Event::Interrupt,
+                        action: KeyAction::Interrupt,
                     },
                 ],
                 action: "exit",

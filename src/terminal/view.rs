@@ -175,10 +175,10 @@ fn render_split_rows(
             let content = before_pane.content();
             let height = content.height.min(frame_rows(shown));
             let separator = Rect::new(panes.separator.x, content.y, panes.separator.width, height);
-            draw_inner_separator(frame.buffer_mut(), separator, "│", palette);
+            draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
         SplitDirection::Stacked => {
-            draw_inner_separator(frame.buffer_mut(), panes.separator, "─", palette);
+            draw_inner_separator(frame.buffer_mut(), panes.separator, direction, palette);
         }
     }
     pane_rows.render(frame, before_pane, before_lines);

@@ -36,8 +36,20 @@ impl StateMarker {
 pub struct TreeRowIndex(usize);
 
 impl TreeRowIndex {
+    pub const FIRST: Self = Self(0);
+
     pub fn get(self) -> usize {
         self.0
+    }
+
+    /// The first row of the `height`-row window that ends at this row, or at the list's top.
+    pub fn window_start(self, height: usize) -> Self {
+        Self((self.0 + 1).saturating_sub(height))
+    }
+
+    /// Rows from `first`, at or above this row, down to this row.
+    pub fn offset_from(self, first: Self) -> usize {
+        self.0 - first.0
     }
 }
 
@@ -99,6 +111,11 @@ impl<'a> ListedTree<'a> {
 impl FileTree {
     pub fn rows(&self) -> &[TreeRow] {
         &self.rows
+    }
+
+    /// The rows from `first` down.
+    pub fn rows_from(&self, first: TreeRowIndex) -> &[TreeRow] {
+        &self.rows[first.0..]
     }
 }
 

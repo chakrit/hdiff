@@ -48,10 +48,10 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<File>>,
     document: PreparedDocument,
 ) -> io::Result<()> {
-    let area = terminal.size()?;
+    let screen = terminal.size()?;
     let color_depth = ColorDepth::from_color_count(crossterm::style::available_color_count());
 
-    Tui::new(document, area, color_depth).run(terminal, TtyEvents::default())
+    Tui::new(document, screen, color_depth).run(terminal, TtyEvents::default())
 }
 
 /// Why an interactive session failed, with every terminal restore step that failed too.
@@ -117,7 +117,7 @@ pub enum RestoreStep {
 }
 
 impl RestoreStep {
-    pub fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::Cursor => "cursor",
             Self::AlternateScreen => "alternate screen",

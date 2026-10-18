@@ -12,8 +12,8 @@ use ratatui::{
 
 use super::row_writer::Clip;
 use crate::{
-    file_tree::{FileTree, TreeRow},
-    geometry::{PANE_FRAME_HEIGHT, frame_interior, inside_frame_rows},
+    file_tree::{FileTree, TreeRow, TreeRowIndex},
+    geometry::{PANE_FRAME_HEIGHT, SplitDirection, frame_interior, inside_frame_rows},
     prepared::PageKind,
     screen::ScreenLines,
     theme::ChromePalette,
@@ -36,7 +36,7 @@ pub(super) fn render_file_column(
     palette: &ChromePalette,
 ) {
     let selected_row = match page {
-        PageKind::File { row } => Some(row.get()),
+        PageKind::File { row } => Some(row),
         PageKind::Text => None,
     };
     let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
@@ -79,14 +79,18 @@ pub(super) fn draw_outer_separator(buffer: &mut Buffer, area: Rect, palette: &Ch
     fill(buffer, area, "│", style);
 }
 
-/// The separator between the before and after panes of a side-by-side layout.
+/// The separator between the before and after panes of a split layout, across the split.
 pub(super) fn draw_inner_separator(
     buffer: &mut Buffer,
     area: Rect,
-    symbol: &'static str,
+    direction: SplitDirection,
     palette: &ChromePalette,
 ) {
     let style = Style::default().fg(palette.dim_separator);
+    let symbol = match direction {
+        SplitDirection::SideBySide => "│",
+        SplitDirection::Stacked => "─",
+    };
 
     fill(buffer, area, symbol, style);
 }
@@ -97,15 +101,6 @@ pub(super) fn draw_inner_separator(
 pub(super) struct ContinuityFrame {
     pane: Rect,
     content: Rect,
-}
-
-/// The visible lines of a pane among all the lines of its scroll extent.
-#[derive(Clone, Copy)]
-pub(super) struct LineWindow {
-    /// The first visible line.
-    pub(super) first: ScreenLines,
-    /// Lines in the scroll extent.
-    pub(super) total: ScreenLines,
 }
 
 impl ContinuityFrame {
@@ -181,29 +176,37 @@ impl ContinuityFrame {
     }
 }
 
+/// The visible lines of a pane among all the lines of its scroll extent.
+#[derive(Clone, Copy)]
+pub(super) struct LineWindow {
+    /// The first visible line.
+    pub(super) first: ScreenLines,
+    /// Lines in the scroll extent.
+    pub(super) total: ScreenLines,
+}
+
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
 /// the selected row on the last row, so listing that window draws the same frame.
 fn render_file_list(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_row: Option<usize>,
+    selected_row: Option<TreeRowIndex>,
     palette: &ChromePalette,
 ) {
     let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
     let height = usize::from(content.height);
     // Without a selected row, the list shows from its top.
-    let first = selected_row.map_or(0, |row| (row + 1).saturating_sub(height));
+    let first = selected_row.map_or(TreeRowIndex::FIRST, |row| row.window_start(height));
     let window = LineWindow {
-        first: ScreenLines::new(first),
+        first: ScreenLines::new(first.offset_from(TreeRowIndex::FIRST)),
         total: ScreenLines::new(tree.rows().len()),
     };
 
     let items = tree
-        .rows()
+        .rows_from(first)
         .iter()
-        .skip(first)
         .take(height)
         .map(|row| tree_item(row, palette));
     let file_list = List::new(items).highlight_style(
@@ -211,7 +214,8 @@ fn render_file_list(
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let mut state = ListState::default().with_selected(selected_row.map(|row| row - first));
+    let mut state =
+        ListState::default().with_selected(selected_row.map(|row| row.offset_from(first)));
 
     frame.render_stateful_widget(file_list, content, &mut state);
     list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
