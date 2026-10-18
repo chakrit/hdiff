@@ -1,6 +1,6 @@
 use std::{fs, io, path::Path};
 
-use super::install_git_diff_pager::InstallGitDiffPagerContext;
+use super::global_git_config::GlobalGitConfigContext;
 
 pub struct BackupGlobalGitConfig<'a> {
     pub source: &'a Path,
@@ -8,7 +8,7 @@ pub struct BackupGlobalGitConfig<'a> {
 }
 
 impl BackupGlobalGitConfig<'_> {
-    pub fn run(self, _context: &mut InstallGitDiffPagerContext) -> io::Result<()> {
+    pub fn run(self, _context: &mut GlobalGitConfigContext) -> io::Result<()> {
         fs::copy(self.source, self.destination).map(|_| ())
     }
 }

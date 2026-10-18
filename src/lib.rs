@@ -7,6 +7,7 @@ pub mod cli;
 pub mod compact;
 pub mod detail;
 pub mod document;
+pub mod exit_status;
 pub mod extent;
 pub mod file_identity;
 pub mod file_tree;

@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fmt, io, process::Command};
 
-use super::install_git_diff_pager::InstallGitDiffPagerContext;
+use super::global_git_config::GlobalGitConfigContext;
 
 /// Sets `pager.diff` in the global Git config to `command`.
 pub struct SetGlobalDiffPager<'a> {
@@ -14,21 +14,12 @@ pub enum Error {
 }
 
 impl SetGlobalDiffPager<'_> {
-    pub fn run(self, context: &mut InstallGitDiffPagerContext) -> Result<(), Error> {
-        let environment = &context.environment;
+    pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
         let mut git = Command::new("git");
         git.args(["config", "--global", "pager.diff", self.command]);
-        set_or_remove(
-            &mut git,
-            "GIT_CONFIG_GLOBAL",
-            environment.git_config_global.as_deref(),
-        );
-        set_or_remove(&mut git, "HOME", environment.home.as_deref());
-        set_or_remove(
-            &mut git,
-            "XDG_CONFIG_HOME",
-            environment.xdg_config_home.as_deref(),
-        );
+        for (name, value) in context.environment.variables() {
+            set_or_remove(&mut git, name, value);
+        }
 
         let output = git.output().map_err(Error::Spawn)?;
 

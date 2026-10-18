@@ -5,6 +5,8 @@ use std::{
     process::{Command, ExitStatus, Stdio},
 };
 
+use crate::exit_status::DiffStatus;
+
 /// Two operands for `diff -u`. Contract: docs/spec/architecture.md#input-contract.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Comparison {
@@ -88,33 +90,6 @@ impl CompareFiles<'_> {
                 status: output.status,
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             }),
-        }
-    }
-}
-
-/// `diff`'s exit status convention, which hdiff's own errors follow. Contract:
-/// docs/spec/architecture.md#error-output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffStatus {
-    Same,
-    Different,
-    Trouble,
-}
-
-impl DiffStatus {
-    pub fn of_exit(status: ExitStatus) -> Self {
-        match status.code() {
-            Some(0) => Self::Same,
-            Some(1) => Self::Different,
-            _ => Self::Trouble,
-        }
-    }
-
-    pub fn code(self) -> u8 {
-        match self {
-            Self::Same => 0,
-            Self::Different => 1,
-            Self::Trouble => 2,
         }
     }
 }

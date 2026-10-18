@@ -4,15 +4,14 @@ use std::{env, fmt, io, process::ExitCode};
 
 use hdiff::{
     actions::{
-        compare_files::DiffStatus,
-        install_git_diff_pager::{
-            self, GitConfigEnvironment, InstallGitDiffPager, InstallGitDiffPagerContext,
-        },
+        global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
+        install_git_diff_pager::{self, InstallGitDiffPager},
         write_output::{OutputContext, WriteOutput},
     },
     bench,
     cli::{self, Invocation, UsageError},
     document::DiffDocument,
+    exit_status::DiffStatus,
     input::{self, StdinState},
     parser::ParseError,
     prepared::PreparedDocument,
@@ -54,7 +53,7 @@ fn install() -> Result<(), RunError> {
     let executable = env::current_exe().map_err(RunError::Executable)?;
 
     let report = InstallGitDiffPager { executable }
-        .run(&mut InstallGitDiffPagerContext {
+        .run(&mut GlobalGitConfigContext {
             environment: GitConfigEnvironment::of_process(),
         })
         .map_err(RunError::Install)?;

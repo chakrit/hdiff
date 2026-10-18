@@ -1,28 +1,17 @@
 use std::{
-    env,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fmt, fs, io,
     path::{Path, PathBuf},
 };
 
 use super::{
     backup_global_git_config::BackupGlobalGitConfig,
+    global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
     set_global_diff_pager::{self, SetGlobalDiffPager},
 };
 
 pub struct InstallGitDiffPager {
     pub executable: PathBuf,
-}
-
-pub struct InstallGitDiffPagerContext {
-    pub environment: GitConfigEnvironment,
-}
-
-/// The environment variables that decide which file `git config --global` writes.
-pub struct GitConfigEnvironment {
-    pub git_config_global: Option<OsString>,
-    pub home: Option<OsString>,
-    pub xdg_config_home: Option<OsString>,
 }
 
 pub struct InstallGitDiffPagerReport {
@@ -47,20 +36,10 @@ pub enum PathRole {
     Backup,
 }
 
-impl GitConfigEnvironment {
-    pub fn of_process() -> Self {
-        Self {
-            git_config_global: env::var_os("GIT_CONFIG_GLOBAL"),
-            home: env::var_os("HOME"),
-            xdg_config_home: env::var_os("XDG_CONFIG_HOME"),
-        }
-    }
-}
-
 impl InstallGitDiffPager {
     pub fn run(
         self,
-        context: &mut InstallGitDiffPagerContext,
+        context: &mut GlobalGitConfigContext,
     ) -> Result<InstallGitDiffPagerReport, Error> {
         let plan = InstallPlan::new(&context.environment, &self.executable)?;
 
@@ -229,7 +208,8 @@ fn shell_quote(value: &str) -> String {
 mod tests {
     use std::{ffi::OsStr, fs, os::unix::ffi::OsStrExt, path::Path};
 
-    use super::{Error, GitConfigEnvironment, InstallPlan, PathRole, backup_path};
+    use super::{Error, InstallPlan, PathRole, backup_path};
+    use crate::actions::global_git_config::GitConfigEnvironment;
 
     fn environment_for(config_path: &Path) -> GitConfigEnvironment {
         GitConfigEnvironment {
