@@ -1,9 +1,9 @@
 //! Indentation, continuity markers, frames, and the minimum layout.
-use hdiff::preferences::{DiffGranularity, DiffLayout};
+use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::{INDENTED, long_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, diff_pane, unified_line},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, diff_pane},
 };
 
 matrix!(
@@ -87,7 +87,7 @@ fn no_markers_when_content_fits(mode: Mode) {
 
 #[test]
 fn frame_cells_never_hold_diff_content() {
-    let mut live = Live::load(&long_patch(), unified_line());
+    let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     let rows = live.rows();
     let row_of = |text: &str| rows.iter().position(|row| row.contains(text));
     let first_content = row_of("--- a/long.rs").expect("file header");
@@ -103,7 +103,7 @@ fn frame_cells_never_hold_diff_content() {
         rows[0]
     );
     assert_eq!(
-        diff_pane(&rows[wide.y as usize]).chars().last(),
+        diff_pane(&rows[usize::from(wide.y)]).chars().last(),
         Some(' '),
         "the right frame column holds no row text"
     );
@@ -118,13 +118,7 @@ fn frame_cells_never_hold_diff_content() {
 
 #[test]
 fn stacked_panes_need_room_for_one_content_line_each() {
-    let mut live = Live::load(
-        INDENTED,
-        Mode {
-            layout: DiffLayout::Stacked,
-            detail: DiffGranularity::Line,
-        },
-    );
+    let mut live = Live::load(INDENTED, Mode::line(DiffLayout::Stacked));
 
     live.resize(80, 6);
     assert!(live.shows("screen too short"));

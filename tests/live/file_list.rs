@@ -1,10 +1,10 @@
 //! The file list: its order, selection, markers, and showing and hiding it.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use hdiff::preferences::{DiffGranularity, DiffLayout};
+use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::{TREE_PATCH, paired_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, change_label, unified_line},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
 };
 
 matrix!(file_list_toggle);
@@ -16,7 +16,7 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
             format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
         })
         .collect::<String>();
-    let mut live = Live::load(&patch, unified_line());
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
 
     for _ in 0..36 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -30,7 +30,7 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
 
 #[test]
 fn lists_top_level_files_first_then_directories_in_input_order() {
-    let live = Live::load(TREE_PATCH, unified_line());
+    let live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
     let listed = [
         "- README.md",
         "src/terminal/",
@@ -49,7 +49,7 @@ fn lists_top_level_files_first_then_directories_in_input_order() {
 
 #[test]
 fn tab_moves_between_files_and_skips_headings() {
-    let mut live = Live::load(TREE_PATCH, unified_line());
+    let mut live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
     assert!(
         live.shows("readme_gone"),
         "the first listed file is selected"
@@ -102,7 +102,7 @@ fn tab_moves_between_files_and_skips_headings() {
 /// Contract: docs/spec/architecture.md#file-tree (markers take their state's color).
 #[test]
 fn colors_markers_by_state() {
-    let mut live = Live::load(TREE_PATCH, unified_line());
+    let mut live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
     live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
 
@@ -131,7 +131,7 @@ fn marks_files_beyond_the_file_list() {
             format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
         })
         .collect::<String>();
-    let mut live = Live::load(&patch, unified_line());
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
     let markers = |live: &Live| {
         let list = live.file_list().join("");
         (list.matches('▴').count(), list.matches('▾').count())
@@ -160,7 +160,7 @@ fn keeps_a_selection_below_its_headings_visible() {
             format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
         })
         .collect::<String>();
-    let mut live = Live::load(&patch, unified_line());
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
 
     for _ in 0..20 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));

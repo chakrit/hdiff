@@ -1,13 +1,13 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    preferences::{DiffGranularity, DiffLayout, ViewPreferences},
+    preferences::{DiffLayout, ViewPreferences},
     terminal::Step,
 };
 
 use crate::{
     fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label, unified_line},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label},
 };
 
 matrix!(
@@ -211,7 +211,7 @@ fn bottom_past_hidden_context(mode: Mode) {
 
 #[test]
 fn context_changes_keep_the_middle_row() {
-    let mut live = Live::load(&hidden_context_patch(), unified_line());
+    let mut live = Live::load(&hidden_context_patch(), Mode::line(DiffLayout::Unified));
     for _ in 0..14 {
         live.press('j');
     }
@@ -227,7 +227,7 @@ fn context_changes_keep_the_middle_row() {
 
 #[test]
 fn preferences_start_in_unified_line_mode() {
-    let live = Live::load(MIXED_LANGUAGES, unified_line());
+    let live = Live::load(MIXED_LANGUAGES, Mode::line(DiffLayout::Unified));
 
     assert_eq!(live.tui.preferences(), ViewPreferences::INITIAL);
 }
@@ -309,7 +309,7 @@ fn far_right_reaches_the_end_of_a_very_wide_row() {
         "--- a/wide.min.js\n+++ b/wide.min.js\n@@ -0,0 +1 @@\n+start_{}_end\n",
         "x".repeat(70_000)
     );
-    let mut live = Live::load(&patch, unified_line());
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
 
     live.press('$');
     assert!(live.shows("_end"), "$ shows the end of the row");

@@ -1,21 +1,14 @@
 //! How rows look: change backgrounds and dimming, alignment peers, syntax and character
 //! detail colors, hunk headers, and continuity markers.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use hdiff::preferences::{DiffGranularity, DiffLayout};
+use hdiff::preferences::DiffLayout;
 use ratatui::{
     buffer::{Buffer, Cell},
     layout::Size,
     style::{Color, Modifier},
 };
 
-use crate::harness::{Live, Mode, THEME, unified_line};
-
-fn line_mode(layout: DiffLayout) -> Mode {
-    Mode {
-        layout,
-        detail: DiffGranularity::Line,
-    }
-}
+use crate::harness::{Live, Mode, THEME};
 
 /// architecture.md (Continuity markers): markers take the dimmed separator tone.
 #[test]
@@ -24,7 +17,7 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
         .map(|row| format!("+row_{row}\n"))
         .collect::<String>();
     let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
-    let live = Live::sized(&patch, unified_line(), Size::new(80, 8));
+    let live = Live::sized(&patch, Mode::line(DiffLayout::Unified), Size::new(80, 8));
 
     let rendered = live.buffer();
     let marker = rendered
@@ -41,13 +34,13 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
 fn renders_vertical_alignment_peers_with_their_change_background() {
     let addition_peer = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
-        line_mode(DiffLayout::Vertical),
+        Mode::line(DiffLayout::Vertical),
         Size::new(80, 9),
     )
     .buffer();
     let deletion_peer = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
-        line_mode(DiffLayout::Vertical),
+        Mode::line(DiffLayout::Vertical),
         Size::new(80, 8),
     )
     .buffer();
@@ -81,7 +74,7 @@ fn renders_vertical_alignment_peers_with_their_change_background() {
 fn renders_stacked_alignment_peers_as_markerless_rows() {
     let live = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
-        line_mode(DiffLayout::Stacked),
+        Mode::line(DiffLayout::Stacked),
         Size::new(80, 20),
     );
 
@@ -118,7 +111,7 @@ fn renders_stacked_alignment_peers_as_markerless_rows() {
 fn renders_syntax_and_low_contrast_record_styles() {
     let live = Live::sized(
         "--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
-        unified_line(),
+        Mode::line(DiffLayout::Unified),
         Size::new(80, 9),
     );
 
@@ -204,10 +197,7 @@ fn renders_syntax_and_low_contrast_record_styles() {
 fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_files_cohesively() {
     let live = Live::sized(
         "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n",
-        Mode {
-            layout: DiffLayout::Unified,
-            detail: DiffGranularity::Character,
-        },
+        Mode::character(DiffLayout::Unified),
         Size::new(80, 8),
     );
 
@@ -262,7 +252,7 @@ fn assert_unmatched_payload_toggle(layout: DiffLayout) {
     let patch = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                  --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
                  @@ -2,0 +2 @@\n+fn added() {}\n";
-    let mut live = Live::sized(patch, line_mode(layout), Size::new(160, 30));
+    let mut live = Live::sized(patch, Mode::line(layout), Size::new(160, 30));
     live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let line_rendered = live.buffer();
     let payloads = [
@@ -306,7 +296,7 @@ fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
 fn renders_hunk_headers_as_muted_cyan_blue() {
     let live = Live::sized(
         "--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
-        unified_line(),
+        Mode::line(DiffLayout::Unified),
         Size::new(80, 9),
     );
 

@@ -174,7 +174,9 @@ impl Live {
             .find_map(|(y, row)| {
                 let byte = row.find(text)?;
                 let x = row[..byte].chars().count();
-                Some(Position::new(x as u16, y as u16))
+                let column = u16::try_from(x).expect("a screen column fits u16");
+                let row = u16::try_from(y).expect("a screen row fits u16");
+                Some(Position::new(column, row))
             })
             .unwrap_or_else(|| panic!("{text:?} is not on screen:\n{}", self.rows().join("\n")))
     }
@@ -186,16 +188,27 @@ pub struct Mode {
     pub detail: DiffGranularity,
 }
 
-pub fn unified_line() -> Mode {
-    Mode {
-        layout: DiffLayout::Unified,
-        detail: DiffGranularity::Line,
+impl Mode {
+    pub const fn line(layout: DiffLayout) -> Self {
+        Self {
+            layout,
+            detail: DiffGranularity::Line,
+        }
+    }
+
+    pub const fn character(layout: DiffLayout) -> Self {
+        Self {
+            layout,
+            detail: DiffGranularity::Character,
+        }
     }
 }
 
-/// The first `old_N` or `new_N` label in `row`.
+/// The leftmost `old_N` or `new_N` label in `row`.
 pub fn change_label(row: &str) -> Option<String> {
-    let start = row.find("old_").or_else(|| row.find("new_"))?;
+    let old = row.find("old_");
+    let new = row.find("new_");
+    let start = old.into_iter().chain(new).min()?;
     let label = row[start..]
         .chars()
         .take_while(|symbol| symbol.is_alphanumeric() || *symbol == '_')

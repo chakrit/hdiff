@@ -1,9 +1,9 @@
 //! Row wrapping and the positions it keeps.
-use hdiff::preferences::{DiffGranularity, DiffLayout};
+use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::long_patch,
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, diff_pane, unified_line},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, diff_pane},
 };
 
 matrix!(wrapping);
@@ -46,7 +46,7 @@ fn x_count(live: &Live) -> usize {
 
 #[test]
 fn wrapping_starts_disabled() {
-    let live = Live::load(&long_patch(), unified_line());
+    let live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
 
     assert!(!live.shows("_end"), "the wide row is clipped");
 }
@@ -57,13 +57,7 @@ fn wrapping_pads_the_shorter_side_of_a_pair() {
         "--- a/pair.rs\n+++ b/pair.rs\n@@ -1 +1 @@\n-short\n+long_{}_end\n",
         "y".repeat(121)
     );
-    let mut live = Live::load(
-        &patch,
-        Mode {
-            layout: DiffLayout::Vertical,
-            detail: DiffGranularity::Line,
-        },
-    );
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Vertical));
 
     live.press('w');
     let short = live.find("short");
@@ -81,7 +75,7 @@ fn wrapping_pads_the_shorter_side_of_a_pair() {
 
 #[test]
 fn resizing_keeps_the_top_line_of_a_wrapped_record() {
-    let mut live = Live::load(&long_patch(), unified_line());
+    let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     live.press('w');
     live.press('g');
     // Lines: three headers, row_0, then the wide row's first and second lines.
@@ -101,7 +95,7 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
 
 #[test]
 fn toggling_wrapping_keeps_the_middle_row() {
-    let mut live = Live::load(&long_patch(), unified_line());
+    let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     for _ in 0..20 {
         live.press('j');
     }

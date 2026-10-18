@@ -1,20 +1,13 @@
 //! Where a frame puts its parts: the file list, separators, diff panes, the help box, and
 //! surrounding text.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use hdiff::preferences::{DiffGranularity, DiffLayout};
+use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;
 
-use crate::harness::{Live, Mode, THEME, unified_line};
+use crate::harness::{Live, Mode, THEME};
 
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
-
-fn vertical_line() -> Mode {
-    Mode {
-        layout: DiffLayout::Vertical,
-        detail: DiffGranularity::Line,
-    }
-}
 
 fn next_file(live: &mut Live) {
     live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -29,7 +22,11 @@ fn row_text(live: &Live, y: usize) -> String {
 /// diff pane, with the help hint below the list.
 #[test]
 fn renders_compact_file_and_diff_panes_with_one_separator() {
-    let mut live = Live::sized(TWO_FILES, unified_line(), Size::new(80, 10));
+    let mut live = Live::sized(
+        TWO_FILES,
+        Mode::line(DiffLayout::Unified),
+        Size::new(80, 10),
+    );
     next_file(&mut live);
 
     let rendered = live.buffer();
@@ -58,7 +55,7 @@ fn renders_compact_file_and_diff_panes_with_one_separator() {
 fn collapses_the_file_list_before_the_diff_pane() {
     let live = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n",
-        unified_line(),
+        Mode::line(DiffLayout::Unified),
         Size::new(23, 8),
     );
 
@@ -73,7 +70,7 @@ fn collapses_the_file_list_before_the_diff_pane() {
 fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
     let live = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
-        vertical_line(),
+        Mode::line(DiffLayout::Vertical),
         Size::new(80, 9),
     );
 
@@ -101,7 +98,7 @@ fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
 fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
     let tail = "_".repeat(40);
     let patch = format!("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-abcdef{tail}\n+ABCDEF{tail}\n");
-    let mut live = Live::sized(&patch, vertical_line(), Size::new(80, 8));
+    let mut live = Live::sized(&patch, Mode::line(DiffLayout::Vertical), Size::new(80, 8));
 
     live.press('l');
     live.press('l');
@@ -115,9 +112,17 @@ fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
 /// of the diff while the file list is hidden, by `e` or by a narrow screen.
 #[test]
 fn floats_a_help_box_while_the_file_list_is_hidden() {
-    let mut hidden = Live::sized(TWO_FILES, unified_line(), Size::new(80, 10));
+    let mut hidden = Live::sized(
+        TWO_FILES,
+        Mode::line(DiffLayout::Unified),
+        Size::new(80, 10),
+    );
     hidden.press('e');
-    let narrow = Live::sized(TWO_FILES, unified_line(), Size::new(23, 10));
+    let narrow = Live::sized(
+        TWO_FILES,
+        Mode::line(DiffLayout::Unified),
+        Size::new(23, 10),
+    );
 
     for live in [&hidden, &narrow] {
         assert!(row_text(live, 7).starts_with("┌────────┐"));
@@ -149,10 +154,7 @@ fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
         (DiffLayout::Vertical, 2),
         (DiffLayout::Stacked, 2),
     ] {
-        let mode = Mode {
-            layout,
-            detail: DiffGranularity::Line,
-        };
+        let mode = Mode::line(layout);
         let mut live = Live::load(&input, mode);
         let text = |live: &Live| live.rows().concat();
 
@@ -179,7 +181,10 @@ fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
 /// shown, and stays shown through movement and file rotation.
 #[test]
 fn shows_comparison_output_that_holds_only_text() {
-    let mut live = Live::comparison("Binary files a.bin and b.bin differ\n", unified_line());
+    let mut live = Live::comparison(
+        "Binary files a.bin and b.bin differ\n",
+        Mode::line(DiffLayout::Unified),
+    );
 
     live.press('j');
     next_file(&mut live);
