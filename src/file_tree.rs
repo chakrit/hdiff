@@ -49,7 +49,9 @@ impl TreeRowIndex {
 
     /// Rows from `first`, at or above this row, down to this row.
     pub fn offset_from(self, first: Self) -> usize {
-        self.0 - first.0
+        self.0
+            .checked_sub(first.0)
+            .expect("the window's first row is at or above this row")
     }
 }
 

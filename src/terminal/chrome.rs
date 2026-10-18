@@ -200,7 +200,7 @@ fn render_file_list(
     // Without a selected row, the list shows from its top.
     let first = selected_row.map_or(TreeRowIndex::FIRST, |row| row.window_start(height));
     let window = LineWindow {
-        first: ScreenLines::new(first.offset_from(TreeRowIndex::FIRST)),
+        first: ScreenLines::new(first.get()),
         total: ScreenLines::new(tree.rows().len()),
     };
 

@@ -205,10 +205,10 @@ fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseErr
     let mut patch = Vec::new();
     let mut blocks = 0;
 
-    while let Some((header, declared_size)) =
-        lines.next_if_map(|text| binary_block_size(text).map(|size| size.parse::<usize>()))
+    while let Some((header, valid_size)) =
+        lines.next_if_map(|text| binary_block_size(text).map(|size| size.parse::<usize>().is_ok()))
     {
-        if declared_size.is_err() {
+        if !valid_size {
             return Err(lines.last_line_error(Malformed::InvalidBinaryPatchHeader));
         }
         patch.push(header);

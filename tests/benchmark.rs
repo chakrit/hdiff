@@ -35,6 +35,10 @@ fn fields(line: &str) -> BTreeMap<&str, u128> {
         .collect()
 }
 
+fn patch_bytes() -> u128 {
+    u128::try_from(PATCH.len()).expect("patch length fits u128")
+}
+
 #[test]
 fn benchmark_accounts_for_input_and_parsing_before_preparation() {
     let output = run("prepare", PATCH);
@@ -49,12 +53,11 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
 
     let preparation = fields(lines[0]);
     let startup = fields(lines[1]);
-    let patch_bytes = u128::try_from(PATCH.len()).expect("patch length fits u128");
 
     assert_eq!(preparation["files"], 1);
     assert_eq!(preparation["records"], 2);
     assert_eq!(startup["version"], 1);
-    assert_eq!(startup["bytes"], patch_bytes);
+    assert_eq!(startup["bytes"], patch_bytes());
     assert_eq!(startup["preparation_ns"], preparation["duration_ns"]);
     assert!(
         startup["ready_ns"]
@@ -133,7 +136,12 @@ fn malformed_input_never_emits_success_measurements() {
 
         assert_trouble(&output);
         assert!(output.stdout.is_empty());
-        assert!(!output.stderr.is_empty());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            "hdiff: input contains no diff\n",
+            "{}",
+            driver.label()
+        );
     }
 }
 
@@ -217,7 +225,7 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
     let text = String::from_utf8(stdin.stdout).expect("report");
     assert_eq!(
         fields(text.lines().nth(1).expect("startup"))["bytes"],
-        PATCH.len() as u128
+        patch_bytes()
     );
 
     let old = env.write_file("old.rs", "fn old() {}\n");

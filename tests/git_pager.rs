@@ -88,7 +88,10 @@ fn git_show_without_diff_content_is_rejected() {
 
         assert_trouble(&viewed);
         assert!(viewed.stdout.is_empty());
-        assert!(!viewed.stderr.is_empty());
+        assert_eq!(
+            String::from_utf8_lossy(&viewed.stderr),
+            "hdiff: input contains no diff\n"
+        );
     }
 }
 
