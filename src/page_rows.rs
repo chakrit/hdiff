@@ -33,11 +33,6 @@ impl LineIndex {
     fn get(self) -> usize {
         self.0.get()
     }
-
-    #[cfg(test)]
-    pub(crate) fn new(position: usize) -> Self {
-        Self::at(position)
-    }
 }
 
 impl PairIndex {
@@ -47,11 +42,6 @@ impl PairIndex {
 
     fn get(self) -> usize {
         self.0.get()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new(position: usize) -> Self {
-        Self::at(position)
     }
 }
 
@@ -144,15 +134,6 @@ impl<T> LineMap<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PairMap<T>(Box<[T]>);
 
-impl<T> PairMap<T> {
-    /// The value of pair `index`, to change.
-    ///
-    /// Panics when `index` names no pair of the rows this map was built from.
-    pub fn get_mut(&mut self, index: PairIndex) -> &mut T {
-        &mut self.0[index.get()]
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct PageRows {
     lines: Box<[RenderedLine]>,
@@ -241,8 +222,20 @@ impl PageRows {
         PairMap(values.collect())
     }
 
-    pub fn pairs(&self) -> &[SideBySideRow<LineIndex>] {
-        &self.pairs
+    /// Hands each pair's per-side values to the lines it holds: a changed line takes its
+    /// side's value, and a shared line takes none.
+    pub fn lines_of_pairs<T>(&self, pairs: PairMap<BySide<Option<T>>>) -> LineMap<Option<T>> {
+        let mut placed = self
+            .pairs
+            .iter()
+            .zip(pairs.0)
+            .flat_map(|(row, values)| placed_values(*row, values))
+            .collect::<Vec<_>>();
+        // A changed block lists its old lines before its new lines, so pair order is not
+        // line order.
+        placed.sort_by_key(|(line, _)| *line);
+
+        LineMap(placed.into_iter().map(|(_, value)| value).collect())
     }
 
     pub fn pair(&self, index: PairIndex) -> SideBySideRow<LineIndex> {
@@ -298,6 +291,35 @@ impl PageRows {
 
         LineIndex::at(position)
     }
+
+    /// The index of the side-by-side row at `position`.
+    ///
+    /// Panics when `position` is not below the pair count.
+    pub fn pair_index(&self, position: usize) -> PairIndex {
+        assert!(
+            position < self.pairs.len(),
+            "pair {position} is in the page rows"
+        );
+
+        PairIndex::at(position)
+    }
+}
+
+/// Each line `row` holds, with the value of the side it shows; a shared line shows no side.
+fn placed_values<T>(
+    row: SideBySideRow<LineIndex>,
+    values: BySide<Option<T>>,
+) -> impl Iterator<Item = (LineIndex, Option<T>)> {
+    let placed = match row {
+        SideBySideRow::Shared(line) => [Some((line, None)), None],
+        SideBySideRow::Paired(lines) => {
+            [Some((lines.old, values.old)), Some((lines.new, values.new))]
+        }
+        SideBySideRow::OldOnly(line) => [Some((line, values.old)), None],
+        SideBySideRow::NewOnly(line) => [Some((line, values.new)), None],
+    };
+
+    placed.into_iter().flatten()
 }
 
 /// The side-by-side rows of `rendered_lines`, and the pair holding each line. Each run of
@@ -528,16 +550,20 @@ mod tests {
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         );
         let text = |line| shown(view.line(line));
+        let pairs = view
+            .pair_indices()
+            .map(|index| view.pair(index))
+            .collect::<Vec<_>>();
 
-        assert_eq!(view.pairs().len(), 6);
+        assert_eq!(pairs.len(), 6);
         assert_eq!(view.lines().count(), 7);
         assert!(matches!(
-            view.pairs()[3],
+            pairs[3],
             SideBySideRow::Paired(lines)
                 if text(lines.old) == "-old first" && text(lines.new) == "+new first"
         ));
         assert!(matches!(
-            view.pairs()[4],
+            pairs[4],
             SideBySideRow::OldOnly(old) if text(old) == "-old second"
         ));
     }

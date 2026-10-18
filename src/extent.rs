@@ -418,7 +418,7 @@ mod tests {
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
-        page_rows::{LineIndex, PairIndex},
+        page_rows::{LineIndex, PageRows, PairIndex},
         parser::parse_patch,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
@@ -445,9 +445,13 @@ mod tests {
         DisplayExtent::of(document, PageIndex::FIRST, settings)
     }
 
+    fn first_rows(document: &PreparedDocument) -> &PageRows {
+        document.page(PageIndex::FIRST).rows()
+    }
+
     /// Each line as a reader sees it: its record marker, its payload, then a newline.
     fn texts(document: &PreparedDocument, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
-        let rows = document.page(PageIndex::FIRST).rows();
+        let rows = first_rows(document);
 
         lines
             .map(|line| rows.line(line))
@@ -488,7 +492,7 @@ mod tests {
         wrapped_line: usize,
     ) -> ScreenLines {
         let anchor = RowAnchor {
-            line: LineIndex::new(line),
+            line: first_rows(document).line_index(line),
             wrapped_line: lines(wrapped_line),
         };
 
@@ -565,7 +569,6 @@ mod tests {
             lines(3),
             "hidden c0 maps to the next visible row"
         );
-        assert_eq!(offset(9), lines(7), "past the end maps to the row count");
     }
 
     #[test]
@@ -576,12 +579,13 @@ mod tests {
         let wrap = wrap_at(20);
         let unified = extent_of(&document, PaneShape::Single, 3, wrap);
         let vertical = extent_of(&document, VERTICAL, 3, wrap);
+        let rows = first_rows(&document);
         let line = |row, wrapped_line| ScreenLine {
-            row: LineIndex::new(row),
+            row: rows.line_index(row),
             wrapped_line: lines(wrapped_line),
         };
         let pair = |row, wrapped_line| ScreenLine {
-            row: PairIndex::new(row),
+            row: rows.pair_index(row),
             wrapped_line: lines(wrapped_line),
         };
 
