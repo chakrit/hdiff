@@ -248,13 +248,13 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
-        document::Side,
         extent::{DisplayExtent, PaneExtent, WrapWidth},
         geometry::PaneShape,
         parser::parse_patch,
         preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
+        side::Side,
         terminal::rows::PaneRow,
         theme::{ColorDepth, Theme},
     };

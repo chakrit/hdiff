@@ -10,8 +10,9 @@ use std::{
 use crate::{
     compact::Count,
     display_lines::{self, DisplayLine, LineKind},
-    document::{BySide, FileView, RecordAddress, RecordKind, Side},
+    document::{FileView, RecordAddress, RecordKind},
     screen::Cells,
+    side::{BySide, Side},
     source_text::SourceLine,
     tab_stops::{MeasuredPayload, MeasuredText},
 };

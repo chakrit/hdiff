@@ -1,11 +1,10 @@
 use std::fmt;
 
 use crate::{
-    document::{
-        DiffDocument, DiffFile, FileBody, Hunk, Record, RecordKind, Section, Side, UnifiedBody,
-    },
+    document::{DiffDocument, DiffFile, FileBody, Hunk, Record, RecordKind, Section, UnifiedBody},
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader, HeaderPath},
+    side::{BySide, Side},
     source_text::SourceLine,
 };
 
@@ -259,7 +258,7 @@ fn parse_unified(
     let mut hunks = Vec::new();
     while let Some((header, declared)) = lines.next_if_map(|text| {
         text.starts_with("@@ ")
-            .then(|| SideCounts::of_header(text).ok_or(Malformed::InvalidHunkHeader))
+            .then(|| hunk_counts(text).ok_or(Malformed::InvalidHunkHeader))
     }) {
         let expected = lines.at_last_line(declared)?;
         hunks.push(parse_hunk(header, expected, lines)?);
@@ -268,13 +267,13 @@ fn parse_unified(
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
     }
 
-    let identity = FileIdentity::of_unified(git.as_ref(), &old, &new);
+    let headers = BySide { old, new };
+    let identity = FileIdentity::of_unified(git.as_ref(), &headers);
     Ok(DiffFile {
         identity,
         body: FileBody::Unified(Box::new(UnifiedBody {
             git,
-            old,
-            new,
+            headers,
             hunks: hunks.into_boxed_slice(),
         })),
     })
@@ -287,16 +286,16 @@ const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file";
 /// The records after a hunk `header` that declares `expected` counts.
 fn parse_hunk(
     header: SourceLine,
-    expected: SideCounts,
+    expected: BySide<usize>,
     lines: &mut Lines<'_>,
 ) -> Result<Hunk, ParseError> {
-    let mut seen = SideCounts::default();
+    let mut seen = BySide::<usize>::default();
     let mut records = Vec::new();
     while let Some(line) =
         lines.next_if(|text| seen != expected || text.starts_with(NO_NEWLINE_MARKER))
     {
         let record = lines.at_last_line(parse_record(line))?;
-        seen.count(record.kind);
+        seen = seen.map_sides(|side, count| count + usize::from(record.kind.on_side(side)));
         records.push(record);
     }
 
@@ -347,29 +346,15 @@ fn is_excess_record(text: &str) -> bool {
     marked && !text.starts_with("--- ")
 }
 
-/// Old-side and new-side line counts of a hunk.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct SideCounts {
-    old: usize,
-    new: usize,
-}
+/// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
+fn hunk_counts(header: &str) -> Option<BySide<usize>> {
+    let mut parts = header.split_whitespace();
+    (parts.next()? == "@@").then_some(())?;
+    let old = range_count(parts.next()?, '-')?;
+    let new = range_count(parts.next()?, '+')?;
+    (parts.next()? == "@@").then_some(())?;
 
-impl SideCounts {
-    /// The counts an `@@ -old +new @@` header declares.
-    fn of_header(header: &str) -> Option<Self> {
-        let mut parts = header.split_whitespace();
-        (parts.next()? == "@@").then_some(())?;
-        let old = range_count(parts.next()?, '-')?;
-        let new = range_count(parts.next()?, '+')?;
-        (parts.next()? == "@@").then_some(())?;
-
-        Some(Self { old, new })
-    }
-
-    fn count(&mut self, kind: RecordKind) {
-        self.old += usize::from(kind.on_side(Side::Old));
-        self.new += usize::from(kind.on_side(Side::New));
-    }
+    Some(BySide { old, new })
 }
 
 fn range_count(range: &str, prefix: char) -> Option<usize> {

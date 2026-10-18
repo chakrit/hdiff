@@ -5,8 +5,8 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    document::{BySide, Side},
     page_rows::{LineIndex, LineMap, PageRows, SideBySideRow},
+    side::{BySide, Side},
     span::PayloadSpan,
 };
 
@@ -289,7 +289,7 @@ fn is_tiny_island(island: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PayloadSpan, changed_pair_spans, character_details};
-    use crate::{document::BySide, page_rows::PageRows, parser::parse_patch};
+    use crate::{page_rows::PageRows, parser::parse_patch, side::BySide};
 
     fn spans_of(old: &str, new: &str) -> BySide<Vec<PayloadSpan>> {
         changed_pair_spans(BySide { old, new })

@@ -3,6 +3,7 @@
 
 use crate::{
     headers::{FileHeader, GitHeader, HeaderPath, quoted_or_plain, unquote},
+    side::BySide,
     source_text::{SourceLine, sanitize},
 };
 
@@ -23,13 +24,14 @@ pub enum FileIdentity {
 
 impl FileIdentity {
     /// A section with `---` / `+++` headers, after its Git header when it has one.
-    pub fn of_unified(git: Option<&GitHeader>, old: &FileHeader, new: &FileHeader) -> Self {
+    pub fn of_unified(git: Option<&GitHeader>, headers: &BySide<FileHeader>) -> Self {
         let git_line = git.map(|git| &git.line);
         let metadata = git.map_or(&[][..], |git| &git.metadata);
-        let located = git_change(metadata)
-            .and_then(|change| locate_unified(change, git_line, &old.path, &new.path));
+        let paths = headers.as_ref().map(|header| &header.path);
+        let located =
+            git_change(metadata).and_then(|change| locate_unified(change, git_line, paths));
 
-        let first_line = git_line.unwrap_or(&old.line);
+        let first_line = git_line.unwrap_or(&headers.old.line);
         located.unwrap_or_else(|| Self::unknown(first_line))
     }
 
@@ -77,8 +79,7 @@ enum GitChange {
 fn locate_unified(
     change: GitChange,
     git_line: Option<&SourceLine>,
-    old_path: &HeaderPath,
-    new_path: &HeaderPath,
+    paths: BySide<&HeaderPath>,
 ) -> Option<FileIdentity> {
     // A `/dev/null` side leaves one header path, so Git sections name the file from
     // their `diff --git` line; plain diffs show the path as written.
@@ -86,7 +87,7 @@ fn locate_unified(
         Some(line) => git_header_path(line),
         None => Some(path.into()),
     };
-    let (header_state, named_path) = match (old_path, new_path) {
+    let (header_state, named_path) = match (paths.old, paths.new) {
         (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => return None,
         (HeaderPath::DevNull, HeaderPath::DevNull) => return None,
         (HeaderPath::DevNull, HeaderPath::Path(new)) => (FileState::Added, one_sided(new)?),

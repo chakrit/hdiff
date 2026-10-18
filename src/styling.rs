@@ -6,9 +6,10 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 use crate::{
     detail::ChangedDetail,
     display_lines::LineKind,
-    document::{RecordMap, Side},
+    document::RecordMap,
     page_rows::{LineMap, PageRows, RenderedLine},
     preferences::DiffGranularity,
+    side::Side,
     span::PayloadSpan,
     syntax::{SyntaxClass, SyntaxSpan},
 };
@@ -250,9 +251,9 @@ mod tests {
     };
     use crate::{
         detail::character_details,
-        document::Side,
         page_rows::PageRows,
         parser::parse_patch,
+        side::Side,
         span::PayloadSpan,
         syntax::{SyntaxClass, SyntaxSpan},
     };

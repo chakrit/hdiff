@@ -3,9 +3,10 @@ use std::ops::Range;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, Hunk, RecordMap, RecordPosition, Side, UnifiedBody},
+    document::{DiffFile, Hunk, RecordMap, RecordPosition, UnifiedBody},
     headers::HeaderPath,
     measurement::{Observer, Stage, Work},
+    side::Side,
     span::PayloadSpan,
 };
 
@@ -73,10 +74,14 @@ impl SyntaxHighlighter {
         observer: &mut impl Observer,
     ) -> Vec<(RecordPosition, SyntaxSpan)> {
         observer.count(Work::Hunk);
-        let old_language = Language::for_header(&file.old.path);
-        let new_language = Language::for_header(&file.new.path);
+        let languages = file
+            .headers
+            .as_ref()
+            .map(|header| Language::for_header(&header.path));
         // architecture.md: context stays textual when the paths select different languages.
-        let shared_language = old_language.filter(|language| Some(*language) == new_language);
+        let shared_language = languages
+            .old
+            .filter(|language| Some(*language) == languages.new);
         let new_styles = match shared_language {
             Some(_) => Styles::ChangesAndContext,
             None => Styles::Changes,
@@ -100,7 +105,7 @@ impl SyntaxHighlighter {
                 let new_pass = self.highlight_projection(language, &new, base, observer);
                 [old_spans, new_pass.map_or_else(Vec::new, |pass| pass.spans)]
             }
-            None => [(old_language, &old), (new_language, &new)].map(|(language, projection)| {
+            None => [(languages.old, &old), (languages.new, &new)].map(|(language, projection)| {
                 language
                     .and_then(|language| {
                         self.highlight_projection(language, projection, None, observer)
@@ -429,9 +434,10 @@ mod tests {
         SyntaxSpan,
     };
     use crate::{
-        document::{FileBody, Hunk, RecordAddress, RecordMap, Side, UnifiedBody},
+        document::{FileBody, Hunk, RecordAddress, RecordMap, UnifiedBody},
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
+        side::Side,
     };
     use tree_sitter::{InputEdit, Point};
 

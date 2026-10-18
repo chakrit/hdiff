@@ -4,6 +4,7 @@
 use ratatui::style::{Modifier, Style};
 
 use crate::{
+    document::RecordKind,
     screen::MARKER_GUTTER_WIDTH,
     styling::{DetailStyle, RowTone, TextStyle},
     theme::{RowPalette, Theme},
@@ -19,7 +20,7 @@ pub(super) fn gutter(
     match tone {
         RowTone::Changed(side) => {
             let marker = Style::default().fg(palette.change.get(side).marker);
-            [(side.change().marker(), marker), spacing]
+            [(RecordKind::change_of(side).marker(), marker), spacing]
         }
         RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
     }

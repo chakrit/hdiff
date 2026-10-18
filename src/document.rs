@@ -5,6 +5,7 @@ use crate::{
     compact::Count,
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader},
+    side::{BySide, Side},
     source_text::SourceLine,
 };
 
@@ -139,8 +140,7 @@ pub enum FileBody {
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnifiedBody {
     pub git: Option<GitHeader>,
-    pub old: FileHeader,
-    pub new: FileHeader,
+    pub headers: BySide<FileHeader>,
     pub hunks: Box<[Hunk]>,
 }
 
@@ -206,9 +206,20 @@ impl RecordKind {
         }
     }
 
+    /// The record kind that changes `side`; it decides which side each change kind
+    /// changes.
+    pub fn change_of(side: Side) -> Self {
+        match side {
+            Side::Old => Self::Deletion,
+            Side::New => Self::Addition,
+        }
+    }
+
     /// The side a change removes from or adds to; context and raw lines change neither.
     pub fn changed_side(self) -> Option<Side> {
-        Side::BOTH.into_iter().find(|side| side.change() == self)
+        Side::BOTH
+            .into_iter()
+            .find(|side| Self::change_of(*side) == self)
     }
 
     /// Whether the record is a line of `side`'s file: context is a line of both sides, a
@@ -219,69 +230,6 @@ impl RecordKind {
             Self::Addition | Self::Deletion => self.changed_side() == Some(side),
             Self::Raw => false,
         }
-    }
-}
-
-/// One of the two files a diff compares.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    Old,
-    New,
-}
-
-impl Side {
-    pub const BOTH: [Self; 2] = [Self::Old, Self::New];
-
-    /// The record kind that changes this side; it decides which side each change kind
-    /// changes.
-    pub fn change(self) -> RecordKind {
-        match self {
-            Self::Old => RecordKind::Deletion,
-            Self::New => RecordKind::Addition,
-        }
-    }
-}
-
-/// One value for each side of a change.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct BySide<T> {
-    pub old: T,
-    pub new: T,
-}
-
-impl<T> BySide<T> {
-    pub fn get(&self, side: Side) -> &T {
-        match side {
-            Side::Old => &self.old,
-            Side::New => &self.new,
-        }
-    }
-
-    pub fn get_mut(&mut self, side: Side) -> &mut T {
-        match side {
-            Side::Old => &mut self.old,
-            Side::New => &mut self.new,
-        }
-    }
-
-    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> BySide<U> {
-        BySide {
-            old: f(self.old),
-            new: f(self.new),
-        }
-    }
-
-    /// Each side's value paired with `other`'s value for that side.
-    pub fn zip<U>(self, other: BySide<U>) -> BySide<(T, U)> {
-        BySide {
-            old: (self.old, other.old),
-            new: (self.new, other.new),
-        }
-    }
-
-    /// Each side with its value, old side first.
-    pub fn into_sides(self) -> [(Side, T); 2] {
-        [(Side::Old, self.old), (Side::New, self.new)]
     }
 }
 

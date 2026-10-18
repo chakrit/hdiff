@@ -1,6 +1,6 @@
 use crate::{
-    document::{BySide, Side},
     page_rows::SideBySideRow,
+    side::{BySide, Side},
     styling::{RowTone, StyledRow},
 };
 

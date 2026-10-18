@@ -3,9 +3,7 @@
 
 use ratatui::style::{Color, Modifier};
 
-use crate::{
-    document::BySide, file_identity::FileState, file_tree::StateMarker, syntax::SyntaxClass,
-};
+use crate::{file_identity::FileState, file_tree::StateMarker, side::BySide, syntax::SyntaxClass};
 
 /// The colors a terminal can show, decided once when the session starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

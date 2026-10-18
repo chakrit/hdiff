@@ -3,8 +3,9 @@
 //! `docs/spec/architecture.md` (Lossless and safe rendering).
 
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind, Section, Side},
+    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind, Section},
     headers::GitHeader,
+    side::Side,
     source_text::SourceLine,
 };
 
@@ -123,7 +124,7 @@ pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     };
     let file_headers = unified
         .into_iter()
-        .flat_map(|body| [&body.old, &body.new])
+        .flat_map(|body| [&body.headers.old, &body.headers.new])
         .map(|header| DisplayLine {
             kind: LineKind::FileHeader,
             source: &header.line,
