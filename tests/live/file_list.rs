@@ -8,7 +8,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{TREE_PATCH, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, unified_line},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label, unified_line},
 };
 
 matrix!(file_list_toggle);
@@ -185,17 +185,6 @@ fn keeps_a_selection_below_its_headings_visible() {
         !live.shows("dir_00/"),
         "the list scrolls past earlier headings"
     );
-}
-
-/// The first `old_N` or `new_N` label in `row`.
-fn change_label(row: &str) -> Option<String> {
-    let start = row.find("old_").or_else(|| row.find("new_"))?;
-    let label = row[start..]
-        .chars()
-        .take_while(|symbol| symbol.is_alphanumeric() || *symbol == '_')
-        .collect();
-
-    Some(label)
 }
 
 /// architecture.md (Interaction model, View model): `e` hides and shows the file list,

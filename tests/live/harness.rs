@@ -162,6 +162,17 @@ pub fn unified_line() -> Mode {
     }
 }
 
+/// The first `old_N` or `new_N` label in `row`.
+pub fn change_label(row: &str) -> Option<String> {
+    let start = row.find("old_").or_else(|| row.find("new_"))?;
+    let label = row[start..]
+        .chars()
+        .take_while(|symbol| symbol.is_alphanumeric() || *symbol == '_')
+        .collect();
+
+    Some(label)
+}
+
 /// The diff pane's part of a screen row, right of the file-list separator.
 pub fn diff_pane(row: &str) -> String {
     row.split_once('│')

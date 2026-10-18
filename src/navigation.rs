@@ -64,6 +64,7 @@ impl Navigation {
                 self.extent.width(),
                 geometry.content_width(),
             ),
+            pane_lines: usize::from(geometry.content_height()),
         };
         let current = interaction.viewport.scroll;
         let start = match policy {

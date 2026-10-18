@@ -186,14 +186,13 @@ pub enum Movement {
 
 impl Movement {
     /// `viewport`'s scroll position after this movement, within `bounds`.
-    fn applied(self, viewport: Viewport, bounds: DisplayBounds) -> ScrollPosition {
-        let scroll = viewport.scroll;
+    fn applied(self, scroll: ScrollPosition, bounds: DisplayBounds) -> ScrollPosition {
         let horizontal = |horizontal| ScrollPosition {
             horizontal,
             ..scroll
         };
         let vertical = |vertical| ScrollPosition { vertical, ..scroll };
-        let half_page = usize::from(viewport.screen.height / 2).max(1);
+        let half_page = (bounds.pane_lines / 2).max(1);
 
         let moved = match self {
             Self::Left => horizontal(scroll.horizontal.saturating_sub(1)),
@@ -289,6 +288,8 @@ impl Destination {
 pub struct DisplayBounds {
     pub maximum_vertical_offset: usize,
     pub maximum_horizontal_offset: u16,
+    /// Content lines of each diff pane: a page.
+    pub pane_lines: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -307,7 +308,7 @@ pub fn transition(
         Event::Interrupt | Event::Command(Command::Quit) => return Transition::Exit,
         Event::Command(Command::Movement(movement)) => Interaction {
             viewport: Viewport {
-                scroll: movement.applied(interaction.viewport, destination.bounds),
+                scroll: movement.applied(interaction.viewport.scroll, destination.bounds),
                 ..interaction.viewport
             },
             ..*interaction
@@ -378,6 +379,7 @@ mod tests {
         DisplayBounds {
             maximum_vertical_offset,
             maximum_horizontal_offset,
+            pane_lines: 1,
         }
     }
 

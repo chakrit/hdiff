@@ -6,8 +6,8 @@ use hdiff::{
 };
 
 use crate::{
-    fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch},
-    harness::{HEIGHT, Live, Mode, WIDTH},
+    fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label},
 };
 
 matrix!(
@@ -20,7 +20,8 @@ matrix!(
     resize,
     quit,
     bottom_past_hidden_context,
-    keymap_popup
+    keymap_popup,
+    half_page_movement
 );
 
 fn vertical_movement(mode: Mode) {
@@ -256,4 +257,39 @@ fn keymap_popup(mode: Mode) {
         Step::Exit,
         "Ctrl-C exits from the popup"
     );
+}
+
+/// architecture.md (Keyboard bindings): `Ctrl-D` and `Ctrl-U` move by half of a diff
+/// pane's lines, so no line passes the pane unseen.
+fn half_page_movement(mode: Mode) {
+    let mut live = Live::load(&paired_patch(), mode);
+    for _ in 0..10 {
+        live.press('j');
+    }
+    let start = live.buffer();
+    let top_label = |live: &Live| label_number(&live.rows()[FIRST_CONTENT_LINE]);
+    let pane_lines = live
+        .rows()
+        .iter()
+        .filter(|row| change_label(row).is_some_and(|label| label.starts_with("old_")))
+        .count();
+    let top = top_label(&live);
+
+    live.send(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+    assert_eq!(
+        top_label(&live),
+        top + pane_lines / 2,
+        "Ctrl-D moves half a pane"
+    );
+    live.send(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    assert_eq!(live.buffer(), start, "Ctrl-U moves back");
+}
+
+/// The number of the `old_N` label on a screen row.
+fn label_number(row: &str) -> usize {
+    let label = change_label(row).expect("a labeled row");
+    label
+        .trim_start_matches("old_")
+        .parse()
+        .expect("an old_N label")
 }

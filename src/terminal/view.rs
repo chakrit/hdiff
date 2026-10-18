@@ -720,6 +720,7 @@ mod tests {
         let bounds = DisplayBounds {
             maximum_vertical_offset: extent.line_count(),
             maximum_horizontal_offset: 1,
+            pane_lines: 28,
         };
         let toggle = |interaction: &Interaction| {
             let event = Event::Command(Command::Preference(PreferenceChange::ToggleGranularity));
