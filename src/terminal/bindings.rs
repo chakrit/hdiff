@@ -40,6 +40,14 @@ fn all_bindings() -> impl Iterator<Item = Binding> {
         .flat_map(Shortcut::bindings)
 }
 
+/// The first plain character, in table order, bound to `command`.
+pub(crate) fn character_for(command: Command) -> Option<char> {
+    all_bindings().find_map(|binding| match (binding.key, binding.event) {
+        (Key::Char(character), Event::Command(bound)) if bound == command => Some(character),
+        _ => None,
+    })
+}
+
 /// The keys that close the open keymap popup, in table order: every key whose command the
 /// open popup turns into closing it.
 pub(super) fn keymap_closing_keys() -> impl Iterator<Item = Key> {

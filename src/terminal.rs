@@ -23,6 +23,7 @@ mod rows;
 mod session;
 mod view;
 
+pub(crate) use bindings::character_for;
 pub use session::{SessionError, open_controlling_terminal, run_interactive};
 
 /// How the viewer writes its output. Rules: `docs/spec/architecture.md` (Input and terminal

@@ -16,11 +16,12 @@ use ratatui::{
 
 use crate::{
     input,
+    interaction::{Command, Movement},
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
     parser::ParseError,
-    preferences::ViewPreferences,
+    preferences::{PreferenceChange, ViewPreferences},
     prepared::PreparedDocument,
-    terminal::Tui,
+    terminal::{self, Tui},
     theme::ColorDepth,
 };
 
@@ -239,27 +240,32 @@ fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Durati
 // movement
 
 const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
-const MOVEMENT_KEYS: [char; 4] = ['l', 'h', 'j', 'k'];
+const MOVEMENTS: [Movement; 4] = [
+    Movement::Right,
+    Movement::Left,
+    Movement::Down,
+    Movement::Up,
+];
 const MOVEMENT_ROUNDS: usize = 4;
 
-/// A key that cycles one preference, and how to tell the cycle has come back around.
+/// A change that cycles one preference, and how to tell the cycle has come back around.
 struct ModeCycle {
-    key: char,
+    change: PreferenceChange,
     same: fn(ViewPreferences, ViewPreferences) -> bool,
 }
 
 /// Every preference the movement driver crosses, outermost first.
 const MODE_CYCLES: [ModeCycle; 3] = [
     ModeCycle {
-        key: 'w',
+        change: PreferenceChange::ToggleWrapping,
         same: |a, b| a.wrapping == b.wrapping,
     },
     ModeCycle {
-        key: 'v',
+        change: PreferenceChange::NextLayout,
         same: |a, b| a.layout == b.layout,
     },
     ModeCycle {
-        key: 'c',
+        change: PreferenceChange::ToggleGranularity,
         same: |a, b| a.granularity == b.granularity,
     },
 ];
@@ -290,11 +296,18 @@ fn visit_modes<B: Backend>(
     let [cycle, inner @ ..] = cycles else {
         return measure_movement(tui, terminal, report);
     };
+    let key = bound_character(Command::Preference(cycle.change));
     let start = tui.preferences();
 
     loop {
         visit_modes(tui, terminal, inner, report)?;
-        tui.step(terminal, key_event(cycle.key))?;
+        let before = tui.preferences();
+        tui.step(terminal, key_event(key))?;
+
+        assert!(
+            !(cycle.same)(tui.preferences(), before),
+            "{key} must change the preference it cycles"
+        );
         if (cycle.same)(tui.preferences(), start) {
             return Ok(());
         }
@@ -308,12 +321,9 @@ fn measure_movement<B: Backend>(
     report: &mut String,
 ) -> Result<(), B::Error> {
     let preferences = tui.preferences();
+    let keys = MOVEMENTS.map(|movement| bound_character(Command::Movement(movement)));
 
-    for key in MOVEMENT_KEYS
-        .iter()
-        .cycle()
-        .take(MOVEMENT_KEYS.len() * MOVEMENT_ROUNDS)
-    {
+    for key in keys.iter().cycle().take(keys.len() * MOVEMENT_ROUNDS) {
         let step = timed_step(tui, terminal, *key)?;
         writeln!(
             report,
@@ -336,6 +346,11 @@ fn timed_step<B: Backend>(
     let started = Instant::now();
     tui.step(terminal, key_event(key))?;
     Ok(started.elapsed())
+}
+
+/// The character key bound to `command`, which the driver presses for it.
+fn bound_character(command: Command) -> char {
+    terminal::character_for(command).expect("every driven command has a character binding")
 }
 
 fn key_event(key: char) -> Event {
