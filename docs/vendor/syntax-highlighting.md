@@ -19,8 +19,8 @@ outside preparation. The document model remains independent of Tree-sitter node 
 so the renderer can stay terminal-focused.
 
 Tree-sitter queries assign semantic capture names such as `keyword`, `function`, `type`, and
-`string`; hdiff maps those captures through `SyntaxTheme`. Grammar crates and queries are
-version-pinned together. Adding a language is an explicit dependency and registry entry, not a
+`string`; hdiff maps those captures through the theme's `SyntaxPalette`. Grammar crates
+and queries are version-pinned together. Adding a language is an explicit dependency and registry entry, not a
 dynamic plugin scan.
 
 The current dependency set is `tree-sitter 0.27.0`, `tree-sitter-rust 0.24.2`,

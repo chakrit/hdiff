@@ -235,7 +235,7 @@ The mean saving is 59.3 million retired instructions per run (paired savings 64.
 
 #### Stored scroll extents
 
-The interactive loop keeps the visible rows and widest row of the selected file, layout,
+The interactive loop keeps the visible rows and widest row of the selected page, layout,
 and context count, and rebuilds them only when one of those changes. Movement bounds read
 the stored extent instead of rescanning the file. Same measurement as
 [Cached layout splits](#cached-layout-splits):

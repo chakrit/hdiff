@@ -127,8 +127,9 @@ valid diff lines without data loss.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `PageIndex`: the selected page in file-list order; the viewport offset is the reader's
   current cursor location and moves without a separate editing cursor.
-- `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
-  and other session-local display choices. Character presentation follows the
+- `ViewPreferences`: layout, granularity, wrapping, context-line count, file-list
+  visibility, and, once semantic diffing lands, a semantic strategy: the session-local
+  display choices. Character presentation follows the
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
 - `Viewport`: the terminal screen size and the scroll position: the vertical line offset
   and the synchronized horizontal offset.
@@ -519,7 +520,7 @@ remain valid values rather than arithmetic errors.
 The viewport's vertical offset indexes the screen lines of the visible rows of the active
 layout at the current context count; a row is one line unless wrapping breaks it into
 several. The frame shows the lines from that offset, and scroll limits count lines. The
-visible rows, their lines, and their widest row are derived once per selected file,
+visible rows, their lines, and their widest row are derived once per selected page,
 layout, context count, and wrap width, and not on movement. Unified rows are lines and
 side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
 the line it starts with. One pane geometry, derived from the screen size and view
