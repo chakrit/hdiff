@@ -12,6 +12,7 @@ pub mod interaction;
 pub mod layout;
 pub mod line_breaks;
 pub mod measurement;
+pub mod navigation;
 pub mod parser;
 pub mod preferences;
 pub mod prepared;

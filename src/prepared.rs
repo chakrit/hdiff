@@ -62,8 +62,8 @@ impl PreparedDocument {
     /// The page at `index`.
     ///
     /// Panics when `index` is not below [`page_count`](Self::page_count).
-    pub fn page(&self, index: usize) -> &PreparedPage {
-        match index.checked_sub(1) {
+    pub fn page(&self, index: PageIndex) -> &PreparedPage {
+        match index.0.checked_sub(1) {
             None => &self.first,
             Some(rest_index) => &self.rest[rest_index],
         }
@@ -87,6 +87,27 @@ impl PreparedDocument {
 
     fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
         std::iter::once(&self.first).chain(&self.rest)
+    }
+}
+
+/// The position of one page in a prepared document's page order, which is the file
+/// list's order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageIndex(usize);
+
+impl PageIndex {
+    pub const FIRST: Self = Self(0);
+
+    /// The page after this one among `page_count` pages, wrapping to the first.
+    pub fn next(self, page_count: NonZeroUsize) -> Self {
+        Self((self.0 + 1) % page_count)
+    }
+
+    /// The page before this one among `page_count` pages, wrapping to the last.
+    pub fn previous(self, page_count: NonZeroUsize) -> Self {
+        let last = page_count.get() - 1;
+
+        Self(self.0.checked_sub(1).unwrap_or(last))
     }
 }
 
@@ -146,7 +167,7 @@ impl PreparedPage {
 
 #[cfg(test)]
 mod tests {
-    use super::PreparedDocument;
+    use super::{PageIndex, PreparedDocument};
     use crate::{parser::parse_unified_diff, preferences::DiffGranularity, styling::TextStyle};
 
     #[test]
@@ -158,14 +179,10 @@ mod tests {
 
         assert_eq!(prepared.file_count(), 2);
         assert_eq!(prepared.record_count(), 4);
-        for (index, expected) in [
+        for (file, expected) in prepared.pages().zip([
             format!("first message\n{patch}"),
             format!("second message\n{patch}trailer\n"),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let file = prepared.page(index);
+        ]) {
             let rendered: Vec<u8> = file
                 .layout()
                 .diff_lines
@@ -223,7 +240,7 @@ mod tests {
 
         let prepared = PreparedDocument::prepare(&document);
 
-        let file = prepared.page(0);
+        let file = prepared.page(PageIndex::FIRST);
         assert!((0..file.layout().diff_lines.len()).any(|row| {
             file.row(row, DiffGranularity::Character)
                 .segments()

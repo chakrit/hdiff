@@ -18,6 +18,46 @@ impl ViewPreferences {
             file_list: FileList::Shown,
         }
     }
+
+    pub const fn after(self, change: PreferenceChange) -> Self {
+        match change {
+            PreferenceChange::NextLayout => Self {
+                layout: self.layout.next(),
+                ..self
+            },
+            PreferenceChange::ToggleGranularity => Self {
+                granularity: self.granularity.toggled(),
+                ..self
+            },
+            PreferenceChange::ToggleWrapping => Self {
+                wrapping: self.wrapping.toggled(),
+                ..self
+            },
+            PreferenceChange::IncreaseContext => Self {
+                context_lines: self.context_lines.saturating_add(1),
+                ..self
+            },
+            PreferenceChange::DecreaseContext => Self {
+                context_lines: self.context_lines.saturating_sub(1),
+                ..self
+            },
+            PreferenceChange::ToggleFileList => Self {
+                file_list: self.file_list.toggled(),
+                ..self
+            },
+        }
+    }
+}
+
+/// One session-local display choice a shortcut changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreferenceChange {
+    NextLayout,
+    ToggleGranularity,
+    ToggleWrapping,
+    IncreaseContext,
+    DecreaseContext,
+    ToggleFileList,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

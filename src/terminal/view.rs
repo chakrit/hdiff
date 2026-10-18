@@ -14,9 +14,6 @@ use crate::{
     theme::Theme,
 };
 
-#[cfg(test)]
-use crate::{document::DiffDocument, prepared::PreparedDocument};
-
 use super::{
     chrome::{
         ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator,
@@ -46,32 +43,6 @@ enum LayoutRows<'a> {
     Stacked(Vec<VisibleLine<VisibleSideBySideRow<'a>>>),
 }
 
-/// Prepares `document` and draws the interaction's selected file.
-#[cfg(test)]
-fn render_document(
-    frame: &mut Frame,
-    document: &DiffDocument,
-    interaction: &Interaction,
-    theme: &Theme,
-) {
-    let prepared = PreparedDocument::prepare(document);
-    let file = prepared.page(interaction.selected_file);
-    let preferences = interaction.preferences;
-    let wrap = Wrap::of(preferences, interaction.viewport.width);
-    let extent = file
-        .layout()
-        .scroll_extent(preferences.layout, preferences.context_lines, wrap);
-
-    render_prepared_frame(
-        frame,
-        prepared.file_tree(),
-        file,
-        &extent,
-        interaction,
-        theme,
-    );
-}
-
 /// Draws `page` through `extent`, the scroll extent of the interaction's layout and
 /// context count, beside the file list of `tree`.
 pub(super) fn render_prepared_frame(
@@ -83,43 +54,47 @@ pub(super) fn render_prepared_frame(
     theme: &Theme,
 ) {
     let area = frame.area();
+    let preferences = interaction.preferences;
+    let panes = pane_layout(area.width, area.height, preferences);
+    let too_small = match panes {
+        PaneLayout::TooNarrow => Some("screen too narrow"),
+        PaneLayout::TooShort => Some("screen too short"),
+        PaneLayout::DiffOnly | PaneLayout::Split { .. } => None,
+    };
+    if let Some(message) = too_small {
+        frame.render_widget(Paragraph::new(message), area);
+        return;
+    }
+
     let row_limit = usize::from(area.height);
-    let granularity = interaction.preferences.granularity;
-    let viewport = &interaction.viewport;
+    let granularity = preferences.granularity;
+    let scroll = interaction.viewport.scroll;
     let side_by_side_rows =
-        || visible_side_by_side_rows(page, extent, viewport, granularity, row_limit);
-    let rows = match interaction.preferences.layout {
+        || visible_side_by_side_rows(page, extent, scroll.vertical, granularity, row_limit);
+    let rows = match preferences.layout {
         DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
             page,
             extent,
-            viewport,
+            scroll.vertical,
             granularity,
             row_limit,
         )),
         DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
         DiffLayout::Stacked => LayoutRows::Stacked(side_by_side_rows()),
     };
-    let preferences = interaction.preferences;
     let display = DisplayRows {
         rows,
         window: LineWindow {
-            first: viewport.vertical_offset,
+            first: scroll.vertical,
             total: extent.line_count(),
         },
-        horizontal_offset: viewport.horizontal_offset,
+        horizontal_offset: scroll.horizontal,
         wrap: Wrap::of(preferences, area.width),
         theme,
     };
 
-    match pane_layout(area.width, area.height, preferences) {
-        PaneLayout::TooNarrow => {
-            frame.render_widget(Paragraph::new("screen too narrow"), area);
-            return;
-        }
-        PaneLayout::TooShort => {
-            frame.render_widget(Paragraph::new("screen too short"), area);
-            return;
-        }
+    match panes {
+        PaneLayout::TooNarrow | PaneLayout::TooShort => {}
         PaneLayout::DiffOnly => {
             render_display_layout(frame, display, area);
             render_help_box(frame, area, &theme.chrome);
@@ -237,7 +212,7 @@ fn render_stacked_rows(
     area: Rect,
     pane_rows: PaneRows<'_, impl Fn(usize) -> RowPlacement>,
 ) {
-    let pane_height = pane_height(usize::from(area.height), DiffLayout::Stacked);
+    let pane_height = pane_height(area.height, DiffLayout::Stacked);
     let pane_height = u16::try_from(pane_height).expect("pane height fits the area");
     let [before_pane, separator, after_pane] = RatatuiLayout::vertical([
         Constraint::Length(pane_height),
@@ -284,26 +259,61 @@ fn pane_pair(row: VisibleSideBySideRow) -> Option<(PaneRow, PaneRow)> {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use ratatui::{
-        Terminal,
+        Frame, Terminal,
         backend::TestBackend,
         buffer::{Buffer, Cell},
+        layout::Size,
         style::{Color, Modifier},
     };
 
-    use super::{render_document, render_prepared_frame};
+    use super::render_prepared_frame;
     use crate::{
+        document::DiffDocument,
         interaction::{
-            DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds, Transition, Viewport,
-            transition_interaction,
+            Command, Destination, DisplayBounds, Event, Interaction, KeymapPopup, ScrollPosition,
+            Transition, Viewport, transition,
         },
+        layout::Wrap,
         parser::parse_unified_diff,
-        preferences::{DiffLayout, FileList, ViewPreferences},
-        prepared::PreparedDocument,
+        preferences::{DiffLayout, FileList, PreferenceChange, ViewPreferences},
+        prepared::{PageIndex, PreparedDocument},
         theme::{ColorDepth, Theme},
     };
 
     const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
+
+    /// Prepares `document` and draws the interaction's selected page.
+    fn render_document(
+        frame: &mut Frame,
+        document: &DiffDocument,
+        interaction: &Interaction,
+        theme: &Theme,
+    ) {
+        let prepared = PreparedDocument::prepare(document);
+        let page = prepared.page(interaction.page);
+        let preferences = interaction.preferences;
+        let wrap = Wrap::of(preferences, interaction.viewport.screen.width);
+        let extent =
+            page.layout()
+                .scroll_extent(preferences.layout, preferences.context_lines, wrap);
+
+        render_prepared_frame(
+            frame,
+            prepared.file_tree(),
+            page,
+            &extent,
+            interaction,
+            theme,
+        );
+    }
+
+    /// The second page of a two-page document.
+    fn second_page() -> PageIndex {
+        PageIndex::FIRST.next(NonZeroUsize::MIN.saturating_add(1))
+    }
 
     #[test]
     fn renders_compact_file_and_diff_panes_with_one_separator() {
@@ -313,9 +323,9 @@ mod tests {
         .expect("valid two-file diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 1,
+            page: second_page(),
             preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::at_start(Size::new(80, 8)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
 
@@ -351,9 +361,9 @@ mod tests {
             .expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(23, 8),
+            viewport: Viewport::at_start(Size::new(23, 8)),
         };
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
 
@@ -374,9 +384,9 @@ mod tests {
         .expect("valid asymmetric diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Vertical),
-            viewport: Viewport::new(80, 9),
+            viewport: Viewport::at_start(Size::new(80, 9)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
@@ -422,9 +432,9 @@ mod tests {
         let document = parse_unified_diff(patch.as_bytes()).expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::at_start(Size::new(80, 8)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
@@ -447,13 +457,14 @@ mod tests {
             .expect("valid diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport {
-                vertical_offset: 0,
-                horizontal_offset: 2,
-                width: 80,
-                height: 8,
+                screen: Size::new(80, 8),
+                scroll: ScrollPosition {
+                    vertical: 0,
+                    horizontal: 2,
+                },
             },
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -475,9 +486,9 @@ mod tests {
         .expect("valid asymmetric diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Vertical),
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::at_start(Size::new(80, 8)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
@@ -511,9 +522,9 @@ mod tests {
         .expect("valid asymmetric diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Stacked),
-            viewport: Viewport::new(80, 20),
+            viewport: Viewport::at_start(Size::new(80, 20)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("test terminal");
 
@@ -556,9 +567,9 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(80, 9),
+            viewport: Viewport::at_start(Size::new(80, 9)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
@@ -649,12 +660,12 @@ mod tests {
                 .expect("valid character diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences {
                 granularity: crate::preferences::DiffGranularity::Character,
                 ..ViewPreferences::initial(DiffLayout::Unified)
             },
-            viewport: Viewport::new(80, 8),
+            viewport: Viewport::at_start(Size::new(80, 8)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
 
@@ -720,29 +731,37 @@ mod tests {
         )
         .expect("valid unmatched Rust changes");
         let prepared = PreparedDocument::prepare(&document);
-        let file = prepared.page(1);
+        let file = prepared.page(second_page());
         let tree = prepared.file_tree();
-        let extent = file
-            .layout()
-            .scroll_extent(diff_layout, 3, crate::layout::Wrap::Off);
+        let extent = file.layout().scroll_extent(diff_layout, 3, Wrap::Off);
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 1,
+            page: second_page(),
             preferences: ViewPreferences::initial(diff_layout),
             viewport: Viewport {
-                vertical_offset: 1,
-                horizontal_offset: 1,
-                width: 160,
-                height: 30,
+                screen: Size::new(160, 30),
+                scroll: ScrollPosition {
+                    vertical: 1,
+                    horizontal: 1,
+                },
             },
         };
-        let bounds = NavigationBounds {
-            page_count: prepared.page_count(),
-            target_display: DisplayBounds {
-                maximum_vertical_offset: file.layout().diff_lines.len().saturating_sub(30),
-                maximum_horizontal_offset: 1,
-            },
-            anchored_vertical_offset: 1,
+        let bounds = DisplayBounds {
+            maximum_vertical_offset: extent.line_count(),
+            maximum_horizontal_offset: 1,
+        };
+        let toggle = |interaction: &Interaction| {
+            let event = Event::Command(Command::Preference(PreferenceChange::ToggleGranularity));
+            let destination = Destination::new(
+                interaction.target(&event),
+                prepared.page_count(),
+                bounds,
+                interaction.viewport.scroll,
+            );
+            let Transition::Redraw(next) = transition(interaction, event, &destination) else {
+                panic!("detail toggle redraws interaction");
+            };
+            next
         };
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("test terminal");
         terminal
@@ -758,12 +777,8 @@ mod tests {
             assert_eq!(cells[0].fg, THEME.syntax.keyword, "Rust keyword");
         }
 
-        let Transition::RedrawInteraction(character) =
-            transition_interaction(&interaction, Input::ToggleGranularity, &bounds)
-        else {
-            panic!("character toggle redraws interaction");
-        };
-        assert_eq!(character.selected_file, interaction.selected_file);
+        let character = toggle(&interaction);
+        assert_eq!(character.page, interaction.page);
         assert_eq!(character.viewport, interaction.viewport);
         terminal
             .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &character, THEME))
@@ -777,11 +792,7 @@ mod tests {
                 assert!(!cell.modifier.contains(Modifier::DIM), "{payload}");
             }
         }
-        let Transition::RedrawInteraction(line) =
-            transition_interaction(&character, Input::ToggleGranularity, &bounds)
-        else {
-            panic!("line toggle redraws interaction");
-        };
+        let line = toggle(&character);
         terminal
             .draw(|frame| render_prepared_frame(frame, tree, file, &extent, &line, THEME))
             .expect("restore line mode from the same prepared file");
@@ -811,9 +822,9 @@ mod tests {
         .expect("valid Rust diff");
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(80, 9),
+            viewport: Viewport::at_start(Size::new(80, 9)),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
 
@@ -860,12 +871,12 @@ mod tests {
     ) -> Interaction {
         Interaction {
             keymap,
-            selected_file: 0,
+            page: PageIndex::FIRST,
             preferences: ViewPreferences {
                 file_list,
                 ..ViewPreferences::initial(DiffLayout::Unified)
             },
-            viewport: Viewport::new(width, usize::from(height)),
+            viewport: Viewport::at_start(Size::new(width, height)),
         }
     }
 

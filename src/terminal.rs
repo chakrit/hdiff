@@ -1,17 +1,11 @@
-use std::{io, num::NonZeroUsize, time::Duration};
+use std::{io, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    interaction::{
-        self, DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds, Transition,
-        Viewport,
-    },
-    layout::{
-        ScreenLine, ScrollExtent, Wrap, content_pane_height, content_pane_width,
-        maximum_horizontal_offset,
-    },
+    interaction::{self, Interaction, Transition},
+    navigation::Navigation,
     preferences::{DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},
@@ -49,39 +43,30 @@ pub enum Step {
 pub struct Tui {
     document: PreparedDocument,
     interaction: Interaction,
-    extent: KeyedExtent,
+    navigation: Navigation,
     theme: &'static Theme,
 }
 
 impl Tui {
     pub fn new(document: PreparedDocument, area: Size, color_depth: ColorDepth) -> Self {
-        let interaction = Interaction {
-            selected_file: 0,
-            preferences: ViewPreferences::initial(DiffLayout::Unified),
-            viewport: Viewport::new(area.width, usize::from(area.height)),
-            keymap: KeymapPopup::Closed,
-        };
-        let extent = KeyedExtent::build(&document, ExtentKey::of(&interaction));
+        let interaction = Interaction::start(ViewPreferences::initial(DiffLayout::Unified), area);
+        let navigation = Navigation::new(&document, &interaction);
 
         Self {
             document,
             interaction,
-            extent,
+            navigation,
             theme: Theme::for_depth(color_depth),
         }
     }
 
     pub fn load(&mut self, document: PreparedDocument) {
-        let viewport = &self.interaction.viewport;
-
-        self.interaction = Interaction {
-            selected_file: 0,
-            preferences: self.interaction.preferences,
-            viewport: Viewport::new(viewport.width, viewport.height),
-            keymap: KeymapPopup::Closed,
-        };
+        self.interaction = Interaction::start(
+            self.interaction.preferences,
+            self.interaction.viewport.screen,
+        );
         self.document = document;
-        self.extent = KeyedExtent::build(&self.document, ExtentKey::of(&self.interaction));
+        self.navigation = Navigation::new(&self.document, &self.interaction);
     }
 
     pub fn preferences(&self) -> ViewPreferences {
@@ -91,7 +76,7 @@ impl Tui {
     pub fn run<B: Backend<Error = io::Error>>(
         &mut self,
         terminal: &mut Terminal<B>,
-        events: impl Iterator<Item = io::Result<Event>>,
+        events: impl Iterator<Item = io::Result<TerminalEvent>>,
     ) -> io::Result<()> {
         self.draw(terminal)?;
 
@@ -106,36 +91,22 @@ impl Tui {
     pub fn step<B: Backend>(
         &mut self,
         terminal: &mut Terminal<B>,
-        event: Event,
+        event: TerminalEvent,
     ) -> Result<Step, B::Error> {
         let keymap = self.interaction.keymap;
-        let Some(input) = input_for_event(event).and_then(|input| keymap.admit(input)) else {
+        let Some(event) = keymap::event_for(event).and_then(|event| event.admitted(keymap)) else {
             return Ok(Step::Continue);
         };
 
-        let focus = Focus::of(&self.interaction, &input, &self.extent.extent);
-        let (target_width, _) = target_screen(&self.interaction, &input);
-        let target = ExtentKey::new(
-            self.interaction.selected_file,
-            interaction::preferences_after(self.interaction.preferences, &input),
-            target_width,
-        );
-        let target_extent = self.extent.select(&self.document, target);
-        let bounds = navigation_bounds(
-            self.document.page_count(),
-            &self.interaction,
-            &input,
-            target_extent,
-            focus,
-        );
+        let destination = self
+            .navigation
+            .destination(&self.document, &self.interaction, &event);
 
-        match interaction::transition_interaction(&self.interaction, input, &bounds) {
+        match interaction::transition(&self.interaction, event, &destination) {
             Transition::Exit => Ok(Step::Exit),
-            Transition::Redraw(_) => unreachable!("interactive transition retains selection"),
-            Transition::RedrawInteraction(next) => {
+            Transition::Redraw(next) => {
                 self.interaction = next;
-                self.extent
-                    .select(&self.document, ExtentKey::of(&self.interaction));
+                self.navigation.settle(&self.document, &self.interaction);
                 self.draw(terminal)?;
                 Ok(Step::Continue)
             }
@@ -143,7 +114,7 @@ impl Tui {
     }
 
     pub fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
-        let page = self.document.page(self.interaction.selected_file);
+        let page = self.document.page(self.interaction.page);
         let tree = self.document.file_tree();
 
         terminal
@@ -152,7 +123,7 @@ impl Tui {
                     frame,
                     tree,
                     page,
-                    &self.extent.extent,
+                    self.navigation.extent(),
                     &self.interaction,
                     self.theme,
                 )
@@ -161,67 +132,14 @@ impl Tui {
     }
 }
 
-/// The scroll extent of one file, layout, context count, and wrap, rebuilt only when that
-/// key changes.
-struct KeyedExtent {
-    key: ExtentKey,
-    extent: ScrollExtent,
-}
-
-impl KeyedExtent {
-    fn build(document: &PreparedDocument, key: ExtentKey) -> Self {
-        let extent =
-            document
-                .page(key.file)
-                .layout()
-                .scroll_extent(key.layout, key.context_lines, key.wrap);
-
-        Self { key, extent }
-    }
-
-    fn select(&mut self, document: &PreparedDocument, key: ExtentKey) -> &ScrollExtent {
-        if self.key != key {
-            *self = Self::build(document, key);
-        }
-        &self.extent
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct ExtentKey {
-    file: usize,
-    layout: DiffLayout,
-    context_lines: usize,
-    wrap: Wrap,
-}
-
-impl ExtentKey {
-    fn new(file: usize, preferences: ViewPreferences, screen_width: u16) -> Self {
-        Self {
-            file,
-            layout: preferences.layout,
-            context_lines: preferences.context_lines,
-            wrap: Wrap::of(preferences, screen_width),
-        }
-    }
-
-    fn of(interaction: &Interaction) -> Self {
-        Self::new(
-            interaction.selected_file,
-            interaction.preferences,
-            interaction.viewport.width,
-        )
-    }
-}
-
 /// Blocking terminal events with consecutive resizes coalesced into the latest one.
 #[derive(Default)]
 struct TtyEvents {
-    pending: Option<Event>,
+    pending: Option<TerminalEvent>,
 }
 
 impl Iterator for TtyEvents {
-    type Item = io::Result<Event>;
+    type Item = io::Result<TerminalEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let event = match self.pending.take() {
@@ -236,15 +154,15 @@ impl Iterator for TtyEvents {
 }
 
 impl TtyEvents {
-    fn coalesce_resize(&mut self, event: Event) -> io::Result<Event> {
-        let Event::Resize(..) = event else {
+    fn coalesce_resize(&mut self, event: TerminalEvent) -> io::Result<TerminalEvent> {
+        let TerminalEvent::Resize(..) = event else {
             return Ok(event);
         };
         let mut latest_resize = event;
 
         while event::poll(Duration::ZERO)? {
             let next_event = event::read()?;
-            if !matches!(next_event, Event::Resize(..)) {
+            if !matches!(next_event, TerminalEvent::Resize(..)) {
                 self.pending = Some(next_event);
                 break;
             }
@@ -254,171 +172,70 @@ impl TtyEvents {
     }
 }
 
-/// The screen line on the diff pane line that `input` keeps in place: the top line for
-/// resizes, the middle line otherwise. See `docs/spec/architecture.md` (View model).
-struct Focus {
-    screen_line: ScreenLine,
-    /// Pane line the screen line sits on.
-    pane_line: usize,
-}
-
-impl Focus {
-    /// No focus when the lines end above the anchor line; the display then fits the pane.
-    fn of(interaction: &Interaction, input: &Input, extent: &ScrollExtent) -> Option<Self> {
-        let viewport = &interaction.viewport;
-        let pane_height = content_pane_height(viewport.height, interaction.preferences.layout);
-        let pane_line = match input {
-            Input::Resize { .. } => 0,
-            _ => pane_height / 2,
-        };
-
-        extent
-            .lines(viewport.vertical_offset + pane_line, 1)
-            .next()
-            .map(|screen_line| Self {
-                screen_line,
-                pane_line,
-            })
-    }
-}
-
-/// Bounds of the display `input` leads to, whose rows are `target_extent`.
-fn navigation_bounds(
-    page_count: NonZeroUsize,
-    interaction: &Interaction,
-    input: &Input,
-    target_extent: &ScrollExtent,
-    focus: Option<Focus>,
-) -> NavigationBounds {
-    let display_preferences = interaction::preferences_after(interaction.preferences, input);
-    let (screen_width, screen_height) = target_screen(interaction, input);
-    let pane_width = content_pane_width(screen_width, display_preferences);
-    let pane_height = content_pane_height(screen_height, display_preferences.layout);
-
-    NavigationBounds {
-        page_count,
-        target_display: DisplayBounds {
-            maximum_vertical_offset: target_extent.line_count().saturating_sub(pane_height),
-            maximum_horizontal_offset: maximum_horizontal_offset(target_extent.width(), pane_width),
-        },
-        anchored_vertical_offset: focus.map_or(0, |focus| {
-            let ScreenLine { row, line } = focus.screen_line;
-            target_extent
-                .offset_of(row, line)
-                .saturating_sub(focus.pane_line)
-        }),
-    }
-}
-
-/// The screen width and height after `input`.
-fn target_screen(interaction: &Interaction, input: &Input) -> (u16, usize) {
-    match input {
-        Input::Resize { width, height } => (*width, usize::from(*height)),
-        _ => (interaction.viewport.width, interaction.viewport.height),
-    }
-}
-
-fn input_for_event(event: Event) -> Option<Input> {
-    match event {
-        Event::Key(key) if key.kind == KeyEventKind::Press => input_for_key(key),
-        Event::Resize(width, height) => Some(Input::Resize { width, height }),
-        _ => None,
-    }
-}
-fn input_for_key(key: KeyEvent) -> Option<Input> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('q'), _) => Some(Input::Quit),
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Input::Interrupt),
-        (KeyCode::Char('h'), _) => Some(Input::Left),
-        (KeyCode::Char('l'), _) => Some(Input::Right),
-        (KeyCode::Char('0') | KeyCode::Char('^'), _) => Some(Input::HorizontalStart),
-        (KeyCode::Char('$'), _) => Some(Input::HorizontalEnd),
-        (KeyCode::Char('j') | KeyCode::Down, _) => Some(Input::Down),
-        (KeyCode::Char('k') | KeyCode::Up, _) => Some(Input::Up),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Input::HalfPageDown),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Input::HalfPageUp),
-        (KeyCode::Char('g'), _) => Some(Input::Top),
-        (KeyCode::Char('G'), _) => Some(Input::Bottom),
-        (KeyCode::Char('v'), _) => Some(Input::NextLayout),
-        (KeyCode::Char('c'), _) => Some(Input::ToggleGranularity),
-        (KeyCode::Char('w'), _) => Some(Input::ToggleWrapping),
-        (KeyCode::Char('+'), _) => Some(Input::IncreaseContext),
-        (KeyCode::Char('-'), _) => Some(Input::DecreaseContext),
-        (KeyCode::Char('e'), _) => Some(Input::ToggleFileList),
-        (KeyCode::Char('?'), _) => Some(Input::OpenKeymap),
-        (KeyCode::Esc, _) => Some(Input::CloseKeymap),
-        (KeyCode::Tab, KeyModifiers::SHIFT) => Some(Input::PreviousFile),
-        (KeyCode::Tab, _) => Some(Input::NextFile),
-        (KeyCode::BackTab, _) => Some(Input::PreviousFile),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend, layout::Size};
 
-    use super::{Input, OutputMode, input_for_event, mode_for_output};
+    use super::{OutputMode, Tui, mode_for_output};
     use crate::{
-        interaction::KeymapPopup,
+        interaction::Interaction,
+        layout::Wrap,
+        parser::{parse_comparison_output, parse_unified_diff},
+        preferences::{DiffLayout, ViewPreferences},
+        prepared::{PageIndex, PreparedDocument},
         theme::{ColorDepth, Theme},
     };
 
+    fn screen_text(terminal: &Terminal<TestBackend>) -> String {
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
     #[test]
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
-        use crate::{
-            interaction::{Interaction, Viewport},
-            layout::Wrap,
-            parser::parse_unified_diff,
-            preferences::{DiffLayout, ViewPreferences},
-            prepared::PreparedDocument,
-        };
-        use ratatui::{Terminal, backend::TestBackend};
-
         let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
         let input = format!("first message\n{patch}second message\n{patch}trailer\n");
         let document = parse_unified_diff(input.as_bytes()).expect("diffs with messages");
         let prepared = PreparedDocument::prepare(&document);
+        let second = PageIndex::FIRST.next(prepared.page_count());
 
         for (layout, copies) in [
             (DiffLayout::Unified, 1),
             (DiffLayout::Vertical, 2),
             (DiffLayout::Stacked, 2),
         ] {
-            for (selected_file, message, absent, trailers) in [
-                (0, "first message", "second message", 0),
-                (1, "second message", "first message", copies),
+            for (page, message, absent, trailers) in [
+                (PageIndex::FIRST, "first message", "second message", 0),
+                (second, "second message", "first message", copies),
             ] {
                 let interaction = Interaction {
-                    keymap: KeymapPopup::Closed,
-                    selected_file,
-                    preferences: ViewPreferences::initial(layout),
-                    viewport: Viewport::new(120, 30),
+                    page,
+                    ..Interaction::start(ViewPreferences::initial(layout), Size::new(120, 30))
                 };
+                let extent = prepared
+                    .page(page)
+                    .layout()
+                    .scroll_extent(layout, 3, Wrap::Off);
                 let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
                 terminal
                     .draw(|frame| {
                         super::view::render_prepared_frame(
                             frame,
                             prepared.file_tree(),
-                            prepared.page(selected_file),
-                            &prepared.page(selected_file).layout().scroll_extent(
-                                layout,
-                                3,
-                                Wrap::Off,
-                            ),
+                            prepared.page(page),
+                            &extent,
                             &interaction,
                             Theme::for_depth(ColorDepth::TrueColor),
                         )
                     })
                     .expect("render prepared frame");
-                let text: String = terminal
-                    .backend()
-                    .buffer()
-                    .content
-                    .iter()
-                    .map(|cell| cell.symbol())
-                    .collect();
+                let text = screen_text(&terminal);
 
                 assert_eq!(text.matches(message).count(), copies, "{layout:?}");
                 assert!(!text.contains(absent), "{layout:?}");
@@ -431,13 +248,10 @@ mod tests {
     /// surrounding text is shown).
     #[test]
     fn shows_comparison_output_that_holds_only_text() {
-        use crate::{parser::parse_comparison_output, prepared::PreparedDocument};
-        use ratatui::{Terminal, backend::TestBackend, layout::Size};
-
         let document = parse_comparison_output(b"Binary files a.bin and b.bin differ\n")
             .expect("text-only comparison output");
         let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
-        let mut tui = super::Tui::new(
+        let mut tui = Tui::new(
             PreparedDocument::prepare(&document),
             Size::new(120, 30),
             ColorDepth::TrueColor,
@@ -445,127 +259,16 @@ mod tests {
 
         tui.draw(&mut terminal).expect("initial frame");
         for key in [KeyCode::Char('j'), KeyCode::Tab, KeyCode::BackTab] {
-            let event = CrosstermEvent::Key(KeyEvent::new(key, KeyModifiers::NONE));
+            let event = TerminalEvent::Key(KeyEvent::new(key, KeyModifiers::NONE));
             tui.step(&mut terminal, event).expect("step");
         }
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
 
-        assert!(text.contains("Binary files a.bin and b.bin differ"));
+        assert!(screen_text(&terminal).contains("Binary files a.bin and b.bin differ"));
     }
 
     #[test]
     fn requests_interactive_mode_only_for_terminal_output() {
         assert_eq!(mode_for_output(false), OutputMode::Finite);
         assert_eq!(mode_for_output(true), OutputMode::Interactive);
-    }
-
-    #[test]
-    fn maps_pager_keys_and_resize_events() {
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('j'),
-                KeyModifiers::NONE
-            ))),
-            Some(Input::Down)
-        );
-        for (key, expected) in [
-            ('h', Input::Left),
-            ('l', Input::Right),
-            ('0', Input::HorizontalStart),
-            ('^', Input::HorizontalStart),
-            ('$', Input::HorizontalEnd),
-        ] {
-            assert_eq!(
-                input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                    KeyCode::Char(key),
-                    KeyModifiers::NONE
-                ))),
-                Some(expected),
-                "{key} horizontal movement"
-            );
-        }
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Tab,
-                KeyModifiers::NONE
-            ))),
-            Some(Input::NextFile)
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('v'),
-                KeyModifiers::NONE
-            ))),
-            Some(Input::NextLayout)
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('+'),
-                KeyModifiers::NONE
-            ))),
-            Some(Input::IncreaseContext)
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('-'),
-                KeyModifiers::NONE
-            ))),
-            Some(Input::DecreaseContext)
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::BackTab,
-                KeyModifiers::SHIFT
-            ))),
-            Some(Input::PreviousFile)
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Tab,
-                KeyModifiers::SHIFT
-            ))),
-            Some(Input::PreviousFile)
-        );
-        for (key, expected) in [
-            (KeyCode::Char('e'), Input::ToggleFileList),
-            (KeyCode::Char('?'), Input::OpenKeymap),
-            (KeyCode::Esc, Input::CloseKeymap),
-        ] {
-            assert_eq!(
-                input_for_event(CrosstermEvent::Key(KeyEvent::new(key, KeyModifiers::NONE))),
-                Some(expected),
-                "{key:?}"
-            );
-        }
-        for key in ['{', '}'] {
-            assert_eq!(
-                input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                    KeyCode::Char(key),
-                    KeyModifiers::NONE
-                ))),
-                None,
-                "{key} has no cursor-visible destination"
-            );
-        }
-        assert_eq!(
-            input_for_event(CrosstermEvent::Resize(100, 30)),
-            Some(Input::Resize {
-                width: 100,
-                height: 30,
-            })
-        );
-        assert_eq!(
-            input_for_event(CrosstermEvent::Key(KeyEvent::new(
-                KeyCode::Char('c'),
-                KeyModifiers::CONTROL
-            ))),
-            Some(Input::Interrupt)
-        );
     }
 }

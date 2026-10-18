@@ -90,7 +90,7 @@ document; it owns neither the terminal nor the input source.
 ```text
 tui.load(document)            replaces the current document
 tui.run(&mut terminal, events) draws, then steps each event until Exit
-tui.step(&mut terminal, event) event -> Input -> Interaction transition -> draw -> Continue | Exit
+tui.step(&mut terminal, event) event -> Event -> Interaction transition -> draw -> Continue | Exit
 ```
 
 Output is Ratatui's `Terminal<B: Backend>`. Input is any
@@ -125,20 +125,24 @@ valid diff lines without data loss.
   headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
-- `Selection`: the active file-list selection; the viewport offset is the reader's current
-  cursor location and moves without a separate editing cursor.
+- `PageIndex`: the selected page in file-list order; the viewport offset is the reader's
+  current cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, semantic strategy, wrapping, context-line count,
   and other session-local display choices. Character presentation follows the
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
-- `Viewport`: terminal width, height, vertical position, and synchronized horizontal offset.
+- `Viewport`: the terminal screen size and the scroll position: the vertical line offset
+  and the synchronized horizontal offset.
 - `Layout`: retained rendered rows, split pairs, and source addresses.
 - Visible layout: derived panes, effective visibility, the help hint, and the keymap popup.
 
-The interaction state is a value that transitions in response to an input event. A transition
-returns a new state and a rendering request; it does not reach into the terminal or document.
-Selection, viewport position, and preferences are authoritative interaction state. Wrapping,
-row numbers, pane geometry, and rendered rows are derived. This makes navigation testable
-without a real terminal and keeps invalid positions out of the renderer.
+The interaction state is a value that transitions in response to an event: a bound command,
+or a session event (interrupt or resize) that applies in every mode, so no mode can
+intercept one. A transition returns a new state and a rendering request; it does not reach
+into the terminal or document. The selected page, viewport position, and preferences are
+authoritative interaction state. Wrapping, row numbers, pane geometry, and rendered rows
+are derived. Navigation, which finds the display an event leads to and its bounds, is
+independent of the terminal. This makes navigation testable without a real terminal and
+keeps invalid positions out of the renderer.
 
 ## Input contract
 
@@ -442,11 +446,12 @@ Vim semantics.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 
-The keymap popup lists every shortcut in the table above under four headings: Scroll,
-Files, View, and Keymap and exit. Scroll shows `h`, `j`, `k`, and `l` as a diamond. It never
-advertises a deferred shortcut. The groups sit in two columns when the screen is wide
-enough and in one column otherwise. Headings take the hunk-header tone in bold, keys the
-syntax function color, actions the file-name tone, and the border the separator tone.
+The keymap popup is drawn from the key bindings themselves and lists every shortcut in the
+table above under four headings: Scroll, Files, View, and Keymap and exit. Scroll shows
+`h`, `j`, `k`, and `l` as a diamond. It never advertises a deferred shortcut. The groups
+sit in two columns when the screen is wide enough and in one column otherwise. Headings
+take the hunk-header tone in bold, keys the syntax function color, actions the file-name
+tone, and the border the separator tone.
 
 ## Technology direction
 

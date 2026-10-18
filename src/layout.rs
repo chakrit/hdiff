@@ -35,7 +35,7 @@ pub fn pane_layout(width: u16, height: u16, preferences: ViewPreferences) -> Pan
     if width < MINIMUM_SCREEN_WIDTH {
         return PaneLayout::TooNarrow;
     }
-    if content_pane_height(usize::from(height), preferences.layout) == 0 {
+    if content_pane_height(height, preferences.layout) == 0 {
         return PaneLayout::TooShort;
     }
 
@@ -82,7 +82,9 @@ pub fn content_pane_width(screen_width: u16, preferences: ViewPreferences) -> u1
 
 /// Rows of each diff pane, frame included; stacked panes share the height around a
 /// one-row separator.
-pub fn pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
+pub fn pane_height(screen_height: u16, display_layout: DiffLayout) -> usize {
+    let screen_height = usize::from(screen_height);
+
     match display_layout {
         DiffLayout::Unified | DiffLayout::Vertical => screen_height,
         DiffLayout::Stacked => screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
@@ -90,7 +92,7 @@ pub fn pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
 }
 
 /// Rows of each diff pane's content, inside its frame.
-pub fn content_pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
+pub fn content_pane_height(screen_height: u16, display_layout: DiffLayout) -> usize {
     pane_height(screen_height, display_layout).saturating_sub(PANE_FRAME_HEIGHT)
 }
 

@@ -928,7 +928,7 @@ fn file_list_toggle(mode: Mode) {
         live.press('j');
     }
     let start = live.buffer();
-    let pane_height = content_pane_height(usize::from(HEIGHT), mode.layout);
+    let pane_height = content_pane_height(HEIGHT, mode.layout);
     let middle_line = FIRST_CONTENT_LINE + pane_height / 2;
     let middle = change_label(&live.rows()[middle_line]);
     assert!(middle.is_some(), "a labeled row on the middle line");

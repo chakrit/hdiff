@@ -2,7 +2,6 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     document::RecordKind,
-    interaction::Viewport,
     layout::{ScrollExtent, SideBySideRow},
     preferences::DiffGranularity,
     prepared::PreparedPage,
@@ -61,12 +60,12 @@ pub(super) struct VisibleLine<R> {
 pub(super) fn visible_diff_rows<'a>(
     file: &'a PreparedPage,
     extent: &ScrollExtent,
-    viewport: &Viewport,
+    first_line: usize,
     granularity: DiffGranularity,
     row_limit: usize,
 ) -> Vec<VisibleLine<StyledRow<'a>>> {
     extent
-        .lines(viewport.vertical_offset, row_limit)
+        .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
             row: file.row(screen_line.row, granularity),
             line: screen_line.line,
@@ -77,7 +76,7 @@ pub(super) fn visible_diff_rows<'a>(
 pub(super) fn visible_side_by_side_rows<'a>(
     file: &'a PreparedPage,
     extent: &ScrollExtent,
-    viewport: &Viewport,
+    first_line: usize,
     granularity: DiffGranularity,
     row_limit: usize,
 ) -> Vec<VisibleLine<VisibleSideBySideRow<'a>>> {
@@ -99,7 +98,7 @@ pub(super) fn visible_side_by_side_rows<'a>(
     };
 
     extent
-        .lines(viewport.vertical_offset, row_limit)
+        .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
             row: side_by_side_row(screen_line.row),
             line: screen_line.line,
