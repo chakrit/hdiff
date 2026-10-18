@@ -47,11 +47,16 @@ impl HeaderPath {
 
 // Git's C-style quoting
 
-/// A field that Git may have quoted, decoded.
+/// A whole field that Git may have quoted, decoded. A quoted field must end at its
+/// closing quote.
 pub fn quoted_or_plain(field: &str) -> Option<Box<str>> {
-    match field.starts_with('"') {
-        true => unquote(field).map(|(path, _)| path),
-        false => Some(field.into()),
+    if !field.starts_with('"') {
+        return Some(field.into());
+    }
+
+    match unquote(field)? {
+        (path, "") => Some(path),
+        (_, _trailing) => None,
     }
 }
 
@@ -117,5 +122,18 @@ mod tests {
         );
         assert_eq!(HeaderPath::of_field("/dev/null"), HeaderPath::DevNull);
         assert_eq!(HeaderPath::of_field("\"b/open"), HeaderPath::Undecodable);
+    }
+
+    #[test]
+    fn quoted_fields_reject_text_after_the_closing_quote() {
+        assert_eq!(
+            HeaderPath::of_field("\"b/x\\tz.rs\""),
+            HeaderPath::Path("b/x\tz.rs".into())
+        );
+        assert_eq!(
+            HeaderPath::of_field("\"b/x.rs\" junk"),
+            HeaderPath::Undecodable
+        );
+        assert_eq!(super::quoted_or_plain("\"x\" junk"), None);
     }
 }
