@@ -64,7 +64,7 @@ Track project tasks in this repository's Markdown. This roadmap owns the backlog
   to `/dev/tty` through a staged session restored in reverse order; human check passed on
   2026-10-16.
 
-Automated checks (formatting, Clippy, `cargo test --locked` including `tests/live.rs`)
+Automated checks (formatting, Clippy, `cargo test --locked` including the `live` target)
 and human terminal checks passed for every delivered slice. Historical delivery plans
 and verification records are preserved in `.ace/spec-cleanup-roadmap-before.md` and in
 Git history.
