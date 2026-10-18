@@ -1,9 +1,13 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
-    fs, io,
+    fmt, fs, io,
     path::{Path, PathBuf},
-    process::Command,
+};
+
+use super::{
+    backup_global_git_config::BackupGlobalGitConfig,
+    set_global_diff_pager::{self, SetGlobalDiffPager},
 };
 
 pub struct InstallGitDiffPager {
@@ -25,6 +29,24 @@ pub struct InstallGitDiffPagerReport {
     pub completed_commands: Vec<String>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    MissingHome,
+    GlobalConfigDisabled,
+    NonUtf8Path(PathRole),
+    InspectConfig(io::Error),
+    Backup(io::Error),
+    SetPager(set_global_diff_pager::Error),
+}
+
+/// Which path `--install` could not spell as a shell command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PathRole {
+    Executable,
+    Config,
+    Backup,
+}
+
 impl GitConfigEnvironment {
     pub fn of_process() -> Self {
         Self {
@@ -39,19 +61,53 @@ impl InstallGitDiffPager {
     pub fn run(
         self,
         context: &mut InstallGitDiffPagerContext,
-    ) -> io::Result<InstallGitDiffPagerReport> {
+    ) -> Result<InstallGitDiffPagerReport, Error> {
         let plan = InstallPlan::new(&context.environment, &self.executable)?;
 
         if let Some(backup) = &plan.backup {
-            BackupGlobalGitConfig { backup }.run(context)?;
+            BackupGlobalGitConfig {
+                source: &backup.source,
+                destination: &backup.destination,
+            }
+            .run(context)
+            .map_err(Error::Backup)?;
         }
-        SetGlobalGitConfig {
-            key: "pager.diff",
-            value: &plan.pager_command,
+        SetGlobalDiffPager {
+            command: &plan.pager_command,
         }
-        .run(context)?;
+        .run(context)
+        .map_err(Error::SetPager)?;
 
         Ok(plan.report())
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingHome => {
+                formatter.write_str("HOME is required to locate the global Git config")
+            }
+            Self::GlobalConfigDisabled => {
+                formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
+            }
+            Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
+            Self::InspectConfig(error) => write!(formatter, "Git config: {error}"),
+            Self::Backup(error) => write!(formatter, "Git config backup: {error}"),
+            Self::SetPager(error) => write!(formatter, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl PathRole {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Executable => "hdiff executable path",
+            Self::Config => "Git config path",
+            Self::Backup => "Git config backup path",
+        }
     }
 }
 
@@ -68,11 +124,11 @@ struct Backup {
 }
 
 impl InstallPlan {
-    fn new(environment: &GitConfigEnvironment, executable: &Path) -> io::Result<Self> {
+    fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config_path = global_config_path(environment)?;
-        let pager_command = shell_quote(utf8(executable, "hdiff executable path")?);
+        let pager_command = shell_quote(utf8(executable, PathRole::Executable)?);
 
-        let backup = match fs::exists(&config_path)? {
+        let backup = match exists(&config_path)? {
             true => Some(Backup::of(config_path)?),
             false => None,
         };
@@ -94,12 +150,12 @@ impl InstallPlan {
 }
 
 impl Backup {
-    fn of(source: PathBuf) -> io::Result<Self> {
+    fn of(source: PathBuf) -> Result<Self, Error> {
         let destination = backup_path(&source);
         let copy_command = format!(
             "cp {} {}",
-            shell_quote(utf8(&source, "Git config path")?),
-            shell_quote(utf8(&destination, "Git config backup path")?)
+            shell_quote(utf8(&source, PathRole::Config)?),
+            shell_quote(utf8(&destination, PathRole::Backup)?)
         );
 
         Ok(Self {
@@ -110,56 +166,8 @@ impl Backup {
     }
 }
 
-struct BackupGlobalGitConfig<'a> {
-    backup: &'a Backup,
-}
-
-impl BackupGlobalGitConfig<'_> {
-    fn run(self, _context: &mut InstallGitDiffPagerContext) -> io::Result<()> {
-        fs::copy(&self.backup.source, &self.backup.destination).map(|_| ())
-    }
-}
-
-struct SetGlobalGitConfig<'a> {
-    key: &'a str,
-    value: &'a str,
-}
-
-impl SetGlobalGitConfig<'_> {
-    fn run(self, context: &mut InstallGitDiffPagerContext) -> io::Result<()> {
-        let environment = &context.environment;
-        let mut command = Command::new("git");
-        command.args(["config", "--global", self.key, self.value]);
-        set_or_remove(
-            &mut command,
-            "GIT_CONFIG_GLOBAL",
-            &environment.git_config_global,
-        );
-        set_or_remove(&mut command, "HOME", &environment.home);
-        set_or_remove(
-            &mut command,
-            "XDG_CONFIG_HOME",
-            &environment.xdg_config_home,
-        );
-
-        let output = command.output()?;
-
-        if output.status.success() {
-            return Ok(());
-        }
-        Err(io::Error::other(String::from_utf8_lossy(&output.stderr)))
-    }
-}
-
-/// Gives Git exactly the environment the config path was resolved from.
-fn set_or_remove(command: &mut Command, key: &str, value: &Option<OsString>) {
-    match value {
-        Some(value) => command.env(key, value),
-        None => command.env_remove(key),
-    };
-}
-
-fn global_config_path(environment: &GitConfigEnvironment) -> io::Result<PathBuf> {
+/// Resolves the file `git config --global` writes, in the order of git-config(1) FILES.
+fn global_config_path(environment: &GitConfigEnvironment) -> Result<PathBuf, Error> {
     if let Some(path) = &environment.git_config_global {
         return configured_global_path(path);
     }
@@ -168,9 +176,9 @@ fn global_config_path(environment: &GitConfigEnvironment) -> io::Result<PathBuf>
         .home
         .as_ref()
         .map(PathBuf::from)
-        .ok_or_else(|| io::Error::other("HOME is required to locate the global Git config"))?;
+        .ok_or(Error::MissingHome)?;
     let home_config = home.join(".gitconfig");
-    if fs::exists(&home_config)? {
+    if exists(&home_config)? {
         return Ok(home_config);
     }
 
@@ -179,22 +187,24 @@ fn global_config_path(environment: &GitConfigEnvironment) -> io::Result<PathBuf>
         None => home.join(".config"),
     };
     let xdg_config = xdg_config_home.join("git/config");
-    if fs::exists(&xdg_config)? {
+    if exists(&xdg_config)? {
         return Ok(xdg_config);
     }
 
     Ok(home_config)
 }
 
-fn configured_global_path(path: &OsStr) -> io::Result<PathBuf> {
+fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
     let path = PathBuf::from(path);
     if path == Path::new("/dev/null") {
-        return Err(io::Error::other(
-            "GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration",
-        ));
+        return Err(Error::GlobalConfigDisabled);
     }
 
     Ok(path)
+}
+
+fn exists(path: &Path) -> Result<bool, Error> {
+    fs::exists(path).map_err(Error::InspectConfig)
 }
 
 /// The sibling backup file: the config's own name with `.bak` appended.
@@ -205,9 +215,8 @@ fn backup_path(config_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn utf8<'a>(path: &'a Path, description: &str) -> io::Result<&'a str> {
-    path.to_str()
-        .ok_or_else(|| io::Error::other(format!("{description} is not valid UTF-8")))
+fn utf8(path: &Path, role: PathRole) -> Result<&str, Error> {
+    path.to_str().ok_or(Error::NonUtf8Path(role))
 }
 
 fn shell_quote(value: &str) -> String {
@@ -220,7 +229,7 @@ fn shell_quote(value: &str) -> String {
 mod tests {
     use std::{ffi::OsStr, fs, os::unix::ffi::OsStrExt, path::Path};
 
-    use super::{GitConfigEnvironment, InstallPlan, backup_path};
+    use super::{Error, GitConfigEnvironment, InstallPlan, PathRole, backup_path};
 
     fn environment_for(config_path: &Path) -> GitConfigEnvironment {
         GitConfigEnvironment {
@@ -240,9 +249,19 @@ mod tests {
         let plan = InstallPlan::new(&environment_for(&config_path), executable);
 
         assert!(
-            plan.is_err(),
+            matches!(plan, Err(Error::NonUtf8Path(PathRole::Executable))),
             "a non-UTF-8 executable cannot form a pager command"
         );
+    }
+
+    #[test]
+    fn rejects_a_disabled_global_config() {
+        let plan = InstallPlan::new(
+            &environment_for(Path::new("/dev/null")),
+            Path::new("/bin/hdiff"),
+        );
+
+        assert!(matches!(plan, Err(Error::GlobalConfigDisabled)));
     }
 
     #[test]

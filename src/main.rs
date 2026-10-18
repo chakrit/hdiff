@@ -8,7 +8,9 @@ use std::{
 
 use hdiff::{
     actions::{
-        git_config::{GitConfigEnvironment, InstallGitDiffPager, InstallGitDiffPagerContext},
+        install_git_diff_pager::{
+            self, GitConfigEnvironment, InstallGitDiffPager, InstallGitDiffPagerContext,
+        },
         write_output::{OutputContext, WriteOutput},
     },
     bench,
@@ -125,7 +127,7 @@ enum RunError {
     Input(input::Error),
     Parse(ParseError),
     Executable(io::Error),
-    Install(io::Error),
+    Install(install_git_diff_pager::Error),
     Bench(bench::Error),
     Output(io::Error),
     Terminal(io::Error),
