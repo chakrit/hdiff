@@ -108,7 +108,7 @@ fn install_backs_up_and_configures_the_global_diff_pager() {
         String::from_utf8_lossy(&installation.stderr)
     );
     assert_eq!(
-        fs::read_to_string(config_path.with_extension("bak")).expect("read backup"),
+        fs::read_to_string(env.path("gitconfig.bak")).expect("read backup"),
         original_config
     );
     let command = git_config(&config_path, "pager.diff");

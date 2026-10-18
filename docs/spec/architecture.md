@@ -145,9 +145,10 @@ operands compare files; two directory operands compare corresponding entries; `-
 recursive directory comparison; and `-` denotes standard input. hdiff adds viewer modes
 for one existing patch or diff file and for a unified diff supplied on standard input.
 It accepts unified diffs from any producer. `--install` is the sole Git integration: it
-backs up the exact global config file Git will write to a sibling `.bak` file, then
-overwrites `pager.diff` through `git config --global`; hdiff never parses or rewrites Git
-config text.
+backs up the exact global config file Git will write to a sibling file named by appending
+`.bak` to its name, then overwrites `pager.diff` through `git config --global`; hdiff never
+parses or rewrites Git config text. Every path and command is validated before the first
+write.
 
 Zero-byte viewer input exits silently with status 0 before parsing, preparation,
 or terminal acquisition. This applies to stdin, an empty patch file, and identical

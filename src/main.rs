@@ -11,7 +11,9 @@ fn main() -> Result<(), String> {
         input::Command::Help => write_stdout(input::HELP.as_bytes())?,
         input::Command::Install => {
             let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-            let mut context = actions::git_config::InstallGitDiffPagerContext;
+            let mut context = actions::git_config::InstallGitDiffPagerContext {
+                environment: actions::git_config::GitConfigEnvironment::of_process(),
+            };
 
             let report = actions::git_config::InstallGitDiffPager { executable }
                 .run(&mut context)
