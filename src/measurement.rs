@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Labels,
     Layout,
@@ -10,6 +10,60 @@ pub enum Stage {
     Projection,
     Parse,
     Query,
+}
+
+impl Stage {
+    /// Every stage, in report order.
+    pub const ALL: [Self; 8] = [
+        Self::Labels,
+        Self::Layout,
+        Self::Syntax,
+        Self::Detail,
+        Self::Language,
+        Self::Projection,
+        Self::Parse,
+        Self::Query,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Labels => "labels",
+            Self::Layout => "layout",
+            Self::Syntax => "syntax",
+            Self::Detail => "detail",
+            Self::Language => "language",
+            Self::Projection => "projection",
+            Self::Parse => "parse",
+            Self::Query => "query",
+        }
+    }
+
+    /// The enclosing measurement whose duration this stage's duration partitions.
+    pub const fn parent(self) -> Parent {
+        match self {
+            Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
+            Self::Language | Self::Projection | Self::Parse | Self::Query => Parent::Syntax,
+        }
+    }
+}
+
+/// A measurement partitioned by disjoint child stages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Parent {
+    Preparation,
+    Syntax,
+}
+
+impl Parent {
+    /// Every parent, in report order.
+    pub const ALL: [Self; 2] = [Self::Preparation, Self::Syntax];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Preparation => "preparation",
+            Self::Syntax => "syntax",
+        }
+    }
 }
 
 pub enum Work {
@@ -36,101 +90,85 @@ impl Observer for Unobserved {
     fn count(&mut self, _: Work) {}
 }
 
+/// Accumulated stage durations and work counts from one observed preparation.
 #[derive(Default)]
 pub struct Profile {
-    durations: [Duration; 8],
-    hunks: usize,
-    parse_calls: usize,
-    captures: usize,
-    projected_bytes: usize,
+    durations: StageDurations,
+    work: WorkCounts,
+}
+
+impl Profile {
+    pub fn duration(&self, stage: Stage) -> Duration {
+        *self.durations.get(stage)
+    }
+
+    pub fn work(&self) -> &WorkCounts {
+        &self.work
+    }
 }
 
 impl Observer for Profile {
     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
         let started = Instant::now();
         let result = operation(self);
-        self.durations[stage as usize] += started.elapsed();
+        *self.durations.get_mut(stage) += started.elapsed();
         result
     }
 
     fn count(&mut self, work: Work) {
         match work {
-            Work::Hunk => self.hunks += 1,
-            Work::Parse => self.parse_calls += 1,
-            Work::Capture => self.captures += 1,
-            Work::ProjectedBytes(bytes) => self.projected_bytes += bytes,
+            Work::Hunk => self.work.hunks += 1,
+            Work::Parse => self.work.parse_calls += 1,
+            Work::Capture => self.work.captures += 1,
+            Work::ProjectedBytes(bytes) => self.work.projected_bytes += bytes,
         }
     }
 }
 
-impl Profile {
-    pub fn report(&self, preparation: Duration) -> String {
-        let mut output = String::from("profile version=1\n");
-        let groups = [
-            (
-                "preparation",
-                preparation,
-                &[
-                    ("labels", Stage::Labels),
-                    ("layout", Stage::Layout),
-                    ("syntax", Stage::Syntax),
-                    ("detail", Stage::Detail),
-                ][..],
-            ),
-            (
-                "syntax",
-                self.durations[Stage::Syntax as usize],
-                &[
-                    ("language", Stage::Language),
-                    ("projection", Stage::Projection),
-                    ("parse", Stage::Parse),
-                    ("query", Stage::Query),
-                ][..],
-            ),
-        ];
-        for (parent, total, stages) in groups {
-            let mut attributed = Duration::ZERO;
-            for (name, stage) in stages {
-                let duration = self.durations[*stage as usize];
-                attributed += duration;
-                output.push_str(&format!(
-                    "stage name={name} parent={parent} duration_ns={}\n",
-                    duration.as_nanos()
-                ));
-            }
-            let remainder = total
-                .checked_sub(attributed)
-                .expect("disjoint stage durations fit inside their parent");
-            output.push_str(&format!(
-                "stage name=unattributed parent={parent} duration_ns={}\n",
-                remainder.as_nanos()
-            ));
+#[derive(Default)]
+pub struct WorkCounts {
+    pub hunks: usize,
+    pub parse_calls: usize,
+    pub captures: usize,
+    pub projected_bytes: usize,
+}
+
+#[derive(Default)]
+struct StageDurations {
+    labels: Duration,
+    layout: Duration,
+    syntax: Duration,
+    detail: Duration,
+    language: Duration,
+    projection: Duration,
+    parse: Duration,
+    query: Duration,
+}
+
+impl StageDurations {
+    fn get(&self, stage: Stage) -> &Duration {
+        match stage {
+            Stage::Labels => &self.labels,
+            Stage::Layout => &self.layout,
+            Stage::Syntax => &self.syntax,
+            Stage::Detail => &self.detail,
+            Stage::Language => &self.language,
+            Stage::Projection => &self.projection,
+            Stage::Parse => &self.parse,
+            Stage::Query => &self.query,
         }
-        output.push_str(&format!(
-            "work hunks={} parse_calls={} captures={} projected_bytes={}\n",
-            self.hunks, self.parse_calls, self.captures, self.projected_bytes
-        ));
-        output
     }
-}
 
-pub struct Startup {
-    pub input: Duration,
-    pub parse: Duration,
-    pub preparation: Duration,
-    pub ready: Duration,
-    pub bytes: usize,
-}
-
-impl Startup {
-    pub fn report(&self) -> String {
-        format!(
-            "startup version=1 input_ns={} parse_ns={} preparation_ns={} ready_ns={} bytes={}\n",
-            self.input.as_nanos(),
-            self.parse.as_nanos(),
-            self.preparation.as_nanos(),
-            self.ready.as_nanos(),
-            self.bytes
-        )
+    fn get_mut(&mut self, stage: Stage) -> &mut Duration {
+        match stage {
+            Stage::Labels => &mut self.labels,
+            Stage::Layout => &mut self.layout,
+            Stage::Syntax => &mut self.syntax,
+            Stage::Detail => &mut self.detail,
+            Stage::Language => &mut self.language,
+            Stage::Projection => &mut self.projection,
+            Stage::Parse => &mut self.parse,
+            Stage::Query => &mut self.query,
+        }
     }
 }
