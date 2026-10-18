@@ -58,29 +58,30 @@ impl Navigation {
     pub fn step(&mut self, document: &PreparedDocument, effect: Effect) {
         let interaction = self.interaction;
 
-        self.interaction = match effect {
+        match effect {
             Effect::Scroll(movement) => {
                 let bounds = bounds_of(&self.extent, &self.view);
-                interaction.scrolled(interaction.scroll().moved(movement, bounds))
+                self.interaction =
+                    interaction.scrolled(interaction.scroll().moved(movement, bounds));
             }
-            Effect::Keymap(keymap) => interaction.with_keymap(keymap),
+            Effect::Keymap(keymap) => self.interaction = interaction.with_keymap(keymap),
             Effect::TurnPage(page) => {
                 let preferences = interaction.preferences();
                 // A page turn keeps the preferences and screen the view derives from.
                 let settings = settings_of(preferences, &self.view);
                 self.extent.turn_to(document, page, settings);
-                interaction.shown(
+                self.interaction = interaction.shown(
                     page,
                     preferences,
                     interaction.screen(),
                     BoundedScroll::START,
-                )
+                );
             }
             Effect::Redisplay {
                 preferences,
                 placement,
             } => self.redisplay(document, preferences, interaction.screen(), placement),
-        };
+        }
     }
 
     /// Shows the interaction on a `screen`-sized terminal when it shows another size,
@@ -92,18 +93,18 @@ impl Navigation {
 
         let preferences = self.interaction.preferences();
         let placement = Placement::Anchor(AnchorLine::PaneTop);
-        self.interaction = self.redisplay(document, preferences, screen, placement);
+        self.redisplay(document, preferences, screen, placement);
     }
 
-    /// The same page with `preferences` on a `screen`-sized terminal, its first line placed
-    /// as `placement` asks.
+    /// Shows the same page with `preferences` on a `screen`-sized terminal, its first line
+    /// placed as `placement` asks.
     fn redisplay(
         &mut self,
         document: &PreparedDocument,
         preferences: ViewPreferences,
         screen: Size,
         placement: Placement,
-    ) -> Interaction {
+    ) {
         let current = self.interaction.scroll().position();
         let view = EffectiveView::of(preferences, screen);
         let settings = settings_of(preferences, &view);
@@ -114,32 +115,34 @@ impl Navigation {
                 current.vertical
             }
             Placement::Anchor(anchor) => {
-                // An anchored row is found among the lines shown now.
-                let pane_line = self.pane_line(anchor);
-                let offset = current.vertical.saturating_add(pane_line);
+                // The row on the anchor line of the view shown now goes to the anchor line
+                // of the new view.
+                let source = pane_line(&self.view, anchor);
+                let target = pane_line(&view, anchor);
+                let offset = current.vertical.saturating_add(source);
                 // None when the lines end above the anchor line, since the view then fits.
                 self.extent
                     .reanchor(document, settings, offset)
-                    .map_or(ScreenLines::ZERO, |line| line.saturating_sub(pane_line))
+                    .map_or(ScreenLines::ZERO, |line| line.saturating_sub(target))
             }
         };
-        self.view = view;
 
+        self.view = view;
         let start = ScrollPosition {
             vertical,
             ..current
         };
         let scroll = bounds_of(&self.extent, &self.view).clamp(start);
         let page = self.interaction.page();
-        self.interaction.shown(page, preferences, screen, scroll)
+        self.interaction = self.interaction.shown(page, preferences, screen, scroll);
     }
+}
 
-    /// The diff-pane line `anchor` names in the view shown now.
-    fn pane_line(&self, anchor: AnchorLine) -> ScreenLines {
-        match anchor {
-            AnchorLine::PaneTop => ScreenLines::ZERO,
-            AnchorLine::PaneMiddle => self.view.pane_content().height.half(),
-        }
+/// The diff-pane line `anchor` names in `view`.
+fn pane_line(view: &EffectiveView, anchor: AnchorLine) -> ScreenLines {
+    match anchor {
+        AnchorLine::PaneTop => ScreenLines::ZERO,
+        AnchorLine::PaneMiddle => view.pane_content().height.half(),
     }
 }
 
