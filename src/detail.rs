@@ -19,23 +19,25 @@ pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>>
     let payload = |line: LineIndex| page_rows.line(line).payload();
     let whole = |side, line| {
         let spans = Box::new([PayloadSpan::whole(payload(line))]);
-        Some((line, ChangedDetail { side, spans }))
+        (line, ChangedDetail { side, spans })
+    };
+    let paired = |lines: BySide<LineIndex>| {
+        let spans = changed_pair_spans(lines.map(payload));
+        let [old, new] = lines.zip(spans).into_sides().map(|(side, (line, spans))| {
+            let spans = spans.into_boxed_slice();
+            (line, ChangedDetail { side, spans })
+        });
+        BySide { old, new }
     };
 
-    let row_details = page_rows.pairs().iter().flat_map(|row| match *row {
-        SideBySideRow::Paired(lines) => {
-            let spans = changed_pair_spans(lines.map(payload));
-            lines.zip(spans).into_sides().map(|(side, (line, spans))| {
-                let spans = spans.into_boxed_slice();
-                Some((line, ChangedDetail { side, spans }))
-            })
-        }
-        SideBySideRow::OldOnly(line) => [whole(Side::Old, line), None],
-        SideBySideRow::NewOnly(line) => [whole(Side::New, line), None],
-        SideBySideRow::Shared(_) => [None, None],
+    let row_details = page_rows.pairs().iter().filter_map(|row| match *row {
+        SideBySideRow::Paired(lines) => Some(SideBySideRow::Paired(paired(lines))),
+        SideBySideRow::OldOnly(line) => Some(SideBySideRow::OldOnly(whole(Side::Old, line))),
+        SideBySideRow::NewOnly(line) => Some(SideBySideRow::NewOnly(whole(Side::New, line))),
+        SideBySideRow::Shared(_) => None,
     });
     let changed = row_details
-        .flatten()
+        .flat_map(SideBySideRow::lines)
         .filter(|(_, detail)| detail.spans.iter().any(|span| !span.is_empty()));
 
     page_rows.sparse_map(changed)

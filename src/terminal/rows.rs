@@ -1,8 +1,6 @@
 use crate::{
     document::{BySide, Side},
-    extent::{ScreenLine, ScrollExtent},
     page_rows::SideBySideRow,
-    screen::ScreenLines,
     styling::{RowTone, StyledRow},
 };
 
@@ -44,18 +42,4 @@ impl<'a> SideBySideRow<StyledRow<'a>> {
             },
         }
     }
-}
-
-/// Up to `limit` screen lines of `extent` from line `first`, each with the row `row`
-/// makes of its index.
-pub(super) fn visible_rows<R: Copy + Ord, T>(
-    extent: &ScrollExtent<R>,
-    first: ScreenLines,
-    limit: ScreenLines,
-    row: impl Fn(R) -> T,
-) -> Vec<ScreenLine<T>> {
-    extent
-        .lines(first, limit)
-        .map(|screen_line| screen_line.map(&row))
-        .collect()
 }

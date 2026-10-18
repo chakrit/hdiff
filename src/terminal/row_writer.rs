@@ -255,7 +255,7 @@ mod tests {
         preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
-        terminal::rows::{PaneRow, visible_rows},
+        terminal::rows::PaneRow,
         theme::{ColorDepth, Theme},
     };
 
@@ -454,12 +454,11 @@ mod tests {
             panic!("a single pane shows lines");
         };
         let all = ScreenLines::new(usize::MAX);
-        let rows = visible_rows(extent, ScreenLines::ZERO, all, |line| {
-            file.row(line, DiffGranularity::Line)
-        });
 
-        rows.into_iter()
-            .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))
+        extent
+            .lines(ScreenLines::ZERO, all)
+            .map(|line| file.row(line.row, DiffGranularity::Line))
+            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
             .collect()
     }
 

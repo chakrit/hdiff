@@ -24,7 +24,7 @@ use super::{
     },
     keymap_popup::render_keymap_popup,
     row_writer::{Clip, RowPlacement, write_row},
-    rows::{PaneRow, visible_rows},
+    rows::PaneRow,
 };
 
 /// Draws `document` as `navigation` shows `interaction`: the page of its scroll extent
@@ -60,22 +60,23 @@ pub(super) fn render_prepared_frame(
     };
     match extent.panes() {
         PaneExtent::Single(lines) => {
-            let lines = visible_rows(lines, scroll.vertical, pane_lines, |line| {
-                page.row(line, granularity)
-            });
+            let lines = lines
+                .lines(scroll.vertical, pane_lines)
+                .map(|line| line.map(|line| PaneRow::Text(page.row(line, granularity))));
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
-            panes.render(
-                frame,
-                pane,
-                lines.into_iter().map(|line| line.map(PaneRow::Text)),
-            );
+            panes.render(frame, pane, lines);
         }
         PaneExtent::Split { direction, extent } => {
-            let lines = visible_rows(extent, scroll.vertical, pane_lines, |pair| {
-                page.rows()
-                    .pair(pair)
-                    .map(|line| page.row(line, granularity))
-            });
+            let lines = extent
+                .lines(scroll.vertical, pane_lines)
+                .map(|line| {
+                    line.map(|pair| {
+                        page.rows()
+                            .pair(pair)
+                            .map(|line| page.row(line, granularity))
+                    })
+                })
+                .collect();
             let split = geometry.split_panes(*direction);
             render_split_rows(frame, lines, split, *direction, &panes);
         }

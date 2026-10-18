@@ -436,11 +436,11 @@ fn point_at(source: &[u8], byte: usize) -> Point {
 mod tests {
     use super::{
         HunkRecord, Language, LanguageHighlighter, ProjectedRecord, Projection, Styles,
-        SyntaxClass, SyntaxHighlighter,
+        SyntaxClass, SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{FileBody, Side},
-        measurement::{Profile, Unobserved},
+        document::{FileBody, Hunk, Side, UnifiedBody},
+        measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
     };
     use tree_sitter::{InputEdit, Point};
@@ -471,15 +471,8 @@ mod tests {
 
     #[test]
     fn highlights_added_rust_keywords_in_the_new_side() {
-        let document =
-            parse_patch(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n")
-                .expect("valid Rust diff");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("fixture should contain a unified file");
-        };
-        let mut highlighter = SyntaxHighlighter::default();
-
-        let highlights = highlighter.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
+        let highlights =
+            highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
 
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
         assert_eq!(highlights[1][0].span.start(), 0);
@@ -488,16 +481,9 @@ mod tests {
 
     #[test]
     fn context_uses_new_projection_syntax_when_old_context_is_a_comment() {
-        let document = parse_patch(
+        let highlights = highlights_of(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
-        )
-        .expect("valid Rust diff with changing comment context");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("fixture should contain a unified file");
-        };
-        let mut highlighter = SyntaxHighlighter::default();
-
-        let highlights = highlighter.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
+        );
 
         // architecture.md: matching languages use the new projection for context styling.
         assert!(
@@ -524,28 +510,21 @@ mod tests {
 
     #[test]
     fn incremental_new_projection_matches_a_full_query_pass() {
-        let document = parse_patch(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n",
-        )
-        .expect("valid Rust diff");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("fixture should contain a unified file");
-        };
-        let new_projection =
-            Projection::from_hunk(&file.hunks[0], Side::New, Styles::ChangesAndContext);
-        let mut incremental = SyntaxHighlighter::default();
-        let incremental_spans = incremental.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
-        let mut full = SyntaxHighlighter::default();
+        let patch = b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+        let incremental_spans = highlights_of(patch);
 
-        let full_pass = full
-            .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
-            .expect("the new side has styled records");
-        let full_spans = full_pass
-            .spans
-            .into_iter()
-            .filter(|(record, _)| *record == HunkRecord(1))
-            .map(|(_, span)| span)
-            .collect::<Vec<_>>();
+        let full_spans = with_first_hunk(patch, |_, hunk| {
+            let new_projection = Projection::from_hunk(hunk, Side::New, Styles::ChangesAndContext);
+            let full_pass = SyntaxHighlighter::default()
+                .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
+                .expect("the new side has styled records");
+            full_pass
+                .spans
+                .into_iter()
+                .filter(|(record, _)| *record == HunkRecord(1))
+                .map(|(_, span)| span)
+                .collect::<Vec<_>>()
+        });
 
         assert_eq!(incremental_spans[1], full_spans);
         assert_eq!(incremental_spans[1][0].class, SyntaxClass::Keyword);
@@ -588,16 +567,9 @@ mod tests {
 
     #[test]
     fn context_stays_textual_when_the_paths_select_different_languages() {
-        let document = parse_patch(
+        let highlights = highlights_of(
             b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
-        )
-        .expect("valid diff renaming Python to Rust");
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("fixture should contain a unified file");
-        };
-        let mut highlighter = SyntaxHighlighter::default();
-
-        let highlights = highlighter.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
+        );
 
         // architecture.md: context remains textual when the paths select different languages.
         assert!(highlights[0].is_empty());
@@ -622,18 +594,38 @@ mod tests {
 
     #[test]
     fn a_side_with_only_context_is_not_parsed() {
-        let document = parse_patch(
+        let mut profile = Profile::default();
+
+        observed_highlights_of(
             b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",
-        )
-        .expect("valid diff renaming Python to Rust");
+            &mut profile,
+        );
+
+        assert_eq!(profile.work().parse_calls, 1);
+    }
+
+    /// The syntax spans of each record of the first hunk of `patch`'s first file.
+    fn highlights_of(patch: &[u8]) -> Box<[Vec<SyntaxSpan>]> {
+        observed_highlights_of(patch, &mut Unobserved)
+    }
+
+    fn observed_highlights_of(
+        patch: &[u8],
+        observer: &mut impl Observer,
+    ) -> Box<[Vec<SyntaxSpan>]> {
+        with_first_hunk(patch, |file, hunk| {
+            SyntaxHighlighter::default().highlight_hunk(file, hunk, observer)
+        })
+    }
+
+    /// `test` applied to the first hunk of `patch`'s first file, which must be unified.
+    fn with_first_hunk<T>(patch: &[u8], test: impl FnOnce(&UnifiedBody, &Hunk) -> T) -> T {
+        let document = parse_patch(patch).expect("valid diff");
         let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
             panic!("fixture should contain a unified file");
         };
-        let mut profile = Profile::default();
 
-        SyntaxHighlighter::default().highlight_hunk(file, &file.hunks[0], &mut profile);
-
-        assert_eq!(profile.work().parse_calls, 1);
+        test(file, &file.hunks[0])
     }
 
     fn projected(ranges: &[std::ops::Range<usize>]) -> Vec<ProjectedRecord> {
