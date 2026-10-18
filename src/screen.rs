@@ -21,6 +21,7 @@ pub struct Cells(usize);
 
 impl Cells {
     pub const ZERO: Self = Self(0);
+    pub const ONE: Self = Self(1);
 
     pub const fn new(cells: usize) -> Self {
         Self(cells)
@@ -50,6 +51,17 @@ impl Cells {
 
     pub const fn saturating_sub(self, other: Self) -> Self {
         Self(self.0.saturating_sub(other.0))
+    }
+
+    /// Cells from this column to the next multiple of `interval` after it.
+    pub const fn to_next_multiple_of(self, interval: NonZeroCells) -> Self {
+        let interval = interval.0.get();
+        Self(interval - self.0 % interval)
+    }
+
+    /// Each cell column from this one up to, but not including, `end`.
+    pub fn columns_until(self, end: Self) -> impl Iterator<Item = Self> {
+        (self.0..end.0).map(Self)
     }
 
     /// These cells less `other`, or `None` when `other` is more.

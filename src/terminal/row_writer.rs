@@ -1,7 +1,7 @@
 //! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
 //! and safe rendering, View model).
 
-use std::ops::{ControlFlow, Range};
+use std::ops::ControlFlow;
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -202,14 +202,15 @@ impl RowCursor<'_> {
         }
 
         match start.checked_sub(self.horizontal_offset) {
-            None => self.fill_blank(0..visible_end.get(), style),
-            Some(visible_start) => self.put(visible_start.get(), width.get(), cluster, style),
+            None => self.fill_blank(Cells::ZERO, visible_end, style),
+            Some(visible_start) => self.put(visible_start, width, cluster, style),
         }
         ControlFlow::Continue(())
     }
 
-    fn fill_blank(&mut self, cells: Range<usize>, style: Style) {
-        for cell in cells {
+    /// Blanks the pane cells from `start` up to, but not including, `end`.
+    fn fill_blank(&mut self, start: Cells, end: Cells, style: Style) {
+        for cell in start.columns_until(end) {
             let x = self.x(cell);
             self.buffer[(x, self.area.y)]
                 .set_symbol(" ")
@@ -219,19 +220,20 @@ impl RowCursor<'_> {
 
     /// Writes the cluster in its first cell and resets the cells it covers, as
     /// `Buffer::set_stringn` does.
-    fn put(&mut self, cell: usize, width: usize, cluster: &str, style: Style) {
+    fn put(&mut self, cell: Cells, width: Cells, cluster: &str, style: Style) {
         let x = self.x(cell);
         let y = self.area.y;
 
         self.buffer[(x, y)].set_symbol(cluster).set_style(style);
-        for continuation in cell + 1..cell + width {
+        for continuation in (cell + Cells::ONE).columns_until(cell + width) {
             let x = self.x(continuation);
             self.buffer[(x, y)].reset();
         }
     }
 
-    fn x(&self, cell: usize) -> u16 {
-        let cell = u16::try_from(cell).expect("visible cells fit the pane");
+    /// The frame column of pane cell `cell`: the one place pane cells become `u16`.
+    fn x(&self, cell: Cells) -> u16 {
+        let cell = u16::try_from(cell.get()).expect("visible cells fit the pane");
         self.area.x + cell
     }
 }

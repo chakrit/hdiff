@@ -1,9 +1,12 @@
 //! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
 //! rendering) for the 2-column tab-stop rule.
 
-use crate::{compact::Count, screen::Cells};
+use crate::{
+    compact::Count,
+    screen::{Cells, NonZeroCells},
+};
 
-const TAB_WIDTH: usize = 2;
+const TAB_WIDTH: NonZeroCells = NonZeroCells::new(Cells::new(2)).expect("tab stops are apart");
 
 /// Expands tabs to the next multiple of `TAB_WIDTH` cells from the start of the payload,
 /// across consecutive segments of one row.
@@ -16,17 +19,17 @@ impl TabStops {
     /// Appends `text` to `expanded` with its tabs replaced by spaces.
     pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
         self.walk(text, |padding, chunk| {
-            expanded.extend(std::iter::repeat_n(' ', padding));
+            expanded.extend(std::iter::repeat_n(' ', padding.get()));
             expanded.push_str(chunk);
         });
     }
 
     /// Visits each tab-free chunk of `text` with the spaces the tab before it expands to;
     /// the first chunk follows no tab.
-    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(usize, &'t str)) {
+    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(Cells, &'t str)) {
         for (index, chunk) in text.split('\t').enumerate() {
             let padding = match index {
-                0 => 0,
+                0 => Cells::ZERO,
                 _ => self.advance_to_tab_stop(),
             };
             visit(padding, chunk);
@@ -34,9 +37,9 @@ impl TabStops {
         }
     }
 
-    fn advance_to_tab_stop(&mut self) -> usize {
-        let padding = TAB_WIDTH - self.column.get() % TAB_WIDTH;
-        self.column += Cells::new(padding);
+    fn advance_to_tab_stop(&mut self) -> Cells {
+        let padding = self.column.to_next_multiple_of(TAB_WIDTH);
+        self.column += padding;
         padding
     }
 }
