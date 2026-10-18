@@ -1,6 +1,8 @@
 //! Character detail: the spans of each changed line that differ from its peer. Rules:
 //! `docs/spec/architecture.md` (View model).
 
+use std::iter;
+
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -159,37 +161,45 @@ struct Token<'a> {
 }
 
 fn tokens(text: &str) -> Vec<Token<'_>> {
-    let mut characters = text.char_indices();
-    let Some((start, first)) = characters.next() else {
+    let Some(first) = text.chars().next() else {
         return Vec::new();
     };
-    let mut start = start;
-    let mut previous = first;
-    let mut kind = token_kind(first);
-    let mut tokens = Vec::new();
 
-    for (index, character) in characters {
-        let next_kind = token_kind(character);
-        let camel_case_boundary = kind == TokenKind::Word
-            && next_kind == TokenKind::Word
-            && previous.is_lowercase()
-            && character.is_uppercase();
-        if kind != next_kind || camel_case_boundary {
-            tokens.push(Token {
-                text: &text[start..index],
-                kind,
-            });
-            start = index;
-            kind = next_kind;
-        }
-        previous = character;
-    }
-    tokens.push(Token {
-        text: &text[start..],
-        kind,
-    });
+    let later_starts = text
+        .chars()
+        .zip(text.char_indices().skip(1))
+        .filter(|&(previous, (_, current))| starts_token(previous, current))
+        .map(|(_, (index, current))| (index, token_kind(current)));
+    let starts = iter::once((0, token_kind(first)))
+        .chain(later_starts)
+        .collect::<Vec<_>>();
+    let ends = starts
+        .iter()
+        .skip(1)
+        .map(|&(index, _)| index)
+        .chain(iter::once(text.len()));
 
-    tokens
+    starts
+        .iter()
+        .zip(ends)
+        .map(|(&(start, kind), end)| Token {
+            text: &text[start..end],
+            kind,
+        })
+        .collect()
+}
+
+/// Whether `current` starts a new token after `previous`: the token kind changes, or an
+/// uppercase letter follows a lowercase one inside a word.
+fn starts_token(previous: char, current: char) -> bool {
+    let kind = token_kind(previous);
+    let next_kind = token_kind(current);
+    let camel_case_boundary = kind == TokenKind::Word
+        && next_kind == TokenKind::Word
+        && previous.is_lowercase()
+        && current.is_uppercase();
+
+    kind != next_kind || camel_case_boundary
 }
 
 fn token_kind(character: char) -> TokenKind {
