@@ -3,7 +3,7 @@
 
 use crate::{
     headers::{FileHeader, GitHeader, HeaderPath, quoted_or_plain, unquote},
-    source_text::SourceLine,
+    source_text::{SourceLine, sanitize},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,8 +17,8 @@ pub enum FileState {
 /// A file located by its path, or a section whose path cannot be determined.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileIdentity {
-    Path { state: FileState, path: Box<str> },
-    Unknown { header: Box<str> },
+    Path { state: FileState, path: DisplayText },
+    Unknown { header: DisplayText },
 }
 
 impl FileIdentity {
@@ -43,8 +43,23 @@ impl FileIdentity {
 
     fn unknown(first_line: &SourceLine) -> Self {
         Self::Unknown {
-            header: first_line.sanitized().into(),
+            header: DisplayText(first_line.sanitized().into()),
         }
+    }
+}
+
+/// Text safe to draw: decoded paths may hold control characters, which this drops.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayText(Box<str>);
+
+impl DisplayText {
+    /// The visible text of a decoded path or header.
+    pub fn of_decoded(text: &str) -> Self {
+        Self(sanitize(text.as_bytes()).into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -81,26 +96,34 @@ fn locate_unified(
         }
     };
 
-    let (state, path) = match change {
-        GitChange::Unmarked => (header_state, named_path),
-        GitChange::Added => (FileState::Added, named_path),
-        GitChange::Deleted => (FileState::Deleted, named_path),
-        GitChange::Renamed(destination) => (FileState::Renamed, destination),
-        GitChange::Copied(destination) => (FileState::Added, destination),
-    };
-    Some(FileIdentity::Path { state, path })
+    change.identity(header_state, || Some(named_path))
 }
 
 fn locate_metadata(change: GitChange, git_line: &SourceLine) -> Option<FileIdentity> {
-    let (state, path) = match change {
-        GitChange::Unmarked => (FileState::Modified, git_header_path(git_line)?),
-        GitChange::Added => (FileState::Added, git_header_path(git_line)?),
-        GitChange::Deleted => (FileState::Deleted, git_header_path(git_line)?),
-        GitChange::Renamed(destination) => (FileState::Renamed, destination),
-        GitChange::Copied(destination) => (FileState::Added, destination),
-    };
+    change.identity(FileState::Modified, || git_header_path(git_line))
+}
 
-    Some(FileIdentity::Path { state, path })
+impl GitChange {
+    /// The file this change names: a rename or copy names its destination, any other
+    /// change the path `named` gives, as `unmarked` unless Git marks it added or deleted.
+    fn identity(
+        self,
+        unmarked: FileState,
+        named: impl FnOnce() -> Option<Box<str>>,
+    ) -> Option<FileIdentity> {
+        let (state, path) = match self {
+            Self::Unmarked => (unmarked, named()?),
+            Self::Added => (FileState::Added, named()?),
+            Self::Deleted => (FileState::Deleted, named()?),
+            Self::Renamed(destination) => (FileState::Renamed, destination),
+            Self::Copied(destination) => (FileState::Added, destination),
+        };
+
+        Some(FileIdentity::Path {
+            state,
+            path: DisplayText::of_decoded(&path),
+        })
+    }
 }
 
 /// `None` when a destination's quoting cannot be decoded.
@@ -181,7 +204,7 @@ fn shared_suffix<'a>(old: &str, new: &'a str) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileIdentity, FileState};
+    use super::{DisplayText, FileIdentity, FileState};
     use crate::parser::parse_patch;
 
     fn identity(input: &str) -> FileIdentity {
@@ -194,13 +217,13 @@ mod tests {
     fn path(state: FileState, path: &str) -> FileIdentity {
         FileIdentity::Path {
             state,
-            path: path.into(),
+            path: DisplayText::of_decoded(path),
         }
     }
 
     fn unknown(header: &str) -> FileIdentity {
         FileIdentity::Unknown {
-            header: header.into(),
+            header: DisplayText::of_decoded(header),
         }
     }
 

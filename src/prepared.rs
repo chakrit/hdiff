@@ -41,11 +41,10 @@ impl PreparedDocument {
     }
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
-        let views = document.file_views().collect::<Vec<_>>();
         let ListedTree {
             tree: file_tree,
             files,
-        } = observer.measure(Stage::Labels, |_| FileTree::build(views.iter().copied()));
+        } = observer.measure(Stage::Labels, |_| ListedTree::build(document.file_views()));
 
         let (first, rest) = match files.as_ref() {
             [] => (PreparedPage::text(document, observer), Vec::new()),
@@ -157,7 +156,7 @@ impl PreparedPage {
         let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(document.text()));
 
         Self {
-            styles: row_styles(&rows, &RecordMap::default(), &rows.sparse_map([])),
+            styles: row_styles(&rows, &RecordMap::empty(), &rows.sparse_map([])),
             rows,
             kind: PageKind::Text,
         }

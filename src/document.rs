@@ -8,9 +8,11 @@ use crate::{
     source_text::SourceLine,
 };
 
+/// Sections in input order, with no two text sections adjacent; only the parser builds
+/// one, which keeps that invariant.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
-    pub sections: Box<[Section]>,
+    sections: Box<[Section]>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -27,6 +29,15 @@ pub struct FileView<'a> {
 }
 
 impl DiffDocument {
+    /// A document of `sections`, which must not hold two adjacent text sections.
+    pub(crate) fn new(sections: Box<[Section]>) -> Self {
+        Self { sections }
+    }
+
+    pub fn sections(&self) -> &[Section] {
+        &self.sections
+    }
+
     pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
         self.sections.iter().filter_map(|section| match section {
             Section::File(file) => Some(file),
@@ -78,6 +89,38 @@ impl DiffDocument {
 pub struct DiffFile {
     pub identity: FileIdentity,
     pub body: FileBody,
+}
+
+impl DiffFile {
+    /// One value for each of the file's records, built hunk by hunk from `values`; a
+    /// file without hunks maps no records.
+    ///
+    /// Panics when `values` gives a hunk a different number of values than it has
+    /// records.
+    pub fn record_map<T>(
+        &self,
+        mut values: impl FnMut(&UnifiedBody, &Hunk) -> Box<[T]>,
+    ) -> RecordMap<T> {
+        let FileBody::Unified(body) = &self.body else {
+            return RecordMap::empty();
+        };
+
+        let hunks = body
+            .hunks
+            .iter()
+            .map(|hunk| {
+                let hunk_values = values(body, hunk);
+                assert_eq!(
+                    hunk_values.len(),
+                    hunk.records.len(),
+                    "one value for each record of the hunk"
+                );
+                hunk_values
+            })
+            .collect();
+
+        RecordMap { hunks }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -199,17 +242,18 @@ impl RecordAddress {
     }
 }
 
-/// One value for each record of a file, looked up by [`RecordAddress`].
+/// One value for each record of a file, looked up by [`RecordAddress`]. Only
+/// [`DiffFile::record_map`] builds a map with records, so a map always matches its file.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RecordMap<T> {
     hunks: Box<[Box<[T]>]>,
 }
 
 impl<T> RecordMap<T> {
-    /// A map from each hunk's values, in hunk order and then record order.
-    pub fn from_hunks(hunks: impl IntoIterator<Item = Box<[T]>>) -> Self {
+    /// The map of a page without records, such as surrounding text.
+    pub fn empty() -> Self {
         Self {
-            hunks: hunks.into_iter().collect(),
+            hunks: Box::new([]),
         }
     }
 
@@ -218,14 +262,5 @@ impl<T> RecordMap<T> {
     /// Panics when `address` names no record of the map's file.
     pub fn get(&self, address: RecordAddress) -> &T {
         &self.hunks[widen(address.hunk)][widen(address.record)]
-    }
-}
-
-/// The map of a file without records.
-impl<T> Default for RecordMap<T> {
-    fn default() -> Self {
-        Self {
-            hunks: Box::new([]),
-        }
     }
 }

@@ -155,10 +155,13 @@ impl LineEnding {
 
 /// The document as finite output: every rendered line, in input order.
 pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
-    let lines = document.sections.iter().flat_map(|section| match section {
-        Section::File(file) => render_file_lines(file),
-        Section::Text(lines) => render_text_lines(lines),
-    });
+    let lines = document
+        .sections()
+        .iter()
+        .flat_map(|section| match section {
+            Section::File(file) => render_file_lines(file),
+            Section::Text(lines) => render_text_lines(lines),
+        });
 
     let mut output = Vec::new();
     for line in lines {

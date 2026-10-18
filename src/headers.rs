@@ -31,17 +31,10 @@ pub enum HeaderPath {
 impl HeaderPath {
     /// Reads a header's field after `--- ` or `+++ `, without its timestamp.
     pub fn of_field(field: &str) -> Self {
-        let decoded = match field.starts_with('"') {
-            true => unquote(field).map(|(path, _)| path),
-            false => Some(
-                field
-                    .split_once('\t')
-                    .map_or(field, |(path, _)| path)
-                    .into(),
-            ),
-        };
+        // Git escapes tabs inside quotes, so the first tab ends a quoted path too.
+        let without_timestamp = field.split_once('\t').map_or(field, |(path, _)| path);
 
-        let Some(path) = decoded else {
+        let Some(path) = quoted_or_plain(without_timestamp) else {
             return Self::Undecodable;
         };
 

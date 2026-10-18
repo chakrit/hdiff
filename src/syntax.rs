@@ -3,7 +3,7 @@ use std::{fmt, ops::Range};
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, FileBody, Hunk, RecordMap, Side, UnifiedBody},
+    document::{DiffFile, Hunk, RecordMap, Side, UnifiedBody},
     headers::HeaderPath,
     measurement::{Observer, Stage, Work},
     render::PayloadSpan,
@@ -70,14 +70,7 @@ impl SyntaxHighlighter {
         file: &DiffFile,
         observer: &mut impl Observer,
     ) -> RecordMap<Vec<SyntaxSpan>> {
-        match &file.body {
-            FileBody::Metadata(_) => RecordMap::default(),
-            FileBody::Unified(file) => RecordMap::from_hunks(
-                file.hunks
-                    .iter()
-                    .map(|hunk| self.highlight_hunk(file, hunk, observer)),
-            ),
-        }
+        file.record_map(|body, hunk| self.highlight_hunk(body, hunk, observer))
     }
 
     /// The syntax spans of each record of `hunk`, a hunk of `file`.

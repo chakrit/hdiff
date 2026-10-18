@@ -70,7 +70,7 @@ impl Malformed {
 
 /// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
 pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
-    let document = parse_comparison(input)?;
+    let document = parse_sections(input)?;
 
     match !input.is_empty() && document.files().next().is_none() {
         true => Err(ParseError::NoDiff),
@@ -80,11 +80,16 @@ pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
 
 /// Parses `diff` output, which may hold only surrounding text such as `Binary files … differ`.
 pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
+    parse_sections(input)
+}
+
+/// Parses any diff output into its surrounding text and file sections.
+fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut lines = Lines::new(input);
     let mut sections = Vec::new();
 
     while let Some(line) = lines.next() {
-        let start = line_start(line.sanitized()).map_err(|reason| lines.last_line_error(reason))?;
+        let start = lines.at_last_line(line_start(line.sanitized()))?;
         let section = match start {
             LineStart::Text => Section::Text(parse_text(line, &mut lines)),
             LineStart::GitHeader => parse_git_section(line, &mut lines)?,
@@ -99,9 +104,7 @@ pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
         sections.push(section);
     }
 
-    Ok(DiffDocument {
-        sections: sections.into_boxed_slice(),
-    })
+    Ok(DiffDocument::new(sections.into_boxed_slice()))
 }
 
 // Sections
@@ -213,7 +216,7 @@ fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseErr
         let payload_start = patch.len();
         while let Some(line) = lines.next_if(|text| !text.is_empty()) {
             let text = line.sanitized();
-            reject_unsupported_header(text).map_err(|reason| lines.last_line_error(reason))?;
+            lines.at_last_line(reject_unsupported_header(text))?;
             if text.starts_with("diff --") || text.starts_with("--- ") {
                 return Err(lines.last_line_error(Malformed::TruncatedBinaryPatch));
             }
@@ -258,7 +261,7 @@ fn parse_unified(
         text.starts_with("@@ ")
             .then(|| SideCounts::of_header(text).ok_or(Malformed::InvalidHunkHeader))
     }) {
-        let expected = declared.map_err(|reason| lines.last_line_error(reason))?;
+        let expected = lines.at_last_line(declared)?;
         hunks.push(parse_hunk(header, expected, lines)?);
     }
     if hunks.is_empty() {
@@ -292,7 +295,7 @@ fn parse_hunk(
     while let Some(line) =
         lines.next_if(|text| seen != expected || text.starts_with(NO_NEWLINE_MARKER))
     {
-        let record = parse_record(line).map_err(|reason| lines.last_line_error(reason))?;
+        let record = lines.at_last_line(parse_record(line))?;
         seen.count(record.kind);
         records.push(record);
     }
@@ -444,6 +447,11 @@ impl<'a> Lines<'a> {
             .map(|(line, path)| FileHeader { line, path })
     }
 
+    /// `result`, with a malformation located at the line most recently taken.
+    fn at_last_line<T>(&self, result: Result<T, Malformed>) -> Result<T, ParseError> {
+        result.map_err(|reason| self.last_line_error(reason))
+    }
+
     /// An error at the line most recently taken.
     fn last_line_error(&self, reason: Malformed) -> ParseError {
         ParseError::Malformed {
@@ -465,7 +473,7 @@ impl<'a> Lines<'a> {
 mod tests {
     use super::{Malformed, ParseError, parse_comparison, parse_patch};
     use crate::{
-        document::{DiffDocument, FileBody, Hunk, RecordKind},
+        document::{DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
         render::render_unified,
     };
 
@@ -583,13 +591,32 @@ mod tests {
         assert_eq!(render_unified(&document), input);
     }
 
-    fn single_unified_hunks(document: &DiffDocument) -> &[Hunk] {
-        assert_eq!(document.files().count(), 1);
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("fixture section should be unified");
+    /// Every file's unified body, in input order; each fixture file must be unified.
+    fn unified_bodies(document: &DiffDocument) -> Vec<&UnifiedBody> {
+        document
+            .files()
+            .map(|file| match &file.body {
+                FileBody::Unified(body) => body.as_ref(),
+                FileBody::Metadata(_) => panic!("fixture section should be unified"),
+            })
+            .collect()
+    }
+
+    /// The first hunk of a document holding one unified file.
+    fn first_hunk(document: &DiffDocument) -> &Hunk {
+        let [body] = unified_bodies(document)[..] else {
+            panic!("fixture should hold one file");
         };
 
-        &file.hunks
+        &body.hunks[0]
+    }
+
+    /// Each body's first-hunk record count.
+    fn first_hunk_record_counts(bodies: &[&UnifiedBody]) -> Vec<usize> {
+        bodies
+            .iter()
+            .map(|body| body.hunks[0].records.len())
+            .collect()
     }
 
     #[test]
@@ -597,10 +624,11 @@ mod tests {
         let input = "--- a/readme.txt\n+++ b/readme.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
         let document = parse_patch(input.as_bytes()).expect("valid unified diff");
+        let bodies = unified_bodies(&document);
 
-        assert_eq!(document.files().count(), 1);
-        assert_eq!(single_unified_hunks(&document).len(), 1);
-        assert_eq!(single_unified_hunks(&document)[0].records.len(), 2);
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(bodies[0].hunks.len(), 1);
+        assert_eq!(first_hunk_record_counts(&bodies), [2]);
     }
 
     #[test]
@@ -608,24 +636,14 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
         let document = parse_patch(input).expect("valid Git fixture");
+        let bodies = unified_bodies(&document);
+        let metadata_counts = bodies
+            .iter()
+            .map(|body| body.git.as_ref().map(|header| header.metadata.len()))
+            .collect::<Vec<_>>();
 
-        assert_eq!(document.files().count(), 2);
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("first fixture section should be unified");
-        };
-        assert_eq!(
-            file.git.as_ref().map(|header| header.metadata.len()),
-            Some(2)
-        );
-        assert_eq!(file.hunks[0].records.len(), 3);
-        let FileBody::Unified(file) = &document.files().nth(1).expect("second file").body else {
-            panic!("second fixture section should be unified");
-        };
-        assert_eq!(
-            file.git.as_ref().map(|header| header.metadata.len()),
-            Some(1)
-        );
-        assert_eq!(file.hunks[0].records.len(), 4);
+        assert_eq!(metadata_counts, [Some(2), Some(1)]);
+        assert_eq!(first_hunk_record_counts(&bodies), [3, 4]);
     }
 
     #[test]
@@ -634,15 +652,7 @@ mod tests {
 
         let document = parse_patch(input).expect("valid colored Git fixture");
 
-        assert_eq!(document.files().count(), 2);
-        let FileBody::Unified(file) = &document.files().next().expect("first file").body else {
-            panic!("first fixture section should be unified");
-        };
-        assert_eq!(file.hunks[0].records.len(), 3);
-        let FileBody::Unified(file) = &document.files().nth(1).expect("second file").body else {
-            panic!("second fixture section should be unified");
-        };
-        assert_eq!(file.hunks[0].records.len(), 4);
+        assert_eq!(first_hunk_record_counts(&unified_bodies(&document)), [3, 4]);
     }
 
     #[test]
@@ -685,7 +695,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
 
         let document = parse_patch(input).expect("structurally valid diff");
-        let payload = &single_unified_hunks(&document)[0].records[1].payload;
+        let payload = &first_hunk(&document).records[1].payload;
 
         assert_eq!(payload.bytes(), b"\xffnew\n");
         assert_eq!(payload.sanitized(), "\u{fffd}new");
@@ -696,7 +706,7 @@ mod tests {
         let input = b"--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n";
 
         let document = parse_patch(input).expect("valid CRLF diff");
-        let payload = &single_unified_hunks(&document)[0].records[0].payload;
+        let payload = &first_hunk(&document).records[0].payload;
 
         assert_eq!(payload.bytes(), b"old\r\n");
         assert_eq!(payload.sanitized(), "old");
@@ -713,7 +723,7 @@ mod tests {
             let input = [b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n".as_slice(), line].concat();
 
             let document = parse_patch(&input).expect("valid deletion");
-            let record = &single_unified_hunks(&document)[0].records[0];
+            let record = &first_hunk(&document).records[0];
 
             assert_eq!(record.kind, RecordKind::Deletion);
             assert_eq!(record.payload.bytes(), payload, "{line:?}");
@@ -725,7 +735,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n--- filename\n";
 
         let document = parse_patch(input).expect("valid deletion record");
-        let record = &single_unified_hunks(&document)[0].records[0];
+        let record = &first_hunk(&document).records[0];
 
         assert_eq!(record.kind, RecordKind::Deletion);
         assert_eq!(record.payload.sanitized(), "-- filename");

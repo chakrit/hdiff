@@ -4,7 +4,6 @@
 use crate::{
     document::FileView,
     file_identity::{FileIdentity, FileState},
-    source_text::sanitize,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -62,8 +61,8 @@ pub struct ListedTree<'a> {
     pub files: Box<[ListedFile<'a>]>,
 }
 
-impl FileTree {
-    pub fn build<'a>(views: impl IntoIterator<Item = FileView<'a>>) -> ListedTree<'a> {
+impl<'a> ListedTree<'a> {
+    pub fn build(views: impl IntoIterator<Item = FileView<'a>>) -> Self {
         let placed = views.into_iter().map(Placed::of);
         let (top_level, nested): (Vec<_>, Vec<_>) =
             placed.partition(|file| file.directory.is_empty());
@@ -74,7 +73,7 @@ impl FileTree {
         let mut directory = "";
         for file in top_level.into_iter().chain(nested) {
             if file.directory != directory {
-                let heading = format!("{}/", sanitize(file.directory.as_bytes()));
+                let heading = format!("{}/", file.directory);
                 rows.push(TreeRow::Directory(heading.into()));
                 directory = file.directory;
             }
@@ -84,18 +83,20 @@ impl FileTree {
             });
             rows.push(TreeRow::File {
                 marker: file.marker,
-                name: sanitize(file.name.as_bytes()).into(),
+                name: file.name.into(),
             });
         }
 
-        ListedTree {
-            tree: Self {
+        Self {
+            tree: FileTree {
                 rows: rows.into_boxed_slice(),
             },
             files: files.into_boxed_slice(),
         }
     }
+}
 
+impl FileTree {
     pub fn rows(&self) -> &[TreeRow] {
         &self.rows
     }
@@ -116,10 +117,11 @@ impl<'a> Placed<'a> {
     fn of(view: FileView<'a>) -> Self {
         let (directory, name, marker) = match &view.file.identity {
             FileIdentity::Path { state, path } => {
+                let path = path.as_str();
                 let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
                 (directory, name, StateMarker::State(*state))
             }
-            FileIdentity::Unknown { header } => ("", &**header, StateMarker::Unknown),
+            FileIdentity::Unknown { header } => ("", header.as_str(), StateMarker::Unknown),
         };
 
         Self {
@@ -133,7 +135,7 @@ impl<'a> Placed<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileTree, ListedTree, TreeRow};
+    use super::{ListedTree, TreeRow};
     use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
 
     fn document(input: &str) -> DiffDocument {
@@ -141,7 +143,7 @@ mod tests {
     }
 
     fn listing(document: &DiffDocument) -> ListedTree<'_> {
-        FileTree::build(document.file_views())
+        ListedTree::build(document.file_views())
     }
 
     fn modified(path: &str) -> String {
@@ -176,8 +178,8 @@ mod tests {
             .iter()
             .map(|file| {
                 let named = match &file.view.file.identity {
-                    FileIdentity::Path { path, .. } => path.to_string(),
-                    FileIdentity::Unknown { header } => header.to_string(),
+                    FileIdentity::Path { path, .. } => path.as_str().to_owned(),
+                    FileIdentity::Unknown { header } => header.as_str().to_owned(),
                 };
                 (named, row_text(&listing.tree.rows()[file.row.get()]))
             })
