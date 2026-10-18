@@ -18,6 +18,7 @@ use crate::{
     input,
     interaction::ViewPreferences,
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
+    parser::ParseError,
     prepared::PreparedDocument,
     terminal::Tui,
 };
@@ -69,15 +70,16 @@ impl Driver {
 /// Why a driver produced no report.
 #[derive(Debug)]
 pub enum Error {
-    Input(String),
-    Parse(String),
+    Input(input::Error),
+    Parse(ParseError),
     Terminal(io::Error),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Input(message) | Self::Parse(message) => formatter.write_str(message),
+            Self::Input(error) => error.fmt(formatter),
+            Self::Parse(error) => formatter.write_str(&error.message),
             Self::Terminal(error) => error.fmt(formatter),
         }
     }
@@ -100,11 +102,9 @@ fn prepare(
 ) -> Result<(Startup, PreparedDocument), Error> {
     let started = Instant::now();
 
-    let input = source
-        .read()
-        .map_err(|error| Error::Input(error.to_string()))?;
+    let content = source.read().map_err(Error::Input)?;
     let input_finished = Instant::now();
-    let document = input.parse().map_err(|error| Error::Parse(error.message))?;
+    let document = content.parse().map_err(Error::Parse)?;
     let parse_finished = Instant::now();
     let prepared = PreparedDocument::prepare_observed(&document, observer);
     let ready = Instant::now();
@@ -114,7 +114,7 @@ fn prepare(
         parse: parse_finished.duration_since(input_finished),
         preparation: ready.duration_since(parse_finished),
         ready: ready.duration_since(started),
-        bytes: input.bytes().len(),
+        bytes: content.bytes().len(),
     };
     Ok((startup, prepared))
 }
