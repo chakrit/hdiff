@@ -217,6 +217,49 @@ impl Side {
     }
 }
 
+/// One value for each side of a change.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BySide<T> {
+    pub old: T,
+    pub new: T,
+}
+
+impl<T> BySide<T> {
+    pub fn get(&self, side: Side) -> &T {
+        match side {
+            Side::Old => &self.old,
+            Side::New => &self.new,
+        }
+    }
+
+    pub fn get_mut(&mut self, side: Side) -> &mut T {
+        match side {
+            Side::Old => &mut self.old,
+            Side::New => &mut self.new,
+        }
+    }
+
+    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> BySide<U> {
+        BySide {
+            old: f(self.old),
+            new: f(self.new),
+        }
+    }
+
+    /// Each side's value paired with `other`'s value for that side.
+    pub fn zip<U>(self, other: BySide<U>) -> BySide<(T, U)> {
+        BySide {
+            old: (self.old, other.old),
+            new: (self.new, other.new),
+        }
+    }
+
+    /// Each side with its value, old side first.
+    pub fn into_sides(self) -> [(Side, T); 2] {
+        [(Side::Old, self.old), (Side::New, self.new)]
+    }
+}
+
 /// A record's place in its file: its hunk, then its position among the hunk's records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {

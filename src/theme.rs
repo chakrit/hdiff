@@ -4,7 +4,7 @@
 use ratatui::style::{Color, Modifier};
 
 use crate::{
-    document::Side, file_identity::FileState, file_tree::StateMarker, syntax::SyntaxClass,
+    document::BySide, file_identity::FileState, file_tree::StateMarker, syntax::SyntaxClass,
 };
 
 /// The colors a terminal can show, decided once when the session starts.
@@ -75,20 +75,10 @@ impl SyntaxPalette {
 
 /// The `low` palette for diff rows.
 pub struct RowPalette {
-    pub deletion: ChangeColors,
-    pub addition: ChangeColors,
+    /// The colors of rows that change each side: deletions, then additions.
+    pub change: BySide<ChangeColors>,
     pub context_body: Color,
     pub hunk_header: Color,
-}
-
-impl RowPalette {
-    /// The colors of rows that change `side`.
-    pub fn change(&self, side: Side) -> &ChangeColors {
-        match side {
-            Side::Old => &self.deletion,
-            Side::New => &self.addition,
-        }
-    }
 }
 
 /// The colors of rows that change one side.
@@ -144,19 +134,21 @@ static TRUECOLOR: Theme = Theme {
         variable: Color::Rgb(220, 220, 220),
     },
     rows: RowPalette {
-        deletion: ChangeColors {
-            background: Color::Rgb(50, 30, 30),
-            body: Color::Rgb(150, 150, 150),
-            unchanged: Color::Rgb(120, 120, 120),
-            marker: Color::Rgb(206, 74, 74),
-            body_modifier: Modifier::DIM,
-        },
-        addition: ChangeColors {
-            background: Color::Rgb(35, 73, 43),
-            body: Color::Rgb(220, 235, 220),
-            unchanged: Color::Rgb(170, 185, 170),
-            marker: Color::Rgb(112, 195, 115),
-            body_modifier: Modifier::empty(),
+        change: BySide {
+            old: ChangeColors {
+                background: Color::Rgb(50, 30, 30),
+                body: Color::Rgb(150, 150, 150),
+                unchanged: Color::Rgb(120, 120, 120),
+                marker: Color::Rgb(206, 74, 74),
+                body_modifier: Modifier::DIM,
+            },
+            new: ChangeColors {
+                background: Color::Rgb(35, 73, 43),
+                body: Color::Rgb(220, 235, 220),
+                unchanged: Color::Rgb(170, 185, 170),
+                marker: Color::Rgb(112, 195, 115),
+                body_modifier: Modifier::empty(),
+            },
         },
         context_body: Color::Rgb(180, 180, 180),
         hunk_header: Color::Rgb(100, 155, 175),
@@ -189,19 +181,21 @@ static INDEXED: Theme = Theme {
         variable: Color::Indexed(253),
     },
     rows: RowPalette {
-        deletion: ChangeColors {
-            background: Color::Indexed(52),
-            body: Color::Indexed(245),
-            unchanged: Color::Indexed(242),
-            marker: Color::Indexed(167),
-            body_modifier: Modifier::DIM,
-        },
-        addition: ChangeColors {
-            background: Color::Indexed(22),
-            body: Color::Indexed(255),
-            unchanged: Color::Indexed(250),
-            marker: Color::Indexed(71),
-            body_modifier: Modifier::empty(),
+        change: BySide {
+            old: ChangeColors {
+                background: Color::Indexed(52),
+                body: Color::Indexed(245),
+                unchanged: Color::Indexed(242),
+                marker: Color::Indexed(167),
+                body_modifier: Modifier::DIM,
+            },
+            new: ChangeColors {
+                background: Color::Indexed(22),
+                body: Color::Indexed(255),
+                unchanged: Color::Indexed(250),
+                marker: Color::Indexed(71),
+                body_modifier: Modifier::empty(),
+            },
         },
         context_body: Color::Indexed(250),
         hunk_header: Color::Indexed(109),
@@ -234,19 +228,21 @@ static BASIC: Theme = Theme {
         variable: Color::White,
     },
     rows: RowPalette {
-        deletion: ChangeColors {
-            background: Color::Red,
-            body: Color::DarkGray,
-            unchanged: Color::DarkGray,
-            marker: Color::Red,
-            body_modifier: Modifier::DIM,
-        },
-        addition: ChangeColors {
-            background: Color::Green,
-            body: Color::White,
-            unchanged: Color::Gray,
-            marker: Color::Green,
-            body_modifier: Modifier::empty(),
+        change: BySide {
+            old: ChangeColors {
+                background: Color::Red,
+                body: Color::DarkGray,
+                unchanged: Color::DarkGray,
+                marker: Color::Red,
+                body_modifier: Modifier::DIM,
+            },
+            new: ChangeColors {
+                background: Color::Green,
+                body: Color::White,
+                unchanged: Color::Gray,
+                marker: Color::Green,
+                body_modifier: Modifier::empty(),
+            },
         },
         context_body: Color::Gray,
         hunk_header: Color::Cyan,
@@ -326,8 +322,7 @@ mod tests {
             variable,
         } = syntax;
         let RowPalette {
-            deletion,
-            addition,
+            change,
             context_body,
             hunk_header,
         } = rows;
@@ -378,8 +373,8 @@ mod tests {
             .into_iter()
             .flatten()
             .copied()
-            .chain(change_colors(deletion))
-            .chain(change_colors(addition))
+            .chain(change_colors(&change.old))
+            .chain(change_colors(&change.new))
             .collect()
     }
 }

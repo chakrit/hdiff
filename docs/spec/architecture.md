@@ -392,7 +392,8 @@ the diff pane's middle line stays on that line.
 
 The `low` palette is the only palette and the locked preferred display: additions are strongest; deletion text and
 syntax spans are muted by a row-wide dim modifier over a dim red background; context is quieter
-neutral text. Every rendered row reserves a marker
+neutral text, and raw records take the same unchanged-record tone. Character detail carries the
+side of the change it marks. Every rendered row reserves a marker
 column and one payload spacer: addition and deletion markers occupy that column, while metadata,
 hunks, and context leave it blank so all payloads align. The separator remains neutral, and each
 change background begins after its right-hand gutter. The palette applies consistently in

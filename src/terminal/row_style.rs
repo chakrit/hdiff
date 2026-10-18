@@ -5,7 +5,7 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     screen::MARKER_GUTTER_WIDTH,
-    styling::{RowTone, TextStyle},
+    styling::{DetailStyle, RowTone, TextStyle},
     theme::{RowPalette, Theme},
 };
 
@@ -18,10 +18,10 @@ pub(super) fn gutter(
 
     match tone {
         RowTone::Changed(side) => {
-            let marker = Style::default().fg(palette.change(side).marker);
+            let marker = Style::default().fg(palette.change.get(side).marker);
             [(side.change().marker(), marker), spacing]
         }
-        RowTone::Context | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
+        RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
     }
 }
 
@@ -29,35 +29,28 @@ pub(super) fn gutter(
 pub(super) fn row_style(tone: RowTone, palette: &RowPalette) -> Style {
     match tone {
         RowTone::Changed(side) => {
-            let colors = palette.change(side);
+            let colors = palette.change.get(side);
             Style::default()
                 .bg(colors.background)
                 .fg(colors.body)
                 .add_modifier(colors.body_modifier)
         }
-        RowTone::Context => Style::default().fg(palette.context_body),
+        RowTone::UnchangedRecord => Style::default().fg(palette.context_body),
         RowTone::HunkHeader => Style::default().fg(palette.hunk_header),
         RowTone::Plain => Style::default(),
     }
 }
 
-/// The style of a text segment on a row of `tone`.
-pub(super) fn segment_style(tone: RowTone, text_style: TextStyle, theme: &Theme) -> Style {
-    let palette = &theme.rows;
-    let (detail, unchanged) = match tone {
-        RowTone::Changed(side) => {
-            let colors = palette.change(side);
-            (colors.marker, colors.unchanged)
-        }
-        RowTone::Context | RowTone::HunkHeader | RowTone::Plain => {
-            (palette.context_body, palette.context_body)
-        }
-    };
-
+/// The style of a text segment, over its row's style.
+pub(super) fn segment_style(text_style: TextStyle, theme: &Theme) -> Style {
     match text_style {
         TextStyle::Plain => Style::default(),
         TextStyle::Syntax(class) => Style::default().fg(theme.syntax.color(class)),
-        TextStyle::Detail => Style::default().fg(detail).remove_modifier(Modifier::DIM),
-        TextStyle::Unchanged => Style::default().fg(unchanged),
+        TextStyle::Detail(side, DetailStyle::Changed) => Style::default()
+            .fg(theme.rows.change.get(side).marker)
+            .remove_modifier(Modifier::DIM),
+        TextStyle::Detail(side, DetailStyle::Unchanged) => {
+            Style::default().fg(theme.rows.change.get(side).unchanged)
+        }
     }
 }

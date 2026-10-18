@@ -1,9 +1,13 @@
+//! Character detail: the spans of each changed line that differ from its peer. Rules:
+//! `docs/spec/architecture.md` (View model).
+
 use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
+    document::{BySide, Side},
     page_rows::{LineIndex, LineMap, PageRows, SideBySideRow},
-    render::PayloadSpan,
+    span::PayloadSpan,
 };
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
@@ -11,52 +15,62 @@ const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 /// The character-detail spans of each `page_rows` line that has changed spans: a paired
 /// row marks the spans that differ from its peer, and an unmatched row is changed as a
 /// whole.
-pub fn character_details(page_rows: &PageRows) -> LineMap<Option<Box<[PayloadSpan]>>> {
+pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
     let payload = |line: LineIndex| page_rows.line(line).payload();
-    let whole = |line: LineIndex| vec![PayloadSpan::new(0, payload(line).len())];
+    let whole = |side, line| {
+        let spans = Box::new([PayloadSpan::whole(payload(line))]);
+        Some((line, ChangedDetail { side, spans }))
+    };
 
     let row_details = page_rows.pairs().iter().flat_map(|row| match *row {
-        SideBySideRow::Paired { before, after } => {
-            let pair = changed_pair_detail(payload(before), payload(after));
-            [Some((before, pair.before)), Some((after, pair.after))]
+        SideBySideRow::Paired(lines) => {
+            let spans = changed_pair_spans(lines.map(payload));
+            lines.zip(spans).into_sides().map(|(side, (line, spans))| {
+                let spans = spans.into_boxed_slice();
+                Some((line, ChangedDetail { side, spans }))
+            })
         }
-        SideBySideRow::BeforeOnly(line) | SideBySideRow::AfterOnly(line) => {
-            [Some((line, whole(line))), None]
-        }
+        SideBySideRow::OldOnly(line) => [whole(Side::Old, line), None],
+        SideBySideRow::NewOnly(line) => [whole(Side::New, line), None],
         SideBySideRow::Shared(_) => [None, None],
     });
     let changed = row_details
         .flatten()
-        .filter(|(_, spans)| spans.iter().any(|span| !span.is_empty()))
-        .map(|(line, spans)| (line, spans.into_boxed_slice()));
+        .filter(|(_, detail)| detail.spans.iter().any(|span| !span.is_empty()));
 
     page_rows.sparse_map(changed)
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct ChangedPairDetail {
-    before: Vec<PayloadSpan>,
-    after: Vec<PayloadSpan>,
+/// The changed spans of a line that changes `side`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ChangedDetail {
+    side: Side,
+    spans: Box<[PayloadSpan]>,
+}
+
+impl ChangedDetail {
+    pub fn side(&self) -> Side {
+        self.side
+    }
+
+    pub fn spans(&self) -> &[PayloadSpan] {
+        &self.spans
+    }
 }
 
 /// The spans that differ between a changed pair's payloads, found by diffing their
 /// tokens.
-fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
-    let before_tokens = tokens(before);
-    let after_tokens = tokens(after);
-    let mut changes = diff_slices(Algorithm::Myers, &before_tokens, &after_tokens)
+fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
+    let tokens = payloads.map(tokens);
+    let mut changes = diff_slices(Algorithm::Myers, &tokens.old, &tokens.new)
         .into_iter()
         .peekable();
-    let mut before_offset = 0;
-    let mut after_offset = 0;
-    let mut detail = ChangedPairDetail::default();
+    let mut cursor = PairCursor::new(payloads);
 
     while let Some((tag, tokens)) = changes.next() {
         let replacement = match tag {
             ChangeTag::Equal => {
-                let width = tokens_width(tokens);
-                before_offset += width;
-                after_offset += width;
+                cursor.take(tag, tokens_width(tokens));
                 continue;
             }
             ChangeTag::Delete => match changes.next_if(|(next, _)| *next == ChangeTag::Insert) {
@@ -74,14 +88,53 @@ fn changed_pair_detail(before: &str, after: &str) -> ChangedPairDetail {
                 None => Replacement::Inserted(tokens),
             },
         };
-        replacement.mark(&mut detail, before_offset, after_offset);
-        before_offset += replacement.deleted_width();
-        after_offset += replacement.inserted_width();
+        replacement.mark(&mut cursor);
     }
 
-    coalesce_tiny_equal_islands(&mut detail.before, before);
-    coalesce_tiny_equal_islands(&mut detail.after, after);
-    detail
+    cursor
+        .spans
+        .zip(payloads)
+        .map(|(spans, payload)| coalesce_tiny_equal_islands(spans, payload))
+}
+
+/// Walks a changed pair's payloads together, marking the changed spans of each side.
+struct PairCursor<'a> {
+    payloads: BySide<&'a str>,
+    offsets: BySide<usize>,
+    spans: BySide<Vec<PayloadSpan>>,
+}
+
+impl<'a> PairCursor<'a> {
+    fn new(payloads: BySide<&'a str>) -> Self {
+        Self {
+            payloads,
+            offsets: BySide::default(),
+            spans: BySide::default(),
+        }
+    }
+
+    /// Takes the next `width` bytes `tag` names: equal text passes on both sides, deleted
+    /// text is marked on the old side, and inserted text on the new side.
+    fn take(&mut self, tag: ChangeTag, width: usize) {
+        match tag {
+            ChangeTag::Equal => {
+                self.offsets.old += width;
+                self.offsets.new += width;
+            }
+            ChangeTag::Delete => self.mark(Side::Old, width),
+            ChangeTag::Insert => self.mark(Side::New, width),
+        }
+    }
+
+    /// Marks the next `width` bytes of `side` changed.
+    fn mark(&mut self, side: Side, width: usize) {
+        let start = *self.offsets.get(side);
+        let end = start + width;
+
+        let span = PayloadSpan::within(self.payloads.get(side), start, end);
+        self.spans.get_mut(side).push(span);
+        *self.offsets.get_mut(side) = end;
+    }
 }
 
 // Tokens
@@ -158,45 +211,32 @@ enum Replacement<'t, 'a> {
 impl Replacement<'_, '_> {
     /// Marks the changed text. A word replaced by one similar word marks only the
     /// graphemes that differ; any other change is marked whole.
-    fn mark(&self, detail: &mut ChangedPairDetail, before_offset: usize, after_offset: usize) {
+    fn mark(&self, cursor: &mut PairCursor<'_>) {
         match self {
-            Self::Deleted(deleted) => {
-                add_span(&mut detail.before, before_offset, tokens_width(deleted));
-            }
-            Self::Inserted(inserted) => {
-                add_span(&mut detail.after, after_offset, tokens_width(inserted));
-            }
-            Self::Replaced { deleted, inserted } => match similar_word_detail(deleted, inserted) {
-                Some(words) => {
-                    add_offset_spans(&mut detail.before, &words.before, before_offset);
-                    add_offset_spans(&mut detail.after, &words.after, after_offset);
+            Self::Deleted(deleted) => cursor.mark(Side::Old, tokens_width(deleted)),
+            Self::Inserted(inserted) => cursor.mark(Side::New, tokens_width(inserted)),
+            Self::Replaced { deleted, inserted } => match similar_word_changes(deleted, inserted) {
+                Some(changes) => {
+                    for (tag, width) in changes {
+                        cursor.take(tag, width);
+                    }
                 }
                 None => {
-                    add_span(&mut detail.before, before_offset, tokens_width(deleted));
-                    add_span(&mut detail.after, after_offset, tokens_width(inserted));
+                    cursor.mark(Side::Old, tokens_width(deleted));
+                    cursor.mark(Side::New, tokens_width(inserted));
                 }
             },
         }
     }
-
-    fn deleted_width(&self) -> usize {
-        match self {
-            Self::Deleted(deleted) | Self::Replaced { deleted, .. } => tokens_width(deleted),
-            Self::Inserted(_) => 0,
-        }
-    }
-
-    fn inserted_width(&self) -> usize {
-        match self {
-            Self::Inserted(inserted) | Self::Replaced { inserted, .. } => tokens_width(inserted),
-            Self::Deleted(_) => 0,
-        }
-    }
 }
 
-/// The graphemes that differ when one word replaces one similar word: one sharing at
-/// least half of the shorter word's graphemes. Any other replacement has none.
-fn similar_word_detail(deleted: &[Token<'_>], inserted: &[Token<'_>]) -> Option<ChangedPairDetail> {
+/// The grapheme changes, as tags and byte widths, when one word replaces one similar
+/// word: one sharing at least half of the shorter word's graphemes. Any other replacement
+/// has none.
+fn similar_word_changes(
+    deleted: &[Token<'_>],
+    inserted: &[Token<'_>],
+) -> Option<Vec<(ChangeTag, usize)>> {
     let ([before], [after]) = (deleted, inserted) else {
         return None;
     };
@@ -217,65 +257,48 @@ fn similar_word_detail(deleted: &[Token<'_>], inserted: &[Token<'_>]) -> Option<
         return None;
     }
 
-    let mut before_offset = 0;
-    let mut after_offset = 0;
-    let mut detail = ChangedPairDetail::default();
-    for (tag, graphemes) in changes {
-        let width = graphemes
-            .iter()
-            .map(|grapheme| grapheme.len())
-            .sum::<usize>();
-        match tag {
-            ChangeTag::Equal => {
-                before_offset += width;
-                after_offset += width;
-            }
-            ChangeTag::Delete => {
-                add_span(&mut detail.before, before_offset, width);
-                before_offset += width;
-            }
-            ChangeTag::Insert => {
-                add_span(&mut detail.after, after_offset, width);
-                after_offset += width;
-            }
-        }
-    }
-    Some(detail)
+    let widths = changes.into_iter().map(|(tag, graphemes)| {
+        let width = graphemes.iter().map(|grapheme| grapheme.len()).sum();
+        (tag, width)
+    });
+    Some(widths.collect())
 }
 
 // Spans
 
-fn add_span(target: &mut Vec<PayloadSpan>, start: usize, width: usize) {
-    target.push(PayloadSpan::new(start, start + width));
-}
-
-fn add_offset_spans(target: &mut Vec<PayloadSpan>, spans: &[PayloadSpan], offset: usize) {
-    target.extend(spans.iter().map(|span| span.offset(offset)));
-}
-
-fn coalesce_tiny_equal_islands(spans: &mut Vec<PayloadSpan>, text: &str) {
-    let mut coalesced = Vec::new();
-
-    for span in spans.drain(..) {
-        let Some(previous) = coalesced.last_mut() else {
-            coalesced.push(span);
-            continue;
-        };
-        let island = &text[previous.end()..span.start()];
-        if island.graphemes(true).count() <= MAX_EQUAL_ISLAND_GRAPHEMES {
-            *previous = previous.through(span);
-        } else {
-            coalesced.push(span);
+/// `spans` with each gap of at most `MAX_EQUAL_ISLAND_GRAPHEMES` graphemes of `payload`
+/// between neighbors absorbed into one span.
+fn coalesce_tiny_equal_islands(spans: Vec<PayloadSpan>, payload: &str) -> Vec<PayloadSpan> {
+    spans.into_iter().fold(Vec::new(), |mut coalesced, span| {
+        match coalesced.last_mut() {
+            Some(previous) if is_tiny_island(&payload[previous.end()..span.start()]) => {
+                *previous = previous.through(span);
+            }
+            _ => coalesced.push(span),
         }
-    }
+        coalesced
+    })
+}
 
-    *spans = coalesced;
+fn is_tiny_island(island: &str) -> bool {
+    island.graphemes(true).count() <= MAX_EQUAL_ISLAND_GRAPHEMES
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ChangedPairDetail, PayloadSpan, changed_pair_detail, character_details};
-    use crate::{page_rows::PageRows, parser::parse_patch};
+    use super::{PayloadSpan, changed_pair_spans, character_details};
+    use crate::{document::BySide, page_rows::PageRows, parser::parse_patch};
+
+    fn spans_of(old: &str, new: &str) -> BySide<Vec<PayloadSpan>> {
+        changed_pair_spans(BySide { old, new })
+    }
+
+    fn spans(text: &str, ranges: &[(usize, usize)]) -> Vec<PayloadSpan> {
+        ranges
+            .iter()
+            .map(|(start, end)| PayloadSpan::within(text, *start, *end))
+            .collect()
+    }
 
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
@@ -306,13 +329,16 @@ mod tests {
             let page_rows = PageRows::of_file(&document.file_views().next().expect("first file"));
             let details = character_details(&page_rows);
 
-            for (row, line) in page_rows.line_indices().zip(page_rows.lines()) {
-                let spans = details.get(row).as_deref().unwrap_or_default();
+            for (row, line) in page_rows.lines() {
+                let found = details
+                    .get(row)
+                    .as_ref()
+                    .map_or(&[][..], |detail| detail.spans());
                 let wanted = expected.iter().find(|(text, _, _)| *text == line.text());
-                let wanted = wanted.map(|(_, start, end)| PayloadSpan::new(*start, *end));
+                let wanted = wanted.map(|(_, start, end)| (*start, *end));
                 assert_eq!(
-                    spans,
-                    wanted.into_iter().collect::<Vec<_>>(),
+                    found,
+                    spans(line.payload(), wanted.as_slice()),
                     "{hunk}: {:?}",
                     line.text()
                 );
@@ -322,52 +348,52 @@ mod tests {
 
     #[test]
     fn marks_only_the_replaced_graphemes_in_a_changed_pair() {
-        let detail = changed_pair_detail("let café = old;", "let café = new;");
+        let (old, new) = ("let café = old;", "let café = new;");
 
         assert_eq!(
-            detail,
-            ChangedPairDetail {
-                before: vec![PayloadSpan::new(12, 15)],
-                after: vec![PayloadSpan::new(12, 15)],
+            spans_of(old, new),
+            BySide {
+                old: spans(old, &[(12, 15)]),
+                new: spans(new, &[(12, 15)]),
             }
         );
     }
 
     #[test]
     fn keeps_unrelated_identifier_replacements_whole() {
-        let detail = changed_pair_detail("DiffLayout", "ViewPreferences");
+        let (old, new) = ("DiffLayout", "ViewPreferences");
 
         assert_eq!(
-            detail,
-            ChangedPairDetail {
-                before: vec![PayloadSpan::new(0, 10)],
-                after: vec![PayloadSpan::new(0, 15)],
+            spans_of(old, new),
+            BySide {
+                old: spans(old, &[(0, 10)]),
+                new: spans(new, &[(0, 15)]),
             }
         );
     }
 
     #[test]
     fn preserves_matching_camel_case_tokens() {
-        let detail = changed_pair_detail("configPath", "configFile");
+        let (old, new) = ("configPath", "configFile");
 
         assert_eq!(
-            detail,
-            ChangedPairDetail {
-                before: vec![PayloadSpan::new(6, 10)],
-                after: vec![PayloadSpan::new(6, 10)],
+            spans_of(old, new),
+            BySide {
+                old: spans(old, &[(6, 10)]),
+                new: spans(new, &[(6, 10)]),
             }
         );
     }
 
     #[test]
     fn coalesces_tiny_equal_islands_between_changed_spans() {
-        let detail = changed_pair_detail("side-by-side", "vertical-split");
+        let (old, new) = ("side-by-side", "vertical-split");
 
         assert_eq!(
-            detail,
-            ChangedPairDetail {
-                before: vec![PayloadSpan::new(0, 12)],
-                after: vec![PayloadSpan::new(0, 14)],
+            spans_of(old, new),
+            BySide {
+                old: spans(old, &[(0, 12)]),
+                new: spans(new, &[(0, 14)]),
             }
         );
     }

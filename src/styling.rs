@@ -1,10 +1,15 @@
+//! Row tones and the styled segments of each row's payload. Rules:
+//! `docs/spec/architecture.md` (View model, Technology direction).
+
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
+    detail::ChangedDetail,
+    display_lines::LineKind,
     document::{RecordMap, Side},
-    page_rows::{LineMap, PageRows},
+    page_rows::{LineMap, PageRows, RenderedLine},
     preferences::DiffGranularity,
-    render::{LineKind, PayloadSpan, RenderedLine},
+    span::PayloadSpan,
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
@@ -13,7 +18,7 @@ use crate::{
 pub fn row_styles(
     page_rows: &PageRows,
     syntax: &RecordMap<Vec<SyntaxSpan>>,
-    details: &LineMap<Option<Box<[PayloadSpan]>>>,
+    details: &LineMap<Option<ChangedDetail>>,
 ) -> LineMap<RowStyles> {
     page_rows.map_lines(|index, line| {
         let text = line.payload();
@@ -23,21 +28,21 @@ pub fn row_styles(
                 &[]
             }
         };
-        let character = details.get(index).as_deref();
+        let character = details.get(index).as_ref();
 
         RowStyles {
             syntax: syntax_partition(text, spans),
-            character: character.map(|spans| character_partition(text, spans)),
+            character: character.map(|detail| character_partition(text, detail)),
         }
     })
 }
 
-/// How a row is toned: a change to one side, a context or raw record, a hunk header, or
-/// any other line.
+/// How a row is toned: a change to one side, an unchanged record (context or raw), a hunk
+/// header, or any other line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RowTone {
     Changed(Side),
-    Context,
+    UnchangedRecord,
     HunkHeader,
     Plain,
 }
@@ -45,9 +50,9 @@ pub enum RowTone {
 impl RowTone {
     fn of(kind: LineKind) -> Self {
         match kind {
-            LineKind::Record { kind, .. } => {
-                kind.changed_side().map_or(Self::Context, Self::Changed)
-            }
+            LineKind::Record { kind, .. } => kind
+                .changed_side()
+                .map_or(Self::UnchangedRecord, Self::Changed),
             LineKind::HunkHeader => Self::HunkHeader,
             LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
         }
@@ -77,13 +82,21 @@ impl<'a> StyledRow<'a> {
     }
 }
 
+/// How a payload segment is drawn: as plain text, as a syntax class, or as character
+/// detail of a line that changes one side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextStyle {
     Plain,
     Syntax(SyntaxClass),
-    /// A changed span on a row with character detail.
-    Detail,
-    /// Text between the changed spans on a row with character detail.
+    Detail(Side, DetailStyle),
+}
+
+/// The two kinds of text on a row with character detail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailStyle {
+    /// A span that differs from the row's peer.
+    Changed,
+    /// Text between the changed spans.
     Unchanged,
 }
 
@@ -128,17 +141,23 @@ fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
     Partition::new(text, &annotations, TextStyle::Plain)
 }
 
-fn character_partition(text: &str, details: &[PayloadSpan]) -> Partition {
-    let annotations = details
+fn character_partition(text: &str, detail: &ChangedDetail) -> Partition {
+    let side = detail.side();
+    let annotations = detail
+        .spans()
         .iter()
         .map(|span| Annotation {
             span: *span,
             priority_length: span.len(),
-            style: TextStyle::Detail,
+            style: TextStyle::Detail(side, DetailStyle::Changed),
         })
         .collect::<Vec<_>>();
 
-    Partition::new(text, &annotations, TextStyle::Unchanged)
+    Partition::new(
+        text,
+        &annotations,
+        TextStyle::Detail(side, DetailStyle::Unchanged),
+    )
 }
 
 struct Annotation {
@@ -162,7 +181,8 @@ struct Boundary {
 }
 
 impl Partition {
-    /// Splits `text` at annotation edges; text no annotation covers takes `uncovered`.
+    /// Splits `text` at annotation edges, which are spans of `text`; text no annotation
+    /// covers takes `uncovered`.
     fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self::Uniform(Boundary {
@@ -171,13 +191,11 @@ impl Partition {
             });
         }
 
-        let mut offsets = vec![0, text.len()];
-        for annotation in annotations {
-            let span = annotation.span;
-            assert!(text.is_char_boundary(span.start()));
-            assert!(text.is_char_boundary(span.end()));
-            offsets.extend([span.start(), span.end()]);
-        }
+        let mut offsets = annotations
+            .iter()
+            .flat_map(|annotation| [annotation.span.start(), annotation.span.end()])
+            .chain([0, text.len()])
+            .collect::<Vec<_>>();
         offsets.sort_unstable();
         offsets.dedup();
 
@@ -226,44 +244,56 @@ impl Partition {
 
 #[cfg(test)]
 mod tests {
-    use super::{RowTone, StyledRow, TextStyle, character_partition, syntax_partition};
+    use super::{
+        DetailStyle, Partition, RowTone, StyledRow, TextStyle, character_partition,
+        syntax_partition,
+    };
     use crate::{
+        detail::character_details,
         document::Side,
-        render::PayloadSpan,
+        page_rows::PageRows,
+        parser::parse_patch,
+        span::PayloadSpan,
         syntax::{SyntaxClass, SyntaxSpan},
     };
+
+    fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<(&'a str, TextStyle)> {
+        let row = StyledRow {
+            tone: RowTone::Plain,
+            text,
+            partition,
+        };
+        row.segments().collect()
+    }
+
+    fn syntax(
+        text: &str,
+        start: usize,
+        end: usize,
+        length: usize,
+        class: SyntaxClass,
+    ) -> SyntaxSpan {
+        SyntaxSpan {
+            span: PayloadSpan::within(text, start, end),
+            capture_length: length,
+            class,
+        }
+    }
 
     #[test]
     fn chooses_specific_captures_and_later_ties_without_losing_outer_styles() {
         let text = "αcall!";
-        let syntax = [
-            SyntaxSpan {
-                span: PayloadSpan::new(0, 7),
-                capture_length: 7,
-                class: SyntaxClass::String,
-            },
-            SyntaxSpan {
-                span: PayloadSpan::new(2, 6),
-                capture_length: 4,
-                class: SyntaxClass::Property,
-            },
-            SyntaxSpan {
-                span: PayloadSpan::new(2, 6),
-                capture_length: 4,
-                class: SyntaxClass::Function,
-            },
+        let spans = [
+            syntax(text, 0, 7, 7, SyntaxClass::String),
+            syntax(text, 2, 6, 4, SyntaxClass::Property),
+            syntax(text, 2, 6, 4, SyntaxClass::Function),
         ];
-        let partition = syntax_partition(text, &syntax);
-        let row = StyledRow {
-            tone: RowTone::Context,
-            text,
-            partition: &partition,
-        };
+        let partition = syntax_partition(text, &spans);
 
         // architecture.md (Technology direction): overlap precedence applies styles
         // without changing source text.
         assert_eq!(
-            row.segments().collect::<Vec<_>>(),
+            segments(text, &partition),
             [
                 ("α", TextStyle::Syntax(SyntaxClass::String)),
                 ("call", TextStyle::Syntax(SyntaxClass::Function)),
@@ -274,21 +304,26 @@ mod tests {
 
     #[test]
     fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
-        let text = "αcall!";
-        let details = [PayloadSpan::new(2, 6)];
-        let partition = character_partition(text, &details);
-        let row = StyledRow {
-            tone: RowTone::Changed(Side::New),
-            text,
-            partition: &partition,
-        };
+        let document = parse_patch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-αcall!\n+αcell!\n".as_bytes())
+            .expect("valid diff");
+        let rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+        let details = character_details(&rows);
+        let addition = rows.line_index(4);
+        let detail = details
+            .get(addition)
+            .as_ref()
+            .expect("a changed pair has detail");
+        let text = rows.line(addition).payload();
 
+        let partition = character_partition(text, detail);
+
+        let detail = |style| TextStyle::Detail(Side::New, style);
         assert_eq!(
-            row.segments().collect::<Vec<_>>(),
+            segments(text, &partition),
             [
-                ("α", TextStyle::Unchanged),
-                ("call", TextStyle::Detail),
-                ("!", TextStyle::Unchanged),
+                ("αc", detail(DetailStyle::Unchanged)),
+                ("e", detail(DetailStyle::Changed)),
+                ("ll!", detail(DetailStyle::Unchanged)),
             ]
         );
     }
@@ -296,43 +331,22 @@ mod tests {
     #[test]
     fn capture_precedence_retains_specificity_after_multiline_clipping() {
         let text = "word";
-        let syntax = [
-            SyntaxSpan {
-                span: PayloadSpan::new(0, 4),
-                capture_length: 4,
-                class: SyntaxClass::Keyword,
-            },
-            SyntaxSpan {
-                span: PayloadSpan::new(0, 4),
-                capture_length: 20,
-                class: SyntaxClass::Comment,
-            },
+        let spans = [
+            syntax(text, 0, 4, 4, SyntaxClass::Keyword),
+            syntax(text, 0, 4, 20, SyntaxClass::Comment),
         ];
-        let partition = syntax_partition(text, &syntax);
-        let row = StyledRow {
-            tone: RowTone::Context,
-            text,
-            partition: &partition,
-        };
+        let partition = syntax_partition(text, &spans);
 
         assert_eq!(
-            row.segments().collect::<Vec<_>>(),
-            [("word", TextStyle::Syntax(SyntaxClass::Keyword)),]
+            segments(text, &partition),
+            [("word", TextStyle::Syntax(SyntaxClass::Keyword))]
         );
     }
 
     #[test]
     fn text_without_annotations_takes_the_uncovered_style() {
-        let partition = character_partition("same", &[]);
-        let row = StyledRow {
-            tone: RowTone::Changed(Side::Old),
-            text: "same",
-            partition: &partition,
-        };
+        let partition = syntax_partition("same", &[]);
 
-        assert_eq!(
-            row.segments().collect::<Vec<_>>(),
-            [("same", TextStyle::Unchanged)]
-        );
+        assert_eq!(segments("same", &partition), [("same", TextStyle::Plain)]);
     }
 }

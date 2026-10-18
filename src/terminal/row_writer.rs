@@ -64,7 +64,7 @@ pub(super) fn write_row(
     let payload = ExpandedPayload::new(row);
     let payload_clusters = payload
         .clusters()
-        .map(|(cluster, text_style)| (cluster, segment_style(row.tone, text_style, theme)));
+        .map(|(cluster, text_style)| (cluster, segment_style(text_style, theme)));
     let gutter = gutter(row.tone, &theme.rows);
 
     let cursor = RowCursor {
@@ -253,7 +253,7 @@ mod tests {
         preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
-        terminal::rows::{PaneRow, visible_diff_rows},
+        terminal::rows::{PaneRow, visible_rows},
         theme::{ColorDepth, Theme},
     };
 
@@ -325,7 +325,7 @@ mod tests {
         // architecture.md: a wide grapheme cut by the left pane edge renders its visible
         // cells blank, keeping later text in its column.
         assert_eq!(buffer[(0, 0)].symbol(), " ");
-        assert_eq!(buffer[(0, 0)].bg, THEME.rows.addition.background);
+        assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
         assert_eq!(buffer[(1, 0)].symbol(), "x");
     }
 
@@ -339,7 +339,7 @@ mod tests {
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
-        assert_eq!(buffer[(4, 0)].bg, THEME.rows.addition.background);
+        assert_eq!(buffer[(4, 0)].bg, THEME.rows.change.new.background);
     }
 
     #[test]
@@ -364,8 +364,8 @@ mod tests {
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
         assert_eq!(row_text(&past_the_end), "");
-        assert_eq!(second[(0, 0)].bg, THEME.rows.addition.background);
-        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.addition.background);
+        assert_eq!(second[(0, 0)].bg, THEME.rows.change.new.background);
+        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.change.new.background);
     }
 
     #[test]
@@ -447,7 +447,9 @@ mod tests {
             panic!("a single pane shows lines");
         };
         let all = ScreenLines::new(usize::MAX);
-        let rows = visible_diff_rows(file, &extent, ScreenLines::ZERO, DiffGranularity::Line, all);
+        let rows = visible_rows(&extent, ScreenLines::ZERO, all, |line| {
+            file.row(line, DiffGranularity::Line)
+        });
 
         rows.into_iter()
             .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))

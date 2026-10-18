@@ -7,7 +7,6 @@ use crate::{
     measurement::{Observer, Stage, Unobserved},
     page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
-    render::LineKind,
     styling::{RowStyles, StyledRow, row_styles},
     syntax::SyntaxHighlighter,
 };
@@ -178,18 +177,18 @@ impl PreparedPage {
     }
 
     fn record_count(&self) -> usize {
-        self.rows
-            .lines()
-            .iter()
-            .filter(|line| matches!(line.kind(), LineKind::Record { .. }))
-            .count()
+        self.rows.record_count()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{PageIndex, PreparedDocument};
-    use crate::{parser::parse_patch, preferences::DiffGranularity, styling::TextStyle};
+    use crate::{
+        parser::parse_patch,
+        preferences::DiffGranularity,
+        styling::{DetailStyle, TextStyle},
+    };
 
     #[test]
     fn retains_surrounding_text_with_separate_repeated_file_views() {
@@ -207,8 +206,7 @@ mod tests {
             let rendered: Vec<u8> = file
                 .rows()
                 .lines()
-                .iter()
-                .flat_map(|line| line.text().bytes())
+                .flat_map(|(_, line)| line.text().bytes())
                 .collect();
             assert_eq!(rendered, expected.as_bytes());
             assert!(
@@ -265,7 +263,7 @@ mod tests {
         assert!(file.rows().line_indices().any(|row| {
             file.row(row, DiffGranularity::Character)
                 .segments()
-                .any(|(_, style)| style == TextStyle::Detail)
+                .any(|(_, style)| matches!(style, TextStyle::Detail(_, DetailStyle::Changed)))
         }));
     }
 }

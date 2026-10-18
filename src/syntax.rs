@@ -6,7 +6,7 @@ use crate::{
     document::{DiffFile, Hunk, RecordMap, Side, UnifiedBody},
     headers::HeaderPath,
     measurement::{Observer, Stage, Work},
-    render::PayloadSpan,
+    span::PayloadSpan,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,7 +145,7 @@ impl SyntaxHighlighter {
                 tree
             });
             observer.count(Work::Parse);
-            highlighter.parse(&projection.source, edited_base.as_ref())
+            highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
         });
         observer.measure(Stage::Query, |observer| {
             highlighter.highlight(projection, &tree, spans, observer)
@@ -293,7 +293,7 @@ impl LanguageHighlighter {
         let capture_names = self.query.capture_names();
         let mut captures =
             self.cursor
-                .captures(&self.query, tree.root_node(), projection.source.as_slice());
+                .captures(&self.query, tree.root_node(), projection.source.as_bytes());
 
         while let Some((query_match, index)) = captures.next() {
             observer.count(Work::Capture);
@@ -325,7 +325,7 @@ enum Styles {
 
 /// One side's records of a hunk joined into a virtual source buffer.
 struct Projection {
-    source: Vec<u8>,
+    source: String,
     /// The records that take this projection's spans, in source order.
     records: Vec<ProjectedRecord>,
 }
@@ -339,7 +339,7 @@ struct ProjectedRecord {
 impl Projection {
     /// `side`'s records of `hunk`; a side without records projects no source.
     fn from_hunk(hunk: &Hunk, side: Side, styles: Styles) -> Self {
-        let mut source = Vec::new();
+        let mut source = String::new();
         let mut records = Vec::new();
         let side_records = hunk
             .records
@@ -349,7 +349,7 @@ impl Projection {
 
         for (record_index, record) in side_records {
             let start = source.len();
-            source.extend_from_slice(record.payload.sanitized().as_bytes());
+            source.push_str(record.payload.sanitized());
             let styled = match styles {
                 Styles::Changes => record.kind.changed_side().is_some(),
                 Styles::ChangesAndContext => true,
@@ -360,7 +360,7 @@ impl Projection {
                     source: start..source.len(),
                 });
             }
-            source.push(b'\n');
+            source.push('\n');
         }
 
         Self { source, records }
@@ -383,8 +383,10 @@ impl Projection {
             let mapped_start = start.max(record.source.start);
             let mapped_end = end.min(record.source.end);
             if mapped_start < mapped_end {
+                let payload = &self.source[record.source.clone()];
                 spans[record.record_index].push(SyntaxSpan {
-                    span: PayloadSpan::new(
+                    span: PayloadSpan::within(
+                        payload,
                         mapped_start - record.source.start,
                         mapped_end - record.source.start,
                     ),
@@ -398,16 +400,16 @@ impl Projection {
     fn edit_to(&self, newer: &Self) -> InputEdit {
         let common_prefix = self
             .source
-            .iter()
-            .zip(&newer.source)
+            .bytes()
+            .zip(newer.source.bytes())
             .take_while(|(old, new)| old == new)
             .count();
         let shared_limit = self.source.len().min(newer.source.len()) - common_prefix;
         let common_suffix = self
             .source
-            .iter()
+            .bytes()
             .rev()
-            .zip(newer.source.iter().rev())
+            .zip(newer.source.bytes().rev())
             .take(shared_limit)
             .take_while(|(old, new)| old == new)
             .count();
@@ -419,9 +421,9 @@ impl Projection {
             start_byte,
             old_end_byte,
             new_end_byte,
-            start_position: point_at(&self.source, start_byte),
-            old_end_position: point_at(&self.source, old_end_byte),
-            new_end_position: point_at(&newer.source, new_end_byte),
+            start_position: point_at(self.source.as_bytes(), start_byte),
+            old_end_position: point_at(self.source.as_bytes(), old_end_byte),
+            new_end_position: point_at(newer.source.as_bytes(), new_end_byte),
         }
     }
 
@@ -458,11 +460,11 @@ mod tests {
     #[test]
     fn describes_the_changed_projection_range_for_incremental_parsing() {
         let old = Projection {
-            source: b"let old = 1;\n".to_vec(),
+            source: "let old = 1;\n".to_owned(),
             records: Vec::new(),
         };
         let new = Projection {
-            source: b"let new = 2;\n".to_vec(),
+            source: "let new = 2;\n".to_owned(),
             records: Vec::new(),
         };
 
@@ -565,7 +567,7 @@ mod tests {
     #[test]
     fn finds_the_first_record_overlapping_a_source_span() {
         let projection = Projection {
-            source: Vec::new(),
+            source: "aaaa\nbbbb\ncccc\n".to_owned(),
             records: projected(&[0..4, 5..9, 10..14]),
         };
 
@@ -577,7 +579,7 @@ mod tests {
     #[test]
     fn maps_only_records_overlapping_a_source_span() {
         let projection = Projection {
-            source: Vec::new(),
+            source: "aaaa\nbbbb\ncccc\n".to_owned(),
             records: projected(&[0..4, 5..9, 10..14]),
         };
         let mut spans = vec![Vec::new(), Vec::new(), Vec::new()];
@@ -595,7 +597,7 @@ mod tests {
     #[test]
     fn does_not_map_a_source_span_in_a_record_separator() {
         let projection = Projection {
-            source: Vec::new(),
+            source: "aaaa\nbbbb\n".to_owned(),
             records: projected(&[0..4, 5..9]),
         };
         let mut spans = vec![Vec::new(), Vec::new()];

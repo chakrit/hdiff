@@ -23,7 +23,7 @@ use super::{
     },
     keymap_popup::render_keymap_popup,
     row_writer::{Clip, RowPlacement, write_row},
-    rows::{PaneRow, visible_diff_rows, visible_side_by_side_rows},
+    rows::{PaneRow, visible_rows},
 };
 
 /// Draws `page` through `extent`, the scroll extent of the interaction's display, beside
@@ -63,7 +63,9 @@ pub(super) fn render_prepared_frame(
     };
     match extent {
         DisplayExtent::Single(lines) => {
-            let lines = visible_diff_rows(page, lines, scroll.vertical, granularity, pane_lines);
+            let lines = visible_rows(lines, scroll.vertical, pane_lines, |line| {
+                page.row(line, granularity)
+            });
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
             panes.render(
                 frame,
@@ -72,8 +74,11 @@ pub(super) fn render_prepared_frame(
             );
         }
         DisplayExtent::Split { direction, extent } => {
-            let lines =
-                visible_side_by_side_rows(page, extent, scroll.vertical, granularity, pane_lines);
+            let lines = visible_rows(extent, scroll.vertical, pane_lines, |pair| {
+                page.rows()
+                    .pair(pair)
+                    .map(|line| page.row(line, granularity))
+            });
             let split = geometry.split_panes(*direction);
             render_split_rows(frame, lines, split, *direction, &panes);
         }
@@ -160,8 +165,8 @@ fn render_split_rows(
     let (before_lines, after_lines): (Vec<_>, Vec<_>) = lines
         .into_iter()
         .map(|line| {
-            let (before, after) = line.row.pane_pair();
-            (line.map(|_| before), line.map(|_| after))
+            let panes = line.row.pane_pair();
+            (line.map(|_| panes.old), line.map(|_| panes.new))
         })
         .unzip();
 

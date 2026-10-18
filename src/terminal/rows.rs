@@ -1,9 +1,7 @@
 use crate::{
-    document::Side,
+    document::{BySide, Side},
     extent::{ScreenLine, ScrollExtent},
-    page_rows::{LineIndex, PairIndex, SideBySideRow},
-    preferences::DiffGranularity,
-    prepared::PreparedPage,
+    page_rows::SideBySideRow,
     screen::ScreenLines,
     styling::{RowTone, StyledRow},
 };
@@ -27,46 +25,37 @@ impl PaneRow<'_> {
 }
 
 impl<'a> SideBySideRow<StyledRow<'a>> {
-    /// The before and after pane rows of this row; a one-sided change pairs with a blank
+    /// The old and new pane rows of this row; a change to one side pairs with a blank
     /// peer toned as a change to the other side.
-    pub(super) fn pane_pair(self) -> (PaneRow<'a>, PaneRow<'a>) {
+    pub(super) fn pane_pair(self) -> BySide<PaneRow<'a>> {
         match self {
-            Self::Shared(row) => (PaneRow::Text(row), PaneRow::Text(row)),
-            Self::Paired { before, after } => (PaneRow::Text(before), PaneRow::Text(after)),
-            Self::BeforeOnly(before) => (PaneRow::Text(before), PaneRow::AlignmentPeer(Side::New)),
-            Self::AfterOnly(after) => (PaneRow::AlignmentPeer(Side::Old), PaneRow::Text(after)),
+            Self::Shared(row) => BySide {
+                old: PaneRow::Text(row),
+                new: PaneRow::Text(row),
+            },
+            Self::Paired(rows) => rows.map(PaneRow::Text),
+            Self::OldOnly(old) => BySide {
+                old: PaneRow::Text(old),
+                new: PaneRow::AlignmentPeer(Side::New),
+            },
+            Self::NewOnly(new) => BySide {
+                old: PaneRow::AlignmentPeer(Side::Old),
+                new: PaneRow::Text(new),
+            },
         }
     }
 }
 
-/// Up to `limit` screen lines of `extent` from line `first`, with their styled rows.
-pub(super) fn visible_diff_rows<'a>(
-    page: &'a PreparedPage,
-    extent: &ScrollExtent<LineIndex>,
+/// Up to `limit` screen lines of `extent` from line `first`, each with the row `row`
+/// makes of its index.
+pub(super) fn visible_rows<R: Copy + Ord, T>(
+    extent: &ScrollExtent<R>,
     first: ScreenLines,
-    granularity: DiffGranularity,
     limit: ScreenLines,
-) -> Vec<ScreenLine<StyledRow<'a>>> {
+    row: impl Fn(R) -> T,
+) -> Vec<ScreenLine<T>> {
     extent
         .lines(first, limit)
-        .map(|screen_line| screen_line.map(|line| page.row(line, granularity)))
-        .collect()
-}
-
-/// Up to `limit` screen lines of `extent` from line `first`, with their styled pairs.
-pub(super) fn visible_side_by_side_rows<'a>(
-    page: &'a PreparedPage,
-    extent: &ScrollExtent<PairIndex>,
-    first: ScreenLines,
-    granularity: DiffGranularity,
-    limit: ScreenLines,
-) -> Vec<ScreenLine<SideBySideRow<StyledRow<'a>>>> {
-    let rows = page.rows();
-
-    extent
-        .lines(first, limit)
-        .map(|screen_line| {
-            screen_line.map(|pair| rows.pair(pair).map(|line| page.row(line, granularity)))
-        })
+        .map(|screen_line| screen_line.map(&row))
         .collect()
 }
