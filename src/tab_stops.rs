@@ -16,11 +16,21 @@ pub struct TabStops {
 impl TabStops {
     /// Appends `text` to `expanded` with its tabs replaced by spaces.
     pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
-        for (index, chunk) in text.split('\t').enumerate() {
-            if index > 0 {
-                expanded.extend(std::iter::repeat_n(' ', self.advance_to_tab_stop()));
-            }
+        self.walk(text, |padding, chunk| {
+            expanded.extend(std::iter::repeat_n(' ', padding));
             expanded.push_str(chunk);
+        });
+    }
+
+    /// Visits each tab-free chunk of `text` with the spaces the tab before it expands to;
+    /// the first chunk follows no tab.
+    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(usize, &'t str)) {
+        for (index, chunk) in text.split('\t').enumerate() {
+            let padding = match index {
+                0 => 0,
+                _ => self.advance_to_tab_stop(),
+            };
+            visit(padding, chunk);
             self.column += cells(chunk);
         }
     }
@@ -35,13 +45,7 @@ impl TabStops {
 /// Terminal cells `text` occupies once its tabs are expanded.
 pub fn expanded_width(text: &str) -> usize {
     let mut tab_stops = TabStops::default();
-
-    for (index, chunk) in text.split('\t').enumerate() {
-        if index > 0 {
-            tab_stops.advance_to_tab_stop();
-        }
-        tab_stops.column += cells(chunk);
-    }
+    tab_stops.walk(text, |_, _| {});
     tab_stops.column
 }
 

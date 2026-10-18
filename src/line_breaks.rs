@@ -22,15 +22,20 @@ impl LineBreaks {
         }
     }
 
-    /// Places the next cluster, `cells` wide, and returns its line.
-    pub fn place(&mut self, cells: usize) -> usize {
+    /// Places the next cluster and returns its line; a cluster that covers no cells takes
+    /// no place.
+    pub fn place(&mut self, cluster: &str) -> Option<usize> {
+        let cells = cluster_cells(cluster);
+        if cells == 0 {
+            return None;
+        }
+
         if self.column > 0 && self.column + cells > self.width {
             self.line += 1;
             self.column = 0;
         }
-
         self.column += cells;
-        self.line
+        Some(self.line)
     }
 
     /// Lines the clusters placed so far occupy; an empty payload still takes one.
@@ -51,10 +56,8 @@ pub fn wrapped_line_count(text: &str, text_width: usize, width: usize) -> usize 
     TabStops::default().expand_into(text, &mut expanded);
 
     let mut breaks = LineBreaks::new(width);
-    for cells in expanded.graphemes(true).map(cluster_cells) {
-        if cells > 0 {
-            breaks.place(cells);
-        }
+    for cluster in expanded.graphemes(true) {
+        breaks.place(cluster);
     }
     breaks.line_count()
 }
@@ -72,9 +75,9 @@ mod tests {
     fn breaks_before_a_cluster_that_does_not_fit_the_rest_of_its_line() {
         let mut breaks = LineBreaks::new(4);
 
-        let lines = [1, 1, 1, 2, 2, 2].map(|cells| breaks.place(cells));
+        let lines = ["a", "a", "a", "界", "界", "界"].map(|cluster| breaks.place(cluster));
 
-        assert_eq!(lines, [0, 0, 0, 1, 1, 2]);
+        assert_eq!(lines, [0, 0, 0, 1, 1, 2].map(Some));
         assert_eq!(breaks.line_count(), 3);
     }
 
@@ -82,9 +85,18 @@ mod tests {
     fn keeps_a_cluster_wider_than_the_line_on_a_line_of_its_own() {
         let mut breaks = LineBreaks::new(1);
 
-        assert_eq!(breaks.place(1), 0);
-        assert_eq!(breaks.place(2), 1);
-        assert_eq!(breaks.place(1), 2);
+        assert_eq!(breaks.place("a"), Some(0));
+        assert_eq!(breaks.place("界"), Some(1));
+        assert_eq!(breaks.place("a"), Some(2));
+    }
+
+    #[test]
+    fn gives_clusters_without_cells_no_place() {
+        let mut breaks = LineBreaks::new(1);
+
+        assert_eq!(breaks.place("a"), Some(0));
+        assert_eq!(breaks.place("\u{7}"), None);
+        assert_eq!(breaks.line_count(), 1);
     }
 
     #[test]
@@ -103,7 +115,7 @@ mod tests {
         let text = "\tlet x = 1;\t// ascii";
         let mut breaks = LineBreaks::new(3);
         for _ in 0..expanded_width(text) {
-            breaks.place(1);
+            breaks.place("a");
         }
 
         assert_eq!(line_count(text, 3), breaks.line_count());

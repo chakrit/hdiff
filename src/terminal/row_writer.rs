@@ -121,9 +121,7 @@ fn write_wrapped_line<'c>(
 ) -> Clip {
     let mut breaks = LineBreaks::new(width);
     let line_clusters = payload_clusters
-        .map(|(cluster, style)| (cluster_cells(cluster), cluster, style))
-        .filter(|(cells, _, _)| *cells > 0)
-        .map(|(cells, cluster, style)| (breaks.place(cells), cluster, style))
+        .filter_map(|(cluster, style)| Some((breaks.place(cluster)?, cluster, style)))
         .skip_while(|(placed_line, _, _)| *placed_line < line)
         .take_while(|(placed_line, _, _)| *placed_line == line)
         .map(|(_, cluster, style)| (cluster, style));
