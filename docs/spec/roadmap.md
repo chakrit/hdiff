@@ -126,24 +126,34 @@ implementation remains unapproved.
    bottom row; open the popup with `?`, confirm other keys except `Ctrl-C` do nothing, and
    close it with `?`, `Esc`, and `q` without exiting.
 
-2. Add implicit Tree-sitter semantic strategies with textual fallback.
+2. Refactor pass on the interactive loop's input and mode abstractions: re-analyze how key
+   events become inputs, how modal state such as the keymap popup filters them, and how
+   transitions, preferences, and derived layout fit together, then reshape them so each
+   concern has one owner and no mode needs per-input exceptions. Known finding:
+   `KeymapPopup::admit` must special-case `Interrupt` and `Resize` because session events
+   and bound keys share one `Input` type; no mode should be able to intercept session
+   events. Behavior stays unchanged.
+
+   Check: every existing unit and live test passes without changes to its assertions.
+
+3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
    Human check: open supported and unsupported source files in the same diff. Supported files
    gain semantic detail when available; unsupported files remain readable with textual diffing,
    and neither case changes the selected layout unexpectedly.
 
-3. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
+4. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
 
    Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
    across unified, vertical, and stacked layouts.
 
-4. Refine highlighting coverage and additional navigation after the core interaction is stable.
+5. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
    hint row and keymap popup match the key behavior, additions and deletions remain distinguishable, and
    low contrast remains readable without saturating the whole terminal.
 
-5. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
+6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.
 
    Human check: search a multi-file diff, verify every match is reachable in both directions with
