@@ -799,9 +799,9 @@ fn stacked_panes_need_room_for_one_content_line_each() {
         },
     );
 
-    live.resize(80, 7);
+    live.resize(80, 6);
     assert!(live.shows("screen too short"));
-    live.resize(80, 8);
+    live.resize(80, 7);
     assert_eq!(live.count('▾'), 2, "each pane shows a line");
     assert!(!live.shows("screen too short"));
 }
@@ -916,10 +916,8 @@ fn change_label(row: &str) -> Option<String> {
     Some(label)
 }
 
-const HINTS: &str = "hjkl move · v layout · Tab file · e files · ? help · q quit";
-
 /// architecture.md (Interaction model, View model): `e` hides and shows the file list,
-/// keeping the hint row on the bottom row and the middle line's row in place.
+/// floating a `? help` box while it is hidden and keeping the middle line's row in place.
 fn file_list_toggle(mode: Mode) {
     let mut live = Live::load(&paired_patch(), mode);
     for _ in 0..20 {
@@ -935,7 +933,7 @@ fn file_list_toggle(mode: Mode) {
     live.press('e');
     assert!(!live.shows("pairs.rs"), "e hides the file list");
     assert_eq!(change_label(&live.rows()[middle_line]), middle);
-    assert!(live.rows().last().is_some_and(|row| row.starts_with(HINTS)));
+    assert!(live.shows("? help"), "a help box replaces the footer hints");
 
     live.press('e');
     assert_eq!(live.buffer(), start, "e shows the file list again");

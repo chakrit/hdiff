@@ -117,14 +117,16 @@ implementation remains unapproved.
 
 ### Product slices
 
-1. Shortcuts: the always-visible hint row, `e` to show and hide the file list, and the `?`
-   keymap popup, per the [interaction model](architecture.md#interaction-model) and
+1. Shortcuts: compact file-list hints, `e` to show and hide the file list with a floating
+   `? help` box while it is hidden, and the grouped `?` keymap popup, per the
+   [interaction model](architecture.md#interaction-model) and
    [keyboard bindings](architecture.md#keyboard-bindings).
 
    Human check: in every layout, hide and show the file list with `e` and confirm the diff
-   widens and narrows while the middle line stays put; confirm the hint row stays on the
-   bottom row; open the popup with `?`, confirm other keys except `Ctrl-C` do nothing, and
-   close it with `?`, `Esc`, and `q` without exiting.
+   widens and narrows while the middle line stays put; confirm the `? help` box shows only
+   while the file list is hidden; open the popup with `?`, confirm its groups scan easily
+   and other keys except `Ctrl-C` do nothing, and close it with `?`, `Esc`, and `q`
+   without exiting.
 
 2. Refactor pass on the interactive loop's input and mode abstractions: re-analyze how key
    events become inputs, how modal state such as the keymap popup filters them, and how
@@ -150,8 +152,8 @@ implementation remains unapproved.
 5. Refine highlighting coverage and additional navigation after the core interaction is stable.
 
    Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
-   hint row and keymap popup match the key behavior, additions and deletions remain distinguishable, and
-   low contrast remains readable without saturating the whole terminal.
+   footer hints and keymap popup match the key behavior, additions and deletions remain
+   distinguishable, and low contrast remains readable without saturating the whole terminal.
 
 6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
    previous result.

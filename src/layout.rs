@@ -14,9 +14,6 @@ pub const PANE_FRAME_HEIGHT: usize = 2;
 /// Columns each diff pane's continuity-marker frame takes: one on either side.
 pub const PANE_FRAME_WIDTH: u16 = 2;
 
-/// Rows the shortcut hint row takes at the bottom of the screen.
-pub const HINT_ROW_HEIGHT: u16 = 1;
-
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const FILE_LIST_WIDTH: u16 = 24;
 const SEPARATOR_WIDTH: u16 = 1;
@@ -33,8 +30,7 @@ pub enum PaneLayout {
     },
 }
 
-/// The screen's panes above the hint row; too short when a diff pane would have no content
-/// line.
+/// The screen's panes; too short when a diff pane would have no content line.
 pub fn pane_layout(width: u16, height: u16, preferences: ViewPreferences) -> PaneLayout {
     if width < MINIMUM_SCREEN_WIDTH {
         return PaneLayout::TooNarrow;
@@ -84,20 +80,18 @@ pub fn content_pane_width(screen_width: u16, preferences: ViewPreferences) -> u1
     pane_width.saturating_sub(PANE_FRAME_WIDTH)
 }
 
-/// Rows of each diff pane, frame included, in a diff area `diff_height` rows tall; stacked
-/// panes share the height around a one-row separator.
-pub fn pane_height(diff_height: usize, display_layout: DiffLayout) -> usize {
+/// Rows of each diff pane, frame included; stacked panes share the height around a
+/// one-row separator.
+pub fn pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
     match display_layout {
-        DiffLayout::Unified | DiffLayout::Vertical => diff_height,
-        DiffLayout::Stacked => diff_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
+        DiffLayout::Unified | DiffLayout::Vertical => screen_height,
+        DiffLayout::Stacked => screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
     }
 }
 
-/// Rows of each diff pane's content, inside its frame, on a screen `screen_height` rows tall.
+/// Rows of each diff pane's content, inside its frame.
 pub fn content_pane_height(screen_height: usize, display_layout: DiffLayout) -> usize {
-    let diff_height = screen_height.saturating_sub(usize::from(HINT_ROW_HEIGHT));
-
-    pane_height(diff_height, display_layout).saturating_sub(PANE_FRAME_HEIGHT)
+    pane_height(screen_height, display_layout).saturating_sub(PANE_FRAME_HEIGHT)
 }
 
 const STACKED_SEPARATOR_HEIGHT: usize = 1;
@@ -752,17 +746,16 @@ mod tests {
             separator_padding: 1,
         };
         let cases = [
-            ((19, 4), DiffLayout::Unified, PaneLayout::TooNarrow),
-            ((20, 3), DiffLayout::Unified, PaneLayout::TooShort),
-            ((27, 4), DiffLayout::Unified, PaneLayout::DiffOnly),
-            ((28, 4), DiffLayout::Unified, split),
-            ((28, 4), DiffLayout::Vertical, split),
-            ((28, 7), DiffLayout::Stacked, PaneLayout::TooShort),
-            ((28, 8), DiffLayout::Stacked, split),
+            ((19, 3), DiffLayout::Unified, PaneLayout::TooNarrow),
+            ((20, 2), DiffLayout::Unified, PaneLayout::TooShort),
+            ((27, 3), DiffLayout::Unified, PaneLayout::DiffOnly),
+            ((28, 3), DiffLayout::Unified, split),
+            ((28, 3), DiffLayout::Vertical, split),
+            ((28, 6), DiffLayout::Stacked, PaneLayout::TooShort),
+            ((28, 7), DiffLayout::Stacked, split),
         ];
 
-        // architecture.md: the minimum layout shows the hint row and one content line in each
-        // diff pane.
+        // architecture.md: the minimum layout shows one content line in each diff pane.
         for ((width, height), layout, expected) in cases {
             assert_eq!(
                 pane_layout(width, height, ViewPreferences::line(layout)),
@@ -776,7 +769,7 @@ mod tests {
     fn gives_the_diff_the_whole_width_while_the_file_list_is_hidden() {
         let hidden = preferences(DiffLayout::Unified, Wrapping::Enabled, FileList::Hidden);
 
-        assert_eq!(pane_layout(80, 4, hidden), PaneLayout::DiffOnly);
+        assert_eq!(pane_layout(80, 3, hidden), PaneLayout::DiffOnly);
         assert_eq!(content_pane_width(80, hidden), 78);
         assert_eq!(Wrap::of(hidden, 80), Wrap::At(76));
     }
@@ -794,12 +787,12 @@ mod tests {
     }
 
     #[test]
-    fn leaves_the_hint_row_and_each_pane_frame_out_of_its_content_height() {
-        assert_eq!(content_pane_height(36, DiffLayout::Unified), 33);
-        assert_eq!(content_pane_height(36, DiffLayout::Vertical), 33);
+    fn leaves_each_pane_frame_out_of_its_content_height() {
+        assert_eq!(content_pane_height(36, DiffLayout::Unified), 34);
+        assert_eq!(content_pane_height(36, DiffLayout::Vertical), 34);
         assert_eq!(content_pane_height(36, DiffLayout::Stacked), 15);
-        assert_eq!(content_pane_height(3, DiffLayout::Unified), 0);
-        assert_eq!(content_pane_height(7, DiffLayout::Stacked), 0);
+        assert_eq!(content_pane_height(2, DiffLayout::Unified), 0);
+        assert_eq!(content_pane_height(6, DiffLayout::Stacked), 0);
     }
 
     #[test]

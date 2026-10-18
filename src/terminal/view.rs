@@ -7,7 +7,7 @@ use ratatui::{
 use crate::{
     file_tree::FileTree,
     interaction::{DiffLayout, Interaction, KeymapPopup},
-    layout::{HINT_ROW_HEIGHT, PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
+    layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
     prepared::PreparedFile,
     styling::StyledRow,
 };
@@ -17,9 +17,10 @@ use crate::{document::DiffDocument, prepared::PreparedDocument};
 
 use super::{
     chrome::{
-        ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator, render_file_list,
-        render_hint_row, render_keymap_popup,
+        ContinuityFrame, LineWindow, draw_inner_separator, draw_outer_separator,
+        render_file_column, render_help_box,
     },
+    keymap::render_keymap_popup,
     row_writer::{Clip, RowPlacement, write_row},
     rows::{
         PaneRow, VisibleLine, VisibleSideBySideRow, aligned_pair, visible_diff_rows,
@@ -110,10 +111,6 @@ pub(super) fn render_prepared_frame(
         color_count,
     };
 
-    let [body, hint_row] =
-        RatatuiLayout::vertical([Constraint::Min(0), Constraint::Length(HINT_ROW_HEIGHT)])
-            .areas(area);
-
     match pane_layout(area.width, area.height, preferences) {
         PaneLayout::TooNarrow => {
             frame.render_widget(Paragraph::new("screen too narrow"), area);
@@ -123,7 +120,10 @@ pub(super) fn render_prepared_frame(
             frame.render_widget(Paragraph::new("screen too short"), area);
             return;
         }
-        PaneLayout::DiffOnly => render_display_layout(frame, display, body),
+        PaneLayout::DiffOnly => {
+            render_display_layout(frame, display, area);
+            render_help_box(frame, area, color_count);
+        }
         PaneLayout::Split {
             file_list_width,
             separator_padding,
@@ -135,17 +135,16 @@ pub(super) fn render_prepared_frame(
                 Constraint::Length(separator_padding),
                 Constraint::Min(1),
             ])
-            .areas(body);
+            .areas(area);
 
-            render_file_list(frame, file_column, tree, file.list_row(), color_count);
+            render_file_column(frame, file_column, tree, file.list_row(), color_count);
             draw_outer_separator(frame.buffer_mut(), separator, color_count);
             render_display_layout(frame, display, diff);
         }
     }
 
-    render_hint_row(frame.buffer_mut(), hint_row, color_count);
     if let KeymapPopup::Open = interaction.keymap {
-        render_keymap_popup(frame, body, color_count);
+        render_keymap_popup(frame, area, color_count);
     }
 }
 
@@ -332,14 +331,18 @@ mod tests {
             ((0, 2), "~", "selected file's state marker"),
             ((28, 4), "-", "deletion marker"),
             ((28, 5), "+", "addition marker"),
-            ((0, 9), "h", "hint row"),
+            ((1, 5), "h", "footer hint"),
         ];
 
         for ((x, y), expected, name) in expected_symbols {
             assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
         }
         assert_eq!(rendered[(2, 1)].fg, Color::Rgb(160, 160, 160), "file name");
-        assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "hint row");
+        assert_eq!(
+            rendered[(0, 9)].fg,
+            Color::Rgb(110, 110, 110),
+            "footer hint"
+        );
     }
 
     #[test]
@@ -849,6 +852,23 @@ mod tests {
         terminal.backend().buffer().clone()
     }
 
+    fn interaction(
+        file_list: FileList,
+        keymap: KeymapPopup,
+        width: u16,
+        height: u16,
+    ) -> Interaction {
+        Interaction {
+            keymap,
+            selected_file: 0,
+            preferences: ViewPreferences {
+                file_list,
+                ..ViewPreferences::line(DiffLayout::Unified)
+            },
+            viewport: Viewport::new(width, usize::from(height)),
+        }
+    }
+
     fn row_text(buffer: &Buffer, y: u16) -> String {
         (0..buffer.area.width)
             .map(|x| buffer[(x, y)].symbol())
@@ -864,101 +884,47 @@ mod tests {
             .join("\n")
     }
 
-    /// architecture.md (Interaction model, Keyboard bindings): one hint row on the bottom
-    /// row, in the same place whether the file list is shown or hidden.
+    /// architecture.md (Interaction model): a `? help` box floats over the bottom-left
+    /// corner of the diff while the file list is hidden, by `e` or by a narrow screen.
     #[test]
-    fn renders_the_hint_row_on_the_bottom_row_whether_or_not_the_file_list_shows() {
-        for file_list in [FileList::Shown, FileList::Hidden] {
-            let interaction = Interaction {
-                keymap: KeymapPopup::Closed,
-                selected_file: 0,
-                preferences: ViewPreferences {
-                    file_list,
-                    ..ViewPreferences::line(DiffLayout::Unified)
-                },
-                viewport: Viewport::new(80, 10),
-            };
+    fn floats_a_help_box_while_the_file_list_is_hidden() {
+        let hidden = render(
+            &interaction(FileList::Hidden, KeymapPopup::Closed, 80, 10),
+            80,
+            10,
+        );
+        let narrow = render(
+            &interaction(FileList::Shown, KeymapPopup::Closed, 23, 10),
+            23,
+            10,
+        );
 
-            let rendered = render(&interaction, 80, 10);
-
-            assert_eq!(
-                row_text(&rendered, 9),
-                "hjkl move · v layout · Tab file · e files · ? help · q quit",
-                "{file_list:?}"
-            );
-            assert_eq!(rendered[(0, 9)].fg, Color::Rgb(110, 110, 110), "hint tone");
-            assert!(
-                (0..9).all(|y| !row_text(&rendered, y).contains("move")),
-                "{file_list:?}: no hints above the hint row"
-            );
+        for rendered in [&hidden, &narrow] {
+            assert!(row_text(rendered, 7).starts_with("┌────────┐"));
+            assert!(row_text(rendered, 8).starts_with("│ ? help │"));
+            assert!(row_text(rendered, 9).starts_with("└────────┘"));
+            assert!(!screen_text(rendered).contains("move"), "no footer hints");
         }
-    }
-
-    #[test]
-    fn gives_the_diff_the_file_list_columns_while_the_file_list_is_hidden() {
-        let interaction = Interaction {
-            keymap: KeymapPopup::Closed,
-            selected_file: 0,
-            preferences: ViewPreferences {
-                file_list: FileList::Hidden,
-                ..ViewPreferences::line(DiffLayout::Unified)
-            },
-            viewport: Viewport::new(80, 10),
-        };
-
-        let rendered = render(&interaction, 80, 10);
-
         assert_eq!(
-            rendered[(1, 4)].symbol(),
+            hidden[(1, 4)].symbol(),
             "-",
             "deletion marker at the left edge"
         );
-        assert!(!screen_text(&rendered).contains("│"), "no outer separator");
-        assert!(!screen_text(&rendered).contains("second"), "no file list");
+        assert!(!screen_text(&hidden).contains("second"), "no file list");
     }
 
-    /// architecture.md (Interaction model): `?` opens a centered, bordered popup over the
-    /// diff that lists every shortcut.
+    /// architecture.md (Interaction model): the popup shows only while it is open.
     #[test]
-    fn lists_every_shortcut_in_a_bordered_popup_over_the_diff() {
-        let interaction = |keymap| Interaction {
-            keymap,
-            selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
-            viewport: Viewport::new(80, 24),
+    fn draws_the_keymap_popup_only_while_it_is_open() {
+        let text = |keymap| {
+            screen_text(&render(
+                &interaction(FileList::Shown, keymap, 120, 30),
+                120,
+                30,
+            ))
         };
 
-        let open = screen_text(&render(&interaction(KeymapPopup::Open), 80, 24));
-        let closed = screen_text(&render(&interaction(KeymapPopup::Closed), 80, 24));
-
-        for action in [
-            "scroll down / up",
-            "scroll left / right",
-            "left edge",
-            "right end",
-            "half page down / up",
-            "top / bottom",
-            "next / previous file",
-            "cycle layout",
-            "character detail",
-            "wrap",
-            "more / less context",
-            "show / hide file list",
-            "close keymap",
-            "exit",
-        ] {
-            assert!(open.contains(action), "popup lists {action}");
-        }
-        assert!(open.contains('┌') && open.contains('┘'), "popup border");
-        assert!(
-            !closed.contains("cycle layout"),
-            "closed popup is not drawn"
-        );
-        assert!(
-            open.lines()
-                .last()
-                .is_some_and(|row| row.starts_with("hjkl move")),
-            "the hint row stays below the popup"
-        );
+        assert!(text(KeymapPopup::Open).contains("cycle layout"));
+        assert!(!text(KeymapPopup::Closed).contains("cycle layout"));
     }
 }

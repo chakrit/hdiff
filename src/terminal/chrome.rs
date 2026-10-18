@@ -1,13 +1,13 @@
-//! Frame chrome around the diff panes: the file list, the hint row, the keymap popup,
+//! Frame chrome around the diff panes: the file list, footer hints, the `? help` box,
 //! separators, and continuity markers.
 
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Layout as RatatuiLayout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph},
 };
 
 use super::row_writer::Clip;
@@ -17,66 +17,65 @@ use crate::{
     layout::{PANE_FRAME_HEIGHT, PANE_FRAME_WIDTH},
 };
 
-const HINTS: &str = "hjkl move · v layout · Tab file · e files · ? help · q quit";
+const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
-/// Every shortcut, as keys and the action they take, in the keymap popup.
-const KEYMAP: [(&str, &str); 15] = [
-    ("j k ↓ ↑", "scroll down / up"),
-    ("h l", "scroll left / right"),
-    ("0 ^", "left edge"),
-    ("$", "right end"),
-    ("^D ^U", "half page down / up"),
-    ("g G", "top / bottom"),
-    ("Tab ⇧Tab", "next / previous file"),
-    ("v", "cycle layout"),
-    ("c", "character detail"),
-    ("w", "wrap"),
-    ("+ -", "more / less context"),
-    ("e", "show / hide file list"),
-    ("?", "open keymap"),
-    ("? Esc q", "close keymap"),
-    ("q ^C", "exit"),
+const FOOTER_HINTS: [&str; 6] = [
+    " hjkl  move",
+    " v     layout",
+    " Tab   file",
+    " e     files",
+    " ?     help",
+    " q     quit",
 ];
 
-const KEYMAP_KEYS_WIDTH: u16 = 9;
-const KEYMAP_ACTION_WIDTH: u16 = 21;
-/// A border and a padding column on either side of the keys and actions.
-const KEYMAP_POPUP_WIDTH: u16 = 1 + 1 + KEYMAP_KEYS_WIDTH + 1 + KEYMAP_ACTION_WIDTH + 1 + 1;
-const KEYMAP_POPUP_HEIGHT: u16 = KEYMAP.len() as u16 + 2;
+const HELP_BOX_TEXT: &str = "? help";
+/// The text inside a border and a padding column on each side, between two border rows.
+const HELP_BOX_WIDTH: u16 = HELP_BOX_TEXT.len() as u16 + 4;
+const HELP_BOX_HEIGHT: u16 = 3;
 
-/// The shortcut hint row across the bottom of the screen.
-pub(super) fn render_hint_row(buffer: &mut Buffer, area: Rect, color_count: u16) {
-    let style = Style::default().fg(chrome_palette(color_count).hints);
+/// Draws the file list above the footer hints in the file-list column.
+pub(super) fn render_file_column(
+    frame: &mut Frame,
+    area: Rect,
+    tree: &FileTree,
+    selected_row: usize,
+    color_count: u16,
+) {
+    let palette = chrome_palette(color_count);
+    let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
+    let footer_height = area
+        .height
+        .saturating_sub(list_height)
+        .min(FOOTER_HINTS.len() as u16);
+    let [list_area, footer_area] = RatatuiLayout::vertical([
+        Constraint::Min(list_height),
+        Constraint::Length(footer_height),
+    ])
+    .areas(area);
 
-    buffer.set_style(area, style);
-    buffer.set_stringn(area.x, area.y, HINTS, usize::from(area.width), style);
+    render_file_list(frame, list_area, tree, selected_row, color_count);
+    render_footer(frame.buffer_mut(), footer_area, palette);
 }
 
-/// The popup listing every shortcut, centered over `area` and clipped to it.
-pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, color_count: u16) {
+/// The floating `? help` box over the bottom-left corner of `area`, shown in place of the
+/// footer hints while the file list is hidden.
+pub(super) fn render_help_box(frame: &mut Frame, area: Rect, color_count: u16) {
     let palette = chrome_palette(color_count);
-    let popup = Rect::new(
-        area.x + area.width.saturating_sub(KEYMAP_POPUP_WIDTH) / 2,
-        area.y + area.height.saturating_sub(KEYMAP_POPUP_HEIGHT) / 2,
-        KEYMAP_POPUP_WIDTH,
-        KEYMAP_POPUP_HEIGHT,
+    let help_box = Rect::new(
+        area.x,
+        area.bottom().saturating_sub(HELP_BOX_HEIGHT),
+        HELP_BOX_WIDTH,
+        HELP_BOX_HEIGHT,
     )
     .intersection(area);
-    let keys_width = usize::from(KEYMAP_KEYS_WIDTH);
 
-    let lines = KEYMAP.map(|(keys, action)| {
-        Line::from(vec![
-            Span::styled(
-                format!(" {keys:<keys_width$} "),
-                Style::default().fg(palette.selected_file),
-            ),
-            Span::styled(action, Style::default().fg(palette.file_name)),
-        ])
-    });
-    let border = Block::bordered().border_style(Style::default().fg(palette.separator));
+    let border = Block::bordered()
+        .border_style(Style::default().fg(palette.separator))
+        .padding(Padding::horizontal(1));
+    let text = Line::styled(HELP_BOX_TEXT, Style::default().fg(palette.footer));
 
-    frame.render_widget(Clear, popup);
-    frame.render_widget(Paragraph::new(Vec::from(lines)).block(border), popup);
+    frame.render_widget(Clear, help_box);
+    frame.render_widget(Paragraph::new(text).block(border), help_box);
 }
 
 /// The full-height separator between the file-list column and the diff panes.
@@ -200,10 +199,9 @@ fn between_frame_rows(area: Rect) -> Rect {
 
 const FRAME_ROWS: u16 = PANE_FRAME_HEIGHT as u16;
 
-/// Draws the file list in the file-list column `area`. Lists only the rows that fit: a
-/// fresh `ListState` scrolls just far enough to keep the selected row on the last row, so
-/// listing that window draws the same frame.
-pub(super) fn render_file_list(
+/// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
+/// the selected row on the last row, so listing that window draws the same frame.
+fn render_file_list(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
@@ -256,6 +254,15 @@ fn tree_item(row: &TreeRow, palette: ChromePalette) -> ListItem<'_> {
     ListItem::new(line)
 }
 
+fn render_footer(buffer: &mut Buffer, area: Rect, palette: ChromePalette) {
+    let style = Style::default().fg(palette.footer);
+
+    buffer.set_style(area, style);
+    for (y, hint) in area.rows().map(|row| row.y).zip(FOOTER_HINTS) {
+        buffer.set_stringn(area.x, y, hint, usize::from(area.width), style);
+    }
+}
+
 fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
     for position in area.positions() {
         buffer[position].set_symbol(symbol).set_style(style);
@@ -263,19 +270,19 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 }
 
 #[derive(Clone, Copy)]
-struct ChromePalette {
-    directory_heading: Color,
-    file_name: Color,
+pub(super) struct ChromePalette {
+    pub(super) directory_heading: Color,
+    pub(super) file_name: Color,
     modified_marker: Color,
     added_marker: Color,
     deleted_marker: Color,
     renamed_marker: Color,
-    selected_file: Color,
+    pub(super) selected_file: Color,
     selected_file_background: Color,
-    separator: Color,
+    pub(super) separator: Color,
     /// The inner separator between side-by-side panes and the continuity markers.
     dim_separator: Color,
-    hints: Color,
+    footer: Color,
 }
 
 impl ChromePalette {
@@ -290,7 +297,7 @@ impl ChromePalette {
     }
 }
 
-fn chrome_palette(color_count: u16) -> ChromePalette {
+pub(super) fn chrome_palette(color_count: u16) -> ChromePalette {
     match color_count {
         u16::MAX => ChromePalette {
             directory_heading: Color::Rgb(125, 125, 125),
@@ -303,7 +310,7 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::Rgb(65, 65, 65),
             separator: Color::Rgb(125, 125, 125),
             dim_separator: Color::Rgb(95, 95, 95),
-            hints: Color::Rgb(110, 110, 110),
+            footer: Color::Rgb(110, 110, 110),
         },
         256.. => ChromePalette {
             directory_heading: Color::Indexed(243),
@@ -316,7 +323,7 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::Indexed(238),
             separator: Color::Indexed(243),
             dim_separator: Color::Indexed(238),
-            hints: Color::Indexed(240),
+            footer: Color::Indexed(240),
         },
         _ => ChromePalette {
             directory_heading: Color::DarkGray,
@@ -329,7 +336,52 @@ fn chrome_palette(color_count: u16) -> ChromePalette {
             selected_file_background: Color::DarkGray,
             separator: Color::DarkGray,
             dim_separator: Color::DarkGray,
-            hints: Color::DarkGray,
+            footer: Color::DarkGray,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
+
+    use super::render_file_column;
+    use crate::{parser::parse_unified_diff, prepared::PreparedDocument};
+
+    /// architecture.md (Keyboard bindings): the footer lists one shortcut per row below the
+    /// file list.
+    #[test]
+    fn lists_compact_shortcuts_below_the_file_list() {
+        let document = parse_unified_diff(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
+            .expect("valid diff");
+        let prepared = PreparedDocument::prepare(&document);
+        let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
+
+        terminal
+            .draw(|frame| {
+                render_file_column(frame, frame.area(), prepared.file_tree(), 0, u16::MAX)
+            })
+            .expect("render file column");
+
+        let buffer = terminal.backend().buffer();
+        let row = |y| {
+            (0..24)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        };
+        assert_eq!(
+            (12..18).map(row).collect::<Vec<_>>(),
+            [
+                " hjkl  move",
+                " v     layout",
+                " Tab   file",
+                " e     files",
+                " ?     help",
+                " q     quit"
+            ]
+        );
+        assert_eq!(buffer[(1, 12)].fg, Color::Rgb(110, 110, 110), "footer tone");
     }
 }
