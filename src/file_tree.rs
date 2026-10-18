@@ -9,17 +9,18 @@ use crate::{
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TreeRow {
-    Directory(String),
-    File { marker: Marker, name: String },
+    Directory(Box<str>),
+    File { marker: StateMarker, name: Box<str> },
 }
 
+/// The mark a file row shows for how its file changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Marker {
+pub enum StateMarker {
     State(FileState),
     Unknown,
 }
 
-impl Marker {
+impl StateMarker {
     pub fn label(self) -> &'static str {
         match self {
             Self::State(FileState::Modified) => "~",
@@ -31,11 +32,21 @@ impl Marker {
     }
 }
 
-/// A file in list order: its index in the views the tree was built from, and its row.
+/// The position of one row among a [`FileTree`]'s rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ListedFile {
-    pub view: usize,
-    pub row: usize,
+pub struct TreeRowIndex(usize);
+
+impl TreeRowIndex {
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+/// A file in list order, with the tree row that shows it.
+#[derive(Clone, Copy)]
+pub struct ListedFile<'a> {
+    pub view: FileView<'a>,
+    pub row: TreeRowIndex,
 }
 
 /// The file-list rows.
@@ -46,45 +57,42 @@ pub struct FileTree {
 
 /// A built file tree and its files in list order. A file's list position is its
 /// selection index.
-pub struct FileListing {
+pub struct ListedTree<'a> {
     pub tree: FileTree,
-    pub order: Box<[ListedFile]>,
+    pub files: Box<[ListedFile<'a>]>,
 }
 
 impl FileTree {
-    pub fn build(views: &[FileView<'_>]) -> FileListing {
-        let identities = views.iter().map(|view| &view.file.identity).enumerate();
+    pub fn build<'a>(views: impl IntoIterator<Item = FileView<'a>>) -> ListedTree<'a> {
+        let placed = views.into_iter().map(Placed::of);
         let (top_level, nested): (Vec<_>, Vec<_>) =
-            identities.partition(|(_, identity)| placement(identity).0.is_empty());
+            placed.partition(|file| file.directory.is_empty());
 
         // Top-level files come first, so a directory heading never needs to be closed.
         let mut rows = Vec::new();
         let mut files = Vec::new();
         let mut directory = "";
-        for (view, identity) in top_level.into_iter().chain(nested) {
-            let (file_directory, name) = placement(identity);
-            if file_directory != directory {
-                rows.push(TreeRow::Directory(format!(
-                    "{}/",
-                    sanitize(file_directory.as_bytes())
-                )));
-                directory = file_directory;
+        for file in top_level.into_iter().chain(nested) {
+            if file.directory != directory {
+                let heading = format!("{}/", sanitize(file.directory.as_bytes()));
+                rows.push(TreeRow::Directory(heading.into()));
+                directory = file.directory;
             }
             files.push(ListedFile {
-                view,
-                row: rows.len(),
+                view: file.view,
+                row: TreeRowIndex(rows.len()),
             });
             rows.push(TreeRow::File {
-                marker: marker(identity),
-                name: sanitize(name.as_bytes()),
+                marker: file.marker,
+                name: sanitize(file.name.as_bytes()).into(),
             });
         }
 
-        FileListing {
+        ListedTree {
             tree: Self {
                 rows: rows.into_boxed_slice(),
             },
-            order: files.into_boxed_slice(),
+            files: files.into_boxed_slice(),
         }
     }
 
@@ -95,51 +103,92 @@ impl FileTree {
 
 // Rows
 
-fn marker(identity: &FileIdentity) -> Marker {
-    match identity {
-        FileIdentity::Path { state, .. } => Marker::State(*state),
-        FileIdentity::Unknown { .. } => Marker::Unknown,
-    }
+/// A file view with where its row goes and what it shows.
+struct Placed<'a> {
+    view: FileView<'a>,
+    /// Empty at the top level.
+    directory: &'a str,
+    name: &'a str,
+    marker: StateMarker,
 }
 
-/// The file's directory (empty at the top level) and the name its row shows.
-fn placement(identity: &FileIdentity) -> (&str, &str) {
-    match identity {
-        FileIdentity::Path { path, .. } => path.rsplit_once('/').unwrap_or(("", path)),
-        FileIdentity::Unknown { header } => ("", header),
+impl<'a> Placed<'a> {
+    fn of(view: FileView<'a>) -> Self {
+        let (directory, name, marker) = match &view.file.identity {
+            FileIdentity::Path { state, path } => {
+                let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
+                (directory, name, StateMarker::State(*state))
+            }
+            FileIdentity::Unknown { header } => ("", &**header, StateMarker::Unknown),
+        };
+
+        Self {
+            view,
+            directory,
+            name,
+            marker,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FileListing, FileTree, TreeRow};
-    use crate::{document::FileView, parser::parse_patch};
+    use super::{FileTree, ListedTree, TreeRow};
+    use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
 
-    fn listing(input: &str) -> FileListing {
-        let document = parse_patch(input.as_bytes()).expect("valid diff");
-        let views = document.file_views().collect::<Vec<FileView>>();
+    fn document(input: &str) -> DiffDocument {
+        parse_patch(input.as_bytes()).expect("valid diff")
+    }
 
-        FileTree::build(&views)
+    fn listing(document: &DiffDocument) -> ListedTree<'_> {
+        FileTree::build(document.file_views())
     }
 
     fn modified(path: &str) -> String {
         format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
     }
 
+    fn row_text(row: &TreeRow) -> String {
+        match row {
+            TreeRow::Directory(heading) => heading.to_string(),
+            TreeRow::File { marker, name } => format!("{} {name}", marker.label()),
+        }
+    }
+
     fn rows(input: &str) -> Vec<String> {
-        listing(input)
+        let document = document(input);
+
+        listing(&document)
             .tree
             .rows()
             .iter()
-            .map(|row| match row {
-                TreeRow::Directory(heading) => heading.clone(),
-                TreeRow::File { marker, name } => format!("{} {name}", marker.label()),
+            .map(row_text)
+            .collect()
+    }
+
+    /// Each file in list order, as the input names it, and the row its selection marks.
+    fn selections(input: &str) -> Vec<(String, String)> {
+        let document = document(input);
+        let listing = listing(&document);
+
+        listing
+            .files
+            .iter()
+            .map(|file| {
+                let named = match &file.view.file.identity {
+                    FileIdentity::Path { path, .. } => path.to_string(),
+                    FileIdentity::Unknown { header } => header.to_string(),
+                };
+                (named, row_text(&listing.tree.rows()[file.row.get()]))
             })
             .collect()
     }
 
-    fn view_order(input: &str) -> Vec<usize> {
-        listing(input).order.iter().map(|file| file.view).collect()
+    fn selected(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(path, row)| (path.to_string(), row.to_string()))
+            .collect()
     }
 
     /// Contract: docs/spec/architecture.md#file-tree (root-level files first).
@@ -155,19 +204,16 @@ mod tests {
                 "~ z.md", "~ a.md", "src/", "~ b.rs", "lib/", "~ a.rs", "src/", "~ c.rs"
             ]
         );
-        assert_eq!(view_order(&input), [1, 3, 0, 2, 4]);
-    }
-
-    #[test]
-    fn stores_each_files_row() {
-        let listing = listing(&["src/b.rs", "README.md", "src/a.rs"].map(modified).concat());
-        let listed = listing
-            .order
-            .iter()
-            .map(|file| (file.view, file.row))
-            .collect::<Vec<_>>();
-
-        assert_eq!(listed, [(1, 0), (0, 2), (2, 3)]);
+        assert_eq!(
+            selections(&input),
+            selected(&[
+                ("z.md", "~ z.md"),
+                ("a.md", "~ a.md"),
+                ("src/b.rs", "~ b.rs"),
+                ("lib/a.rs", "~ a.rs"),
+                ("src/c.rs", "~ c.rs"),
+            ])
+        );
     }
 
     #[test]
@@ -194,7 +240,7 @@ mod tests {
         let input = ["x", "x"].map(modified).concat();
 
         assert_eq!(rows(&input), ["~ x", "~ x"]);
-        assert_eq!(view_order(&input), [0, 1]);
+        assert_eq!(selections(&input), selected(&[("x", "~ x"), ("x", "~ x")]));
     }
 
     #[test]
@@ -216,6 +262,15 @@ mod tests {
                 "~ mode",
             ]
         );
-        assert_eq!(view_order(input), [0, 1, 2, 3, 4]);
+        assert_eq!(
+            selections(input),
+            selected(&[
+                ("gone", "- gone"),
+                ("new", "+ new"),
+                ("renamed", "* renamed"),
+                ("diff --git a/x b/y z", "? diff --git a/x b/y z"),
+                ("dir/mode", "~ mode"),
+            ])
+        );
     }
 }

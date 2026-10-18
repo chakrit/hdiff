@@ -42,7 +42,7 @@ pub(super) fn render_prepared_frame(
     render_display_layout(frame, display, geometry.diff());
     match geometry.file_column() {
         Some(column) => {
-            render_file_column(frame, column.list, tree, page.list_row(), &theme.chrome);
+            render_file_column(frame, column.list, tree, page.kind(), &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
         None => render_help_box(frame, area, &theme.chrome),

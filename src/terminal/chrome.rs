@@ -14,6 +14,7 @@ use super::row_writer::Clip;
 use crate::{
     file_tree::{FileTree, TreeRow},
     geometry::{PANE_FRAME_HEIGHT, between_frame_rows, pane_content},
+    prepared::PageKind,
     theme::ChromePalette,
 };
 
@@ -24,14 +25,19 @@ const HELP_HINT: &str = "? help";
 const HELP_BOX_WIDTH: u16 = HELP_HINT.len() as u16 + 4;
 const HELP_BOX_HEIGHT: u16 = 3;
 
-/// Draws the file list above the help hint in the file-list column.
+/// Draws the file list above the help hint in the file-list column, selecting the row of
+/// the page's file; a text page selects none.
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_row: Option<usize>,
+    page: PageKind,
     palette: &ChromePalette,
 ) {
+    let selected_row = match page {
+        PageKind::File { row } => Some(row.get()),
+        PageKind::Text => None,
+    };
     let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
     let hint_height = area.height.saturating_sub(list_height).min(1);
     let [list_area, hint_area] = Layout::vertical([
@@ -212,7 +218,7 @@ fn render_file_list(
 fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
     let line = match row {
         TreeRow::Directory(heading) => Line::styled(
-            heading.as_str(),
+            &**heading,
             Style::default()
                 .fg(palette.directory_heading)
                 .add_modifier(Modifier::BOLD),
@@ -220,7 +226,7 @@ fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
         TreeRow::File { marker, name } => Line::from(vec![
             Span::styled(marker.label(), Style::default().fg(palette.marker(*marker))),
             Span::raw(" "),
-            Span::raw(name.as_str()),
+            Span::raw(&**name),
         ])
         .style(Style::default().fg(palette.file_name)),
     };
@@ -257,7 +263,7 @@ mod tests {
     use super::render_file_column;
     use crate::{
         parser::parse_patch,
-        prepared::PreparedDocument,
+        prepared::{PageIndex, PreparedDocument},
         theme::{ColorDepth, Theme},
     };
 
@@ -268,12 +274,13 @@ mod tests {
         let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
+        let page = prepared.page(PageIndex::FIRST).kind();
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
         let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
             .draw(|frame| {
-                render_file_column(frame, frame.area(), prepared.file_tree(), Some(0), palette)
+                render_file_column(frame, frame.area(), prepared.file_tree(), page, palette)
             })
             .expect("render file column");
 

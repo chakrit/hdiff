@@ -3,7 +3,9 @@
 
 use ratatui::style::{Color, Modifier};
 
-use crate::{document::Side, file_identity::FileState, file_tree::Marker, syntax::SyntaxClass};
+use crate::{
+    document::Side, file_identity::FileState, file_tree::StateMarker, syntax::SyntaxClass,
+};
 
 /// The colors a terminal can show, decided once when the session starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,13 +120,13 @@ pub struct ChromePalette {
 }
 
 impl ChromePalette {
-    pub fn marker(&self, marker: Marker) -> Color {
+    pub fn marker(&self, marker: StateMarker) -> Color {
         match marker {
-            Marker::State(FileState::Modified) => self.modified_marker,
-            Marker::State(FileState::Added) => self.added_marker,
-            Marker::State(FileState::Deleted) => self.deleted_marker,
-            Marker::State(FileState::Renamed) => self.renamed_marker,
-            Marker::Unknown => self.file_name,
+            StateMarker::State(FileState::Modified) => self.modified_marker,
+            StateMarker::State(FileState::Added) => self.added_marker,
+            StateMarker::State(FileState::Deleted) => self.deleted_marker,
+            StateMarker::State(FileState::Renamed) => self.renamed_marker,
+            StateMarker::Unknown => self.file_name,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use crate::{
     detail::character_details,
     document::{DiffDocument, FileView, RecordMap},
-    file_tree::{FileListing, FileTree, ListedFile},
+    file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
@@ -25,7 +25,14 @@ pub struct PreparedDocument {
 pub struct PreparedPage {
     rows: PageRows,
     styles: LineMap<RowStyles>,
-    list_row: Option<usize>,
+    kind: PageKind,
+}
+
+/// What a page shows: a listed file, or the text of a document that lists no file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageKind {
+    File { row: TreeRowIndex },
+    Text,
 }
 
 impl PreparedDocument {
@@ -35,17 +42,17 @@ impl PreparedDocument {
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         let views = document.file_views().collect::<Vec<_>>();
-        let FileListing {
+        let ListedTree {
             tree: file_tree,
-            order,
-        } = observer.measure(Stage::Labels, |_| FileTree::build(&views));
+            files,
+        } = observer.measure(Stage::Labels, |_| FileTree::build(views.iter().copied()));
 
-        let (first, rest) = match order.as_ref() {
+        let (first, rest) = match files.as_ref() {
             [] => (PreparedPage::text(document, observer), Vec::new()),
             [first, rest @ ..] => {
                 let mut syntax = SyntaxHighlighter::default();
                 let mut prepare = |listed: &ListedFile| {
-                    PreparedPage::file(views[listed.view], listed.row, &mut syntax, observer)
+                    PreparedPage::file(listed.view, listed.row, &mut syntax, observer)
                 };
                 (prepare(first), rest.iter().map(prepare).collect())
             }
@@ -73,7 +80,9 @@ impl PreparedDocument {
     }
 
     pub fn file_count(&self) -> usize {
-        self.pages().filter(|page| page.list_row.is_some()).count()
+        self.pages()
+            .filter(|page| matches!(page.kind, PageKind::File { .. }))
+            .count()
     }
 
     pub fn record_count(&self) -> usize {
@@ -113,7 +122,7 @@ impl PageIndex {
 impl PreparedPage {
     fn file(
         file: FileView<'_>,
-        list_row: usize,
+        row: TreeRowIndex,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
@@ -126,7 +135,7 @@ impl PreparedPage {
         Self {
             styles: row_styles(&rows, &syntax, &details),
             rows,
-            list_row: Some(list_row),
+            kind: PageKind::File { row },
         }
     }
 
@@ -137,13 +146,12 @@ impl PreparedPage {
         Self {
             styles: row_styles(&rows, &RecordMap::default(), &rows.sparse_map([])),
             rows,
-            list_row: None,
+            kind: PageKind::Text,
         }
     }
 
-    /// The page's file row in the [file tree](FileTree); a text page lists no file.
-    pub fn list_row(&self) -> Option<usize> {
-        self.list_row
+    pub fn kind(&self) -> PageKind {
+        self.kind
     }
 
     pub fn rows(&self) -> &PageRows {
