@@ -3,10 +3,11 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    parser::parse_patch,
+    parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout},
     prepared::PreparedDocument,
     terminal::{Step, Tui},
+    theme::{ColorDepth, Theme},
 };
 use ratatui::{
     Terminal,
@@ -20,6 +21,7 @@ pub const WIDTH: u16 = 120;
 pub const HEIGHT: u16 = 36;
 /// The screen row of a diff pane's first content line, below its top frame row.
 pub const FIRST_CONTENT_LINE: usize = 1;
+pub const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
 pub struct Live {
     pub tui: Tui,
@@ -28,14 +30,29 @@ pub struct Live {
 
 impl Live {
     pub fn load(patch: &str, mode: Mode) -> Self {
+        Self::sized(patch, mode, Size::new(WIDTH, HEIGHT))
+    }
+
+    /// `patch` on a terminal of `size`.
+    pub fn sized(patch: &str, mode: Mode, size: Size) -> Self {
         let document = parse_patch(patch.as_bytes()).expect("valid fixture patch");
-        let prepared = PreparedDocument::prepare(&document);
-        let mut terminal = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).expect("test terminal");
-        let tui = Tui::new(
-            prepared,
+        Self::start(PreparedDocument::prepare(&document), mode, size)
+    }
+
+    /// The output of comparing file operands.
+    pub fn comparison(output: &str, mode: Mode) -> Self {
+        let document = parse_comparison(output.as_bytes()).expect("valid comparison output");
+        Self::start(
+            PreparedDocument::prepare(&document),
+            mode,
             Size::new(WIDTH, HEIGHT),
-            hdiff::theme::ColorDepth::TrueColor,
-        );
+        )
+    }
+
+    fn start(prepared: PreparedDocument, mode: Mode, size: Size) -> Self {
+        let mut terminal =
+            Terminal::new(TestBackend::new(size.width, size.height)).expect("test terminal");
+        let tui = Tui::new(prepared, size, ColorDepth::TrueColor);
         tui.draw(&mut terminal).expect("initial frame");
 
         let mut live = Self { tui, terminal };
@@ -133,6 +150,15 @@ impl Live {
             "{row:?} draws its name in one color: {name:?}"
         );
         (marker, name[0])
+    }
+
+    /// Screen rows whose first change label is an `old_N` label: with every diff-pane line
+    /// of the before pane labeled, the lines that pane shows.
+    pub fn old_label_lines(&self) -> usize {
+        self.rows()
+            .iter()
+            .filter(|row| change_label(row).is_some_and(|label| label.starts_with("old_")))
+            .count()
     }
 
     /// Cell position of the first occurrence of `text`.

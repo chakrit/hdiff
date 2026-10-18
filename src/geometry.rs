@@ -1,15 +1,19 @@
-//! The screen's panes for one screen size and set of view preferences: the file-list
-//! column, its separator, and the diff panes. Navigation bounds and drawing both read this
-//! one geometry. Rules: `docs/spec/architecture.md` (Interaction model, Continuity markers).
+//! The screen's areas for one screen size and file-list choice: the file-list column, its
+//! separator, and the diff area, which each pane shape divides into diff panes. Navigation
+//! bounds and drawing both read this one geometry. Rules: `docs/spec/architecture.md`
+//! (Interaction model, Continuity markers, Viewport coordinates).
 
-use ratatui::layout::{Constraint, Flex, Layout, Rect, Size};
+use ratatui::layout::{Constraint, Flex, Layout, Position, Rect, Size};
 
-use crate::preferences::{DiffLayout, FileList, ViewPreferences};
+use crate::{
+    preferences::{DiffLayout, FileList},
+    screen::{Cells, ScreenLines},
+};
 
 /// Rows each pane's continuity-marker frame takes: one above and one below.
 pub const PANE_FRAME_HEIGHT: u16 = 2;
 /// Columns each diff pane's continuity-marker frame takes: one on either side.
-pub const PANE_FRAME_WIDTH: u16 = 2;
+const PANE_FRAME_WIDTH: u16 = 2;
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const FILE_LIST_WIDTH: u16 = 24;
@@ -21,10 +25,34 @@ const STACKED_SEPARATOR_HEIGHT: u16 = 1;
 const FILE_COLUMN_WIDTH: u16 =
     FILE_LIST_WIDTH + SEPARATOR_PADDING + SEPARATOR_WIDTH + SEPARATOR_PADDING;
 
+/// How a layout divides the diff area: one pane, or a before and an after pane.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PaneGeometry {
+pub enum PaneShape {
+    Single,
+    Split(SplitDirection),
+}
+
+impl PaneShape {
+    pub const fn of(layout: DiffLayout) -> Self {
+        match layout {
+            DiffLayout::Unified => Self::Single,
+            DiffLayout::Vertical => Self::Split(SplitDirection::SideBySide),
+            DiffLayout::Stacked => Self::Split(SplitDirection::Stacked),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitDirection {
+    /// The before pane left of the after pane.
+    SideBySide,
+    /// The before pane above the after pane.
+    Stacked,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenGeometry {
     screen: Rect,
-    layout: DiffLayout,
     file_column: Option<FileColumn>,
     diff: Rect,
 }
@@ -36,7 +64,7 @@ pub struct FileColumn {
     pub separator: Rect,
 }
 
-/// The before and after panes of a side-by-side layout, frames included, and the separator
+/// The before and after panes of a split shape, frames included, and the separator
 /// between them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SplitPanes {
@@ -45,46 +73,12 @@ pub struct SplitPanes {
     pub after: Rect,
 }
 
-impl SplitPanes {
-    /// Side by side across `area`, each half its width.
-    pub fn vertical(area: Rect) -> Self {
-        let [before, separator, after] = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Length(SEPARATOR_WIDTH),
-            Constraint::Percentage(50),
-        ])
-        .areas(area);
-
-        Self {
-            before,
-            separator,
-            after,
-        }
-    }
-
-    /// One above the other, from the top of `area`.
-    pub fn stacked(area: Rect) -> Self {
-        let height = pane_height(area.height, DiffLayout::Stacked);
-        let [before, separator, after] = Layout::vertical([
-            Constraint::Length(height),
-            Constraint::Length(STACKED_SEPARATOR_HEIGHT),
-            Constraint::Length(height),
-        ])
-        .flex(Flex::Start)
-        .areas(area);
-
-        Self {
-            before,
-            separator,
-            after,
-        }
-    }
-
-    fn content_width(self) -> u16 {
-        pane_content(self.before)
-            .width
-            .min(pane_content(self.after).width)
-    }
+/// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
+/// lines every pane shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaneContent {
+    pub width: Cells,
+    pub height: ScreenLines,
 }
 
 /// Why a screen shows only a message instead of its panes.
@@ -95,78 +89,72 @@ pub enum TooSmall {
     Short,
 }
 
-impl TooSmall {
-    pub const fn message(self) -> &'static str {
-        match self {
-            Self::Narrow => "screen too narrow",
-            Self::Short => "screen too short",
-        }
-    }
-}
-
-impl PaneGeometry {
-    pub fn of(screen: Rect, preferences: ViewPreferences) -> Self {
-        let file_column = match shows_file_list(screen.width, preferences.file_list) {
-            true => Some(FILE_COLUMN_WIDTH),
-            false => None,
+impl ScreenGeometry {
+    /// The areas of a screen of `size` at the origin.
+    pub fn of(size: Size, file_list: FileList) -> Self {
+        let screen = Rect::from((Position::ORIGIN, size));
+        let (file_column, diff) = match shows_file_list(screen.width, file_list) {
+            true => {
+                let [column, diff] =
+                    Layout::horizontal([Constraint::Length(FILE_COLUMN_WIDTH), Constraint::Min(0)])
+                        .areas(screen);
+                (Some(FileColumn::of(column)), diff)
+            }
+            false => (None, screen),
         };
-        let [column, diff] = Layout::horizontal([
-            Constraint::Length(file_column.unwrap_or(0)),
-            Constraint::Min(0),
-        ])
-        .areas(screen);
 
         Self {
             screen,
-            layout: preferences.layout,
-            file_column: file_column.map(|_| FileColumn::of(column)),
+            file_column,
             diff,
         }
     }
 
-    /// The geometry of a screen of `size` at the origin.
-    pub fn of_size(size: Size, preferences: ViewPreferences) -> Self {
-        Self::of(
-            Rect::from((ratatui::layout::Position::ORIGIN, size)),
-            preferences,
-        )
-    }
-
-    pub fn too_small(&self) -> Option<TooSmall> {
-        if self.screen.width < MINIMUM_SCREEN_WIDTH {
-            return Some(TooSmall::Narrow);
-        }
-        match self.content_height() {
-            0 => Some(TooSmall::Short),
-            _ => None,
-        }
+    pub fn screen(&self) -> Rect {
+        self.screen
     }
 
     pub fn file_column(&self) -> Option<FileColumn> {
         self.file_column
     }
 
-    /// The area of the diff panes, beside the file-list column.
-    pub fn diff(&self) -> Rect {
+    pub fn too_small(&self, shape: PaneShape) -> Option<TooSmall> {
+        if self.is_narrow() {
+            return Some(TooSmall::Narrow);
+        }
+        match self.pane_content(shape).height {
+            ScreenLines::ZERO => Some(TooSmall::Short),
+            _ => None,
+        }
+    }
+
+    /// The one diff pane of the single shape, frame included: the whole diff area.
+    pub fn single_pane(&self) -> Rect {
         self.diff
     }
 
-    /// Columns of the narrowest diff pane's content; none on a too-narrow screen.
-    pub fn content_width(&self) -> u16 {
-        if self.screen.width < MINIMUM_SCREEN_WIDTH {
-            return 0;
-        }
+    /// The diff panes a split in `direction` divides the diff area into.
+    pub fn split_panes(&self, direction: SplitDirection) -> SplitPanes {
+        SplitPanes::of(self.diff, direction)
+    }
 
-        match self.layout {
-            DiffLayout::Unified => pane_content(self.diff).width,
-            DiffLayout::Vertical => SplitPanes::vertical(self.diff).content_width(),
-            DiffLayout::Stacked => SplitPanes::stacked(self.diff).content_width(),
+    /// The content each pane of `shape` shows; a too-narrow screen shows no columns.
+    pub fn pane_content(&self, shape: PaneShape) -> PaneContent {
+        let width = match (self.is_narrow(), shape) {
+            (true, _) => 0,
+            (false, PaneShape::Single) => pane_content(self.single_pane()).width,
+            (false, PaneShape::Split(direction)) => self.split_panes(direction).content_width(),
+        };
+        let height = pane_height(self.screen.height, shape).saturating_sub(PANE_FRAME_HEIGHT);
+
+        PaneContent {
+            width: Cells::from(width),
+            height: ScreenLines::from(height),
         }
     }
 
-    /// Rows of each diff pane's content.
-    pub fn content_height(&self) -> u16 {
-        pane_height(self.screen.height, self.layout).saturating_sub(PANE_FRAME_HEIGHT)
+    fn is_narrow(&self) -> bool {
+        self.screen.width < MINIMUM_SCREEN_WIDTH
     }
 }
 
@@ -181,6 +169,41 @@ impl FileColumn {
         .areas(column);
 
         Self { list, separator }
+    }
+}
+
+impl SplitPanes {
+    fn of(area: Rect, direction: SplitDirection) -> Self {
+        let [before, separator, after] = match direction {
+            SplitDirection::SideBySide => Layout::horizontal([
+                Constraint::Percentage(50),
+                Constraint::Length(SEPARATOR_WIDTH),
+                Constraint::Percentage(50),
+            ])
+            .areas(area),
+            SplitDirection::Stacked => {
+                let height = pane_height(area.height, PaneShape::Split(direction));
+                Layout::vertical([
+                    Constraint::Length(height),
+                    Constraint::Length(STACKED_SEPARATOR_HEIGHT),
+                    Constraint::Length(height),
+                ])
+                .flex(Flex::Start)
+                .areas(area)
+            }
+        };
+
+        Self {
+            before,
+            separator,
+            after,
+        }
+    }
+
+    fn content_width(self) -> u16 {
+        pane_content(self.before)
+            .width
+            .min(pane_content(self.after).width)
     }
 }
 
@@ -219,22 +242,12 @@ fn shows_file_list(width: u16, file_list: FileList) -> bool {
 
 /// Rows of each diff pane, frame included; stacked panes share the height around a
 /// one-row separator.
-fn pane_height(screen_height: u16, layout: DiffLayout) -> u16 {
-    match layout {
-        DiffLayout::Unified | DiffLayout::Vertical => screen_height,
-        DiffLayout::Stacked => screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2,
-    }
-}
-
-/// The largest horizontal offset that keeps content `content_width` cells wide filling a
-/// pane `pane_width` cells wide.
-pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
-    match pane_width {
-        0 => 0,
-        _ => content_width
-            .saturating_sub(usize::from(pane_width))
-            .try_into()
-            .unwrap_or(u16::MAX),
+fn pane_height(screen_height: u16, shape: PaneShape) -> u16 {
+    match shape {
+        PaneShape::Single | PaneShape::Split(SplitDirection::SideBySide) => screen_height,
+        PaneShape::Split(SplitDirection::Stacked) => {
+            screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2
+        }
     }
 }
 
@@ -242,11 +255,14 @@ pub fn maximum_horizontal_offset(content_width: usize, pane_width: u16) -> u16 {
 mod tests {
     use ratatui::layout::{Rect, Size};
 
-    use super::{FileColumn, PaneGeometry, TooSmall, maximum_horizontal_offset};
-    use crate::preferences::{DiffLayout, FileList, ViewPreferences};
+    use super::{FileColumn, PaneShape, ScreenGeometry, TooSmall};
+    use crate::{
+        preferences::{DiffLayout, FileList},
+        screen::{Cells, ScreenLines},
+    };
 
-    fn geometry(width: u16, height: u16, preferences: ViewPreferences) -> PaneGeometry {
-        PaneGeometry::of_size(Size::new(width, height), preferences)
+    fn geometry(width: u16, height: u16) -> ScreenGeometry {
+        ScreenGeometry::of(Size::new(width, height), FileList::Shown)
     }
 
     /// What a screen shows: a message, or its panes with or without the file list.
@@ -283,8 +299,11 @@ mod tests {
 
         // architecture.md: the minimum layout shows one content line in each diff pane.
         for ((width, height), layout, expected) in cases {
-            let panes = geometry(width, height, ViewPreferences::initial(layout));
-            let shown = match (panes.too_small(), panes.file_column()) {
+            let screen = geometry(width, height);
+            let shown = match (
+                screen.too_small(PaneShape::of(layout)),
+                screen.file_column(),
+            ) {
                 (Some(too_small), _) => Shown::Message(too_small),
                 (None, None) => Shown::DiffOnly,
                 (None, Some(_)) => Shown::Split,
@@ -298,62 +317,54 @@ mod tests {
     /// each side, follows the file list.
     #[test]
     fn pads_the_separator_after_the_file_list() {
-        let panes = geometry(28, 3, ViewPreferences::initial(DiffLayout::Unified));
+        let screen = geometry(28, 3);
 
         assert_eq!(
-            panes.file_column(),
+            screen.file_column(),
             Some(FileColumn {
                 list: Rect::new(0, 0, 24, 3),
                 separator: Rect::new(25, 0, 1, 3),
             })
         );
-        assert_eq!(panes.diff(), Rect::new(27, 0, 1, 3));
+        assert_eq!(screen.single_pane(), Rect::new(27, 0, 1, 3));
     }
 
     #[test]
     fn gives_the_diff_the_whole_width_while_the_file_list_is_hidden() {
-        let hidden = ViewPreferences {
-            file_list: FileList::Hidden,
-            ..ViewPreferences::initial(DiffLayout::Unified)
-        };
-        let panes = geometry(80, 3, hidden);
+        let screen = ScreenGeometry::of(Size::new(80, 3), FileList::Hidden);
 
-        assert_eq!(panes.file_column(), None);
-        assert_eq!(panes.diff(), Rect::new(0, 0, 80, 3));
-        assert_eq!(panes.content_width(), 78);
+        assert_eq!(screen.file_column(), None);
+        assert_eq!(screen.single_pane(), Rect::new(0, 0, 80, 3));
+        assert_eq!(screen.pane_content(PaneShape::Single).width, Cells::new(78));
     }
 
     #[test]
     fn derives_the_narrowest_content_pane_width_for_each_layout() {
         let width = |screen_width, layout| {
-            geometry(screen_width, 30, ViewPreferences::initial(layout)).content_width()
+            geometry(screen_width, 30)
+                .pane_content(PaneShape::of(layout))
+                .width
         };
 
-        assert_eq!(width(80, DiffLayout::Unified), 51);
-        assert_eq!(width(80, DiffLayout::Vertical), 24);
-        assert_eq!(width(80, DiffLayout::Stacked), 51);
-        assert_eq!(width(23, DiffLayout::Unified), 21);
-        assert_eq!(width(23, DiffLayout::Vertical), 9);
+        assert_eq!(width(80, DiffLayout::Unified), Cells::new(51));
+        assert_eq!(width(80, DiffLayout::Vertical), Cells::new(24));
+        assert_eq!(width(80, DiffLayout::Stacked), Cells::new(51));
+        assert_eq!(width(23, DiffLayout::Unified), Cells::new(21));
+        assert_eq!(width(23, DiffLayout::Vertical), Cells::new(9));
     }
 
     #[test]
     fn leaves_each_pane_frame_out_of_its_content_height() {
         let height = |screen_height, layout| {
-            geometry(80, screen_height, ViewPreferences::initial(layout)).content_height()
+            geometry(80, screen_height)
+                .pane_content(PaneShape::of(layout))
+                .height
         };
 
-        assert_eq!(height(36, DiffLayout::Unified), 34);
-        assert_eq!(height(36, DiffLayout::Vertical), 34);
-        assert_eq!(height(36, DiffLayout::Stacked), 15);
-        assert_eq!(height(2, DiffLayout::Unified), 0);
-        assert_eq!(height(6, DiffLayout::Stacked), 0);
-    }
-
-    #[test]
-    fn bounds_horizontal_movement_to_visible_content() {
-        assert_eq!(maximum_horizontal_offset(40, 20), 20);
-        assert_eq!(maximum_horizontal_offset(10, 20), 0);
-        assert_eq!(maximum_horizontal_offset(40, 0), 0);
-        assert_eq!(maximum_horizontal_offset(usize::MAX, 1), u16::MAX);
+        assert_eq!(height(36, DiffLayout::Unified), ScreenLines::new(34));
+        assert_eq!(height(36, DiffLayout::Vertical), ScreenLines::new(34));
+        assert_eq!(height(36, DiffLayout::Stacked), ScreenLines::new(15));
+        assert_eq!(height(2, DiffLayout::Unified), ScreenLines::ZERO);
+        assert_eq!(height(6, DiffLayout::Stacked), ScreenLines::ZERO);
     }
 }

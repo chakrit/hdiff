@@ -1,10 +1,6 @@
 #![deny(warnings)]
 
-use std::{
-    env, fmt,
-    io::{self, IsTerminal},
-    process::ExitCode,
-};
+use std::{env, fmt, io, process::ExitCode};
 
 use hdiff::{
     actions::{
@@ -80,7 +76,7 @@ fn view(source: input::Source) -> Result<(), RunError> {
 /// Draws `document`, releasing it once prepared: the prepared document keeps every
 /// line it draws.
 fn render_document(document: DiffDocument) -> Result<(), RunError> {
-    let output_mode = terminal::mode_for_output(io::stdout().is_terminal());
+    let output_mode = terminal::OutputMode::of_stdout();
 
     match output_mode {
         terminal::OutputMode::Finite => write_stdout(&render::render_unified(&document)),
@@ -130,7 +126,7 @@ enum RunError {
     Install(install_git_diff_pager::Error),
     Bench(bench::Error),
     Output(io::Error),
-    Terminal(io::Error),
+    Terminal(terminal::SessionError),
 }
 
 impl fmt::Display for RunError {

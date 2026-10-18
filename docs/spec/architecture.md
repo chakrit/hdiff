@@ -131,8 +131,10 @@ valid diff lines without data loss.
   visibility, and, once semantic diffing lands, a semantic strategy: the session-local
   display choices. Character presentation follows the
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
-- `Viewport`: the terminal screen size and the scroll position: the vertical line offset
-  and the synchronized horizontal offset.
+- `Display`: the view preferences on a terminal screen size, with the screen geometry they
+  lay out.
+- `ScrollPosition`: the vertical screen-line offset and the synchronized horizontal cell
+  offset.
 - `PageRows`: retained rendered rows, split pairs, and source addresses.
 - Visible layout: derived panes, effective visibility, the help hint, and the keymap popup.
 
@@ -429,7 +431,7 @@ The current keymap is pager-like:
 | `h`, `l`                  | Move left or right by one terminal cell       |
 | `0`, `^`                  | Return to the left edge                       |
 | `$`                       | Move to the furthest useful horizontal offset |
-| `Ctrl-D`, `Ctrl-U`        | Move down or up by half a page                |
+| `Ctrl-D`, `Ctrl-U`        | Move down or up by half a diff pane's lines   |
 | `g`, `G`                  | Move to the top or bottom                     |
 | `Tab`, `Shift-Tab`        | Rotate to the next or previous file           |
 | `v`                       | Cycle unified, vertical, and stacked layouts  |
@@ -449,8 +451,8 @@ Vim semantics.
 Hunk jumps remain absent until a visible hunk focus makes their destination legible.
 Half-page movement is smooth.
 
-The keymap popup is drawn from the key bindings themselves and lists every shortcut in the
-table above under four headings: Scroll, Files, View, and Keymap and exit. Scroll shows
+The keymap popup is drawn from the key bindings themselves, its close row listing every
+key that closes the open popup, and lists every shortcut in the table above under four headings: Scroll, Files, View, and Keymap and exit. Scroll shows
 `h`, `j`, `k`, and `l` as a diamond. It never advertises a deferred shortcut. The groups
 sit in two columns when the screen is wide enough and in one column otherwise. Headings
 take the hunk-header tone in bold, keys the syntax function color, actions the file-name
@@ -523,9 +525,12 @@ several. The frame shows the lines from that offset, and scroll limits count lin
 visible rows, their lines, and their widest row are derived once per selected page,
 layout, context count, and wrap width, and not on movement. Unified rows are lines and
 side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
-the line it starts with. One pane geometry, derived from the screen size and view
-preferences, serves both navigation bounds and drawing, and a scroll extent carries the
-wrap it was built with.
+the line it starts with. Cell columns and screen lines are distinct units, held at full
+width and narrowed only where a frame is drawn, so no offset type caps how far a row
+reaches. One screen geometry, derived from the screen size and view preferences, serves
+both navigation bounds and drawing, and a scroll extent carries the wrap width and pane
+shape it was built with. A frame whose size differs from the interaction's screen waits
+for the resize event that follows it.
 
 ### Eager prepared rendering
 

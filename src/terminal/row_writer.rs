@@ -1,7 +1,10 @@
 //! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
 //! and safe rendering, View model).
 
-use std::{num::NonZeroUsize, ops::ControlFlow};
+use std::{
+    num::NonZeroUsize,
+    ops::{ControlFlow, Range},
+};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -12,8 +15,9 @@ use super::{
 };
 use crate::{
     cells::cluster_cells,
-    extent::{MARKER_GUTTER_WIDTH, Wrap},
+    extent::MARKER_GUTTER_WIDTH,
     line_breaks::LineBreaks,
+    screen::Cells,
     styling::{StyledRow, TextStyle},
     tab_stops::TabStops,
     theme::Theme,
@@ -23,18 +27,9 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(super) enum RowPlacement {
     /// The whole row, from column `horizontal_offset` onward.
-    Scrolled { horizontal_offset: u16 },
+    Scrolled { horizontal_offset: Cells },
     /// Wrapped line `line` of the row's payload, wrapped at `width` cells.
     Wrapped { line: usize, width: NonZeroUsize },
-}
-
-impl RowPlacement {
-    pub(super) fn new(wrap: Wrap, horizontal_offset: u16, line: usize) -> Self {
-        match wrap {
-            Wrap::Off => Self::Scrolled { horizontal_offset },
-            Wrap::At(width) => Self::Wrapped { line, width },
-        }
-    }
 }
 
 /// Whether a written line left cells of its row outside the pane on either side.
@@ -85,7 +80,7 @@ pub(super) fn write_row(
     match placement {
         RowPlacement::Scrolled { horizontal_offset } => {
             let cursor = RowCursor {
-                horizontal_offset: usize::from(horizontal_offset),
+                horizontal_offset: horizontal_offset.get(),
                 ..cursor
             };
             write_clusters(cursor, gutter.into_iter().chain(payload_clusters))
@@ -211,7 +206,7 @@ impl RowCursor<'_> {
         ControlFlow::Continue(())
     }
 
-    fn fill_blank(&mut self, cells: std::ops::Range<usize>, style: Style) {
+    fn fill_blank(&mut self, cells: Range<usize>, style: Style) {
         for cell in cells {
             let x = self.x(cell);
             self.buffer[(x, self.area.y)]
@@ -252,10 +247,12 @@ mod tests {
     use super::{Clip, RowPlacement, write_row};
     use crate::{
         document::Side,
-        extent::{DisplayExtent, Wrap},
+        extent::{DisplayExtent, WrapWidth},
+        geometry::PaneShape,
         parser::parse_patch,
-        preferences::{DiffGranularity, DiffLayout},
+        preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
+        screen::{Cells, ScreenLines},
         terminal::rows::{PaneRow, visible_diff_rows},
         theme::{ColorDepth, Theme},
     };
@@ -379,7 +376,9 @@ mod tests {
         let clip = |width, horizontal_offset| {
             let area = Rect::new(0, 0, width, 1);
             let mut buffer = Buffer::empty(area);
-            let placement = RowPlacement::Scrolled { horizontal_offset };
+            let placement = RowPlacement::Scrolled {
+                horizontal_offset: Cells::new(horizontal_offset),
+            };
             write_row(&mut buffer, area, row, placement, THEME)
         };
         let sides = |left, right| Clip { left, right };
@@ -426,8 +425,11 @@ mod tests {
         PreparedDocument::prepare(&document)
     }
 
-    fn write(row: PaneRow<'_>, width: u16, horizontal_offset: u16) -> Buffer {
-        write_placed(row, width, RowPlacement::Scrolled { horizontal_offset }).0
+    fn write(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
+        let placement = RowPlacement::Scrolled {
+            horizontal_offset: Cells::new(horizontal_offset),
+        };
+        write_placed(row, width, placement).0
     }
 
     fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> (Buffer, Clip) {
@@ -439,12 +441,13 @@ mod tests {
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
         let file = prepared.page(PageIndex::FIRST);
-        let DisplayExtent::Unified(extent) =
-            DisplayExtent::of(file.rows(), DiffLayout::Unified, 3, Wrap::Off)
+        let DisplayExtent::Single(extent) =
+            DisplayExtent::of(file.rows(), PaneShape::Single, 3, WrapWidth::Unbounded)
         else {
-            panic!("the unified layout shows lines");
+            panic!("a single pane shows lines");
         };
-        let rows = visible_diff_rows(file, &extent, 0, DiffGranularity::Line, usize::MAX);
+        let all = ScreenLines::new(usize::MAX);
+        let rows = visible_diff_rows(file, &extent, ScreenLines::ZERO, DiffGranularity::Line, all);
 
         rows.into_iter()
             .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))

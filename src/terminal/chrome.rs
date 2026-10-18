@@ -15,14 +15,15 @@ use crate::{
     file_tree::{FileTree, TreeRow},
     geometry::{PANE_FRAME_HEIGHT, between_frame_rows, pane_content},
     prepared::PageKind,
+    screen::ScreenLines,
     theme::ChromePalette,
 };
 
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
 const HELP_HINT: &str = "? help";
-/// The hint inside a border and a padding column on each side, between two border rows.
-const HELP_BOX_WIDTH: u16 = HELP_HINT.len() as u16 + 4;
+/// A border and a padding column on each side of the hint.
+const HELP_BOX_FRAME_WIDTH: u16 = 4;
 const HELP_BOX_HEIGHT: u16 = 3;
 
 /// Draws the file list above the help hint in the file-list column, selecting the row of
@@ -53,10 +54,11 @@ pub(super) fn render_file_column(
 /// The help hint in a box floating over the bottom-left corner of `area`, while the file list
 /// is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
+    let hint_width = u16::try_from(HELP_HINT.len()).expect("the help hint fits a row");
     let help_box = Rect::new(
         area.x,
         area.bottom().saturating_sub(HELP_BOX_HEIGHT),
-        HELP_BOX_WIDTH,
+        hint_width + HELP_BOX_FRAME_WIDTH,
         HELP_BOX_HEIGHT,
     )
     .intersection(area);
@@ -101,9 +103,9 @@ pub(super) struct ContinuityFrame {
 #[derive(Clone, Copy)]
 pub(super) struct LineWindow {
     /// The first visible line.
-    pub(super) first: usize,
+    pub(super) first: ScreenLines,
     /// Lines in the scroll extent.
-    pub(super) total: usize,
+    pub(super) total: ScreenLines,
 }
 
 impl ContinuityFrame {
@@ -164,14 +166,14 @@ impl ContinuityFrame {
         }
         let style = Style::default().fg(palette.dim_separator);
         let center = self.pane.x + self.pane.width / 2;
-        let shown = usize::from(self.content.height);
+        let shown = ScreenLines::from(self.content.height);
 
-        if window.first > 0 {
+        if window.first > ScreenLines::ZERO {
             buffer[(center, self.pane.top())]
                 .set_symbol("▴")
                 .set_style(style);
         }
-        if window.first + shown < window.total {
+        if window.first.saturating_add(shown) < window.total {
             buffer[(center, self.pane.bottom() - 1)]
                 .set_symbol("▾")
                 .set_style(style);
@@ -194,8 +196,8 @@ fn render_file_list(
     // Without a selected row, the list shows from its top.
     let first = selected_row.map_or(0, |row| (row + 1).saturating_sub(height));
     let window = LineWindow {
-        first,
-        total: tree.rows().len(),
+        first: ScreenLines::new(first),
+        total: ScreenLines::new(tree.rows().len()),
     };
 
     let items = tree

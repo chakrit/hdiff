@@ -34,7 +34,7 @@ cargo test --locked --test live file_rotation
 
 `harness.rs` holds the `Live` harness and `Mode`, `fixtures.rs` the patches several
 scenarios share, and one module per concern holds its scenarios: `navigation.rs`,
-`file_list.rs`, `rendering.rs`, and `wrapping.rs`.
+`file_list.rs`, `panes.rs`, `rendering.rs`, `styles.rs`, and `wrapping.rs`.
 
 The `matrix!` macro in `main.rs` runs each scenario function once per layout (`unified`,
 `vertical`, `stacked`) and detail mode (`line`, `character`), as test modules named after

@@ -1,14 +1,10 @@
 //! The file list: its order, selection, markers, and showing and hiding it.
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use hdiff::{
-    geometry::PaneGeometry,
-    preferences::{DiffGranularity, DiffLayout, ViewPreferences},
-};
-use ratatui::layout::Size;
+use hdiff::preferences::{DiffGranularity, DiffLayout};
 
 use crate::{
     fixtures::{TREE_PATCH, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label, unified_line},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, change_label, unified_line},
 };
 
 matrix!(file_list_toggle);
@@ -20,13 +16,7 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
             format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
         })
         .collect::<String>();
-    let mut live = Live::load(
-        &patch,
-        Mode {
-            layout: DiffLayout::Unified,
-            detail: DiffGranularity::Line,
-        },
-    );
+    let mut live = Live::load(&patch, unified_line());
 
     for _ in 0..36 {
         live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -195,11 +185,7 @@ fn file_list_toggle(mode: Mode) {
         live.press('j');
     }
     let start = live.buffer();
-    let geometry = PaneGeometry::of_size(
-        Size::new(WIDTH, HEIGHT),
-        ViewPreferences::initial(mode.layout),
-    );
-    let middle_line = FIRST_CONTENT_LINE + usize::from(geometry.content_height() / 2);
+    let middle_line = FIRST_CONTENT_LINE + live.old_label_lines() / 2;
     let middle = change_label(&live.rows()[middle_line]);
     assert!(middle.is_some(), "a labeled row on the middle line");
     assert!(live.shows("pairs.rs"), "the file list starts shown");

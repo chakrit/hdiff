@@ -1,7 +1,13 @@
 //! The controlling-terminal session. Contracts: docs/spec/architecture.md#terminal-lifecycle
 //! and docs/spec/architecture.md#input-and-terminal-boundary.
 
-use std::{fs::File, io};
+use std::{
+    fmt,
+    fs::File,
+    io,
+    panic::{self, PanicHookInfo},
+    sync::Arc,
+};
 
 use crossterm::{
     execute,
@@ -23,12 +29,19 @@ pub fn open_controlling_terminal() -> io::Result<File> {
 }
 
 /// Runs the interactive loop on the controlling terminal, restoring it on every return path.
-pub fn run_interactive(controlling_terminal: File, document: PreparedDocument) -> io::Result<()> {
+pub fn run_interactive(
+    controlling_terminal: File,
+    document: PreparedDocument,
+) -> Result<(), SessionError> {
     let mut session = TerminalSession::start(controlling_terminal)?;
 
     let result = run_loop(session.terminal_mut(), document);
 
-    combine(result, session.finish())
+    match (result, session.finish()) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(failures)) => Err(SessionError::Restore(failures)),
+        (Err(error), restored) => Err(SessionError::Run { error, restored }),
+    }
 }
 
 fn run_loop(
@@ -41,88 +54,205 @@ fn run_loop(
     Tui::new(document, area, color_depth).run(terminal, TtyEvents::default())
 }
 
-/// Raw mode and the alternate screen on the controlling terminal, both entered.
+/// Why an interactive session failed, with every terminal restore step that failed too.
+#[derive(Debug)]
+pub enum SessionError {
+    /// Raw mode or the alternate screen could not be entered.
+    Start {
+        error: io::Error,
+        restored: Result<(), RestoreFailures>,
+    },
+    /// The interactive loop failed.
+    Run {
+        error: io::Error,
+        restored: Result<(), RestoreFailures>,
+    },
+    /// The loop finished, but the terminal was not fully restored.
+    Restore(RestoreFailures),
+}
+
+impl fmt::Display for SessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (error, restored) = match self {
+            Self::Start { error, restored } => {
+                write!(formatter, "cannot start the session: ")?;
+                (error, restored)
+            }
+            Self::Run { error, restored } => (error, restored),
+            Self::Restore(failures) => return write!(formatter, "cleanup failed: {failures}"),
+        };
+
+        write!(formatter, "{error}")?;
+        match restored {
+            Ok(()) => Ok(()),
+            Err(failures) => write!(formatter, "; cleanup failed: {failures}"),
+        }
+    }
+}
+
+impl std::error::Error for SessionError {}
+
+/// The restore steps that failed, at least one, in the order they were attempted.
+#[derive(Debug)]
+pub struct RestoreFailures(Vec<(RestoreStep, io::Error)>);
+
+impl fmt::Display for RestoreFailures {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let failures = self
+            .0
+            .iter()
+            .map(|(step, error)| format!("{}: {error}", step.label()))
+            .collect::<Vec<_>>();
+
+        write!(formatter, "{}", failures.join("; "))
+    }
+}
+
+/// One step that returns the terminal to how the session found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreStep {
+    Cursor,
+    AlternateScreen,
+    RawMode,
+}
+
+impl RestoreStep {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cursor => "cursor",
+            Self::AlternateScreen => "alternate screen",
+            Self::RawMode => "raw mode",
+        }
+    }
+}
+
+/// Success when every step succeeded; otherwise the failed steps.
+fn restored(
+    steps: impl IntoIterator<Item = (RestoreStep, io::Result<()>)>,
+) -> Result<(), RestoreFailures> {
+    let failures = steps
+        .into_iter()
+        .filter_map(|(step, result)| result.err().map(|error| (step, error)))
+        .collect::<Vec<_>>();
+
+    match failures.is_empty() {
+        true => Ok(()),
+        false => Err(RestoreFailures(failures)),
+    }
+}
+
+/// Raw mode and the alternate screen on the controlling terminal, both entered, and the
+/// panic hook that restores them.
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<File>>,
+    panic_hook: RestoringPanicHook,
 }
 
 impl TerminalSession {
     /// Enters raw mode, then the alternate screen, leaving raw mode again when the alternate
     /// screen fails.
-    fn start(controlling_terminal: File) -> io::Result<Self> {
-        let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))?;
-        restore_on_panic();
+    fn start(controlling_terminal: File) -> Result<Self, SessionError> {
+        let started = |error| SessionError::Start {
+            error,
+            restored: Ok(()),
+        };
+        let mut terminal =
+            Terminal::new(CrosstermBackend::new(controlling_terminal)).map_err(started)?;
+        terminal::enable_raw_mode().map_err(started)?;
+        let panic_hook = RestoringPanicHook::install();
 
-        terminal::enable_raw_mode()?;
-        let entered = execute!(terminal.backend_mut(), EnterAlternateScreen);
-        if let Err(error) = entered {
-            let cursor = terminal.show_cursor();
-            let cleanup = all_restored([cursor, terminal::disable_raw_mode()]);
-            return Err(with_cleanup(error, cleanup));
+        if let Err(error) = execute!(terminal.backend_mut(), EnterAlternateScreen) {
+            let restored = restored([
+                (RestoreStep::Cursor, terminal.show_cursor()),
+                (RestoreStep::RawMode, terminal::disable_raw_mode()),
+            ]);
+            panic_hook.uninstall();
+            return Err(SessionError::Start { error, restored });
         }
 
-        Ok(Self { terminal })
+        Ok(Self {
+            terminal,
+            panic_hook,
+        })
     }
 
     fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<File>> {
         &mut self.terminal
     }
 
-    /// Leaves the alternate screen, then raw mode, reporting all failures after attempting
-    /// each step.
-    fn finish(mut self) -> io::Result<()> {
+    /// Leaves the alternate screen, then raw mode, attempting each step whatever failed
+    /// before it, and puts back the panic hook the session replaced.
+    fn finish(mut self) -> Result<(), RestoreFailures> {
         let cursor = self.terminal.show_cursor();
         let screen = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let raw_mode = terminal::disable_raw_mode();
+        self.panic_hook.uninstall();
 
-        all_restored([cursor, screen, raw_mode])
+        restored([
+            (RestoreStep::Cursor, cursor),
+            (RestoreStep::AlternateScreen, screen),
+            (RestoreStep::RawMode, raw_mode),
+        ])
     }
 }
 
-/// One error naming every failed restore step, or success when none failed.
-fn all_restored<const STEPS: usize>(steps: [io::Result<()>; STEPS]) -> io::Result<()> {
-    let errors = steps
-        .into_iter()
-        .filter_map(Result::err)
-        .map(|error| error.to_string())
-        .collect::<Vec<_>>();
+type PanicHook = dyn Fn(&PanicHookInfo<'_>) + Sync + Send;
 
-    match errors.is_empty() {
-        true => Ok(()),
-        false => Err(io::Error::other(format!(
-            "terminal cleanup failed: {}",
-            errors.join("; ")
-        ))),
+/// A panic hook that restores the terminal before the panic message prints, so it stays
+/// visible, then runs the hook it replaced.
+struct RestoringPanicHook {
+    previous: Arc<PanicHook>,
+}
+
+impl RestoringPanicHook {
+    fn install() -> Self {
+        let previous: Arc<PanicHook> = Arc::from(panic::take_hook());
+        let chained = Arc::clone(&previous);
+
+        panic::set_hook(Box::new(move |info| {
+            if let Err(error) = restore_after_panic() {
+                eprintln!("terminal restore failed: {error}");
+            }
+            chained(info);
+        }));
+        Self { previous }
+    }
+
+    /// Puts back the hook this one replaced.
+    fn uninstall(self) {
+        let previous = self.previous;
+        panic::set_hook(Box::new(move |info| previous(info)));
     }
 }
 
-/// Joins a session result with its cleanup result so neither failure is lost.
-fn combine(result: io::Result<()>, cleanup: io::Result<()>) -> io::Result<()> {
-    match result {
-        Ok(()) => cleanup,
-        Err(error) => Err(with_cleanup(error, cleanup)),
-    }
+/// Best effort on a fresh handle, since the session's terminal is unreachable from a panic.
+fn restore_after_panic() -> Result<(), PanicRestoreError> {
+    let mut controlling_terminal = open_controlling_terminal().map_err(PanicRestoreError::Open)?;
+
+    let restored = restored([
+        (
+            RestoreStep::Cursor,
+            execute!(controlling_terminal, crossterm::cursor::Show),
+        ),
+        (
+            RestoreStep::AlternateScreen,
+            execute!(controlling_terminal, LeaveAlternateScreen),
+        ),
+        (RestoreStep::RawMode, terminal::disable_raw_mode()),
+    ]);
+    restored.map_err(PanicRestoreError::Restore)
 }
 
-fn with_cleanup(error: io::Error, cleanup: io::Result<()>) -> io::Error {
-    match cleanup {
-        Ok(()) => error,
-        Err(cleanup_error) => io::Error::other(format!("{error}; {cleanup_error}")),
-    }
+enum PanicRestoreError {
+    Open(io::Error),
+    Restore(RestoreFailures),
 }
 
-/// Best effort: restores the terminal before the panic message prints, so it stays visible.
-fn restore_on_panic() {
-    let hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let restored = open_controlling_terminal().and_then(|mut controlling_terminal| {
-            let cursor = execute!(controlling_terminal, crossterm::cursor::Show);
-            let screen = execute!(controlling_terminal, LeaveAlternateScreen);
-            all_restored([cursor, screen, terminal::disable_raw_mode()])
-        });
-        if let Err(error) = restored {
-            eprintln!("terminal restore failed: {error}");
+impl fmt::Display for PanicRestoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Open(error) => write!(formatter, "cannot open {CONTROLLING_TERMINAL}: {error}"),
+            Self::Restore(failures) => write!(formatter, "{failures}"),
         }
-        hook(info);
-    }));
+    }
 }

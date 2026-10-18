@@ -22,6 +22,7 @@ pub mod parser;
 pub mod preferences;
 pub mod prepared;
 pub mod render;
+pub mod screen;
 pub mod source_text;
 pub mod styling;
 pub mod syntax;

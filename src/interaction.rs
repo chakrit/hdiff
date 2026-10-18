@@ -1,91 +1,149 @@
 //! Interaction state and its transitions. Rules: `docs/spec/architecture.md` (Core model,
 //! Interaction model, View model).
 
-use std::num::NonZeroUsize;
-
 use ratatui::layout::Size;
 
 use crate::{
+    geometry::{PaneContent, PaneShape, ScreenGeometry},
     preferences::{PreferenceChange, ViewPreferences},
-    prepared::PageIndex,
+    prepared::{PageCount, PageIndex},
+    screen::{Cells, ScreenLines},
 };
 
+/// The selected page, what the screen shows, the scroll position, and the keymap popup.
+/// Only [`Interaction::start`] and transitions build one, so its scroll position is
+/// always within its display's bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interaction {
-    pub page: PageIndex,
-    pub preferences: ViewPreferences,
-    pub viewport: Viewport,
-    pub keymap: KeymapPopup,
+    page: PageIndex,
+    display: Display,
+    scroll: ScrollPosition,
+    keymap: KeymapPopup,
 }
 
 impl Interaction {
     /// The first page of a document on a `screen`-sized terminal, scrolled to its start.
-    pub const fn start(preferences: ViewPreferences, screen: Size) -> Self {
+    pub fn start(preferences: ViewPreferences, screen: Size) -> Self {
         Self {
             page: PageIndex::FIRST,
-            preferences,
-            viewport: Viewport::at_start(screen),
+            display: Display::new(preferences, screen),
+            scroll: ScrollPosition::START,
             keymap: KeymapPopup::Closed,
         }
     }
 
-    /// The preferences and screen the display shows now.
-    pub const fn shown(&self) -> Target {
-        Target {
-            preferences: self.preferences,
-            screen: self.viewport.screen,
-        }
+    pub fn page(&self) -> PageIndex {
+        self.page
     }
 
-    /// The preferences and screen the display shows after `event`.
-    pub fn target(&self, event: &Event) -> Target {
-        let current = self.shown();
+    pub fn display(&self) -> &Display {
+        &self.display
+    }
 
+    pub fn preferences(&self) -> ViewPreferences {
+        self.display.preferences
+    }
+
+    pub fn scroll(&self) -> ScrollPosition {
+        self.scroll
+    }
+
+    pub fn keymap(&self) -> KeymapPopup {
+        self.keymap
+    }
+
+    /// What `event` does among `pages` pages, before navigation places the scroll position.
+    pub fn effect(&self, event: Event, pages: PageCount) -> Effect {
         match event {
-            Event::Command(Command::Preference(change)) => Target {
-                preferences: self.preferences.after(*change),
-                ..current
+            Event::Interrupt | Event::Command(Command::Quit) => Effect::Exit,
+            Event::Command(Command::Movement(movement)) => Effect::Scroll(movement),
+            Event::Command(Command::Page(step)) => Effect::TurnPage(step.applied(self.page, pages)),
+            Event::Command(Command::Keymap(command)) => Effect::Keymap(self.keymap.after(command)),
+            Event::Command(Command::Preference(change)) => Effect::Redisplay {
+                display: self
+                    .display
+                    .with_preferences(self.display.preferences.after(change)),
+                placement: placement_after(change),
             },
-            Event::Resize(screen) => Target {
-                screen: *screen,
-                ..current
+            Event::Resize(screen) => Effect::Redisplay {
+                display: self.display.resized(screen),
+                placement: Placement::Anchor(AnchorLine::PaneTop),
             },
-            Event::Command(
-                Command::Movement(_) | Command::Page(_) | Command::Keymap(_) | Command::Quit,
-            )
-            | Event::Interrupt => current,
         }
     }
 }
 
-/// The terminal screen and the reader's position in the active layout's screen lines.
+/// Where the reader stays after a preference change. Rules: `docs/spec/architecture.md`
+/// (View model).
+const fn placement_after(change: PreferenceChange) -> Placement {
+    match change {
+        PreferenceChange::ToggleWrapping
+        | PreferenceChange::IncreaseContext
+        | PreferenceChange::DecreaseContext
+        | PreferenceChange::ToggleFileList => Placement::Anchor(AnchorLine::PaneMiddle),
+        PreferenceChange::NextLayout | PreferenceChange::ToggleGranularity => Placement::Keep,
+    }
+}
+
+/// The view preferences laid out on a screen: the screen's geometry and the content each
+/// diff pane of the preferred layout shows, derived once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Viewport {
-    pub screen: Size,
-    pub scroll: ScrollPosition,
+pub struct Display {
+    preferences: ViewPreferences,
+    geometry: ScreenGeometry,
+    pane_content: PaneContent,
 }
 
-impl Viewport {
-    pub const fn at_start(screen: Size) -> Self {
+impl Display {
+    pub fn new(preferences: ViewPreferences, screen: Size) -> Self {
+        let geometry = ScreenGeometry::of(screen, preferences.file_list);
+
         Self {
-            screen,
-            scroll: ScrollPosition::START,
+            preferences,
+            geometry,
+            pane_content: geometry.pane_content(PaneShape::of(preferences.layout)),
         }
+    }
+
+    pub fn preferences(&self) -> ViewPreferences {
+        self.preferences
+    }
+
+    pub fn geometry(&self) -> &ScreenGeometry {
+        &self.geometry
+    }
+
+    /// The pane shape of the preferred layout.
+    pub fn shape(&self) -> PaneShape {
+        PaneShape::of(self.preferences.layout)
+    }
+
+    /// The content each diff pane of the preferred layout shows.
+    pub fn pane_content(&self) -> PaneContent {
+        self.pane_content
+    }
+
+    fn with_preferences(&self, preferences: ViewPreferences) -> Self {
+        Self::new(preferences, self.geometry.screen().as_size())
+    }
+
+    fn resized(&self, screen: Size) -> Self {
+        Self::new(self.preferences, screen)
     }
 }
 
-/// The first visible screen line and the synchronized horizontal offset in cells. Rules:
+/// The first visible screen line and the synchronized horizontal offset. Rules:
 /// `docs/spec/architecture.md` (Viewport coordinates).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollPosition {
-    pub vertical: usize,
-    pub horizontal: u16,
+    pub vertical: ScreenLines,
+    pub horizontal: Cells,
 }
 
 impl ScrollPosition {
     pub const START: Self = Self {
-        vertical: 0,
-        horizontal: 0,
+        vertical: ScreenLines::ZERO,
+        horizontal: Cells::ZERO,
     };
 
     fn clamped(self, bounds: DisplayBounds) -> Self {
@@ -105,15 +163,31 @@ pub enum KeymapPopup {
 
 impl KeymapPopup {
     /// The command this popup lets through: while open, only its close keys act, all closing
-    /// it.
+    /// it; while closed, there is nothing to close.
     pub fn admit(self, command: Command) -> Option<Command> {
         match (self, command) {
-            (Self::Closed, Command::Keymap(Self::Closed)) => None,
+            (Self::Closed, Command::Keymap(KeymapCommand::Close)) => None,
             (Self::Closed, command) => Some(command),
-            (Self::Open, Command::Keymap(_) | Command::Quit) => Some(Command::Keymap(Self::Closed)),
+            (Self::Open, Command::Keymap(_) | Command::Quit) => {
+                Some(Command::Keymap(KeymapCommand::Close))
+            }
             (Self::Open, Command::Movement(_) | Command::Page(_) | Command::Preference(_)) => None,
         }
     }
+
+    const fn after(self, command: KeymapCommand) -> Self {
+        match (command, self) {
+            (KeymapCommand::Toggle, Self::Closed) => Self::Open,
+            (KeymapCommand::Toggle, Self::Open) | (KeymapCommand::Close, _) => Self::Closed,
+        }
+    }
+}
+
+/// What a keymap key asks of the popup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeymapCommand {
+    Toggle,
+    Close,
 }
 
 /// One event of the interactive session: a bound command, or a session event that applies
@@ -133,30 +207,6 @@ impl Event {
             Self::Interrupt | Self::Resize(_) => Some(self),
         }
     }
-
-    /// Where the display after this event starts. See `docs/spec/architecture.md` (View
-    /// model).
-    pub const fn viewport_policy(&self) -> ViewportPolicy {
-        match self {
-            Self::Resize(_) => ViewportPolicy::Anchor(AnchorLine::PaneTop),
-            Self::Command(Command::Preference(
-                PreferenceChange::ToggleWrapping
-                | PreferenceChange::IncreaseContext
-                | PreferenceChange::DecreaseContext
-                | PreferenceChange::ToggleFileList,
-            )) => ViewportPolicy::Anchor(AnchorLine::PaneMiddle),
-            Self::Command(Command::Page(_)) => ViewportPolicy::Reset,
-            Self::Command(
-                Command::Preference(
-                    PreferenceChange::NextLayout | PreferenceChange::ToggleGranularity,
-                )
-                | Command::Movement(_)
-                | Command::Keymap(_)
-                | Command::Quit,
-            )
-            | Self::Interrupt => ViewportPolicy::Keep,
-        }
-    }
 }
 
 /// What a bound key asks for.
@@ -165,8 +215,7 @@ pub enum Command {
     Movement(Movement),
     Page(PageStep),
     Preference(PreferenceChange),
-    /// Opens or closes the keymap popup.
-    Keymap(KeymapPopup),
+    Keymap(KeymapCommand),
     Quit,
 }
 
@@ -185,25 +234,27 @@ pub enum Movement {
 }
 
 impl Movement {
-    /// `viewport`'s scroll position after this movement, within `bounds`.
+    /// `scroll` after this movement, within `bounds`.
     fn applied(self, scroll: ScrollPosition, bounds: DisplayBounds) -> ScrollPosition {
         let horizontal = |horizontal| ScrollPosition {
             horizontal,
             ..scroll
         };
         let vertical = |vertical| ScrollPosition { vertical, ..scroll };
-        let half_page = (bounds.pane_lines / 2).max(1);
+        let one_cell = Cells::new(1);
+        let one_line = ScreenLines::new(1);
+        let half_page = bounds.pane_lines.half().max(one_line);
 
         let moved = match self {
-            Self::Left => horizontal(scroll.horizontal.saturating_sub(1)),
-            Self::Right => horizontal(scroll.horizontal.saturating_add(1)),
-            Self::FarLeft => horizontal(0),
+            Self::Left => horizontal(scroll.horizontal.saturating_sub(one_cell)),
+            Self::Right => horizontal(scroll.horizontal.saturating_add(one_cell)),
+            Self::FarLeft => horizontal(Cells::ZERO),
             Self::FarRight => horizontal(bounds.maximum_horizontal_offset),
-            Self::Down => vertical(scroll.vertical.saturating_add(1)),
-            Self::Up => vertical(scroll.vertical.saturating_sub(1)),
+            Self::Down => vertical(scroll.vertical.saturating_add(one_line)),
+            Self::Up => vertical(scroll.vertical.saturating_sub(one_line)),
             Self::HalfPageDown => vertical(scroll.vertical.saturating_add(half_page)),
             Self::HalfPageUp => vertical(scroll.vertical.saturating_sub(half_page)),
-            Self::Top => vertical(0),
+            Self::Top => vertical(ScreenLines::ZERO),
             Self::Bottom => vertical(bounds.maximum_vertical_offset),
         };
 
@@ -218,21 +269,35 @@ pub enum PageStep {
 }
 
 impl PageStep {
-    fn applied(self, page: PageIndex, page_count: NonZeroUsize) -> PageIndex {
+    fn applied(self, page: PageIndex, pages: PageCount) -> PageIndex {
         match self {
-            Self::Next => page.next(page_count),
-            Self::Previous => page.previous(page_count),
+            Self::Next => page.next(pages),
+            Self::Previous => page.previous(pages),
         }
     }
 }
 
-/// How the display after an event places its first line.
+/// What an event does to the interaction, before navigation places the scroll position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewportPolicy {
+pub enum Effect {
+    Exit,
+    /// Moves within the display shown now.
+    Scroll(Movement),
+    /// Shows another page from its start.
+    TurnPage(PageIndex),
+    /// Shows the same page as another display.
+    Redisplay {
+        display: Display,
+        placement: Placement,
+    },
+    Keymap(KeymapPopup),
+}
+
+/// Where a redisplayed page places its first line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Placement {
     /// The current position, within the new display's bounds.
     Keep,
-    /// The start of the display.
-    Reset,
     /// The position that keeps the row on this diff-pane line on that line.
     Anchor(AnchorLine),
 }
@@ -243,53 +308,85 @@ pub enum AnchorLine {
     PaneMiddle,
 }
 
-/// The preferences and screen of the display an event leads to.
+/// The limits of a display's scroll position, and the lines one pane shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Target {
-    pub preferences: ViewPreferences,
-    pub screen: Size,
+pub struct DisplayBounds {
+    pub maximum_vertical_offset: ScreenLines,
+    pub maximum_horizontal_offset: Cells,
+    pub pane_lines: ScreenLines,
 }
 
-/// The display an event leads to: its target, page count, bounds, and the scroll position,
-/// within those bounds, that the event's viewport policy places it at.
+/// The interaction an event leads to, resolved by navigation against its display's bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Destination {
-    target: Target,
-    page_count: NonZeroUsize,
-    bounds: DisplayBounds,
-    start: ScrollPosition,
+pub struct Destination(Resolved);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Resolved {
+    Exit,
+    Scroll {
+        movement: Movement,
+        bounds: DisplayBounds,
+    },
+    Show {
+        page: PageIndex,
+        display: Display,
+        start: ScrollPosition,
+    },
+    Keymap(KeymapPopup),
 }
 
 impl Destination {
-    /// The display of `target` with `bounds`, starting at `start` moved within them.
-    pub fn new(
-        target: Target,
-        page_count: NonZeroUsize,
-        bounds: DisplayBounds,
+    pub const EXIT: Self = Self(Resolved::Exit);
+
+    /// `movement` within the shown display's `bounds`.
+    pub fn scroll(movement: Movement, bounds: DisplayBounds) -> Self {
+        Self(Resolved::Scroll { movement, bounds })
+    }
+
+    /// `page` as `display`, from `start` moved within `bounds`.
+    pub fn show(
+        page: PageIndex,
+        display: Display,
         start: ScrollPosition,
+        bounds: DisplayBounds,
     ) -> Self {
-        Self {
-            target,
-            page_count,
-            bounds,
+        Self(Resolved::Show {
+            page,
+            display,
             start: start.clamped(bounds),
-        }
+        })
     }
 
-    fn viewport(&self) -> Viewport {
-        Viewport {
-            screen: self.target.screen,
-            scroll: self.start,
-        }
+    pub fn keymap(keymap: KeymapPopup) -> Self {
+        Self(Resolved::Keymap(keymap))
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplayBounds {
-    pub maximum_vertical_offset: usize,
-    pub maximum_horizontal_offset: u16,
-    /// Content lines of each diff pane: a page.
-    pub pane_lines: usize,
+    /// The interaction after `interaction` reaches this destination.
+    pub fn transition(self, interaction: &Interaction) -> Transition {
+        let next = match self.0 {
+            Resolved::Exit => return Transition::Exit,
+            Resolved::Scroll { movement, bounds } => Interaction {
+                scroll: movement.applied(interaction.scroll, bounds),
+                ..*interaction
+            },
+            Resolved::Show {
+                page,
+                display,
+                start,
+            } => Interaction {
+                page,
+                display,
+                scroll: start,
+                ..*interaction
+            },
+            Resolved::Keymap(keymap) => Interaction {
+                keymap,
+                ..*interaction
+            },
+        };
+
+        Transition::Redraw(next)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -298,290 +395,266 @@ pub enum Transition {
     Exit,
 }
 
-/// The interaction after `event`, which leads to `destination`.
-pub fn transition(
-    interaction: &Interaction,
-    event: Event,
-    destination: &Destination,
-) -> Transition {
-    let next = match event {
-        Event::Interrupt | Event::Command(Command::Quit) => return Transition::Exit,
-        Event::Command(Command::Movement(movement)) => Interaction {
-            viewport: Viewport {
-                scroll: movement.applied(interaction.viewport.scroll, destination.bounds),
-                ..interaction.viewport
-            },
-            ..*interaction
-        },
-        Event::Command(Command::Page(step)) => Interaction {
-            page: step.applied(interaction.page, destination.page_count),
-            viewport: destination.viewport(),
-            ..*interaction
-        },
-        Event::Command(Command::Keymap(keymap)) => Interaction {
-            keymap,
-            viewport: destination.viewport(),
-            ..*interaction
-        },
-        Event::Command(Command::Preference(_)) | Event::Resize(_) => Interaction {
-            preferences: destination.target.preferences,
-            viewport: destination.viewport(),
-            ..*interaction
-        },
-    };
-
-    Transition::Redraw(next)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
-
     use ratatui::layout::Size;
 
     use super::{
-        Command, Destination, DisplayBounds, Event, Interaction, KeymapPopup, Movement, PageStep,
-        ScrollPosition, Transition, Viewport, transition,
+        AnchorLine, Command, Destination, Display, DisplayBounds, Effect, Event, Interaction,
+        KeymapCommand, KeymapPopup, Movement, PageStep, Placement, ScrollPosition, Transition,
     };
     use crate::{
         preferences::{
             DiffGranularity, DiffLayout, FileList, PreferenceChange, ViewPreferences, Wrapping,
         },
-        prepared::PageIndex,
+        prepared::{PageCount, PageIndex},
+        screen::{Cells, ScreenLines},
     };
 
-    const TWO_PAGES: NonZeroUsize = NonZeroUsize::new(2).expect("two is nonzero");
+    const TWO_PAGES: PageCount = PageCount::of_test(2);
 
     fn second_page() -> PageIndex {
         PageIndex::FIRST.next(TWO_PAGES)
     }
 
-    fn viewport(width: u16, height: u16, vertical: usize, horizontal: u16) -> Viewport {
-        Viewport {
-            screen: Size::new(width, height),
-            scroll: ScrollPosition {
-                vertical,
-                horizontal,
-            },
+    fn scroll(vertical: usize, horizontal: usize) -> ScrollPosition {
+        ScrollPosition {
+            vertical: ScreenLines::new(vertical),
+            horizontal: Cells::new(horizontal),
         }
     }
 
-    fn interaction(page: PageIndex, layout: DiffLayout, viewport: Viewport) -> Interaction {
+    /// An interaction scrolled to `position` on an 80-by-9 screen.
+    fn interaction(page: PageIndex, layout: DiffLayout, position: ScrollPosition) -> Interaction {
+        let preferences = ViewPreferences {
+            layout,
+            ..ViewPreferences::INITIAL
+        };
+
         Interaction {
             page,
-            preferences: ViewPreferences::initial(layout),
-            viewport,
-            keymap: KeymapPopup::Closed,
+            scroll: position,
+            ..Interaction::start(preferences, Size::new(80, 9))
         }
     }
 
-    fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: u16) -> DisplayBounds {
+    fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: usize) -> DisplayBounds {
         DisplayBounds {
-            maximum_vertical_offset,
-            maximum_horizontal_offset,
-            pane_lines: 1,
+            maximum_vertical_offset: ScreenLines::new(maximum_vertical_offset),
+            maximum_horizontal_offset: Cells::new(maximum_horizontal_offset),
+            pane_lines: ScreenLines::new(8),
         }
     }
 
-    /// The interaction after `event` leads to a display with `bounds` among `page_count`
-    /// pages, starting at `start`.
-    fn after_starting_at(
-        interaction: &Interaction,
-        event: Event,
-        page_count: NonZeroUsize,
-        bounds: DisplayBounds,
-        start: ScrollPosition,
-    ) -> Interaction {
-        let destination = Destination::new(interaction.target(&event), page_count, bounds, start);
-        let Transition::Redraw(next) = transition(interaction, event, &destination) else {
-            panic!("{event:?} redraws the interaction");
+    fn redrawn(transition: Transition) -> Interaction {
+        let Transition::Redraw(next) = transition else {
+            panic!("the event redraws the interaction");
         };
         next
     }
 
-    /// The interaction after `event`, whose display keeps the current position.
-    fn after(interaction: &Interaction, event: Event, bounds: DisplayBounds) -> Interaction {
-        let start = interaction.viewport.scroll;
-        after_starting_at(interaction, event, TWO_PAGES, bounds, start)
+    fn moved(start: &Interaction, movement: Movement, bounds: DisplayBounds) -> Interaction {
+        redrawn(Destination::scroll(movement, bounds).transition(start))
     }
 
-    fn movement(movement: Movement) -> Event {
-        Event::Command(Command::Movement(movement))
+    fn command(command: Command) -> Event {
+        Event::Command(command)
     }
 
     fn preference(change: PreferenceChange) -> Event {
-        Event::Command(Command::Preference(change))
+        command(Command::Preference(change))
     }
 
     #[test]
     fn moves_and_clamps_the_vertical_viewport() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 3, 4, 2));
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(4, 2));
 
-        let next = after(&start, movement(Movement::Down), bounds(7, 4));
+        let down = moved(&start, Movement::Down, bounds(5, 4));
+        let clamped = moved(&down, Movement::Down, bounds(5, 4));
 
-        assert_eq!(next.viewport, viewport(80, 3, 5, 2));
+        assert_eq!(down.scroll, scroll(5, 2));
+        assert_eq!(clamped.scroll, scroll(5, 2));
     }
 
     #[test]
     fn moves_and_clamps_the_horizontal_viewport() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 3, 4, 2));
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(4, 2));
         let display = bounds(7, 3);
 
-        let right = after(&start, movement(Movement::Right), display);
-        let at_end = after(&right, movement(Movement::Right), display);
-        let clamped = after(&at_end, movement(Movement::Right), display);
-        let left = after(&clamped, movement(Movement::Left), display);
+        let right = moved(&start, Movement::Right, display);
+        let clamped = moved(&right, Movement::Right, display);
+        let left = moved(&clamped, Movement::Left, display);
 
-        assert_eq!(right.viewport.scroll.horizontal, 3);
-        assert_eq!(at_end.viewport.scroll.horizontal, 3);
-        assert_eq!(clamped.viewport.scroll.horizontal, 3);
-        assert_eq!(left.viewport.scroll.horizontal, 2);
-        assert_eq!(left.viewport.scroll.vertical, 4);
+        assert_eq!(right.scroll, scroll(4, 3));
+        assert_eq!(clamped.scroll, scroll(4, 3));
+        assert_eq!(left.scroll, scroll(4, 2));
     }
 
     #[test]
     fn jumps_to_horizontal_boundaries() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 3, 4, 2));
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(4, 2));
         let display = bounds(7, 12);
 
-        let far_left = after(&start, movement(Movement::FarLeft), display);
-        let far_right = after(&start, movement(Movement::FarRight), display);
+        assert_eq!(
+            moved(&start, Movement::FarLeft, display).scroll,
+            scroll(4, 0)
+        );
+        assert_eq!(
+            moved(&start, Movement::FarRight, display).scroll,
+            scroll(4, 12)
+        );
+    }
 
-        assert_eq!(far_left.viewport.scroll.horizontal, 0);
-        assert_eq!(far_right.viewport.scroll.horizontal, 12);
-        assert_eq!(far_right.viewport.scroll.vertical, 4);
+    /// architecture.md (Keyboard bindings): half-page movement moves half of a pane's lines.
+    #[test]
+    fn moves_half_a_pane_by_half_page() {
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(4, 0));
+        let display = DisplayBounds {
+            pane_lines: ScreenLines::new(15),
+            ..bounds(100, 0)
+        };
+
+        let down = moved(&start, Movement::HalfPageDown, display);
+        let up = moved(&down, Movement::HalfPageUp, display);
+
+        assert_eq!(down.scroll, scroll(11, 0));
+        assert_eq!(up.scroll, scroll(4, 0));
     }
 
     #[test]
     fn exits_for_quit_and_interrupt() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 1, 0, 0));
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, ScrollPosition::START);
 
-        for event in [Event::Command(Command::Quit), Event::Interrupt] {
-            let destination = Destination::new(
-                start.target(&event),
-                NonZeroUsize::MIN,
-                bounds(0, 0),
-                ScrollPosition::START,
+        for event in [command(Command::Quit), Event::Interrupt] {
+            assert_eq!(start.effect(event, TWO_PAGES), Effect::Exit);
+        }
+        assert_eq!(Destination::EXIT.transition(&start), Transition::Exit);
+    }
+
+    #[test]
+    fn resizes_at_the_pane_top_anchor_clamped_for_the_new_size() {
+        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(2, 4));
+        let screen = Size::new(80, 20);
+
+        let Effect::Redisplay { display, placement } =
+            start.effect(Event::Resize(screen), TWO_PAGES)
+        else {
+            panic!("a resize redisplays the page");
+        };
+        let resized = |anchored| {
+            let destination = Destination::show(start.page, display, anchored, bounds(5, 3));
+            redrawn(destination.transition(&start))
+        };
+
+        assert_eq!(placement, Placement::Anchor(AnchorLine::PaneTop));
+        assert_eq!(display, Display::new(start.preferences(), screen));
+        assert_eq!(resized(scroll(4, 4)).scroll, scroll(4, 3));
+        assert_eq!(resized(scroll(7, 4)).scroll, scroll(5, 3));
+    }
+
+    /// architecture.md (View model): wrapping, context changes, and showing or hiding the
+    /// file list keep the row on the diff pane's middle line on that line; cycling layouts
+    /// and toggling detail keep the position.
+    #[test]
+    fn anchors_preference_changes_that_move_rows_on_the_middle_line() {
+        let start = interaction(second_page(), DiffLayout::Vertical, scroll(2, 4));
+        let placement = |change| {
+            let Effect::Redisplay { placement, .. } = start.effect(preference(change), TWO_PAGES)
+            else {
+                panic!("{change:?} redisplays the page");
+            };
+            placement
+        };
+
+        for change in [
+            PreferenceChange::ToggleWrapping,
+            PreferenceChange::IncreaseContext,
+            PreferenceChange::DecreaseContext,
+            PreferenceChange::ToggleFileList,
+        ] {
+            assert_eq!(
+                placement(change),
+                Placement::Anchor(AnchorLine::PaneMiddle),
+                "{change:?}"
             );
-            assert_eq!(transition(&start, event, &destination), Transition::Exit);
+        }
+        for change in [
+            PreferenceChange::NextLayout,
+            PreferenceChange::ToggleGranularity,
+        ] {
+            assert_eq!(placement(change), Placement::Keep, "{change:?}");
         }
     }
 
     #[test]
-    fn resize_moves_to_the_anchored_offset_clamped_for_the_new_size() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(40, 3, 2, 4));
-        let resize = |anchored_vertical_offset| {
-            let anchored = ScrollPosition {
-                vertical: anchored_vertical_offset,
-                ..start.viewport.scroll
+    fn redisplays_the_same_page_with_the_changed_preference() {
+        let start = interaction(second_page(), DiffLayout::Unified, scroll(4, 3));
+        let after = |interaction: &Interaction, change| {
+            let Effect::Redisplay { display, .. } =
+                interaction.effect(preference(change), TWO_PAGES)
+            else {
+                panic!("{change:?} redisplays the page");
             };
-            let event = Event::Resize(Size::new(80, 9));
-            after_starting_at(&start, event, NonZeroUsize::MIN, bounds(5, 3), anchored).viewport
+            let destination =
+                Destination::show(interaction.page, display, interaction.scroll, bounds(7, 12));
+            redrawn(destination.transition(interaction))
         };
 
-        assert_eq!(resize(4), viewport(80, 9, 4, 3));
-        assert_eq!(resize(7).scroll.vertical, 5);
+        let vertical = after(&start, PreferenceChange::NextLayout);
+        let stacked = after(&vertical, PreferenceChange::NextLayout);
+        let unified = after(&stacked, PreferenceChange::NextLayout);
+        let character = after(&start, PreferenceChange::ToggleGranularity);
+        let wrapped = after(&start, PreferenceChange::ToggleWrapping);
+        let more_context = after(&start, PreferenceChange::IncreaseContext);
+        let hidden = after(&start, PreferenceChange::ToggleFileList);
+
+        assert_eq!(vertical.preferences().layout, DiffLayout::Vertical);
+        assert_eq!(stacked.preferences().layout, DiffLayout::Stacked);
+        assert_eq!(unified, start, "three layout changes return to the start");
+        assert_eq!(
+            character.preferences().granularity,
+            DiffGranularity::Character
+        );
+        assert_eq!(wrapped.preferences().wrapping, Wrapping::Enabled);
+        assert_eq!(more_context.preferences().context_lines, 4);
+        assert_eq!(hidden.preferences().file_list, FileList::Hidden);
+        assert_eq!(character.page, start.page);
+        assert_eq!(character.scroll, start.scroll);
     }
 
     #[test]
-    fn toggles_wrapping_at_the_anchored_offset() {
-        let start = interaction(
-            PageIndex::FIRST,
-            DiffLayout::Vertical,
-            viewport(80, 9, 2, 4),
-        );
-        let anchored = ScrollPosition {
-            vertical: 11,
-            ..start.viewport.scroll
-        };
+    fn turns_pages_with_wrapping() {
+        let first = interaction(PageIndex::FIRST, DiffLayout::Unified, scroll(4, 3));
+        let second = interaction(second_page(), DiffLayout::Unified, scroll(4, 3));
 
-        let wrapped = after_starting_at(
-            &start,
-            preference(PreferenceChange::ToggleWrapping),
-            NonZeroUsize::MIN,
-            bounds(20, 0),
-            anchored,
+        assert_eq!(
+            second.effect(command(Command::Page(PageStep::Next)), TWO_PAGES),
+            Effect::TurnPage(PageIndex::FIRST)
         );
-
-        assert_eq!(wrapped.preferences.wrapping, Wrapping::Enabled);
-        assert_eq!(wrapped.preferences.layout, DiffLayout::Vertical);
-        assert_eq!(wrapped.viewport.scroll.vertical, 11);
-        assert_eq!(wrapped.viewport.scroll.horizontal, 0);
+        assert_eq!(
+            first.effect(command(Command::Page(PageStep::Previous)), TWO_PAGES),
+            Effect::TurnPage(second_page())
+        );
     }
 
     #[test]
-    fn rotates_files_and_resets_the_viewport() {
-        let start = interaction(second_page(), DiffLayout::Unified, viewport(80, 3, 4, 3));
+    fn shows_a_turned_page_from_its_start() {
+        let start = interaction(second_page(), DiffLayout::Unified, scroll(4, 3));
 
-        let next = after_starting_at(
-            &start,
-            Event::Command(Command::Page(PageStep::Next)),
-            TWO_PAGES,
-            bounds(7, 12),
-            ScrollPosition::START,
+        let next = redrawn(
+            Destination::show(
+                PageIndex::FIRST,
+                start.display,
+                ScrollPosition::START,
+                bounds(7, 12),
+            )
+            .transition(&start),
         );
 
         assert_eq!(
             next,
-            interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 3, 0, 0))
+            interaction(PageIndex::FIRST, DiffLayout::Unified, ScrollPosition::START)
         );
-    }
-
-    #[test]
-    fn rotates_to_the_previous_file_and_resets_the_viewport() {
-        let start = interaction(PageIndex::FIRST, DiffLayout::Unified, viewport(80, 3, 4, 3));
-
-        let previous = after_starting_at(
-            &start,
-            Event::Command(Command::Page(PageStep::Previous)),
-            TWO_PAGES,
-            bounds(7, 12),
-            ScrollPosition::START,
-        );
-
-        assert_eq!(
-            previous,
-            interaction(second_page(), DiffLayout::Unified, viewport(80, 3, 0, 0))
-        );
-    }
-
-    #[test]
-    fn cycles_layouts_without_changing_the_reader_position() {
-        let start = interaction(second_page(), DiffLayout::Unified, viewport(80, 3, 4, 3));
-        let next_layout = preference(PreferenceChange::NextLayout);
-        let display = bounds(7, 12);
-
-        let vertical = after(&start, next_layout, display);
-        let stacked = after(&vertical, next_layout, display);
-        let unified = after(&stacked, next_layout, display);
-
-        assert_eq!(vertical.preferences.layout, DiffLayout::Vertical);
-        assert_eq!(stacked.preferences.layout, DiffLayout::Stacked);
-        assert_eq!(unified, start);
-    }
-
-    #[test]
-    fn toggles_detail_and_bounds_context_without_moving_the_viewport() {
-        let start = interaction(second_page(), DiffLayout::Unified, viewport(80, 3, 4, 3));
-        let display = bounds(7, 12);
-
-        let character = after(
-            &start,
-            preference(PreferenceChange::ToggleGranularity),
-            display,
-        );
-        let one_more_context = after(
-            &character,
-            preference(PreferenceChange::IncreaseContext),
-            display,
-        );
-
-        assert_eq!(
-            character.preferences.granularity,
-            DiffGranularity::Character
-        );
-        assert_eq!(one_more_context.preferences.context_lines, 4);
-        assert_eq!(one_more_context.viewport, start.viewport);
     }
 
     /// architecture.md (Interaction model): while the keymap popup is open, `?`, `Esc`,
@@ -589,10 +662,10 @@ mod tests {
     #[test]
     fn admits_only_closing_keys_interrupts_and_resizes_while_the_keymap_is_open() {
         let open = KeymapPopup::Open;
-        let close = Command::Keymap(KeymapPopup::Closed);
+        let close = Command::Keymap(KeymapCommand::Close);
         let resize = Event::Resize(Size::new(80, 9));
 
-        for closing in [Command::Keymap(KeymapPopup::Open), close, Command::Quit] {
+        for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(open.admit(closing), Some(close));
         }
         for ignored in [
@@ -613,55 +686,24 @@ mod tests {
     }
 
     #[test]
-    fn opens_and_closes_the_keymap_without_moving_the_viewport() {
-        let start = interaction(second_page(), DiffLayout::Unified, viewport(80, 9, 4, 3));
-        let display = bounds(7, 12);
-
-        let open = after(
-            &start,
-            Event::Command(Command::Keymap(KeymapPopup::Open)),
-            display,
-        );
-        let closed = after(
-            &open,
-            Event::Command(Command::Keymap(KeymapPopup::Closed)),
-            display,
-        );
-
-        assert_eq!(open.keymap, KeymapPopup::Open);
-        assert_eq!(open.viewport, start.viewport);
-        assert_eq!(closed, start);
-    }
-
-    /// architecture.md (View model): showing or hiding the file list keeps the row on the
-    /// diff pane's middle line on that line.
-    #[test]
-    fn toggles_the_file_list_at_the_anchored_offset() {
-        let start = interaction(
-            PageIndex::FIRST,
-            DiffLayout::Vertical,
-            viewport(80, 9, 2, 9),
-        );
-        let toggle = |interaction: &Interaction| {
-            let anchored = ScrollPosition {
-                vertical: 6,
-                ..interaction.viewport.scroll
+    fn toggles_and_closes_the_keymap_without_moving_the_viewport() {
+        let start = interaction(second_page(), DiffLayout::Unified, scroll(4, 3));
+        let after = |interaction: &Interaction, keymap| {
+            let Effect::Keymap(popup) =
+                interaction.effect(command(Command::Keymap(keymap)), TWO_PAGES)
+            else {
+                panic!("a keymap command changes the popup");
             };
-            after_starting_at(
-                interaction,
-                preference(PreferenceChange::ToggleFileList),
-                NonZeroUsize::MIN,
-                bounds(20, 4),
-                anchored,
-            )
+            redrawn(Destination::keymap(popup).transition(interaction))
         };
 
-        let hidden = toggle(&start);
-        let shown = toggle(&hidden);
+        let open = after(&start, KeymapCommand::Toggle);
+        let toggled_closed = after(&open, KeymapCommand::Toggle);
+        let closed = after(&open, KeymapCommand::Close);
 
-        assert_eq!(hidden.preferences.file_list, FileList::Hidden);
-        assert_eq!(hidden.viewport.scroll.vertical, 6);
-        assert_eq!(hidden.viewport.scroll.horizontal, 4);
-        assert_eq!(shown.preferences.file_list, FileList::Shown);
+        assert_eq!(open.keymap, KeymapPopup::Open);
+        assert_eq!(open.scroll, start.scroll);
+        assert_eq!(toggled_closed, start);
+        assert_eq!(closed, start);
     }
 }

@@ -1,9 +1,10 @@
 use crate::{
     document::Side,
-    extent::ScrollExtent,
+    extent::{ScreenLine, ScrollExtent},
     page_rows::{LineIndex, PairIndex, SideBySideRow},
     preferences::DiffGranularity,
     prepared::PreparedPage,
+    screen::ScreenLines,
     styling::{RowTone, StyledRow},
 };
 
@@ -38,44 +39,34 @@ impl<'a> SideBySideRow<StyledRow<'a>> {
     }
 }
 
-/// One screen line: line `line` of `row`.
-pub(super) struct VisibleLine<R> {
-    pub(super) row: R,
-    pub(super) line: usize,
-}
-
+/// Up to `limit` screen lines of `extent` from line `first`, with their styled rows.
 pub(super) fn visible_diff_rows<'a>(
     page: &'a PreparedPage,
     extent: &ScrollExtent<LineIndex>,
-    first_line: usize,
+    first: ScreenLines,
     granularity: DiffGranularity,
-    row_limit: usize,
-) -> Vec<VisibleLine<StyledRow<'a>>> {
+    limit: ScreenLines,
+) -> Vec<ScreenLine<StyledRow<'a>>> {
     extent
-        .lines(first_line, row_limit)
-        .map(|screen_line| VisibleLine {
-            row: page.row(screen_line.row, granularity),
-            line: screen_line.wrapped_line,
-        })
+        .lines(first, limit)
+        .map(|screen_line| screen_line.map(|line| page.row(line, granularity)))
         .collect()
 }
 
+/// Up to `limit` screen lines of `extent` from line `first`, with their styled pairs.
 pub(super) fn visible_side_by_side_rows<'a>(
     page: &'a PreparedPage,
     extent: &ScrollExtent<PairIndex>,
-    first_line: usize,
+    first: ScreenLines,
     granularity: DiffGranularity,
-    row_limit: usize,
-) -> Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>> {
+    limit: ScreenLines,
+) -> Vec<ScreenLine<SideBySideRow<StyledRow<'a>>>> {
     let rows = page.rows();
 
     extent
-        .lines(first_line, row_limit)
-        .map(|screen_line| VisibleLine {
-            row: rows
-                .pair(screen_line.row)
-                .map(|line| page.row(line, granularity)),
-            line: screen_line.wrapped_line,
+        .lines(first, limit)
+        .map(|screen_line| {
+            screen_line.map(|pair| rows.pair(pair).map(|line| page.row(line, granularity)))
         })
         .collect()
 }

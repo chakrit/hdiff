@@ -8,16 +8,14 @@ pub struct ViewPreferences {
 }
 
 impl ViewPreferences {
-    /// The preferences a session starts with in `layout`.
-    pub const fn initial(layout: DiffLayout) -> Self {
-        Self {
-            layout,
-            granularity: DiffGranularity::Line,
-            wrapping: Wrapping::Disabled,
-            context_lines: 3,
-            file_list: FileList::Shown,
-        }
-    }
+    /// The preferences a session starts with.
+    pub const INITIAL: Self = Self {
+        layout: DiffLayout::Unified,
+        granularity: DiffGranularity::Line,
+        wrapping: Wrapping::Disabled,
+        context_lines: 3,
+        file_list: FileList::Shown,
+    };
 
     pub const fn after(self, change: PreferenceChange) -> Self {
         match change {

@@ -45,5 +45,7 @@ mod file_list;
 mod fixtures;
 mod harness;
 mod navigation;
+mod panes;
 mod rendering;
+mod styles;
 mod wrapping;

@@ -75,8 +75,8 @@ impl PreparedDocument {
         }
     }
 
-    pub fn page_count(&self) -> NonZeroUsize {
-        NonZeroUsize::MIN.saturating_add(self.rest.len())
+    pub fn page_count(&self) -> PageCount {
+        PageCount(NonZeroUsize::MIN.saturating_add(self.rest.len()))
     }
 
     pub fn file_count(&self) -> usize {
@@ -106,16 +106,29 @@ pub struct PageIndex(usize);
 impl PageIndex {
     pub const FIRST: Self = Self(0);
 
-    /// The page after this one among `page_count` pages, wrapping to the first.
-    pub fn next(self, page_count: NonZeroUsize) -> Self {
-        Self((self.0 + 1) % page_count)
+    /// The page after this one among `pages`, wrapping to the first.
+    pub fn next(self, pages: PageCount) -> Self {
+        Self((self.0 + 1) % pages.0)
     }
 
-    /// The page before this one among `page_count` pages, wrapping to the last.
-    pub fn previous(self, page_count: NonZeroUsize) -> Self {
-        let last = page_count.get() - 1;
+    /// The page before this one among `pages`, wrapping to the last.
+    pub fn previous(self, pages: PageCount) -> Self {
+        let last = pages.0.get() - 1;
 
         Self(self.0.checked_sub(1).unwrap_or(last))
+    }
+}
+
+/// How many pages a prepared document holds; only the document issues one, so page steps
+/// stay among its pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageCount(NonZeroUsize);
+
+impl PageCount {
+    /// `count` pages, for tests that step through pages without a document.
+    #[cfg(test)]
+    pub const fn of_test(count: usize) -> Self {
+        Self(NonZeroUsize::new(count).expect("a test page count is nonzero"))
     }
 }
 

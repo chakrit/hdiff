@@ -1,36 +1,45 @@
-use std::{io, time::Duration};
+use std::{
+    io::{self, IsTerminal},
+    time::Duration,
+};
 
 use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    interaction::{self, Interaction, Transition},
+    interaction::{Interaction, Transition},
     navigation::Navigation,
-    preferences::{DiffLayout, ViewPreferences},
+    preferences::ViewPreferences,
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},
 };
 
+mod bindings;
 mod chrome;
-mod keymap;
+mod keymap_popup;
 mod row_style;
 mod row_writer;
 mod rows;
 mod session;
 mod view;
 
-pub use session::{open_controlling_terminal, run_interactive};
+pub use session::{SessionError, open_controlling_terminal, run_interactive};
 
+/// How the viewer writes its output. Rules: `docs/spec/architecture.md` (Input and terminal
+/// boundary).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Finite,
     Interactive,
 }
 
-pub fn mode_for_output(is_terminal: bool) -> OutputMode {
-    match is_terminal {
-        true => OutputMode::Interactive,
-        false => OutputMode::Finite,
+impl OutputMode {
+    /// Interactive when standard output is a terminal, finite otherwise.
+    pub fn of_stdout() -> Self {
+        match io::stdout().is_terminal() {
+            true => Self::Interactive,
+            false => Self::Finite,
+        }
     }
 }
 
@@ -50,7 +59,7 @@ pub struct Tui {
 
 impl Tui {
     pub fn new(document: PreparedDocument, area: Size, color_depth: ColorDepth) -> Self {
-        let interaction = Interaction::start(ViewPreferences::initial(DiffLayout::Unified), area);
+        let interaction = Interaction::start(ViewPreferences::INITIAL, area);
         let navigation = Navigation::new(&document, &interaction);
 
         Self {
@@ -61,17 +70,18 @@ impl Tui {
         }
     }
 
+    /// Replaces the document, keeping the preferences and screen and starting at its first
+    /// page.
     pub fn load(&mut self, document: PreparedDocument) {
-        self.interaction = Interaction::start(
-            self.interaction.preferences,
-            self.interaction.viewport.screen,
-        );
+        let screen = self.interaction.display().geometry().screen().as_size();
+
+        self.interaction = Interaction::start(self.interaction.preferences(), screen);
         self.document = document;
         self.navigation = Navigation::new(&self.document, &self.interaction);
     }
 
     pub fn preferences(&self) -> ViewPreferences {
-        self.interaction.preferences
+        self.interaction.preferences()
     }
 
     pub fn run<B: Backend<Error = io::Error>>(
@@ -94,20 +104,19 @@ impl Tui {
         terminal: &mut Terminal<B>,
         event: TerminalEvent,
     ) -> Result<Step, B::Error> {
-        let keymap = self.interaction.keymap;
-        let Some(event) = keymap::event_for(event).and_then(|event| event.admitted(keymap)) else {
+        let keymap = self.interaction.keymap();
+        let Some(event) = bindings::event_for(event).and_then(|event| event.admitted(keymap))
+        else {
             return Ok(Step::Continue);
         };
 
-        let destination = self
+        match self
             .navigation
-            .destination(&self.document, &self.interaction, &event);
-
-        match interaction::transition(&self.interaction, event, &destination) {
+            .step(&self.document, &self.interaction, event)
+        {
             Transition::Exit => Ok(Step::Exit),
             Transition::Redraw(next) => {
                 self.interaction = next;
-                self.navigation.settle(&self.document, &self.interaction);
                 self.draw(terminal)?;
                 Ok(Step::Continue)
             }
@@ -115,7 +124,7 @@ impl Tui {
     }
 
     pub fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
-        let page = self.document.page(self.interaction.page);
+        let page = self.document.page(self.interaction.page());
         let tree = self.document.file_tree();
 
         terminal
@@ -170,103 +179,5 @@ impl TtyEvents {
             latest_resize = next_event;
         }
         Ok(latest_resize)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{Terminal, backend::TestBackend, layout::Size};
-
-    use super::{OutputMode, Tui, mode_for_output};
-    use crate::{
-        extent::{DisplayExtent, Wrap},
-        interaction::Interaction,
-        parser::{parse_comparison, parse_patch},
-        preferences::{DiffLayout, ViewPreferences},
-        prepared::{PageIndex, PreparedDocument},
-        theme::{ColorDepth, Theme},
-    };
-
-    fn screen_text(terminal: &Terminal<TestBackend>) -> String {
-        terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect()
-    }
-
-    #[test]
-    fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
-        let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
-        let input = format!("first message\n{patch}second message\n{patch}trailer\n");
-        let document = parse_patch(input.as_bytes()).expect("diffs with messages");
-        let prepared = PreparedDocument::prepare(&document);
-        let second = PageIndex::FIRST.next(prepared.page_count());
-
-        for (layout, copies) in [
-            (DiffLayout::Unified, 1),
-            (DiffLayout::Vertical, 2),
-            (DiffLayout::Stacked, 2),
-        ] {
-            for (page, message, absent, trailers) in [
-                (PageIndex::FIRST, "first message", "second message", 0),
-                (second, "second message", "first message", copies),
-            ] {
-                let interaction = Interaction {
-                    page,
-                    ..Interaction::start(ViewPreferences::initial(layout), Size::new(120, 30))
-                };
-                let extent = DisplayExtent::of(prepared.page(page).rows(), layout, 3, Wrap::Off);
-                let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
-                terminal
-                    .draw(|frame| {
-                        super::view::render_prepared_frame(
-                            frame,
-                            prepared.file_tree(),
-                            prepared.page(page),
-                            &extent,
-                            &interaction,
-                            Theme::for_depth(ColorDepth::TrueColor),
-                        )
-                    })
-                    .expect("render prepared frame");
-                let text = screen_text(&terminal);
-
-                assert_eq!(text.matches(message).count(), copies, "{layout:?}");
-                assert!(!text.contains(absent), "{layout:?}");
-                assert_eq!(text.matches("trailer").count(), trailers, "{layout:?}");
-            }
-        }
-    }
-
-    /// Contract: docs/spec/architecture.md#input-contract (comparison output holding only
-    /// surrounding text is shown).
-    #[test]
-    fn shows_comparison_output_that_holds_only_text() {
-        let document = parse_comparison(b"Binary files a.bin and b.bin differ\n")
-            .expect("text-only comparison output");
-        let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
-        let mut tui = Tui::new(
-            PreparedDocument::prepare(&document),
-            Size::new(120, 30),
-            ColorDepth::TrueColor,
-        );
-
-        tui.draw(&mut terminal).expect("initial frame");
-        for key in [KeyCode::Char('j'), KeyCode::Tab, KeyCode::BackTab] {
-            let event = TerminalEvent::Key(KeyEvent::new(key, KeyModifiers::NONE));
-            tui.step(&mut terminal, event).expect("step");
-        }
-
-        assert!(screen_text(&terminal).contains("Binary files a.bin and b.bin differ"));
-    }
-
-    #[test]
-    fn requests_interactive_mode_only_for_terminal_output() {
-        assert_eq!(mode_for_output(false), OutputMode::Finite);
-        assert_eq!(mode_for_output(true), OutputMode::Interactive);
     }
 }

@@ -7,7 +7,7 @@ use hdiff::{
 
 use crate::{
     fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label, unified_line},
 };
 
 matrix!(
@@ -185,13 +185,7 @@ fn bottom_past_hidden_context(mode: Mode) {
 
 #[test]
 fn context_changes_keep_the_middle_row() {
-    let mut live = Live::load(
-        &hidden_context_patch(),
-        Mode {
-            layout: DiffLayout::Unified,
-            detail: DiffGranularity::Line,
-        },
-    );
+    let mut live = Live::load(&hidden_context_patch(), unified_line());
     for _ in 0..14 {
         live.press('j');
     }
@@ -207,18 +201,9 @@ fn context_changes_keep_the_middle_row() {
 
 #[test]
 fn preferences_start_in_unified_line_mode() {
-    let live = Live::load(
-        MIXED_LANGUAGES,
-        Mode {
-            layout: DiffLayout::Unified,
-            detail: DiffGranularity::Line,
-        },
-    );
+    let live = Live::load(MIXED_LANGUAGES, unified_line());
 
-    assert_eq!(
-        live.tui.preferences(),
-        ViewPreferences::initial(DiffLayout::Unified)
-    );
+    assert_eq!(live.tui.preferences(), ViewPreferences::INITIAL);
 }
 
 /// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,
@@ -268,11 +253,7 @@ fn half_page_movement(mode: Mode) {
     }
     let start = live.buffer();
     let top_label = |live: &Live| label_number(&live.rows()[FIRST_CONTENT_LINE]);
-    let pane_lines = live
-        .rows()
-        .iter()
-        .filter(|row| change_label(row).is_some_and(|label| label.starts_with("old_")))
-        .count();
+    let pane_lines = live.old_label_lines();
     let top = top_label(&live);
 
     live.send(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
@@ -292,4 +273,18 @@ fn label_number(row: &str) -> usize {
         .trim_start_matches("old_")
         .parse()
         .expect("an old_N label")
+}
+
+/// architecture.md (Lossless and safe rendering): the document is never truncated, so `$`
+/// reaches the end of a row wider than any terminal offset type.
+#[test]
+fn far_right_reaches_the_end_of_a_very_wide_row() {
+    let patch = format!(
+        "--- a/wide.min.js\n+++ b/wide.min.js\n@@ -0,0 +1 @@\n+start_{}_end\n",
+        "x".repeat(70_000)
+    );
+    let mut live = Live::load(&patch, unified_line());
+
+    live.press('$');
+    assert!(live.shows("_end"), "$ shows the end of the row");
 }
