@@ -1,10 +1,6 @@
-use std::{
-    ffi::OsStr,
-    fmt, io,
-    process::{Command, ExitStatus},
-};
+use std::{ffi::OsStr, fmt, io, process::Command};
 
-use super::global_git_config::GlobalGitConfigContext;
+use super::{global_git_config::GlobalGitConfigContext, process_failure::ProcessFailure};
 use crate::shell_words;
 
 /// Sets `pager.diff` in the global Git config to `command`.
@@ -17,11 +13,7 @@ const GIT: &str = "git";
 #[derive(Debug)]
 pub enum Error {
     Spawn(io::Error),
-    /// `git config` exited unsuccessfully, explained by its standard error when it wrote one.
-    Failed {
-        status: ExitStatus,
-        stderr: String,
-    },
+    Failed(ProcessFailure),
 }
 
 impl SetGlobalDiffPager<'_> {
@@ -43,10 +35,10 @@ impl SetGlobalDiffPager<'_> {
 
         match output.status.success() {
             true => Ok(()),
-            false => Err(Error::Failed {
-                status: output.status,
-                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            }),
+            false => Err(Error::Failed(ProcessFailure::of_output(
+                "git config",
+                &output,
+            ))),
         }
     }
 
@@ -59,10 +51,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Spawn(error) => write!(formatter, "cannot run git: {error}"),
-            Self::Failed { status, stderr } => match stderr.trim_end() {
-                "" => write!(formatter, "git config failed: {status}"),
-                explanation => formatter.write_str(explanation),
-            },
+            Self::Failed(failure) => write!(formatter, "{failure}"),
         }
     }
 }
@@ -75,31 +64,4 @@ fn set_or_remove(git: &mut Command, key: &str, value: Option<&OsStr>) {
         Some(value) => git.env(key, value),
         None => git.env_remove(key),
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use std::os::unix::process::ExitStatusExt;
-
-    use super::*;
-
-    #[test]
-    fn a_silent_git_failure_still_names_its_exit_status() {
-        let error = Error::Failed {
-            status: ExitStatus::from_raw(3 << 8),
-            stderr: String::new(),
-        };
-
-        assert_eq!(error.to_string(), "git config failed: exit status: 3");
-    }
-
-    #[test]
-    fn a_git_failure_is_explained_by_its_standard_error() {
-        let error = Error::Failed {
-            status: ExitStatus::from_raw(1 << 8),
-            stderr: "error: could not lock config file\n".to_owned(),
-        };
-
-        assert_eq!(error.to_string(), "error: could not lock config file");
-    }
 }

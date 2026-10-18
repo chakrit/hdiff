@@ -2,9 +2,10 @@ use std::{
     ffi::OsStr,
     fmt, io,
     path::PathBuf,
-    process::{Command, ExitStatus, Stdio},
+    process::{Command, Stdio},
 };
 
+use super::process_failure::ProcessFailure;
 use crate::exit_status::DiffStatus;
 
 /// Two operands for `diff -u`. Contract: docs/spec/architecture.md#input-contract.
@@ -46,18 +47,15 @@ pub struct CompareFilesContext;
 pub enum Error {
     /// `diff` could not be started.
     Spawn(io::Error),
-    /// `diff` exited with trouble, explained by its standard error when it wrote one.
-    Trouble { status: ExitStatus, stderr: String },
+    /// `diff` exited with trouble.
+    Trouble(ProcessFailure),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Spawn(error) => write!(formatter, "diff: {error}"),
-            Self::Trouble { status, stderr } => match stderr.trim_end() {
-                "" => write!(formatter, "diff failed: {status}"),
-                explanation => formatter.write_str(explanation),
-            },
+            Self::Trouble(failure) => write!(formatter, "{failure}"),
         }
     }
 }
@@ -86,10 +84,7 @@ impl CompareFiles<'_> {
 
         match DiffStatus::of_exit(output.status) {
             DiffStatus::Same | DiffStatus::Different => Ok(output.stdout),
-            DiffStatus::Trouble => Err(Error::Trouble {
-                status: output.status,
-                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            }),
+            DiffStatus::Trouble => Err(Error::Trouble(ProcessFailure::of_output("diff", &output))),
         }
     }
 }
