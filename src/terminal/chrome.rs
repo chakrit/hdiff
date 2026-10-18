@@ -4,7 +4,7 @@
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{Constraint, Layout as RatatuiLayout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph},
@@ -34,7 +34,7 @@ pub(super) fn render_file_column(
 ) {
     let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
     let hint_height = area.height.saturating_sub(list_height).min(1);
-    let [list_area, hint_area] = RatatuiLayout::vertical([
+    let [list_area, hint_area] = Layout::vertical([
         Constraint::Min(list_height),
         Constraint::Length(hint_height),
     ])

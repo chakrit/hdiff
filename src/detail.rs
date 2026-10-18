@@ -2,7 +2,7 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    layout::{Layout, LineIndex, SideBySideRow},
+    page_rows::{LineIndex, PageRows, SideBySideRow},
     render::PayloadSpan,
 };
 
@@ -21,13 +21,13 @@ pub struct RowDetail {
     pub spans: Vec<PayloadSpan>,
 }
 
-/// The character detail of each `layout` row that has changed spans: a paired row marks
+/// The character detail of each `page_rows` row that has changed spans: a paired row marks
 /// the spans that differ from its peer, and an unmatched row is changed as a whole.
-pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
-    let payload = |row: LineIndex| layout.line(row).payload();
+pub fn character_details(page_rows: &PageRows) -> Vec<RowDetail> {
+    let payload = |row: LineIndex| page_rows.line(row).payload();
     let mut details = Vec::new();
 
-    for row in layout.pairs() {
+    for row in page_rows.pairs() {
         match row {
             SideBySideRow::Paired { before, after } => {
                 let pair = changed_pair_detail(payload(*before), payload(*after));
@@ -292,7 +292,7 @@ fn coalesce_tiny_equal_islands(spans: &mut Vec<PayloadSpan>, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::{ChangedPairDetail, PayloadSpan, changed_pair_detail, character_details};
-    use crate::{layout::file_layout, parser::parse_unified_diff};
+    use crate::{page_rows::PageRows, parser::parse_unified_diff};
 
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
@@ -320,10 +320,10 @@ mod tests {
         ] {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
             let document = parse_unified_diff(patch.as_bytes()).expect("valid unmatched diff");
-            let layout = file_layout(&document.file_views().next().expect("first file"));
-            let details = character_details(&layout);
+            let page_rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+            let details = character_details(&page_rows);
 
-            for (row, line) in layout.line_indices().zip(layout.lines()) {
+            for (row, line) in page_rows.line_indices().zip(page_rows.lines()) {
                 let spans = details
                     .iter()
                     .find(|detail| detail.row == row)

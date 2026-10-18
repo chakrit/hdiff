@@ -3,12 +3,13 @@
 //! model, Viewport coordinates).
 
 use crate::{
+    extent::{DisplayExtent, RowAnchor, Wrap},
     geometry::{PaneGeometry, maximum_horizontal_offset},
     interaction::{
         AnchorLine, Destination, DisplayBounds, Event, Interaction, ScrollPosition, Target,
         ViewportPolicy,
     },
-    layout::{DisplayExtent, Layout, RowAnchor, Wrap},
+    page_rows::PageRows,
     preferences::DiffLayout,
     prepared::{PageIndex, PreparedDocument},
 };
@@ -45,10 +46,10 @@ impl Navigation {
     ) -> Destination {
         let target = interaction.target(event);
         let policy = event.viewport_policy();
-        let layout = document.page(interaction.page).layout();
+        let rows = document.page(interaction.page).rows();
         // The focus is found among the current display's lines, before they are replaced.
         let focus = match policy {
-            ViewportPolicy::Anchor(anchor) => Focus::of(interaction, anchor, layout, &self.extent),
+            ViewportPolicy::Anchor(anchor) => Focus::of(interaction, anchor, rows, &self.extent),
             ViewportPolicy::Keep | ViewportPolicy::Reset => None,
         };
 
@@ -69,7 +70,7 @@ impl Navigation {
             ViewportPolicy::Keep => current,
             ViewportPolicy::Reset => ScrollPosition::START,
             ViewportPolicy::Anchor(_) => ScrollPosition {
-                vertical: focus.map_or(0, |focus| focus.offset_in(layout, &self.extent)),
+                vertical: focus.map_or(0, |focus| focus.offset_in(rows, &self.extent)),
                 ..current
             },
         };
@@ -115,10 +116,12 @@ impl ExtentKey {
     }
 
     fn build(self, document: &PreparedDocument) -> DisplayExtent {
-        document
-            .page(self.page)
-            .layout()
-            .scroll_extent(self.layout, self.context_lines, self.wrap)
+        DisplayExtent::of(
+            document.page(self.page).rows(),
+            self.layout,
+            self.context_lines,
+            self.wrap,
+        )
     }
 }
 
@@ -134,7 +137,7 @@ impl Focus {
     fn of(
         interaction: &Interaction,
         anchor: AnchorLine,
-        layout: &Layout,
+        rows: &PageRows,
         extent: &DisplayExtent,
     ) -> Option<Self> {
         let viewport = &interaction.viewport;
@@ -146,15 +149,15 @@ impl Focus {
             }
         };
 
-        layout
-            .anchor_at(extent, viewport.scroll.vertical + pane_line)
+        extent
+            .anchor_at(rows, viewport.scroll.vertical + pane_line)
             .map(|row| Self { row, pane_line })
     }
 
     /// The vertical offset in `extent` that puts the focused row back on its pane line.
-    fn offset_in(&self, layout: &Layout, extent: &DisplayExtent) -> usize {
-        layout
-            .offset_of(extent, self.row)
+    fn offset_in(&self, rows: &PageRows, extent: &DisplayExtent) -> usize {
+        extent
+            .offset_of(rows, self.row)
             .saturating_sub(self.pane_line)
     }
 }

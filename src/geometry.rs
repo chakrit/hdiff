@@ -2,7 +2,7 @@
 //! column, its separator, and the diff panes. Navigation bounds and drawing both read this
 //! one geometry. Rules: `docs/spec/architecture.md` (Interaction model, Continuity markers).
 
-use ratatui::layout::{Constraint, Flex, Layout as RatatuiLayout, Rect, Size};
+use ratatui::layout::{Constraint, Flex, Layout, Rect, Size};
 
 use crate::preferences::{DiffLayout, FileList, ViewPreferences};
 
@@ -48,7 +48,7 @@ pub struct SplitPanes {
 impl SplitPanes {
     /// Side by side across `area`, each half its width.
     pub fn vertical(area: Rect) -> Self {
-        let [before, separator, after] = RatatuiLayout::horizontal([
+        let [before, separator, after] = Layout::horizontal([
             Constraint::Percentage(50),
             Constraint::Length(SEPARATOR_WIDTH),
             Constraint::Percentage(50),
@@ -65,7 +65,7 @@ impl SplitPanes {
     /// One above the other, from the top of `area`.
     pub fn stacked(area: Rect) -> Self {
         let height = pane_height(area.height, DiffLayout::Stacked);
-        let [before, separator, after] = RatatuiLayout::vertical([
+        let [before, separator, after] = Layout::vertical([
             Constraint::Length(height),
             Constraint::Length(STACKED_SEPARATOR_HEIGHT),
             Constraint::Length(height),
@@ -110,7 +110,7 @@ impl PaneGeometry {
             true => Some(FILE_COLUMN_WIDTH),
             false => None,
         };
-        let [column, diff] = RatatuiLayout::horizontal([
+        let [column, diff] = Layout::horizontal([
             Constraint::Length(file_column.unwrap_or(0)),
             Constraint::Min(0),
         ])
@@ -172,7 +172,7 @@ impl PaneGeometry {
 
 impl FileColumn {
     fn of(column: Rect) -> Self {
-        let [list, _, separator, _] = RatatuiLayout::horizontal([
+        let [list, _, separator, _] = Layout::horizontal([
             Constraint::Length(FILE_LIST_WIDTH),
             Constraint::Length(SEPARATOR_PADDING),
             Constraint::Length(SEPARATOR_WIDTH),

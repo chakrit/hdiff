@@ -4,7 +4,7 @@
 use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout as RatatuiLayout, Rect, Size},
+    layout::{Constraint, Layout, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, Padding, Paragraph},
@@ -340,10 +340,9 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
     let border = Block::bordered()
         .border_style(Style::default().fg(theme.chrome.separator))
         .padding(Padding::horizontal(1));
-    let column_areas =
-        RatatuiLayout::horizontal(vec![Constraint::Length(COLUMN_WIDTH); columns.len()])
-            .spacing(COLUMN_GAP)
-            .split(border.inner(popup));
+    let column_areas = Layout::horizontal(vec![Constraint::Length(COLUMN_WIDTH); columns.len()])
+        .spacing(COLUMN_GAP)
+        .split(border.inner(popup));
 
     frame.render_widget(Clear, popup);
     frame.render_widget(border, popup);

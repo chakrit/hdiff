@@ -179,8 +179,8 @@ mod tests {
 
     use super::{OutputMode, Tui, mode_for_output};
     use crate::{
+        extent::{DisplayExtent, Wrap},
         interaction::Interaction,
-        layout::Wrap,
         parser::{parse_comparison_output, parse_unified_diff},
         preferences::{DiffLayout, ViewPreferences},
         prepared::{PageIndex, PreparedDocument},
@@ -218,10 +218,7 @@ mod tests {
                     page,
                     ..Interaction::start(ViewPreferences::initial(layout), Size::new(120, 30))
                 };
-                let extent = prepared
-                    .page(page)
-                    .layout()
-                    .scroll_extent(layout, 3, Wrap::Off);
+                let extent = DisplayExtent::of(prepared.page(page).rows(), layout, 3, Wrap::Off);
                 let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
                 terminal
                     .draw(|frame| {

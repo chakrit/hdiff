@@ -1,10 +1,11 @@
 use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
+    extent::{DisplayExtent, Wrap},
     file_tree::FileTree,
     geometry::{PaneGeometry, SplitPanes},
     interaction::{Interaction, KeymapPopup},
-    layout::{DisplayExtent, SideBySideRow, Wrap},
+    page_rows::SideBySideRow,
     prepared::PreparedPage,
     styling::StyledRow,
     theme::Theme,
@@ -246,11 +247,11 @@ mod tests {
     use super::render_prepared_frame;
     use crate::{
         document::DiffDocument,
+        extent::{DisplayExtent, Wrap},
         interaction::{
             Command, Destination, DisplayBounds, Event, Interaction, KeymapPopup, ScrollPosition,
             Transition, Viewport, transition,
         },
-        layout::Wrap,
         navigation::Navigation,
         parser::parse_unified_diff,
         preferences::{DiffLayout, FileList, PreferenceChange, ViewPreferences},
@@ -703,7 +704,7 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
         let file = prepared.page(second_page());
         let tree = prepared.file_tree();
-        let extent = file.layout().scroll_extent(diff_layout, 3, Wrap::Off);
+        let extent = DisplayExtent::of(file.rows(), diff_layout, 3, Wrap::Off);
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             page: second_page(),

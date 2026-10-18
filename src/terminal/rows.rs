@@ -2,7 +2,8 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     document::RecordKind,
-    layout::{LineIndex, PairIndex, ScrollExtent, SideBySideRow},
+    extent::ScrollExtent,
+    page_rows::{LineIndex, PairIndex, SideBySideRow},
     preferences::DiffGranularity,
     prepared::PreparedPage,
     styling::{RowKind, StyledRow, TextStyle},
@@ -73,12 +74,12 @@ pub(super) fn visible_side_by_side_rows<'a>(
     granularity: DiffGranularity,
     row_limit: usize,
 ) -> Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>> {
-    let layout = page.layout();
+    let rows = page.rows();
 
     extent
         .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
-            row: layout
+            row: rows
                 .pair(screen_line.row)
                 .map(|line| page.row(line, granularity)),
             line: screen_line.line,

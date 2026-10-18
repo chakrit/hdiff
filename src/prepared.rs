@@ -4,8 +4,8 @@ use crate::{
     detail::character_details,
     document::{DiffDocument, FileView, RecordMap},
     file_tree::{FileListing, FileTree, ListedFile},
-    layout::{Layout, LineIndex, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
+    page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
     render::LineKind,
     styling::{RowStyles, StyledRow, row_styles},
@@ -23,8 +23,8 @@ pub struct PreparedDocument {
 /// text of a document that holds no file.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
-    layout: Layout,
-    /// The styles of each layout row, in row order.
+    rows: PageRows,
+    /// The styles of each row, in row order.
     styles: Box<[RowStyles]>,
     list_row: Option<usize>,
 }
@@ -118,26 +118,26 @@ impl PreparedPage {
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
-        let layout = observer.measure(Stage::Layout, |_| file_layout(&file));
+        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file(&file));
         let syntax = observer.measure(Stage::Syntax, |observer| {
             syntax.highlight_file(file.file, observer)
         });
-        let details = observer.measure(Stage::Detail, |_| character_details(&layout));
+        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
 
         Self {
-            styles: row_styles(&layout, &syntax, details),
-            layout,
+            styles: row_styles(&rows, &syntax, details),
+            rows,
             list_row: Some(list_row),
         }
     }
 
     /// Surrounding text has no syntax or character detail.
     fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
-        let layout = observer.measure(Stage::Layout, |_| text_layout(document.text()));
+        let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(document.text()));
 
         Self {
-            styles: row_styles(&layout, &RecordMap::default(), Vec::new()),
-            layout,
+            styles: row_styles(&rows, &RecordMap::default(), Vec::new()),
+            rows,
             list_row: None,
         }
     }
@@ -147,17 +147,17 @@ impl PreparedPage {
         self.list_row
     }
 
-    pub fn layout(&self) -> &Layout {
-        &self.layout
+    pub fn rows(&self) -> &PageRows {
+        &self.rows
     }
 
-    /// Layout row `index` with the styles `granularity` presents.
+    /// Row `index` with the styles `granularity` presents.
     pub fn row(&self, index: LineIndex, granularity: DiffGranularity) -> StyledRow<'_> {
-        self.styles[index.get()].row(self.layout.line(index), granularity)
+        self.styles[index.get()].row(self.rows.line(index), granularity)
     }
 
     fn record_count(&self) -> usize {
-        self.layout
+        self.rows
             .lines()
             .iter()
             .filter(|line| matches!(line.kind(), LineKind::Record { .. }))
@@ -184,19 +184,19 @@ mod tests {
             format!("second message\n{patch}trailer\n"),
         ]) {
             let rendered: Vec<u8> = file
-                .layout()
+                .rows()
                 .lines()
                 .iter()
                 .flat_map(|line| line.text().bytes())
                 .collect();
             assert_eq!(rendered, expected.as_bytes());
             assert!(
-                file.row(file.layout().line_index(0), DiffGranularity::Line)
+                file.row(file.rows().line_index(0), DiffGranularity::Line)
                     .segments()
                     .all(|(_, style)| style == TextStyle::Plain),
                 "message is not source code"
             );
-            assert!(file.layout().line_indices().skip(4).any(|row| {
+            assert!(file.rows().line_indices().skip(4).any(|row| {
                 file.row(row, DiffGranularity::Line)
                     .segments()
                     .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))
@@ -241,7 +241,7 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
 
         let file = prepared.page(PageIndex::FIRST);
-        assert!(file.layout().line_indices().any(|row| {
+        assert!(file.rows().line_indices().any(|row| {
             file.row(row, DiffGranularity::Character)
                 .segments()
                 .any(|(_, style)| style == TextStyle::Detail)

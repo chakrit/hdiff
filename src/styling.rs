@@ -3,20 +3,20 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 use crate::{
     detail::RowDetail,
     document::{RecordKind, RecordMap},
-    layout::Layout,
+    page_rows::PageRows,
     preferences::DiffGranularity,
     render::{LineKind, PayloadSpan, RenderedLine},
     syntax::{SyntaxClass, SyntaxSpan},
 };
 
-/// The styles of each `layout` row: syntax spans of its record, looked up by address, and
+/// The styles of each `page_rows` row: syntax spans of its record, looked up by address, and
 /// the character detail of each row `details` names.
 pub fn row_styles(
-    layout: &Layout,
+    page_rows: &PageRows,
     syntax: &RecordMap<Vec<SyntaxSpan>>,
     details: Vec<RowDetail>,
 ) -> Box<[RowStyles]> {
-    let mut rows = layout
+    let mut rows = page_rows
         .lines()
         .iter()
         .map(|line| {
@@ -32,7 +32,7 @@ pub fn row_styles(
         .collect::<Vec<_>>();
 
     for detail in details {
-        let text = layout.line(detail.row).payload();
+        let text = page_rows.line(detail.row).payload();
         rows[detail.row.get()].character = Some(character_partition(text, &detail.spans));
     }
     rows.into_boxed_slice()

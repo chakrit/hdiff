@@ -167,7 +167,7 @@ record counting in its preparation timer and was superseded by the final capture
 
 #### Constant-time context visibility
 
-`Layout` derives each rendered line's visibility once: always shown, shown within a
+`PageRows` derives each rendered line's visibility once: always shown, shown within a
 record distance of the nearest change in its hunk, or never shown. It also derives each
 line's tab-expanded width once, so movement bounds compare stored numbers. The frame
 renderer builds rows for the active layout only, from the viewport, at most one screen
