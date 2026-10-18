@@ -14,13 +14,12 @@ use crate::{prepared::PreparedDocument, theme::ColorDepth};
 
 const CONTROLLING_TERMINAL: &str = "/dev/tty";
 
-/// Opens the controlling terminal for drawing; `None` when the process has none.
-pub fn open_controlling_terminal() -> Option<File> {
+/// Opens the controlling terminal for drawing.
+pub fn open_controlling_terminal() -> io::Result<File> {
     File::options()
         .read(true)
         .write(true)
         .open(CONTROLLING_TERMINAL)
-        .ok()
 }
 
 /// Runs the interactive loop on the controlling terminal, restoring it on every return path.
@@ -42,62 +41,58 @@ fn run_loop(
     Tui::new(document, area, color_depth).run(terminal, TtyEvents::default())
 }
 
-enum Stage {
-    RawMode,
-    AlternateScreen,
-}
-
-/// Raw mode and the alternate screen on the controlling terminal, unwound in reverse.
+/// Raw mode and the alternate screen on the controlling terminal, both entered.
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<File>>,
-    stages: Vec<Stage>,
 }
 
 impl TerminalSession {
+    /// Enters raw mode, then the alternate screen, leaving raw mode again when the alternate
+    /// screen fails.
     fn start(controlling_terminal: File) -> io::Result<Self> {
-        let terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))?;
-        let mut session = Self {
-            terminal,
-            stages: Vec::new(),
-        };
+        let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))?;
         restore_on_panic();
 
         terminal::enable_raw_mode()?;
-        session.stages.push(Stage::RawMode);
-
-        let entered = execute!(session.terminal.backend_mut(), EnterAlternateScreen);
+        let entered = execute!(terminal.backend_mut(), EnterAlternateScreen);
         if let Err(error) = entered {
-            return Err(with_cleanup(error, session.finish()));
+            let cursor = terminal.show_cursor();
+            let cleanup = all_restored([cursor, terminal::disable_raw_mode()]);
+            return Err(with_cleanup(error, cleanup));
         }
-        session.stages.push(Stage::AlternateScreen);
 
-        Ok(session)
+        Ok(Self { terminal })
     }
 
     fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<File>> {
         &mut self.terminal
     }
 
-    /// Restores every completed stage, reporting all failures after attempting each one.
+    /// Leaves the alternate screen, then raw mode, reporting all failures after attempting
+    /// each step.
     fn finish(mut self) -> io::Result<()> {
         let cursor = self.terminal.show_cursor();
-        let stages = self.stages.iter().rev().map(|stage| match stage {
-            Stage::AlternateScreen => execute!(self.terminal.backend_mut(), LeaveAlternateScreen),
-            Stage::RawMode => terminal::disable_raw_mode(),
-        });
-        let errors = std::iter::once(cursor)
-            .chain(stages.collect::<Vec<_>>())
-            .filter_map(Result::err)
-            .map(|error| error.to_string())
-            .collect::<Vec<_>>();
+        let screen = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let raw_mode = terminal::disable_raw_mode();
 
-        match errors.is_empty() {
-            true => Ok(()),
-            false => Err(io::Error::other(format!(
-                "terminal cleanup failed: {}",
-                errors.join("; ")
-            ))),
-        }
+        all_restored([cursor, screen, raw_mode])
+    }
+}
+
+/// One error naming every failed restore step, or success when none failed.
+fn all_restored<const STEPS: usize>(steps: [io::Result<()>; STEPS]) -> io::Result<()> {
+    let errors = steps
+        .into_iter()
+        .filter_map(Result::err)
+        .map(|error| error.to_string())
+        .collect::<Vec<_>>();
+
+    match errors.is_empty() {
+        true => Ok(()),
+        false => Err(io::Error::other(format!(
+            "terminal cleanup failed: {}",
+            errors.join("; ")
+        ))),
     }
 }
 
@@ -120,16 +115,13 @@ fn with_cleanup(error: io::Error, cleanup: io::Result<()>) -> io::Error {
 fn restore_on_panic() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let restored = open_controlling_terminal().map(|mut controlling_terminal| {
+        let restored = open_controlling_terminal().and_then(|mut controlling_terminal| {
             let cursor = execute!(controlling_terminal, crossterm::cursor::Show);
             let screen = execute!(controlling_terminal, LeaveAlternateScreen);
-            [cursor, screen, terminal::disable_raw_mode()]
+            all_restored([cursor, screen, terminal::disable_raw_mode()])
         });
-        if let Some(results) = restored {
-            results
-                .into_iter()
-                .filter_map(Result::err)
-                .for_each(|error| eprintln!("terminal restore failed: {error}"));
+        if let Err(error) = restored {
+            eprintln!("terminal restore failed: {error}");
         }
         hook(info);
     }));

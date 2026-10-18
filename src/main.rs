@@ -79,7 +79,9 @@ fn render_document(document: &DiffDocument) -> Result<(), RunError> {
     match output_mode {
         terminal::OutputMode::Finite => write_stdout(&render::render_unified(document)),
         terminal::OutputMode::Interactive => {
-            let Some(controlling_terminal) = terminal::open_controlling_terminal() else {
+            // architecture.md (Input and terminal boundary): whatever keeps `/dev/tty` from
+            // opening, the output falls back to finite text.
+            let Ok(controlling_terminal) = terminal::open_controlling_terminal() else {
                 return write_stdout(&render::render_unified(document));
             };
             let prepared = PreparedDocument::prepare(document);
