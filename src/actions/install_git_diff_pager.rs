@@ -24,8 +24,15 @@ pub enum Error {
     MissingHome,
     GlobalConfigDisabled,
     NonUtf8Path(PathRole),
-    InspectConfig(io::Error),
-    Backup(io::Error),
+    InspectConfig {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Backup {
+        source_path: String,
+        destination: String,
+        source: io::Error,
+    },
     SetPager(set_global_diff_pager::Error),
 }
 
@@ -51,7 +58,11 @@ impl InstallGitDiffPager {
                 destination: &backup.destination,
             };
             let copy_command = copy.shell_command();
-            copy.run(context).map_err(Error::Backup)?;
+            copy.run(context).map_err(|source| Error::Backup {
+                source_path: backup.source.clone(),
+                destination: backup.destination.clone(),
+                source,
+            })?;
             completed_commands.push(copy_command);
         }
 
@@ -76,8 +87,17 @@ impl fmt::Display for Error {
                 formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
             }
             Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
-            Self::InspectConfig(error) => write!(formatter, "Git config: {error}"),
-            Self::Backup(error) => write!(formatter, "Git config backup: {error}"),
+            Self::InspectConfig { path, source } => {
+                write!(formatter, "{}: {source}", path.display())
+            }
+            Self::Backup {
+                source_path,
+                destination,
+                source,
+            } => write!(
+                formatter,
+                "backing up {source_path} to {destination}: {source}"
+            ),
             Self::SetPager(error) => write!(formatter, "{error}"),
         }
     }
@@ -174,7 +194,10 @@ fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
 }
 
 fn exists(path: &Path) -> Result<bool, Error> {
-    fs::exists(path).map_err(Error::InspectConfig)
+    fs::exists(path).map_err(|source| Error::InspectConfig {
+        path: path.to_owned(),
+        source,
+    })
 }
 
 /// The sibling backup file: the config's own name with `.bak` appended.

@@ -52,7 +52,12 @@ impl TestEnv {
 
     /// hdiff running in the root with only `HOME`, `PATH`, and `TERM` set.
     pub fn hdiff(&self) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hdiff"));
+        self.program(Path::new(env!("CARGO_BIN_EXE_hdiff")))
+    }
+
+    /// `program` running in the root, isolated like [`TestEnv::hdiff`].
+    pub fn program(&self, program: &Path) -> Command {
+        let mut command = Command::new(program);
         command.current_dir(self.root());
         self.isolate(&mut command);
 

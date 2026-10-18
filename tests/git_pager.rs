@@ -2,36 +2,40 @@ mod common;
 
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
     process::{Output, Stdio},
 };
 
 use common::{TestEnv, assert_trouble};
-use hdiff::shell_words;
 
+const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
+
+/// An executable path holding a quote, a space, and a parameter expansion, so the
+/// registered pager runs only when it is quoted as one shell word.
+const SPECIAL_EXECUTABLE: &str = "it's a $dir/hdiff";
+
+/// architecture.md#input-contract: `--install` backs up the global config and registers
+/// the running executable as `pager.diff`, which Git runs through `sh`.
 #[test]
-fn install_backs_up_and_configures_the_global_diff_pager() {
+fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
     let env = TestEnv::new();
-    let original_config = "[user]\n\tname = Test User\n";
-    let config_path = env.write_file("gitconfig", original_config);
+    let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
 
-    let installation = env
-        .hdiff()
-        .arg("--install")
-        .env("GIT_CONFIG_GLOBAL", &config_path)
-        .output()
-        .expect("run hdiff installer");
+    let (config_path, installation) = install(&env, &executable);
 
-    assert!(
-        installation.status.success(),
-        "installer failed: {}",
-        String::from_utf8_lossy(&installation.stderr)
-    );
+    assert!(installation.status.success(), "{installation:?}");
     assert_eq!(
         fs::read_to_string(env.path("gitconfig.bak")).expect("read backup"),
-        original_config
+        ORIGINAL_CONFIG
     );
-    let pager = configured_value(&env, "gitconfig", "pager.diff");
-    assert_eq!(pager, shell_words::quote(env!("CARGO_BIN_EXE_hdiff")));
+    let pager = configured_value(&env, &config_path, "pager.diff");
+    let pager_version = env
+        .shell(&format!("{pager} --version"))
+        .output()
+        .expect("run the configured pager");
+    assert!(pager_version.status.success(), "{pager_version:?}");
+    assert_eq!(pager_version.stdout, hdiff_version(&env));
 }
 
 /// architecture.md#input-contract: `--install` prints the `cp` and `git config` commands
@@ -39,21 +43,15 @@ fn install_backs_up_and_configures_the_global_diff_pager() {
 #[test]
 fn install_prints_the_commands_it_applied() {
     let env = TestEnv::new();
-    let original_config = "[user]\n\tname = Test User\n";
-    let config_path = env.write_file("gitconfig", original_config);
-    let installation = env
-        .hdiff()
-        .arg("--install")
-        .env("GIT_CONFIG_GLOBAL", &config_path)
-        .output()
-        .expect("run hdiff installer");
+    let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
+    let (config_path, installation) = install(&env, &executable);
     assert!(installation.status.success(), "{installation:?}");
     let printed = String::from_utf8(installation.stdout).expect("UTF-8 commands");
     let [copy_command, config_command] = printed.lines().collect::<Vec<_>>()[..] else {
         panic!("expected a cp and a git config command, got {printed:?}");
     };
     fs::remove_file(env.path("gitconfig.bak")).expect("remove the installer's backup");
-    env.write_file("replayed", "");
+    let replayed_path = env.write_file("replayed", "");
 
     let copied = env
         .shell(copy_command)
@@ -61,7 +59,7 @@ fn install_prints_the_commands_it_applied() {
         .expect("replay the cp command");
     let configured = env
         .shell(config_command)
-        .env("GIT_CONFIG_GLOBAL", env.path("replayed"))
+        .env("GIT_CONFIG_GLOBAL", &replayed_path)
         .output()
         .expect("replay the git config command");
 
@@ -72,8 +70,35 @@ fn install_prints_the_commands_it_applied() {
         fs::read_to_string(&config_path).expect("read installed config")
     );
     assert_eq!(
-        configured_value(&env, "replayed", "pager.diff"),
-        configured_value(&env, "gitconfig", "pager.diff")
+        configured_value(&env, &replayed_path, "pager.diff"),
+        configured_value(&env, &config_path, "pager.diff")
+    );
+}
+
+/// architecture.md#error-output: unreadable files are named in the message.
+#[test]
+fn install_names_a_config_path_it_cannot_inspect() {
+    let env = TestEnv::new();
+    let locked = env.path("locked");
+    fs::create_dir(&locked).expect("create locked directory");
+    let config_path = locked.join("gitconfig");
+
+    set_mode(&locked, 0o000);
+    let installation = env
+        .hdiff()
+        .arg("--install")
+        .env("GIT_CONFIG_GLOBAL", &config_path)
+        .output();
+    set_mode(&locked, 0o755);
+    let installation = installation.expect("run hdiff installer");
+
+    assert_trouble(&installation);
+    assert_eq!(
+        String::from_utf8_lossy(&installation.stderr),
+        format!(
+            "hdiff: --install: {}: Permission denied (os error 13)\n",
+            config_path.display()
+        )
     );
 }
 
@@ -139,6 +164,44 @@ fn git_show_without_diff_content_is_rejected() {
     }
 }
 
+/// A copy of the hdiff binary at `name` under the sandbox root.
+fn copied_hdiff(env: &TestEnv, name: &str) -> PathBuf {
+    let executable = env.write_file(name, "");
+    fs::copy(env!("CARGO_BIN_EXE_hdiff"), &executable).expect("copy the hdiff binary");
+
+    executable
+}
+
+/// Runs `executable --install` against a fresh global config holding
+/// [`ORIGINAL_CONFIG`], returning the config's path and the installer's output.
+fn install(env: &TestEnv, executable: &Path) -> (PathBuf, Output) {
+    let config_path = env.write_file("gitconfig", ORIGINAL_CONFIG);
+
+    let installation = env
+        .program(executable)
+        .arg("--install")
+        .env("GIT_CONFIG_GLOBAL", &config_path)
+        .output()
+        .expect("run hdiff installer");
+
+    (config_path, installation)
+}
+
+fn hdiff_version(env: &TestEnv) -> Vec<u8> {
+    let version = env
+        .hdiff()
+        .arg("--version")
+        .output()
+        .expect("run hdiff --version");
+
+    assert!(version.status.success(), "{version:?}");
+    version.stdout
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).expect("set permissions");
+}
+
 fn setup_commit_history() -> TestEnv {
     let env = TestEnv::new();
     git_output(&env, &["init", "--quiet"]);
@@ -178,11 +241,11 @@ fn pipe_git_to_hdiff(env: &TestEnv, arguments: &[&str]) -> Output {
     output
 }
 
-/// Reads `key` from the global config file `config` under the sandbox root.
-fn configured_value(env: &TestEnv, config: &str, key: &str) -> String {
+/// Reads `key` from the global config file at `config_path`.
+fn configured_value(env: &TestEnv, config_path: &Path, key: &str) -> String {
     let output = env
         .git(&["config", "--global", "--get", key])
-        .env("GIT_CONFIG_GLOBAL", env.path(config))
+        .env("GIT_CONFIG_GLOBAL", config_path)
         .output()
         .expect("read global Git config");
 
