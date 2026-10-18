@@ -518,7 +518,11 @@ The viewport's vertical offset indexes the screen lines of the visible rows of t
 layout at the current context count; a row is one line unless wrapping breaks it into
 several. The frame shows the lines from that offset, and scroll limits count lines. The
 visible rows, their lines, and their widest row are derived once per selected file,
-layout, context count, and wrap width, and not on movement.
+layout, context count, and wrap width, and not on movement. Unified rows are lines and
+side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
+the line it starts with. One pane geometry, derived from the screen size and view
+preferences, serves both navigation bounds and drawing, and a scroll extent carries the
+wrap it was built with.
 
 ### Eager prepared rendering
 

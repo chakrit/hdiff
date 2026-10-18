@@ -13,7 +13,7 @@ use ratatui::{
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileTree, TreeRow},
-    layout::{PANE_FRAME_HEIGHT, PANE_FRAME_WIDTH},
+    geometry::{PANE_FRAME_HEIGHT, between_frame_rows, pane_content},
     theme::ChromePalette,
 };
 
@@ -32,7 +32,7 @@ pub(super) fn render_file_column(
     selected_row: Option<usize>,
     palette: &ChromePalette,
 ) {
-    let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
+    let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
     let hint_height = area.height.saturating_sub(list_height).min(1);
     let [list_area, hint_area] = RatatuiLayout::vertical([
         Constraint::Min(list_height),
@@ -103,15 +103,10 @@ pub(super) struct LineWindow {
 impl ContinuityFrame {
     /// A diff pane: one frame row above and below and one frame column on either side.
     pub(super) fn diff_pane(pane: Rect) -> Self {
-        let rows = between_frame_rows(pane);
-        let content = Rect::new(
-            rows.x + PANE_FRAME_WIDTH / 2,
-            rows.y,
-            rows.width.saturating_sub(PANE_FRAME_WIDTH),
-            rows.height,
-        );
-
-        Self { pane, content }
+        Self {
+            pane,
+            content: pane_content(pane),
+        }
     }
 
     /// The file list: one frame row above and below, and no frame columns.
@@ -177,18 +172,6 @@ impl ContinuityFrame {
         }
     }
 }
-
-/// `area` without its frame rows above and below.
-fn between_frame_rows(area: Rect) -> Rect {
-    Rect::new(
-        area.x,
-        area.y + FRAME_ROWS / 2,
-        area.width,
-        area.height.saturating_sub(FRAME_ROWS),
-    )
-}
-
-const FRAME_ROWS: u16 = PANE_FRAME_HEIGHT as u16;
 
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
 /// the selected row on the last row, so listing that window draws the same frame.

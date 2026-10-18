@@ -7,6 +7,7 @@ pub mod detail;
 pub mod document;
 pub mod file_identity;
 pub mod file_tree;
+pub mod geometry;
 pub mod input;
 pub mod interaction;
 pub mod layout;

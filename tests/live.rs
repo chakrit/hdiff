@@ -4,7 +4,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    layout::content_pane_height,
+    geometry::PaneGeometry,
     parser::parse_unified_diff,
     preferences::{DiffGranularity, DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
@@ -928,8 +928,11 @@ fn file_list_toggle(mode: Mode) {
         live.press('j');
     }
     let start = live.buffer();
-    let pane_height = content_pane_height(HEIGHT, mode.layout);
-    let middle_line = FIRST_CONTENT_LINE + pane_height / 2;
+    let geometry = PaneGeometry::of_size(
+        Size::new(WIDTH, HEIGHT),
+        ViewPreferences::initial(mode.layout),
+    );
+    let middle_line = FIRST_CONTENT_LINE + usize::from(geometry.content_height() / 2);
     let middle = change_label(&live.rows()[middle_line]);
     assert!(middle.is_some(), "a labeled row on the middle line");
     assert!(live.shows("pairs.rs"), "the file list starts shown");

@@ -4,7 +4,7 @@ use crate::{
     detail::character_details,
     document::{DiffDocument, FileView, RecordMap},
     file_tree::{FileListing, FileTree, ListedFile},
-    layout::{Layout, file_layout, text_layout},
+    layout::{Layout, LineIndex, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
     preferences::DiffGranularity,
     render::LineKind,
@@ -152,13 +152,13 @@ impl PreparedPage {
     }
 
     /// Layout row `index` with the styles `granularity` presents.
-    pub fn row(&self, index: usize, granularity: DiffGranularity) -> StyledRow<'_> {
-        self.styles[index].row(&self.layout.diff_lines[index], granularity)
+    pub fn row(&self, index: LineIndex, granularity: DiffGranularity) -> StyledRow<'_> {
+        self.styles[index.get()].row(self.layout.line(index), granularity)
     }
 
     fn record_count(&self) -> usize {
         self.layout
-            .diff_lines
+            .lines()
             .iter()
             .filter(|line| matches!(line.kind(), LineKind::Record { .. }))
             .count()
@@ -185,18 +185,18 @@ mod tests {
         ]) {
             let rendered: Vec<u8> = file
                 .layout()
-                .diff_lines
+                .lines()
                 .iter()
                 .flat_map(|line| line.text().bytes())
                 .collect();
             assert_eq!(rendered, expected.as_bytes());
             assert!(
-                file.row(0, DiffGranularity::Line)
+                file.row(file.layout().line_index(0), DiffGranularity::Line)
                     .segments()
                     .all(|(_, style)| style == TextStyle::Plain),
                 "message is not source code"
             );
-            assert!((4..file.layout().diff_lines.len()).any(|row| {
+            assert!(file.layout().line_indices().skip(4).any(|row| {
                 file.row(row, DiffGranularity::Line)
                     .segments()
                     .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))
@@ -241,7 +241,7 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
 
         let file = prepared.page(PageIndex::FIRST);
-        assert!((0..file.layout().diff_lines.len()).any(|row| {
+        assert!(file.layout().line_indices().any(|row| {
             file.row(row, DiffGranularity::Character)
                 .segments()
                 .any(|(_, style)| style == TextStyle::Detail)

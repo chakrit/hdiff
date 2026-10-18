@@ -2,7 +2,7 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     document::RecordKind,
-    layout::{ScrollExtent, SideBySideRow},
+    layout::{LineIndex, PairIndex, ScrollExtent, SideBySideRow},
     preferences::DiffGranularity,
     prepared::PreparedPage,
     styling::{RowKind, StyledRow, TextStyle},
@@ -25,30 +25,23 @@ impl PaneRow<'_> {
     }
 }
 
-pub(super) fn aligned_pair<'a>(
-    before: Option<StyledRow<'a>>,
-    after: Option<StyledRow<'a>>,
-) -> Option<(PaneRow<'a>, PaneRow<'a>)> {
-    match (before, after) {
-        (Some(before), Some(after)) => Some((PaneRow::Text(before), PaneRow::Text(after))),
-        (Some(before), None) => Some((
-            PaneRow::Text(before),
-            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Addition)),
-        )),
-        (None, Some(after)) => Some((
-            PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Deletion)),
-            PaneRow::Text(after),
-        )),
-        (None, None) => None,
+impl<'a> SideBySideRow<StyledRow<'a>> {
+    /// The before and after pane rows of this row; a one-sided change pairs with a blank
+    /// peer of the opposite kind.
+    pub(super) fn pane_pair(self) -> (PaneRow<'a>, PaneRow<'a>) {
+        match self {
+            Self::Shared(row) => (PaneRow::Text(row), PaneRow::Text(row)),
+            Self::Paired { before, after } => (PaneRow::Text(before), PaneRow::Text(after)),
+            Self::BeforeOnly(before) => (
+                PaneRow::Text(before),
+                PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Addition)),
+            ),
+            Self::AfterOnly(after) => (
+                PaneRow::AlignmentPeer(RowKind::Record(RecordKind::Deletion)),
+                PaneRow::Text(after),
+            ),
+        }
     }
-}
-
-pub(super) enum VisibleSideBySideRow<'a> {
-    Shared(StyledRow<'a>),
-    Paired {
-        before: Option<StyledRow<'a>>,
-        after: Option<StyledRow<'a>>,
-    },
 }
 
 /// One screen line: line `line` of `row`.
@@ -58,8 +51,8 @@ pub(super) struct VisibleLine<R> {
 }
 
 pub(super) fn visible_diff_rows<'a>(
-    file: &'a PreparedPage,
-    extent: &ScrollExtent,
+    page: &'a PreparedPage,
+    extent: &ScrollExtent<LineIndex>,
     first_line: usize,
     granularity: DiffGranularity,
     row_limit: usize,
@@ -67,40 +60,27 @@ pub(super) fn visible_diff_rows<'a>(
     extent
         .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
-            row: file.row(screen_line.row, granularity),
+            row: page.row(screen_line.row, granularity),
             line: screen_line.line,
         })
         .collect()
 }
 
 pub(super) fn visible_side_by_side_rows<'a>(
-    file: &'a PreparedPage,
-    extent: &ScrollExtent,
+    page: &'a PreparedPage,
+    extent: &ScrollExtent<PairIndex>,
     first_line: usize,
     granularity: DiffGranularity,
     row_limit: usize,
-) -> Vec<VisibleLine<VisibleSideBySideRow<'a>>> {
-    let side_by_side_rows = &file.layout().side_by_side_rows;
-    let side_by_side_row = |index| match &side_by_side_rows[index] {
-        SideBySideRow::Shared(index) => VisibleSideBySideRow::Shared(file.row(*index, granularity)),
-        SideBySideRow::Paired { before, after } => VisibleSideBySideRow::Paired {
-            before: Some(file.row(*before, granularity)),
-            after: Some(file.row(*after, granularity)),
-        },
-        SideBySideRow::BeforeOnly(index) => VisibleSideBySideRow::Paired {
-            before: Some(file.row(*index, granularity)),
-            after: None,
-        },
-        SideBySideRow::AfterOnly(index) => VisibleSideBySideRow::Paired {
-            before: None,
-            after: Some(file.row(*index, granularity)),
-        },
-    };
+) -> Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>> {
+    let layout = page.layout();
 
     extent
         .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
-            row: side_by_side_row(screen_line.row),
+            row: layout
+                .pair(screen_line.row)
+                .map(|line| page.row(line, granularity)),
             line: screen_line.line,
         })
         .collect()

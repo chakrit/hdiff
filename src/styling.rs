@@ -17,7 +17,7 @@ pub fn row_styles(
     details: Vec<RowDetail>,
 ) -> Box<[RowStyles]> {
     let mut rows = layout
-        .diff_lines
+        .lines()
         .iter()
         .map(|line| {
             let spans: &[SyntaxSpan] = match line.kind() {
@@ -32,8 +32,8 @@ pub fn row_styles(
         .collect::<Vec<_>>();
 
     for detail in details {
-        let text = layout.diff_lines[detail.row].payload();
-        rows[detail.row].character = Some(character_partition(text, &detail.spans));
+        let text = layout.line(detail.row).payload();
+        rows[detail.row.get()].character = Some(character_partition(text, &detail.spans));
     }
     rows.into_boxed_slice()
 }

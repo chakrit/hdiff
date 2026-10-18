@@ -1,14 +1,10 @@
-use ratatui::{
-    Frame,
-    layout::{Constraint, Flex, Layout as RatatuiLayout, Rect},
-    widgets::Paragraph,
-};
+use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     file_tree::FileTree,
+    geometry::{PaneGeometry, SplitPanes},
     interaction::{Interaction, KeymapPopup},
-    layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
-    preferences::DiffLayout,
+    layout::{DisplayExtent, SideBySideRow, Wrap},
     prepared::PreparedPage,
     styling::StyledRow,
     theme::Theme,
@@ -21,11 +17,40 @@ use super::{
     },
     keymap::render_keymap_popup,
     row_writer::{Clip, RowPlacement, write_row},
-    rows::{
-        PaneRow, VisibleLine, VisibleSideBySideRow, aligned_pair, visible_diff_rows,
-        visible_side_by_side_rows,
-    },
+    rows::{PaneRow, VisibleLine, visible_diff_rows, visible_side_by_side_rows},
 };
+
+/// Draws `page` through `extent`, the scroll extent of the interaction's layout, context
+/// count, and wrap, beside the file list of `tree`.
+pub(super) fn render_prepared_frame(
+    frame: &mut Frame,
+    tree: &FileTree,
+    page: &PreparedPage,
+    extent: &DisplayExtent,
+    interaction: &Interaction,
+    theme: &Theme,
+) {
+    let area = frame.area();
+    let geometry = PaneGeometry::of(area, interaction.preferences);
+    if let Some(too_small) = geometry.too_small() {
+        frame.render_widget(Paragraph::new(too_small.message()), area);
+        return;
+    }
+
+    let display = DisplayRows::of(page, extent, interaction, usize::from(area.height), theme);
+    render_display_layout(frame, display, geometry.diff());
+    match geometry.file_column() {
+        Some(column) => {
+            render_file_column(frame, column.list, tree, page.list_row(), &theme.chrome);
+            draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
+        }
+        None => render_help_box(frame, area, &theme.chrome),
+    }
+
+    if let KeymapPopup::Open = interaction.keymap {
+        render_keymap_popup(frame, area, theme);
+    }
+}
 
 struct DisplayRows<'a> {
     rows: LayoutRows<'a>,
@@ -39,87 +64,46 @@ struct DisplayRows<'a> {
 /// screen.
 enum LayoutRows<'a> {
     Unified(Vec<VisibleLine<StyledRow<'a>>>),
-    Vertical(Vec<VisibleLine<VisibleSideBySideRow<'a>>>),
-    Stacked(Vec<VisibleLine<VisibleSideBySideRow<'a>>>),
+    Vertical(Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>>),
+    Stacked(Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>>),
 }
 
-/// Draws `page` through `extent`, the scroll extent of the interaction's layout and
-/// context count, beside the file list of `tree`.
-pub(super) fn render_prepared_frame(
-    frame: &mut Frame,
-    tree: &FileTree,
-    page: &PreparedPage,
-    extent: &ScrollExtent,
-    interaction: &Interaction,
-    theme: &Theme,
-) {
-    let area = frame.area();
-    let preferences = interaction.preferences;
-    let panes = pane_layout(area.width, area.height, preferences);
-    let too_small = match panes {
-        PaneLayout::TooNarrow => Some("screen too narrow"),
-        PaneLayout::TooShort => Some("screen too short"),
-        PaneLayout::DiffOnly | PaneLayout::Split { .. } => None,
-    };
-    if let Some(message) = too_small {
-        frame.render_widget(Paragraph::new(message), area);
-        return;
-    }
+impl<'a> DisplayRows<'a> {
+    /// Up to `row_limit` lines of `extent` from the interaction's scroll position.
+    fn of(
+        page: &'a PreparedPage,
+        extent: &DisplayExtent,
+        interaction: &Interaction,
+        row_limit: usize,
+        theme: &'a Theme,
+    ) -> Self {
+        let granularity = interaction.preferences.granularity;
+        let scroll = interaction.viewport.scroll;
+        let pairs = |extent| {
+            visible_side_by_side_rows(page, extent, scroll.vertical, granularity, row_limit)
+        };
+        let rows = match extent {
+            DisplayExtent::Unified(extent) => LayoutRows::Unified(visible_diff_rows(
+                page,
+                extent,
+                scroll.vertical,
+                granularity,
+                row_limit,
+            )),
+            DisplayExtent::Vertical(extent) => LayoutRows::Vertical(pairs(extent)),
+            DisplayExtent::Stacked(extent) => LayoutRows::Stacked(pairs(extent)),
+        };
 
-    let row_limit = usize::from(area.height);
-    let granularity = preferences.granularity;
-    let scroll = interaction.viewport.scroll;
-    let side_by_side_rows =
-        || visible_side_by_side_rows(page, extent, scroll.vertical, granularity, row_limit);
-    let rows = match preferences.layout {
-        DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
-            page,
-            extent,
-            scroll.vertical,
-            granularity,
-            row_limit,
-        )),
-        DiffLayout::Vertical => LayoutRows::Vertical(side_by_side_rows()),
-        DiffLayout::Stacked => LayoutRows::Stacked(side_by_side_rows()),
-    };
-    let display = DisplayRows {
-        rows,
-        window: LineWindow {
-            first: scroll.vertical,
-            total: extent.line_count(),
-        },
-        horizontal_offset: scroll.horizontal,
-        wrap: Wrap::of(preferences, area.width),
-        theme,
-    };
-
-    match panes {
-        PaneLayout::TooNarrow | PaneLayout::TooShort => {}
-        PaneLayout::DiffOnly => {
-            render_display_layout(frame, display, area);
-            render_help_box(frame, area, &theme.chrome);
+        Self {
+            rows,
+            window: LineWindow {
+                first: scroll.vertical,
+                total: extent.line_count(),
+            },
+            horizontal_offset: scroll.horizontal,
+            wrap: extent.wrap(),
+            theme,
         }
-        PaneLayout::Split {
-            file_list_width,
-            separator_padding,
-        } => {
-            let [file_column, _, separator, _, diff] = RatatuiLayout::horizontal([
-                Constraint::Length(file_list_width),
-                Constraint::Length(separator_padding),
-                Constraint::Length(1),
-                Constraint::Length(separator_padding),
-                Constraint::Min(1),
-            ])
-            .areas(area);
-
-            render_file_column(frame, file_column, tree, page.list_row(), &theme.chrome);
-            draw_outer_separator(frame.buffer_mut(), separator, &theme.chrome);
-            render_display_layout(frame, display, diff);
-        }
-    }
-
-    if let KeymapPopup::Open = interaction.keymap {
-        render_keymap_popup(frame, area, theme);
     }
 }
 
@@ -140,8 +124,12 @@ fn render_display_layout(frame: &mut Frame, display: DisplayRows, area: Rect) {
                 line: line.line,
             }),
         ),
-        LayoutRows::Vertical(lines) => render_vertical_rows(frame, lines, area, pane_rows),
-        LayoutRows::Stacked(lines) => render_stacked_rows(frame, lines, area, pane_rows),
+        LayoutRows::Vertical(lines) => {
+            render_vertical_rows(frame, lines, SplitPanes::vertical(area), pane_rows)
+        }
+        LayoutRows::Stacked(lines) => {
+            render_stacked_rows(frame, lines, SplitPanes::stacked(area), pane_rows)
+        }
     }
 }
 
@@ -183,23 +171,17 @@ impl<P: Fn(usize) -> RowPlacement> PaneRows<'_, P> {
 
 fn render_vertical_rows(
     frame: &mut Frame,
-    lines: Vec<VisibleLine<VisibleSideBySideRow>>,
-    area: Rect,
+    lines: Vec<VisibleLine<SideBySideRow<StyledRow>>>,
+    panes: SplitPanes,
     pane_rows: PaneRows<'_, impl Fn(usize) -> RowPlacement>,
 ) {
-    let [before_pane, separator, after_pane] = RatatuiLayout::horizontal([
-        Constraint::Percentage(50),
-        Constraint::Length(1),
-        Constraint::Percentage(50),
-    ])
-    .areas(area);
     let (before_lines, after_lines) = split_panes(lines);
-    let before_pane = ContinuityFrame::diff_pane(before_pane);
-    let after_pane = ContinuityFrame::diff_pane(after_pane);
+    let before_pane = ContinuityFrame::diff_pane(panes.before);
+    let after_pane = ContinuityFrame::diff_pane(panes.after);
 
     let content = before_pane.content();
     let shown = before_lines.len().min(content.height.into()) as u16;
-    let separator = Rect::new(separator.x, content.y, separator.width, shown);
+    let separator = Rect::new(panes.separator.x, content.y, panes.separator.width, shown);
     draw_inner_separator(frame.buffer_mut(), separator, "│", &pane_rows.theme.chrome);
 
     pane_rows.render(frame, before_pane, before_lines);
@@ -208,34 +190,34 @@ fn render_vertical_rows(
 
 fn render_stacked_rows(
     frame: &mut Frame,
-    lines: Vec<VisibleLine<VisibleSideBySideRow>>,
-    area: Rect,
+    lines: Vec<VisibleLine<SideBySideRow<StyledRow>>>,
+    panes: SplitPanes,
     pane_rows: PaneRows<'_, impl Fn(usize) -> RowPlacement>,
 ) {
-    let pane_height = pane_height(area.height, DiffLayout::Stacked);
-    let pane_height = u16::try_from(pane_height).expect("pane height fits the area");
-    let [before_pane, separator, after_pane] = RatatuiLayout::vertical([
-        Constraint::Length(pane_height),
-        Constraint::Length(1),
-        Constraint::Length(pane_height),
-    ])
-    .flex(Flex::Start)
-    .areas(area);
     let (before_lines, after_lines) = split_panes(lines);
 
-    draw_inner_separator(frame.buffer_mut(), separator, "─", &pane_rows.theme.chrome);
-    pane_rows.render(frame, ContinuityFrame::diff_pane(before_pane), before_lines);
-    pane_rows.render(frame, ContinuityFrame::diff_pane(after_pane), after_lines);
+    draw_inner_separator(
+        frame.buffer_mut(),
+        panes.separator,
+        "─",
+        &pane_rows.theme.chrome,
+    );
+    pane_rows.render(
+        frame,
+        ContinuityFrame::diff_pane(panes.before),
+        before_lines,
+    );
+    pane_rows.render(frame, ContinuityFrame::diff_pane(panes.after), after_lines);
 }
 
 /// The before and after pane lines of side-by-side lines.
 fn split_panes<'a>(
-    lines: Vec<VisibleLine<VisibleSideBySideRow<'a>>>,
+    lines: Vec<VisibleLine<SideBySideRow<StyledRow<'a>>>>,
 ) -> (Vec<VisibleLine<PaneRow<'a>>>, Vec<VisibleLine<PaneRow<'a>>>) {
     lines
         .into_iter()
-        .filter_map(|line| {
-            let (before, after) = pane_pair(line.row)?;
+        .map(|line| {
+            let (before, after) = line.row.pane_pair();
             let before = VisibleLine {
                 row: before,
                 line: line.line,
@@ -244,17 +226,9 @@ fn split_panes<'a>(
                 row: after,
                 line: line.line,
             };
-            Some((before, after))
+            (before, after)
         })
         .unzip()
-}
-
-/// The before and after pane rows of one side-by-side row.
-fn pane_pair(row: VisibleSideBySideRow) -> Option<(PaneRow, PaneRow)> {
-    match row {
-        VisibleSideBySideRow::Shared(row) => Some((PaneRow::Text(row), PaneRow::Text(row))),
-        VisibleSideBySideRow::Paired { before, after } => aligned_pair(before, after),
-    }
 }
 
 #[cfg(test)]
@@ -277,6 +251,7 @@ mod tests {
             Transition, Viewport, transition,
         },
         layout::Wrap,
+        navigation::Navigation,
         parser::parse_unified_diff,
         preferences::{DiffLayout, FileList, PreferenceChange, ViewPreferences},
         prepared::{PageIndex, PreparedDocument},
@@ -293,18 +268,13 @@ mod tests {
         theme: &Theme,
     ) {
         let prepared = PreparedDocument::prepare(document);
-        let page = prepared.page(interaction.page);
-        let preferences = interaction.preferences;
-        let wrap = Wrap::of(preferences, interaction.viewport.screen.width);
-        let extent =
-            page.layout()
-                .scroll_extent(preferences.layout, preferences.context_lines, wrap);
+        let navigation = Navigation::new(&prepared, interaction);
 
         render_prepared_frame(
             frame,
             prepared.file_tree(),
-            page,
-            &extent,
+            prepared.page(interaction.page),
+            navigation.extent(),
             interaction,
             theme,
         );

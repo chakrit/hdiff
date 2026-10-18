@@ -2,7 +2,7 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    layout::{Layout, SideBySideRow},
+    layout::{Layout, LineIndex, SideBySideRow},
     render::PayloadSpan,
 };
 
@@ -17,17 +17,17 @@ pub struct ChangedPairDetail {
 /// One row's character-detail spans.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RowDetail {
-    pub row: usize,
+    pub row: LineIndex,
     pub spans: Vec<PayloadSpan>,
 }
 
 /// The character detail of each `layout` row that has changed spans: a paired row marks
 /// the spans that differ from its peer, and an unmatched row is changed as a whole.
 pub fn character_details(layout: &Layout) -> Vec<RowDetail> {
-    let payload = |row: usize| layout.diff_lines[row].payload();
+    let payload = |row: LineIndex| layout.line(row).payload();
     let mut details = Vec::new();
 
-    for row in &layout.side_by_side_rows {
+    for row in layout.pairs() {
         match row {
             SideBySideRow::Paired { before, after } => {
                 let pair = changed_pair_detail(payload(*before), payload(*after));
@@ -323,7 +323,7 @@ mod tests {
             let layout = file_layout(&document.file_views().next().expect("first file"));
             let details = character_details(&layout);
 
-            for (row, line) in layout.diff_lines.iter().enumerate() {
+            for (row, line) in layout.line_indices().zip(layout.lines()) {
                 let spans = details
                     .iter()
                     .find(|detail| detail.row == row)
