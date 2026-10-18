@@ -117,9 +117,11 @@ fn write_wrapped_line<'c>(
     line: ScreenLines,
     width: NonZeroCells,
 ) -> Clip {
-    let mut breaks = LineBreaks::new(width);
     let line_clusters = payload_clusters
-        .filter_map(|(cluster, style)| Some((breaks.place(cluster)?, cluster, style)))
+        .scan(LineBreaks::new(width), |breaks, (cluster, style)| {
+            Some((breaks.place(cluster), cluster, style))
+        })
+        .filter_map(|(placed_line, cluster, style)| Some((placed_line?, cluster, style)))
         .skip_while(|(placed_line, _, _)| *placed_line < line)
         .take_while(|(placed_line, _, _)| *placed_line == line)
         .map(|(_, cluster, style)| (cluster, style));
@@ -149,21 +151,23 @@ impl ExpandedPayload {
 
     /// Each cluster with the style of the segment containing its first byte.
     fn clusters(&self) -> impl Iterator<Item = (&str, TextStyle)> {
-        let mut segments = self.segment_ends.iter().peekable();
-
         self.text
             .grapheme_indices(true)
-            .map(move |(start, cluster)| {
-                while let Some((end, _)) = segments.peek()
-                    && *end <= start
-                {
-                    segments.next();
-                }
-                let (_, text_style) = segments
-                    .peek()
-                    .expect("every cluster starts inside a segment");
-                (cluster, *text_style)
-            })
+            .map(|(start, cluster)| (cluster, self.style_at(start)))
+    }
+
+    /// The style of the segment containing byte `position`: the first segment ending past
+    /// it, since segment ends ascend.
+    fn style_at(&self, position: usize) -> TextStyle {
+        let containing = self
+            .segment_ends
+            .partition_point(|(end, _)| *end <= position);
+        let (_, text_style) = self
+            .segment_ends
+            .get(containing)
+            .expect("every cluster starts inside a segment");
+
+        *text_style
     }
 }
 
