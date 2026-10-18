@@ -62,9 +62,4 @@ impl<T> BySide<T> {
             new: (self.new, other.new),
         }
     }
-
-    /// Each side with its value, old side first.
-    pub fn into_sides(self) -> [(Side, T); 2] {
-        [(Side::Old, self.old), (Side::New, self.new)]
-    }
 }
