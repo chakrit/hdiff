@@ -55,7 +55,7 @@ pub(super) fn visible_diff_rows<'a>(
         .lines(first_line, row_limit)
         .map(|screen_line| VisibleLine {
             row: page.row(screen_line.row, granularity),
-            line: screen_line.line,
+            line: screen_line.wrapped_line,
         })
         .collect()
 }
@@ -75,7 +75,7 @@ pub(super) fn visible_side_by_side_rows<'a>(
             row: rows
                 .pair(screen_line.row)
                 .map(|line| page.row(line, granularity)),
-            line: screen_line.line,
+            line: screen_line.wrapped_line,
         })
         .collect()
 }

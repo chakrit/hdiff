@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod bench;
+pub mod cells;
 pub mod cli;
 pub mod compact;
 pub mod detail;

@@ -1,20 +1,22 @@
 //! Breaks interactive row payloads into wrapped lines; see `docs/spec/architecture.md`
 //! (View model) for the wrapping rules.
 
+use std::num::NonZeroUsize;
+
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::tab_stops::{TabStops, cluster_cells};
+use crate::{cells::cluster_cells, page_rows::MeasuredPayload, tab_stops::TabStops};
 
 /// Places grapheme clusters on lines `width` cells wide, in order: a cluster that does
 /// not fit the rest of its line starts the next one.
 pub struct LineBreaks {
-    width: usize,
+    width: NonZeroUsize,
     line: usize,
     column: usize,
 }
 
 impl LineBreaks {
-    pub fn new(width: usize) -> Self {
+    pub fn new(width: NonZeroUsize) -> Self {
         Self {
             width,
             line: 0,
@@ -30,7 +32,7 @@ impl LineBreaks {
             return None;
         }
 
-        if self.column > 0 && self.column + cells > self.width {
+        if self.column > 0 && self.column + cells > self.width.get() {
             self.line += 1;
             self.column = 0;
         }
@@ -44,12 +46,12 @@ impl LineBreaks {
     }
 }
 
-/// Lines `text` wraps to at `width` cells once its tabs are expanded; `text_width` is the
-/// expanded text's width in cells.
-pub fn wrapped_line_count(text: &str, text_width: usize, width: usize) -> usize {
+/// Lines `payload` wraps to at `width` cells once its tabs are expanded.
+pub fn wrapped_line_count(payload: MeasuredPayload<'_>, width: NonZeroUsize) -> usize {
+    let text = payload.text();
     if text.bytes().all(|byte| matches!(byte, b'\t' | b' '..=b'~')) {
         // Every cluster is one cell, so every line but the last is full.
-        return text_width.div_ceil(width).max(1);
+        return payload.cells().div_ceil(width.get()).max(1);
     }
 
     let mut expanded = String::new();
@@ -64,16 +66,22 @@ pub fn wrapped_line_count(text: &str, text_width: usize, width: usize) -> usize 
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::{LineBreaks, wrapped_line_count};
-    use crate::tab_stops::expanded_width;
+    use crate::{page_rows::MeasuredPayload, tab_stops::expanded_width};
+
+    fn cells(width: usize) -> NonZeroUsize {
+        NonZeroUsize::new(width).expect("a nonzero test width")
+    }
 
     fn line_count(text: &str, width: usize) -> usize {
-        wrapped_line_count(text, expanded_width(text), width)
+        wrapped_line_count(MeasuredPayload::new(text), cells(width))
     }
 
     #[test]
     fn breaks_before_a_cluster_that_does_not_fit_the_rest_of_its_line() {
-        let mut breaks = LineBreaks::new(4);
+        let mut breaks = LineBreaks::new(cells(4));
 
         let lines = ["a", "a", "a", "界", "界", "界"].map(|cluster| breaks.place(cluster));
 
@@ -83,7 +91,7 @@ mod tests {
 
     #[test]
     fn keeps_a_cluster_wider_than_the_line_on_a_line_of_its_own() {
-        let mut breaks = LineBreaks::new(1);
+        let mut breaks = LineBreaks::new(cells(1));
 
         assert_eq!(breaks.place("a"), Some(0));
         assert_eq!(breaks.place("界"), Some(1));
@@ -92,7 +100,7 @@ mod tests {
 
     #[test]
     fn gives_clusters_without_cells_no_place() {
-        let mut breaks = LineBreaks::new(1);
+        let mut breaks = LineBreaks::new(cells(1));
 
         assert_eq!(breaks.place("a"), Some(0));
         assert_eq!(breaks.place("\u{7}"), None);
@@ -113,7 +121,7 @@ mod tests {
     #[test]
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
-        let mut breaks = LineBreaks::new(3);
+        let mut breaks = LineBreaks::new(cells(3));
         for _ in 0..expanded_width(text) {
             breaks.place("a");
         }

@@ -84,6 +84,30 @@ impl<T> SideBySideRow<T> {
     }
 }
 
+/// A payload and the terminal cells it covers once its tabs are expanded.
+#[derive(Clone, Copy, Debug)]
+pub struct MeasuredPayload<'a> {
+    text: &'a str,
+    cells: usize,
+}
+
+impl<'a> MeasuredPayload<'a> {
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            cells: expanded_width(text),
+        }
+    }
+
+    pub fn text(self) -> &'a str {
+        self.text
+    }
+
+    pub fn cells(self) -> usize {
+        self.cells
+    }
+}
+
 /// One value for each line of a page's rows, looked up by [`LineIndex`]; only those rows
 /// build one.
 #[derive(Debug, PartialEq, Eq)]
@@ -148,7 +172,7 @@ impl PageRows {
             .zip(&lines)
             .map(|(visibility, line)| LineMetrics {
                 visibility,
-                payload_width: narrow(expanded_width(line.payload())),
+                payload_width: narrow(MeasuredPayload::new(line.payload()).cells()),
             })
             .collect();
 
@@ -235,6 +259,14 @@ impl PageRows {
     /// Terminal cells of the line's payload, without the marker gutter.
     pub(crate) fn payload_width(&self, index: LineIndex) -> usize {
         widen(self.line_metrics.get(index).payload_width)
+    }
+
+    /// The line's payload with the width measured when the rows were built.
+    pub(crate) fn measured_payload(&self, index: LineIndex) -> MeasuredPayload<'_> {
+        MeasuredPayload {
+            text: self.line(index).payload(),
+            cells: self.payload_width(index),
+        }
     }
 }
 

@@ -2,6 +2,8 @@
 //! lines, the widest row, and the anchors that find a row again across rebuilds. Rules:
 //! `docs/spec/architecture.md` (Viewport coordinates).
 
+use std::num::NonZeroUsize;
+
 use crate::{
     compact::{narrow, widen},
     line_breaks::wrapped_line_count,
@@ -9,6 +11,7 @@ use crate::{
     preferences::{DiffLayout, Wrapping},
 };
 
+/// Cells of the marker gutter that precedes every row's payload.
 pub const MARKER_GUTTER_WIDTH: usize = 2;
 
 /// A row named by the line it starts with, and one of its wrapped lines.
@@ -24,18 +27,20 @@ pub enum Wrap {
     /// Every row is one line, scrolled horizontally.
     Off,
     /// Payloads wrap at this many cells.
-    At(usize),
+    At(NonZeroUsize),
 }
 
 impl Wrap {
     /// The wrap `wrapping` selects for panes whose narrowest content is `content_width`
-    /// cells wide: both side-by-side panes wrap at the narrower pane's payload width.
+    /// cells wide: both side-by-side panes wrap at the narrower pane's payload width. A
+    /// pane with no room for payload wraps one cell per line.
     pub fn for_panes(wrapping: Wrapping, content_width: u16) -> Self {
         let payload_width = usize::from(content_width).saturating_sub(MARKER_GUTTER_WIDTH);
+        let wrap_width = NonZeroUsize::new(payload_width).unwrap_or(NonZeroUsize::MIN);
 
         match wrapping {
             Wrapping::Disabled => Self::Off,
-            Wrapping::Enabled => Self::At(payload_width.max(1)),
+            Wrapping::Enabled => Self::At(wrap_width),
         }
     }
 
@@ -43,7 +48,7 @@ impl Wrap {
     fn visible_width(self, width: usize) -> usize {
         match self {
             Self::Off => width,
-            Self::At(cells) => width.min(cells),
+            Self::At(cells) => width.min(cells.get()),
         }
     }
 }
@@ -54,11 +59,11 @@ struct VisibleRow<R> {
     height: usize,
 }
 
-/// One screen line: line `line` of row `row`.
+/// One screen line: wrapped line `wrapped_line` of row `row`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScreenLine<R> {
     pub row: R,
-    pub line: usize,
+    pub wrapped_line: usize,
 }
 
 /// The rows one layout shows at one context count and wrap: unified rows are lines, and
@@ -128,12 +133,12 @@ impl DisplayExtent {
         match self {
             Self::Unified(extent) => extent.line_at(offset).map(|screen_line| RowAnchor {
                 line: screen_line.row,
-                wrapped_line: screen_line.line,
+                wrapped_line: screen_line.wrapped_line,
             }),
             Self::Vertical(extent) | Self::Stacked(extent) => {
                 extent.line_at(offset).map(|screen_line| RowAnchor {
                     line: rows.pair(screen_line.row).first(),
-                    wrapped_line: screen_line.line,
+                    wrapped_line: screen_line.wrapped_line,
                 })
             }
         }
@@ -180,12 +185,12 @@ fn line_height(rows: &PageRows, index: LineIndex, wrap: Wrap) -> usize {
     let Wrap::At(cells) = wrap else {
         return 1;
     };
-    let payload_width = rows.payload_width(index);
-    if payload_width <= cells {
+    let payload = rows.measured_payload(index);
+    if payload.cells() <= cells.get() {
         return 1;
     }
 
-    wrapped_line_count(rows.line(index).payload(), payload_width, cells)
+    wrapped_line_count(payload, cells)
 }
 
 /// The rows one layout shows at one context count and wrap, their screen lines, and the
@@ -215,6 +220,7 @@ impl<R: Copy + Ord> ScrollExtent<R> {
             line_ends.push(narrow(line_end));
             width = width.max(row.width);
         }
+
         Self {
             rows: indices.into_boxed_slice(),
             line_ends: line_ends.into_boxed_slice(),
@@ -239,7 +245,7 @@ impl<R: Copy + Ord> ScrollExtent<R> {
 
                 (row_start.max(offset)..row_end).map(move |line| ScreenLine {
                     row,
-                    line: line - row_start,
+                    wrapped_line: line - row_start,
                 })
             })
             .take(limit)
@@ -249,15 +255,15 @@ impl<R: Copy + Ord> ScrollExtent<R> {
         self.lines(offset, 1).next()
     }
 
-    /// The offset of line `line` of row `index`, clamped to the row's lines; a hidden row
-    /// maps to the first line of the first visible row after it.
-    pub fn offset_of(&self, index: R, line: usize) -> usize {
+    /// The offset of wrapped line `wrapped_line` of row `index`, clamped to the row's
+    /// lines; a hidden row maps to the first line of the first visible row after it.
+    pub fn offset_of(&self, index: R, wrapped_line: usize) -> usize {
         let position = self.rows.partition_point(|row| *row < index);
         let start = self.line_start(position);
         let shown = self.rows.get(position).is_some_and(|row| *row == index);
 
         match shown {
-            true => start + line.min(widen(self.line_ends[position]) - start - 1),
+            true => start + wrapped_line.min(widen(self.line_ends[position]) - start - 1),
             false => start,
         }
     }
@@ -272,6 +278,8 @@ impl<R: Copy + Ord> ScrollExtent<R> {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::{DisplayExtent, ScreenLine, ScrollExtent, Wrap};
     use crate::{
         page_rows::{LineIndex, PageRows, PairIndex},
@@ -282,6 +290,10 @@ mod tests {
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_unified_diff(patch).expect("valid diff");
         PageRows::of_file(&document.file_views().next().expect("first file"))
+    }
+
+    fn wrap_at(cells: usize) -> Wrap {
+        Wrap::At(NonZeroUsize::new(cells).expect("a nonzero test wrap width"))
     }
 
     fn texts(rows: &PageRows, lines: impl Iterator<Item = LineIndex>) -> Vec<&[u8]> {
@@ -372,20 +384,20 @@ mod tests {
             &view,
             DiffLayout::Unified,
             3,
-            Wrap::At(20),
+            wrap_at(20),
         ));
         let DisplayExtent::Vertical(vertical) =
-            DisplayExtent::of(&view, DiffLayout::Vertical, 3, Wrap::At(20))
+            DisplayExtent::of(&view, DiffLayout::Vertical, 3, wrap_at(20))
         else {
             panic!("the vertical layout shows pairs");
         };
-        let line = |row, line| ScreenLine {
+        let line = |row, wrapped_line| ScreenLine {
             row: LineIndex::new(row),
-            line,
+            wrapped_line,
         };
-        let pair = |row, line| ScreenLine {
+        let pair = |row, wrapped_line| ScreenLine {
             row: PairIndex::new(row),
-            line,
+            wrapped_line,
         };
 
         assert_eq!(
@@ -418,10 +430,10 @@ mod tests {
 
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
-        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 24), Wrap::At(22));
-        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 51), Wrap::At(49));
+        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 24), wrap_at(22));
+        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 51), wrap_at(49));
         assert_eq!(Wrap::for_panes(Wrapping::Disabled, 51), Wrap::Off);
-        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 78), Wrap::At(76));
+        assert_eq!(Wrap::for_panes(Wrapping::Enabled, 78), wrap_at(76));
     }
 
     /// architecture.md (View model): an anchored row keeps its place when its layout

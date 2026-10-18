@@ -1,7 +1,7 @@
 //! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
 //! and safe rendering, View model).
 
-use std::ops::ControlFlow;
+use std::{num::NonZeroUsize, ops::ControlFlow};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -11,10 +11,11 @@ use super::{
     rows::PaneRow,
 };
 use crate::{
+    cells::cluster_cells,
     extent::{MARKER_GUTTER_WIDTH, Wrap},
     line_breaks::LineBreaks,
     styling::{StyledRow, TextStyle},
-    tab_stops::{TabStops, cluster_cells},
+    tab_stops::TabStops,
     theme::Theme,
 };
 
@@ -24,7 +25,7 @@ pub(super) enum RowPlacement {
     /// The whole row, from column `horizontal_offset` onward.
     Scrolled { horizontal_offset: u16 },
     /// Wrapped line `line` of the row's payload, wrapped at `width` cells.
-    Wrapped { line: usize, width: usize },
+    Wrapped { line: usize, width: NonZeroUsize },
 }
 
 impl RowPlacement {
@@ -120,7 +121,7 @@ fn write_wrapped_line<'c>(
     gutter: impl IntoIterator<Item = (&'c str, Style)>,
     payload_clusters: impl Iterator<Item = (&'c str, Style)>,
     line: usize,
-    width: usize,
+    width: NonZeroUsize,
 ) -> Clip {
     let mut breaks = LineBreaks::new(width);
     let line_clusters = payload_clusters
@@ -240,6 +241,8 @@ impl RowCursor<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use ratatui::{
         buffer::{Buffer, CellWidth},
         layout::Rect,
@@ -351,7 +354,10 @@ mod tests {
             write_placed(
                 PaneRow::Text(addition),
                 6,
-                RowPlacement::Wrapped { line, width: 4 },
+                RowPlacement::Wrapped {
+                    line,
+                    width: cells(4),
+                },
             )
             .0
         };
@@ -389,7 +395,15 @@ mod tests {
         assert_eq!(clip(4, 1), sides(true, true));
         assert_eq!(clip(6, 1), sides(true, false));
         assert_eq!(
-            write_placed(row, 3, RowPlacement::Wrapped { line: 1, width: 1 }).1,
+            write_placed(
+                row,
+                3,
+                RowPlacement::Wrapped {
+                    line: 1,
+                    width: cells(1)
+                }
+            )
+            .1,
             sides(false, false),
             "a wrapped line shows its whole part of the row"
         );
@@ -401,6 +415,10 @@ mod tests {
 
         assert!((0..4).all(|x| buffer[(x, 0)].symbol() == " "));
         assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));
+    }
+
+    fn cells(width: usize) -> NonZeroUsize {
+        NonZeroUsize::new(width).expect("a nonzero test width")
     }
 
     fn prepare(diff: &[u8]) -> PreparedDocument {

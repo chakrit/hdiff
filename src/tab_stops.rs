@@ -1,8 +1,7 @@
 //! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
 //! rendering) for the 2-column tab-stop rule.
 
-use ratatui::buffer::CellWidth;
-use unicode_segmentation::UnicodeSegmentation;
+use crate::cells::text_cells;
 
 const TAB_WIDTH: usize = 2;
 
@@ -31,7 +30,7 @@ impl TabStops {
                 _ => self.advance_to_tab_stop(),
             };
             visit(padding, chunk);
-            self.column += cells(chunk);
+            self.column += text_cells(chunk);
         }
     }
 
@@ -47,20 +46,6 @@ pub fn expanded_width(text: &str) -> usize {
     let mut tab_stops = TabStops::default();
     tab_stops.walk(text, |_, _| {});
     tab_stops.column
-}
-
-/// Terminal cells the row writer covers drawing `text`.
-fn cells(text: &str) -> usize {
-    text.graphemes(true).map(cluster_cells).sum()
-}
-
-/// Terminal cells the row writer covers drawing `cluster`, measured with Ratatui's
-/// `CellWidth`; Ratatui skips control-containing clusters, so they cover none.
-pub fn cluster_cells(cluster: &str) -> usize {
-    match cluster.contains(char::is_control) {
-        true => 0,
-        false => usize::from(cluster.cell_width()),
-    }
 }
 
 #[cfg(test)]
