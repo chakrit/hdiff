@@ -153,10 +153,11 @@ can intercept one. A resize event names no size: the terminal is the one source 
 screen size. An event's transition returns an outcome: exit, redraw, or an effect, which
 navigation applies to give the next state; every continuing step then draws. A transition
 does not reach into the terminal or document. The selected page, viewport position, and
-preferences are authoritative interaction state. Wrapping, row numbers, pane geometry, and
-rendered rows are derived. Navigation, which holds the interaction and finds the display
-an event leads to and its bounds, is independent of the terminal. This makes navigation
-testable without a real terminal and keeps invalid positions out of the renderer.
+preferences are authoritative interaction state. The wrap width, row numbers, pane
+geometry, and rendered rows are derived. Navigation, which holds the interaction and finds
+the display an event leads to and its bounds, is independent of the terminal. This makes
+navigation testable without a real terminal and keeps invalid positions out of the
+renderer.
 
 ## Input contract
 
