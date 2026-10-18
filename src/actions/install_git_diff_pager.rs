@@ -9,6 +9,7 @@ use super::{
     global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
     set_global_diff_pager::{self, SetGlobalDiffPager},
 };
+use crate::shell_words;
 
 pub struct InstallGitDiffPager {
     pub executable: PathBuf,
@@ -42,22 +43,26 @@ impl InstallGitDiffPager {
         context: &mut GlobalGitConfigContext,
     ) -> Result<InstallGitDiffPagerReport, Error> {
         let plan = InstallPlan::new(&context.environment, &self.executable)?;
+        let mut completed_commands = Vec::new();
 
         if let Some(backup) = &plan.backup {
-            BackupGlobalGitConfig {
+            let copy = BackupGlobalGitConfig {
                 source: &backup.source,
                 destination: &backup.destination,
-            }
-            .run(context)
-            .map_err(Error::Backup)?;
+            };
+            let copy_command = copy.shell_command();
+            copy.run(context).map_err(Error::Backup)?;
+            completed_commands.push(copy_command);
         }
-        SetGlobalDiffPager {
-            command: &plan.pager_command,
-        }
-        .run(context)
-        .map_err(Error::SetPager)?;
 
-        Ok(plan.report())
+        let set_pager = SetGlobalDiffPager {
+            command: &plan.pager_command,
+        };
+        let config_command = set_pager.shell_command();
+        set_pager.run(context).map_err(Error::SetPager)?;
+        completed_commands.push(config_command);
+
+        Ok(InstallGitDiffPagerReport { completed_commands })
     }
 }
 
@@ -90,22 +95,23 @@ impl PathRole {
     }
 }
 
-/// Every path and command `--install` needs, validated before anything is written.
+/// Every path and value `--install` needs, validated as UTF-8 before anything is written.
 struct InstallPlan {
     backup: Option<Backup>,
+    /// The `pager.diff` value: the executable as one shell word.
     pager_command: String,
 }
 
 struct Backup {
-    source: PathBuf,
-    destination: PathBuf,
-    copy_command: String,
+    source: String,
+    destination: String,
 }
 
 impl InstallPlan {
     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config_path = global_config_path(environment)?;
-        let pager_command = shell_quote(utf8(executable, PathRole::Executable)?);
+        let pager_command =
+            shell_words::quote(utf8(executable, PathRole::Executable)?).into_owned();
 
         let backup = match exists(&config_path)? {
             true => Some(Backup::of(config_path)?),
@@ -117,30 +123,15 @@ impl InstallPlan {
             pager_command,
         })
     }
-
-    fn report(self) -> InstallGitDiffPagerReport {
-        let copy_command = self.backup.map(|backup| backup.copy_command);
-        let config_command = format!("git config --global pager.diff {}", self.pager_command);
-
-        InstallGitDiffPagerReport {
-            completed_commands: copy_command.into_iter().chain([config_command]).collect(),
-        }
-    }
 }
 
 impl Backup {
     fn of(source: PathBuf) -> Result<Self, Error> {
         let destination = backup_path(&source);
-        let copy_command = format!(
-            "cp {} {}",
-            shell_quote(utf8(&source, PathRole::Config)?),
-            shell_quote(utf8(&destination, PathRole::Backup)?)
-        );
 
         Ok(Self {
-            source,
-            destination,
-            copy_command,
+            source: utf8(&source, PathRole::Config)?.to_owned(),
+            destination: utf8(&destination, PathRole::Backup)?.to_owned(),
         })
     }
 }
@@ -196,12 +187,6 @@ fn backup_path(config_path: &Path) -> PathBuf {
 
 fn utf8(path: &Path, role: PathRole) -> Result<&str, Error> {
     path.to_str().ok_or(Error::NonUtf8Path(role))
-}
-
-fn shell_quote(value: &str) -> String {
-    let escaped_value = value.replace('\'', "'\"'\"'");
-
-    format!("'{escaped_value}'")
 }
 
 #[cfg(test)]

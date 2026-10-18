@@ -33,6 +33,49 @@ fn install_backs_up_and_configures_the_global_diff_pager() {
     assert!(pager.contains(env!("CARGO_BIN_EXE_hdiff")));
 }
 
+/// architecture.md#input-contract: `--install` prints the `cp` and `git config` commands
+/// it applied, so running them reproduces its writes.
+#[test]
+fn install_prints_the_commands_it_applied() {
+    let env = TestEnv::new();
+    let original_config = "[user]\n\tname = Test User\n";
+    let config_path = env.write_file("gitconfig", original_config);
+    let installation = env
+        .hdiff()
+        .arg("--install")
+        .env("GIT_CONFIG_GLOBAL", &config_path)
+        .output()
+        .expect("run hdiff installer");
+    assert!(installation.status.success(), "{installation:?}");
+    let printed = String::from_utf8(installation.stdout).expect("UTF-8 commands");
+    let [copy_command, config_command] = printed.lines().collect::<Vec<_>>()[..] else {
+        panic!("expected a cp and a git config command, got {printed:?}");
+    };
+    fs::remove_file(env.path("gitconfig.bak")).expect("remove the installer's backup");
+    env.write_file("replayed", "");
+
+    let copied = env
+        .shell(copy_command)
+        .output()
+        .expect("replay the cp command");
+    let configured = env
+        .shell(config_command)
+        .env("GIT_CONFIG_GLOBAL", env.path("replayed"))
+        .output()
+        .expect("replay the git config command");
+
+    assert!(copied.status.success(), "{copied:?}");
+    assert!(configured.status.success(), "{configured:?}");
+    assert_eq!(
+        fs::read_to_string(env.path("gitconfig.bak")).expect("read replayed backup"),
+        fs::read_to_string(&config_path).expect("read installed config")
+    );
+    assert_eq!(
+        configured_value(&env, "replayed", "pager.diff"),
+        configured_value(&env, "gitconfig", "pager.diff")
+    );
+}
+
 #[test]
 fn git_show_preserves_commit_text_and_repeated_file_paths() {
     let env = setup_commit_history();

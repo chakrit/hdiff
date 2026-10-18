@@ -82,6 +82,16 @@ impl TestEnv {
         command
     }
 
+    /// `sh` running `script` in the root, isolated like [`TestEnv::hdiff`].
+    #[allow(dead_code)]
+    pub fn shell(&self, script: &str) -> Command {
+        let mut command = Command::new("sh");
+        command.args(["-c", script]).current_dir(self.root());
+        self.isolate(&mut command);
+
+        command
+    }
+
     fn isolate(&self, command: &mut Command) {
         command
             .env_clear()
