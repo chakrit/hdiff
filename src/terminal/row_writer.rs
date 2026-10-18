@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn keeps_a_cluster_whole_when_its_mark_starts_a_style_segment() {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let addition = file.row(4, DiffGranularity::Character);
 
         let buffer = write(PaneRow::Text(addition), 8, 0);
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn blanks_the_visible_cell_of_a_wide_cluster_cut_by_the_left_edge() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let addition = file.row(3, DiffGranularity::Line);
 
         let buffer = write(PaneRow::Text(addition), 8, 3);
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn leaves_a_wide_cluster_that_does_not_fit_the_right_edge_blank() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let addition = file.row(3, DiffGranularity::Line);
 
         let buffer = write(PaneRow::Text(addition), 5, 0);
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let addition = file.row(3, DiffGranularity::Line);
         let line = |line| {
             write_placed(
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn reports_the_sides_where_a_row_leaves_the_pane() {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let row = PaneRow::Text(file.row(3, DiffGranularity::Line));
         let clip = |width, horizontal_offset| {
             let area = Rect::new(0, 0, width, 1);
@@ -422,7 +422,7 @@ mod tests {
     }
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         let extent = file
             .layout()
             .scroll_extent(DiffLayout::Unified, 3, Wrap::Off);

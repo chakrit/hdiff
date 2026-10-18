@@ -116,6 +116,8 @@ valid diff lines without data loss.
 - `FileView`: a borrowed navigation projection of a file and its surrounding text.
   Leading text appears above the following file; final trailing text appears after
   the last file. Repeated paths remain separate file occurrences.
+  Each file occurrence is one navigation page; a document that holds no file is one page of
+  its surrounding text, with an empty file list.
 - `DiffFile`: file identity, headers, and ordered hunks. Identity (state and path) and
   decoded header paths are derived when the file is parsed; the file tree and syntax
   highlighting read them rather than raw header text.

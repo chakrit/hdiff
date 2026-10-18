@@ -41,9 +41,9 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
     output
 }
 
-pub fn render_text_lines(lines: &[SourceLine]) -> Vec<RenderedLine> {
+pub fn render_text_lines<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Vec<RenderedLine> {
     lines
-        .iter()
+        .into_iter()
         .map(|line| rendered_line(RenderedLineKind::Text, "", line))
         .collect()
 }

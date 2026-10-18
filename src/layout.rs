@@ -3,6 +3,7 @@ use crate::{
     interaction::{DiffLayout, FileList, ViewPreferences, Wrapping},
     line_breaks::wrapped_line_count,
     render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
+    source_text::SourceLine,
     styling::payload,
     tab_stops::expanded_width,
 };
@@ -409,6 +410,11 @@ pub fn file_layout(view: &FileView<'_>) -> Layout {
         .collect::<Vec<_>>();
 
     Layout::new(diff_lines)
+}
+
+/// The layout of a document that holds only surrounding text.
+pub fn text_layout<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Layout {
+    Layout::new(render_text_lines(lines))
 }
 
 fn side_by_side_rows(rendered_lines: &[RenderedLine]) -> Vec<SideBySideRow> {

@@ -29,7 +29,7 @@ pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_row: usize,
+    selected_row: Option<usize>,
     palette: &ChromePalette,
 ) {
     let list_height = MINIMUM_FILE_LIST_HEIGHT + FRAME_ROWS;
@@ -196,13 +196,14 @@ fn render_file_list(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    selected_row: usize,
+    selected_row: Option<usize>,
     palette: &ChromePalette,
 ) {
     let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
     let height = usize::from(content.height);
-    let first = (selected_row + 1).saturating_sub(height);
+    // Without a selected row, the list shows from its top.
+    let first = selected_row.map_or(0, |row| (row + 1).saturating_sub(height));
     let window = LineWindow {
         first,
         total: tree.rows().len(),
@@ -219,7 +220,7 @@ fn render_file_list(
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let mut state = ListState::default().with_selected(Some(selected_row - first));
+    let mut state = ListState::default().with_selected(selected_row.map(|row| row - first));
 
     frame.render_stateful_widget(file_list, content, &mut state);
     list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
@@ -288,7 +289,9 @@ mod tests {
         let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
-            .draw(|frame| render_file_column(frame, frame.area(), prepared.file_tree(), 0, palette))
+            .draw(|frame| {
+                render_file_column(frame, frame.area(), prepared.file_tree(), Some(0), palette)
+            })
             .expect("render file column");
 
         let buffer = terminal.backend().buffer();

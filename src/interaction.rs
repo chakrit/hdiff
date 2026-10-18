@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewport {
     pub vertical_offset: usize,
@@ -188,7 +190,7 @@ impl DiffGranularity {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct NavigationBounds {
-    pub file_count: usize,
+    pub page_count: NonZeroUsize,
     pub target_display: DisplayBounds,
     /// The target display's vertical offset that keeps the input's anchor line in place:
     /// the diff pane's top line for resizes, its middle line otherwise. Resizes, wrapping
@@ -239,8 +241,8 @@ pub fn transition_interaction(
     let preferences = interaction.preferences.after(&input);
 
     match input {
-        Input::NextFile => return select_next_file(interaction, bounds.file_count),
-        Input::PreviousFile => return select_previous_file(interaction, bounds.file_count),
+        Input::NextFile => return select_next_file(interaction, bounds.page_count),
+        Input::PreviousFile => return select_previous_file(interaction, bounds.page_count),
         Input::NextLayout => {
             let viewport =
                 bounded_viewport(viewport.vertical_offset, viewport.height, viewport, display);
@@ -278,23 +280,18 @@ pub fn transition_interaction(
     }
 }
 
-fn select_next_file(interaction: &Interaction, file_count: usize) -> Transition {
-    let selected_file = match file_count {
-        0 => 0,
-        _ => (interaction.selected_file + 1) % file_count,
-    };
+fn select_next_file(interaction: &Interaction, page_count: NonZeroUsize) -> Transition {
+    let selected_file = (interaction.selected_file + 1) % page_count;
 
     redraw_selected_file(interaction, selected_file)
 }
 
-fn select_previous_file(interaction: &Interaction, file_count: usize) -> Transition {
-    let selected_file = match file_count {
-        0 => 0,
-        _ => interaction
-            .selected_file
-            .checked_sub(1)
-            .unwrap_or(file_count - 1),
-    };
+fn select_previous_file(interaction: &Interaction, page_count: NonZeroUsize) -> Transition {
+    let last_page = page_count.get() - 1;
+    let selected_file = interaction
+        .selected_file
+        .checked_sub(1)
+        .unwrap_or(last_page);
 
     redraw_selected_file(interaction, selected_file)
 }
@@ -450,11 +447,15 @@ fn redraw_horizontal(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::{
         DiffGranularity, DiffLayout, DisplayBounds, FileList, Input, Interaction, KeymapPopup,
         NavigationBounds, Transition, ViewPreferences, Viewport, Wrapping, transition,
         transition_interaction,
     };
+
+    const TWO_PAGES: NonZeroUsize = NonZeroUsize::new(2).expect("two is nonzero");
 
     #[test]
     fn moves_and_clamps_the_vertical_viewport() {
@@ -503,7 +504,7 @@ mod tests {
             maximum_horizontal_offset: 3,
         };
         let bounds = NavigationBounds {
-            file_count: 1,
+            page_count: NonZeroUsize::MIN,
             target_display: display,
             anchored_vertical_offset: 0,
         };
@@ -554,7 +555,7 @@ mod tests {
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
-            file_count: 1,
+            page_count: NonZeroUsize::MIN,
             target_display: display,
             anchored_vertical_offset: 0,
         };
@@ -611,7 +612,7 @@ mod tests {
         };
         let resize = |anchored_vertical_offset| {
             let bounds = NavigationBounds {
-                file_count: 1,
+                page_count: NonZeroUsize::MIN,
                 target_display: DisplayBounds {
                     maximum_vertical_offset: 5,
                     maximum_horizontal_offset: 3,
@@ -656,7 +657,7 @@ mod tests {
             },
         };
         let bounds = NavigationBounds {
-            file_count: 1,
+            page_count: NonZeroUsize::MIN,
             target_display: DisplayBounds {
                 maximum_vertical_offset: 20,
                 maximum_horizontal_offset: 0,
@@ -694,7 +695,7 @@ mod tests {
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
-            file_count: 2,
+            page_count: TWO_PAGES,
             target_display: display,
             anchored_vertical_offset: 0,
         };
@@ -735,7 +736,7 @@ mod tests {
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
-            file_count: 2,
+            page_count: TWO_PAGES,
             target_display: display,
             anchored_vertical_offset: 0,
         };
@@ -776,7 +777,7 @@ mod tests {
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
-            file_count: 2,
+            page_count: TWO_PAGES,
             target_display: display,
             anchored_vertical_offset: 0,
         };
@@ -820,7 +821,7 @@ mod tests {
             maximum_horizontal_offset: 12,
         };
         let bounds = NavigationBounds {
-            file_count: 2,
+            page_count: TWO_PAGES,
             target_display: display,
             anchored_vertical_offset: 4,
         };
@@ -885,7 +886,7 @@ mod tests {
             },
         };
         let bounds = NavigationBounds {
-            file_count: 2,
+            page_count: TWO_PAGES,
             target_display: DisplayBounds {
                 maximum_vertical_offset: 7,
                 maximum_horizontal_offset: 12,
@@ -925,7 +926,7 @@ mod tests {
             },
         };
         let bounds = NavigationBounds {
-            file_count: 1,
+            page_count: NonZeroUsize::MIN,
             target_display: DisplayBounds {
                 maximum_vertical_offset: 20,
                 maximum_horizontal_offset: 4,

@@ -8,7 +8,7 @@ use crate::{
     file_tree::FileTree,
     interaction::{DiffLayout, Interaction, KeymapPopup},
     layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
-    prepared::PreparedFile,
+    prepared::PreparedPage,
     styling::StyledRow,
     theme::Theme,
 };
@@ -54,9 +54,7 @@ fn render_document(
     theme: &Theme,
 ) {
     let prepared = PreparedDocument::prepare(document);
-    let file = prepared
-        .file(interaction.selected_file)
-        .expect("selected prepared file");
+    let file = prepared.page(interaction.selected_file);
     let preferences = interaction.preferences;
     let wrap = Wrap::of(preferences, interaction.viewport.width);
     let extent = file
@@ -73,12 +71,12 @@ fn render_document(
     );
 }
 
-/// Draws `file` through `extent`, the scroll extent of the interaction's layout and
+/// Draws `page` through `extent`, the scroll extent of the interaction's layout and
 /// context count, beside the file list of `tree`.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
     tree: &FileTree,
-    file: &PreparedFile,
+    page: &PreparedPage,
     extent: &ScrollExtent,
     interaction: &Interaction,
     theme: &Theme,
@@ -88,10 +86,10 @@ pub(super) fn render_prepared_frame(
     let granularity = interaction.preferences.granularity;
     let viewport = &interaction.viewport;
     let side_by_side_rows =
-        || visible_side_by_side_rows(file, extent, viewport, granularity, row_limit);
+        || visible_side_by_side_rows(page, extent, viewport, granularity, row_limit);
     let rows = match interaction.preferences.layout {
         DiffLayout::Unified => LayoutRows::Unified(visible_diff_rows(
-            file,
+            page,
             extent,
             viewport,
             granularity,
@@ -138,7 +136,7 @@ pub(super) fn render_prepared_frame(
             ])
             .areas(area);
 
-            render_file_column(frame, file_column, tree, file.list_row(), &theme.chrome);
+            render_file_column(frame, file_column, tree, page.list_row(), &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), separator, &theme.chrome);
             render_display_layout(frame, display, diff);
         }
@@ -720,7 +718,7 @@ mod tests {
         )
         .expect("valid unmatched Rust changes");
         let prepared = PreparedDocument::prepare(&document);
-        let file = prepared.file(1).expect("second prepared file");
+        let file = prepared.page(1);
         let tree = prepared.file_tree();
         let extent = file
             .layout()
@@ -737,7 +735,7 @@ mod tests {
             },
         };
         let bounds = NavigationBounds {
-            file_count: prepared.file_count(),
+            page_count: prepared.page_count(),
             target_display: DisplayBounds {
                 maximum_vertical_offset: file.layout().diff_lines.len().saturating_sub(30),
                 maximum_horizontal_offset: 1,

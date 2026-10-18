@@ -1,7 +1,7 @@
-use std::{io, time::Duration};
+use std::{io, num::NonZeroUsize, time::Duration};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Terminal, backend::Backend, layout::Size, widgets::Paragraph};
+use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
     interaction::{
@@ -121,7 +121,7 @@ impl Tui {
         );
         let target_extent = self.extent.select(&self.document, target);
         let bounds = navigation_bounds(
-            self.document.file_count(),
+            self.document.page_count(),
             &self.interaction,
             &input,
             target_extent,
@@ -142,11 +142,7 @@ impl Tui {
     }
 
     pub fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
-        let Some(file) = self.document.file(self.interaction.selected_file) else {
-            return terminal
-                .draw(|frame| frame.render_widget(Paragraph::new(""), frame.area()))
-                .map(|_| ());
-        };
+        let page = self.document.page(self.interaction.selected_file);
         let tree = self.document.file_tree();
 
         terminal
@@ -154,7 +150,7 @@ impl Tui {
                 view::render_prepared_frame(
                     frame,
                     tree,
-                    file,
+                    page,
                     &self.extent.extent,
                     &self.interaction,
                     self.theme,
@@ -173,14 +169,11 @@ struct KeyedExtent {
 
 impl KeyedExtent {
     fn build(document: &PreparedDocument, key: ExtentKey) -> Self {
-        // A document without files shows no rows.
-        let extent = document
-            .file(key.file)
-            .map(|file| {
-                file.layout()
-                    .scroll_extent(key.layout, key.context_lines, key.wrap)
-            })
-            .unwrap_or_default();
+        let extent =
+            document
+                .page(key.file)
+                .layout()
+                .scroll_extent(key.layout, key.context_lines, key.wrap);
 
         Self { key, extent }
     }
@@ -290,7 +283,7 @@ impl Focus {
 
 /// Bounds of the display `input` leads to, whose rows are `target_extent`.
 fn navigation_bounds(
-    file_count: usize,
+    page_count: NonZeroUsize,
     interaction: &Interaction,
     input: &Input,
     target_extent: &ScrollExtent,
@@ -302,7 +295,7 @@ fn navigation_bounds(
     let pane_height = content_pane_height(screen_height, display_preferences.layout);
 
     NavigationBounds {
-        file_count,
+        page_count,
         target_display: DisplayBounds {
             maximum_vertical_offset: target_extent.line_count().saturating_sub(pane_height),
             maximum_horizontal_offset: maximum_horizontal_offset(target_extent.width(), pane_width),
@@ -406,12 +399,12 @@ mod tests {
                         super::view::render_prepared_frame(
                             frame,
                             prepared.file_tree(),
-                            prepared.file(selected_file).expect("file occurrence"),
-                            &prepared
-                                .file(selected_file)
-                                .expect("file occurrence")
-                                .layout()
-                                .scroll_extent(layout, 3, Wrap::Off),
+                            prepared.page(selected_file),
+                            &prepared.page(selected_file).layout().scroll_extent(
+                                layout,
+                                3,
+                                Wrap::Off,
+                            ),
                             &interaction,
                             Theme::for_depth(ColorDepth::TrueColor),
                         )
@@ -430,6 +423,38 @@ mod tests {
                 assert_eq!(text.matches("trailer").count(), trailers, "{layout:?}");
             }
         }
+    }
+
+    /// Contract: docs/spec/architecture.md#input-contract (comparison output holding only
+    /// surrounding text is shown).
+    #[test]
+    fn shows_comparison_output_that_holds_only_text() {
+        use crate::{parser::parse_comparison_output, prepared::PreparedDocument};
+        use ratatui::{Terminal, backend::TestBackend, layout::Size};
+
+        let document = parse_comparison_output(b"Binary files a.bin and b.bin differ\n")
+            .expect("text-only comparison output");
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
+        let mut tui = super::Tui::new(
+            PreparedDocument::prepare(&document),
+            Size::new(120, 30),
+            ColorDepth::TrueColor,
+        );
+
+        tui.draw(&mut terminal).expect("initial frame");
+        for key in [KeyCode::Char('j'), KeyCode::Tab, KeyCode::BackTab] {
+            let event = CrosstermEvent::Key(KeyEvent::new(key, KeyModifiers::NONE));
+            tui.step(&mut terminal, event).expect("step");
+        }
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        assert!(text.contains("Binary files a.bin and b.bin differ"));
     }
 
     #[test]

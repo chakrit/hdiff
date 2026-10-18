@@ -1,22 +1,29 @@
+use std::num::NonZeroUsize;
+
 use crate::{
     detail::detail_rows,
     document::{DiffDocument, FileView},
-    file_tree::FileTree,
+    file_tree::{FileTree, ListedFile},
     interaction::DiffGranularity,
-    layout::{Layout, file_layout},
+    layout::{Layout, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
+    render::RenderedLineKind,
     styling::{StyledLayout, StyledRow},
     syntax::{SyntaxHighlighter, SyntaxSpan},
 };
 
+/// A document ready to draw: at least one page, and the file list.
 pub struct PreparedDocument {
-    files: Vec<PreparedFile>,
+    first: PreparedPage,
+    rest: Box<[PreparedPage]>,
     file_tree: FileTree,
 }
 
-pub struct PreparedFile {
+/// What one selection shows: a file occurrence with its surrounding text, or all the
+/// text of a document that holds no file.
+pub struct PreparedPage {
     rows: StyledLayout,
-    list_row: usize,
+    list_row: Option<usize>,
 }
 
 impl PreparedDocument {
@@ -25,40 +32,60 @@ impl PreparedDocument {
     }
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
-        let mut syntax = SyntaxHighlighter::default();
         let views = document.file_views().collect::<Vec<_>>();
         let file_tree = observer.measure(Stage::Labels, |_| FileTree::build(&views));
 
-        let files = file_tree
-            .files()
-            .iter()
-            .map(|listed| {
-                PreparedFile::prepare(views[listed.view], listed.row, &mut syntax, observer)
-            })
-            .collect();
+        let (first, rest) = match file_tree.files() {
+            [] => (PreparedPage::text(document, observer), Vec::new()),
+            [first, rest @ ..] => {
+                let mut syntax = SyntaxHighlighter::default();
+                let mut prepare = |listed: &ListedFile| {
+                    PreparedPage::file(views[listed.view], listed.row, &mut syntax, observer)
+                };
+                (prepare(first), rest.iter().map(prepare).collect())
+            }
+        };
 
-        Self { files, file_tree }
+        Self {
+            first,
+            rest: rest.into_boxed_slice(),
+            file_tree,
+        }
     }
 
-    pub fn file(&self, index: usize) -> Option<&PreparedFile> {
-        self.files.get(index)
+    /// The page at `index`.
+    ///
+    /// Panics when `index` is not below [`page_count`](Self::page_count).
+    pub fn page(&self, index: usize) -> &PreparedPage {
+        match index.checked_sub(1) {
+            None => &self.first,
+            Some(rest_index) => &self.rest[rest_index],
+        }
+    }
+
+    pub fn page_count(&self) -> NonZeroUsize {
+        NonZeroUsize::MIN.saturating_add(self.rest.len())
     }
 
     pub fn file_count(&self) -> usize {
-        self.files.len()
+        self.file_tree.files().len()
     }
 
     pub fn record_count(&self) -> usize {
-        self.files.iter().map(PreparedFile::record_count).sum()
+        self.pages().map(PreparedPage::record_count).sum()
     }
 
     pub fn file_tree(&self) -> &FileTree {
         &self.file_tree
     }
+
+    fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
 }
 
-impl PreparedFile {
-    fn prepare(
+impl PreparedPage {
+    fn file(
         file: FileView<'_>,
         list_row: usize,
         syntax: &mut SyntaxHighlighter,
@@ -78,12 +105,29 @@ impl PreparedFile {
 
         Self {
             rows: StyledLayout::new(layout, &syntax, &character_details),
-            list_row,
+            list_row: Some(list_row),
         }
     }
 
-    /// The file's row in the [file tree](FileTree).
-    pub fn list_row(&self) -> usize {
+    /// Surrounding text has no syntax or character detail.
+    fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
+        let layout = observer.measure(Stage::Layout, |_| text_layout(document.text()));
+        let row_count = layout.diff_lines.len();
+        let syntax = std::iter::repeat_with(Vec::new)
+            .take(row_count)
+            .collect::<Vec<_>>();
+        let details = std::iter::repeat_with(Vec::new)
+            .take(row_count)
+            .collect::<Vec<_>>();
+
+        Self {
+            rows: StyledLayout::new(layout, &syntax, &details),
+            list_row: None,
+        }
+    }
+
+    /// The page's file row in the [file tree](FileTree); a text page lists no file.
+    pub fn list_row(&self) -> Option<usize> {
         self.list_row
     }
 
@@ -99,7 +143,7 @@ impl PreparedFile {
         self.layout()
             .diff_lines
             .iter()
-            .filter(|line| matches!(line.kind, crate::render::RenderedLineKind::Record(_)))
+            .filter(|line| matches!(line.kind, RenderedLineKind::Record(_)))
             .count()
     }
 }
@@ -125,7 +169,7 @@ mod tests {
         .iter()
         .enumerate()
         {
-            let file = prepared.file(index).expect("separate file occurrence");
+            let file = prepared.page(index);
             let rendered: Vec<u8> = file
                 .layout()
                 .diff_lines
@@ -159,7 +203,7 @@ mod tests {
 
         assert_eq!(ordinary.file_tree(), observed.file_tree());
         assert_eq!(ordinary.record_count(), observed.record_count());
-        for (ordinary, observed) in ordinary.files.iter().zip(&observed.files) {
+        for (ordinary, observed) in ordinary.pages().zip(observed.pages()) {
             assert_eq!(ordinary.rows, observed.rows);
         }
     }
@@ -183,7 +227,7 @@ mod tests {
 
         let prepared = PreparedDocument::prepare(&document);
 
-        let file = prepared.file(0).expect("prepared file");
+        let file = prepared.page(0);
         assert!((0..file.layout().diff_lines.len()).any(|row| {
             file.row(row, DiffGranularity::Character)
                 .segments()

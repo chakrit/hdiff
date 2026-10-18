@@ -3,7 +3,7 @@ use ratatui::style::{Modifier, Style};
 use crate::{
     interaction::{DiffGranularity, Viewport},
     layout::{ScrollExtent, SideBySideRow},
-    prepared::PreparedFile,
+    prepared::PreparedPage,
     styling::{RowKind, StyledRow, TextStyle},
     theme::{RowPalette, Theme},
 };
@@ -57,7 +57,7 @@ pub(super) struct VisibleLine<R> {
 }
 
 pub(super) fn visible_diff_rows<'a>(
-    file: &'a PreparedFile,
+    file: &'a PreparedPage,
     extent: &ScrollExtent,
     viewport: &Viewport,
     granularity: DiffGranularity,
@@ -73,7 +73,7 @@ pub(super) fn visible_diff_rows<'a>(
 }
 
 pub(super) fn visible_side_by_side_rows<'a>(
-    file: &'a PreparedFile,
+    file: &'a PreparedPage,
     extent: &ScrollExtent,
     viewport: &Viewport,
     granularity: DiffGranularity,

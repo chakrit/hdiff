@@ -29,6 +29,14 @@ impl DiffDocument {
         })
     }
 
+    /// Every surrounding-text line, in input order.
+    pub fn text(&self) -> impl Iterator<Item = &SourceLine> {
+        self.sections.iter().flat_map(|section| match section {
+            Section::Text(lines) => lines.as_ref(),
+            Section::File(_) => &[],
+        })
+    }
+
     pub fn file(&self, index: usize) -> Option<&DiffFile> {
         self.files().nth(index)
     }
