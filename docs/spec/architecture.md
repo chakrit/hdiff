@@ -241,7 +241,8 @@ unrecognized arguments are treated as paths, subject to the operand-count limit.
 Errors write their message to standard error with every line prefixed `hdiff: ` and exit
 with status 2, `diff`'s status for trouble. Unreadable files are named in the message;
 a failed comparison reports `diff`'s own standard error. A malformed diff section names
-its 1-based input line; input that holds no diff names no line.
+its 1-based input line; input that holds no diff names no line. A failed error report
+still exits with status 2.
 
 ## Interaction model
 

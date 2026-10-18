@@ -8,6 +8,7 @@ use std::{
 
 use hdiff::{
     actions::{
+        compare_files::DiffStatus,
         install_git_diff_pager::{
             self, GitConfigEnvironment, InstallGitDiffPager, InstallGitDiffPagerContext,
         },
@@ -22,23 +23,24 @@ use hdiff::{
     render, terminal,
 };
 
-/// The exit status for every error, following `diff`'s status for trouble.
-/// Contract: docs/spec/architecture.md#error-output.
-const ERROR_STATUS: u8 = 2;
-
 fn main() -> ExitCode {
     let Err(error) = run() else {
         return ExitCode::SUCCESS;
     };
 
-    report(&error);
-    ExitCode::from(ERROR_STATUS)
+    // Contract: docs/spec/architecture.md#error-output.
+    let trouble = ExitCode::from(DiffStatus::Trouble.code());
+    match report(&error) {
+        Ok(()) => trouble,
+        // Standard error was the last channel left; the exit status still reports trouble.
+        Err(_unreported) => trouble,
+    }
 }
 
 fn run() -> Result<(), RunError> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
-    let stdin = StdinState::inspect()?;
-    let invocation = cli::select_invocation(&arguments, stdin)?;
+    let stdin = StdinState::inspect().map_err(RunError::Input)?;
+    let invocation = cli::select_invocation(&arguments, stdin).map_err(RunError::Usage)?;
 
     match invocation {
         Invocation::Help => write_stdout(cli::HELP.as_bytes()),
@@ -66,12 +68,12 @@ fn install() -> Result<(), RunError> {
 }
 
 fn view(source: input::Source) -> Result<(), RunError> {
-    let content = source.read()?;
+    let content = source.read().map_err(RunError::Input)?;
     if content.bytes().is_empty() {
         return Ok(());
     }
 
-    let document = content.parse()?;
+    let document = content.parse().map_err(RunError::Parse)?;
     render_document(document)
 }
 
@@ -104,24 +106,19 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
 }
 
 /// Writes `error` to standard error with every line naming the program.
-fn report(error: &RunError) {
+fn report(error: &RunError) -> io::Result<()> {
     let message = error
         .to_string()
         .lines()
         .map(|line| format!("hdiff: {line}\n"))
         .collect::<String>();
 
-    let written = WriteOutput {
+    WriteOutput {
         bytes: message.as_bytes(),
     }
     .run(&mut OutputContext {
         writer: &mut io::stderr(),
-    });
-
-    // A failed error report has nowhere left to go; the exit status still reports failure.
-    match written {
-        Ok(()) | Err(_) => {}
-    }
+    })
 }
 
 #[derive(Debug)]
@@ -150,23 +147,5 @@ impl fmt::Display for RunError {
             Self::Output(error) => write!(formatter, "standard output: {error}"),
             Self::Terminal(error) => write!(formatter, "terminal: {error}"),
         }
-    }
-}
-
-impl From<UsageError> for RunError {
-    fn from(error: UsageError) -> Self {
-        Self::Usage(error)
-    }
-}
-
-impl From<input::Error> for RunError {
-    fn from(error: input::Error) -> Self {
-        Self::Input(error)
-    }
-}
-
-impl From<ParseError> for RunError {
-    fn from(error: ParseError) -> Self {
-        Self::Parse(error)
     }
 }
