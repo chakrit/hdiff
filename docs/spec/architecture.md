@@ -77,11 +77,12 @@ input bytes
 
 The parser owns interpretation of unified diff syntax. The document owns the
 loss-preserving representation of what was received. Preparation owns retained display
-rows, split pairs, and style partitions. Interaction state owns selection, scroll
-position, and view mode. Visible layout derives pane geometry and visibility from prepared
-content, interaction state, and terminal size. The terminal adapter owns raw-mode setup,
-input events, drawing, resize events, and restoration on exit. Finite output renders the
-document directly without entering the interactive preparation and terminal path.
+rows, split pairs, and style partitions. Interaction state is the `Interaction` of the
+[core model](#core-model). Visible layout derives pane geometry and visibility from
+prepared content, interaction state, and terminal size. The terminal adapter owns raw-mode
+setup, input events, drawing, resize events, and restoration on exit. Finite output
+renders the document directly without entering the interactive preparation and terminal
+path.
 
 ### Interactive loop
 
@@ -153,9 +154,9 @@ screen size. An event's transition returns an outcome: exit, redraw, or an effec
 navigation applies to give the next state; every continuing step then draws. A transition
 does not reach into the terminal or document. The selected page, viewport position, and
 preferences are authoritative interaction state. Wrapping, row numbers, pane geometry, and
-rendered rows are derived. Navigation, which finds the display an event leads to and its
-bounds, is independent of the terminal. This makes navigation testable without a real
-terminal and keeps invalid positions out of the renderer.
+rendered rows are derived. Navigation, which holds the interaction and finds the display
+an event leads to and its bounds, is independent of the terminal. This makes navigation
+testable without a real terminal and keeps invalid positions out of the renderer.
 
 ## Input contract
 
@@ -529,9 +530,9 @@ Setup errors after the controlling terminal opens propagate.
 
 ## Interaction and layout state
 
-Interaction state holds the selection, the viewport, the preferences, and the keymap
-popup; navigation derives the effective view. Resize is an event; visible layout is
-recomputed from retained content and the latest dimensions, following the [interaction
+Interaction state is the `Interaction` of the [core model](#core-model); navigation holds
+it and derives the effective view. Resize is an event; visible layout is recomputed from
+retained content and the latest dimensions, following the [interaction
 model](#interaction-model). Zero-sized layouts remain valid values rather than arithmetic
 errors.
 

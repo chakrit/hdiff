@@ -4,9 +4,9 @@
 use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::{
-    interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
+    navigation::interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
+    navigation::scroll::Movement,
     preferences::PreferenceChange,
-    scroll::Movement,
 };
 
 /// The session event a terminal event stands for, if any.
@@ -330,9 +330,9 @@ mod tests {
 
     use super::{Key, all_bindings, event_for, keymap_closing_keys};
     use crate::{
-        interaction::{Command, Event, KeymapCommand, PageStep},
+        navigation::interaction::{Command, Event, KeymapCommand, PageStep},
+        navigation::scroll::Movement,
         preferences::PreferenceChange,
-        scroll::Movement,
     };
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {

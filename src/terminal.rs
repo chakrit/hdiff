@@ -7,8 +7,8 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    interaction::{Interaction, Outcome},
     navigation::Navigation,
+    navigation::interaction::Outcome,
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},
@@ -55,26 +55,23 @@ pub enum Step {
 /// The interactive loop. Contract: docs/spec/architecture.md#interactive-loop.
 pub struct Tui {
     document: PreparedDocument,
-    interaction: Interaction,
     navigation: Navigation,
     theme: &'static Theme,
 }
 
 impl Tui {
     pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
-        let interaction = Interaction::start(ViewPreferences::INITIAL, screen);
-        let navigation = Navigation::new(&document, &interaction);
+        let navigation = Navigation::start(&document, ViewPreferences::INITIAL, screen);
 
         Self {
             document,
-            interaction,
             navigation,
             theme: Theme::for_depth(color_depth),
         }
     }
 
     pub fn preferences(&self) -> ViewPreferences {
-        self.interaction.preferences()
+        self.navigation.interaction().preferences()
     }
 
     pub fn run<B: Backend<Error = io::Error>>(
@@ -97,27 +94,19 @@ impl Tui {
         terminal: &mut Terminal<B>,
         event: TerminalEvent,
     ) -> Result<Step, B::Error> {
-        let keymap = self.interaction.keymap();
+        let keymap = self.navigation.interaction().keymap();
         let Some(event) = bindings::event_for(event).and_then(|event| event.admitted(keymap))
         else {
             return Ok(Step::Continue);
         };
         let screen = next_frame_size(terminal)?;
-        adopt_screen(
-            &self.document,
-            &mut self.interaction,
-            &mut self.navigation,
-            screen,
-        );
+        self.navigation.adopt_screen(&self.document, screen);
 
-        match self.interaction.respond(event, self.document.page_count()) {
+        let pages = self.document.page_count();
+        match self.navigation.interaction().respond(event, pages) {
             Outcome::Exit => return Ok(Step::Exit),
             Outcome::Redraw => {}
-            Outcome::Effect(effect) => {
-                self.interaction = self
-                    .navigation
-                    .step(&self.document, &self.interaction, effect);
-            }
+            Outcome::Effect(effect) => self.navigation.step(&self.document, effect),
         }
 
         self.draw(terminal)?;
@@ -129,16 +118,15 @@ impl Tui {
     pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
         let Self {
             document,
-            interaction,
             navigation,
             theme,
         } = self;
 
         terminal
             .draw(|frame| {
-                adopt_screen(document, interaction, navigation, frame.area().as_size());
+                navigation.adopt_screen(document, frame.area().as_size());
 
-                view::render_prepared_frame(frame, document, navigation, interaction, theme)
+                view::render_prepared_frame(frame, document, navigation, theme)
             })
             .map(|_| ())
     }
@@ -148,20 +136,6 @@ impl Tui {
 fn next_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
     terminal.autoresize()?;
     Ok(terminal.get_frame().area().as_size())
-}
-
-/// Resizes `interaction` to `screen` when the screen it shows has another size.
-fn adopt_screen(
-    document: &PreparedDocument,
-    interaction: &mut Interaction,
-    navigation: &mut Navigation,
-    screen: Size,
-) {
-    if screen == interaction.screen() {
-        return;
-    }
-
-    *interaction = navigation.resize(document, interaction, screen);
 }
 
 /// Blocking terminal events with consecutive resizes coalesced into the latest one.

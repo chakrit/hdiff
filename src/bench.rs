@@ -17,11 +17,11 @@ use ratatui::{
 use crate::{
     document::DiffDocument,
     input,
-    interaction::Command,
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
+    navigation::interaction::Command,
+    navigation::scroll::Movement,
     preferences::PreferenceChange,
     prepared::PreparedDocument,
-    scroll::Movement,
     terminal::{self, Tui},
     theme::ColorDepth,
 };

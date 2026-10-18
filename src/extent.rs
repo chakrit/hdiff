@@ -4,45 +4,13 @@
 
 use crate::{
     compact::Count,
+    effective_view::WrapWidth,
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
     page_rows::{LineIndex, PageRows, PairIndex},
-    preferences::Wrapping,
     prepared::{PageIndex, PreparedDocument},
-    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
+    screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
 };
-
-/// The width at which rows break into screen lines.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WrapWidth {
-    /// Every row is one line, scrolled horizontally.
-    Unbounded,
-    /// Payloads wrap at this many cells.
-    At(NonZeroCells),
-}
-
-impl WrapWidth {
-    /// The wrap width `wrapping` selects for panes whose narrowest content is
-    /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
-    /// width. A pane with no room for payload wraps one cell per line.
-    pub fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
-        let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
-        let wrap_width = NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN);
-
-        match wrapping {
-            Wrapping::Disabled => Self::Unbounded,
-            Wrapping::Enabled => Self::At(wrap_width),
-        }
-    }
-
-    /// Cells of a payload `width` cells wide that the pane must scroll through.
-    fn visible_width(self, width: Cells) -> Cells {
-        match self {
-            Self::Unbounded => width,
-            Self::At(cells) => width.min(cells.get()),
-        }
-    }
-}
 
 /// What a page's rows are shown with: the pane shape, the context count, and the wrap
 /// width.
@@ -443,14 +411,15 @@ struct LineEnds {
     line_ends: Box<[Count]>,
     width: Cells,
 }
+
 #[cfg(test)]
 mod tests {
-    use super::{DisplayExtent, ExtentSettings, RowAnchor, ScreenLine, ShownLines, WrapWidth};
+    use super::{DisplayExtent, ExtentSettings, RowAnchor, ScreenLine, ShownLines};
     use crate::{
+        effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
         page_rows::{LineIndex, PairIndex},
         parser::parse_patch,
-        preferences::Wrapping,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
     };
@@ -643,16 +612,6 @@ mod tests {
             "the paired row takes its taller side's three lines"
         );
         assert_eq!(pair_lines(&vertical, 5, 2), [pair(3, 2), pair(4, 0)]);
-    }
-
-    #[test]
-    fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
-        let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
-
-        assert_eq!(wrap(Wrapping::Enabled, 24), wrap_at(22));
-        assert_eq!(wrap(Wrapping::Enabled, 51), wrap_at(49));
-        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Unbounded);
-        assert_eq!(wrap(Wrapping::Enabled, 78), wrap_at(76));
     }
 
     /// architecture.md (View model): an anchored row keeps its place when its layout

@@ -65,12 +65,13 @@ pub struct FileColumn {
     pub separator: Rect,
 }
 
-/// The old and new panes of a split shape, frames included, and the separator between
-/// them.
+/// The old and new panes of a split in one direction, frames included, and the separator
+/// between them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SplitPanes {
-    pub panes: BySide<Rect>,
-    pub separator: Rect,
+    direction: SplitDirection,
+    panes: BySide<Rect>,
+    separator: Rect,
 }
 
 /// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
@@ -176,9 +177,22 @@ impl SplitPanes {
         };
 
         Self {
+            direction,
             panes: BySide { old, new },
             separator,
         }
+    }
+
+    pub fn direction(&self) -> SplitDirection {
+        self.direction
+    }
+
+    pub fn panes(&self) -> BySide<Rect> {
+        self.panes
+    }
+
+    pub fn separator(&self) -> Rect {
+        self.separator
     }
 
     fn content_width(self) -> u16 {

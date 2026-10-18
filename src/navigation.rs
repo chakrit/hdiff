@@ -1,35 +1,49 @@
-//! Where an effect leads the interaction: the effective view and scroll extent it shows,
-//! and the scroll position within their bounds. Rules: `docs/spec/architecture.md` (View
-//! model, Viewport coordinates).
+//! Where an effect leads the interaction: the interaction navigation holds, the effective
+//! view and scroll extent it shows, and the scroll position within their bounds. Rules:
+//! `docs/spec/architecture.md` (Core model, View model, Viewport coordinates).
+
+pub mod interaction;
+pub mod scroll;
 
 use ratatui::layout::Size;
 
+use self::{
+    interaction::{AnchorLine, Effect, Interaction, Placement},
+    scroll::{BoundedScroll, DisplayBounds, ScrollPosition},
+};
 use crate::{
     effective_view::EffectiveView,
     extent::{DisplayExtent, ExtentSettings},
-    interaction::{AnchorLine, Effect, Interaction, Placement},
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     screen::ScreenLines,
-    scroll::{BoundedScroll, DisplayBounds, ScrollPosition},
 };
 
-/// The effective view and scroll extent of the interaction navigation last led to. The
-/// extent is rebuilt only when its page or settings change.
+/// The interaction a session is at, with the effective view and scroll extent that show
+/// it. The extent is rebuilt only when its page or settings change.
 pub struct Navigation {
+    interaction: Interaction,
     view: EffectiveView,
     extent: DisplayExtent,
 }
 
 impl Navigation {
-    pub fn new(document: &PreparedDocument, interaction: &Interaction) -> Self {
-        let view = EffectiveView::of(interaction.preferences(), interaction.screen());
-        let settings = settings_of(interaction.preferences(), &view);
+    /// The first page of `document` with `preferences` on a `screen`-sized terminal, at its
+    /// start.
+    pub fn start(document: &PreparedDocument, preferences: ViewPreferences, screen: Size) -> Self {
+        let interaction = Interaction::start(preferences, screen);
+        let view = EffectiveView::of(preferences, screen);
+        let settings = settings_of(preferences, &view);
 
         Self {
+            interaction,
             view,
             extent: DisplayExtent::of(document, interaction.page(), settings),
         }
+    }
+
+    pub fn interaction(&self) -> &Interaction {
+        &self.interaction
     }
 
     pub fn view(&self) -> &EffectiveView {
@@ -40,58 +54,45 @@ impl Navigation {
         &self.extent
     }
 
-    /// The interaction `effect` leads `interaction` to; the view and extent then show it.
-    pub fn step(
-        &mut self,
-        document: &PreparedDocument,
-        interaction: &Interaction,
-        effect: Effect,
-    ) -> Interaction {
-        match effect {
+    /// Leads the interaction where `effect` asks; the view and extent then show it.
+    pub fn step(&mut self, document: &PreparedDocument, effect: Effect) {
+        let interaction = self.interaction;
+
+        self.interaction = match effect {
             Effect::Scroll(movement) => {
-                let bounds = DisplayBounds::of(&self.extent, &self.view);
+                let bounds = bounds_of(&self.extent, &self.view);
                 interaction.scrolled(interaction.scroll().moved(movement, bounds))
             }
             Effect::Keymap(keymap) => interaction.with_keymap(keymap),
             Effect::TurnPage(page) => {
                 let preferences = interaction.preferences();
-                let screen = interaction.screen();
-                self.view = EffectiveView::of(preferences, screen);
-
+                // A page turn keeps the preferences and screen the view derives from.
                 let settings = settings_of(preferences, &self.view);
                 self.extent.turn_to(document, page, settings);
-                interaction.shown(page, preferences, screen, BoundedScroll::START)
+                interaction.shown(
+                    page,
+                    preferences,
+                    interaction.screen(),
+                    BoundedScroll::START,
+                )
             }
             Effect::Redisplay {
                 preferences,
                 placement,
-            } => self.redisplay(
-                document,
-                interaction,
-                preferences,
-                interaction.screen(),
-                placement,
-            ),
-        }
+            } => self.redisplay(document, preferences, interaction.screen(), placement),
+        };
     }
 
-    /// `interaction` on a `screen`-sized terminal, keeping the row on the diff pane's top
-    /// line there.
-    pub fn resize(
-        &mut self,
-        document: &PreparedDocument,
-        interaction: &Interaction,
-        screen: Size,
-    ) -> Interaction {
-        let placement = Placement::Anchor(AnchorLine::PaneTop);
+    /// Shows the interaction on a `screen`-sized terminal when it shows another size,
+    /// keeping the row on the diff pane's top line there.
+    pub fn adopt_screen(&mut self, document: &PreparedDocument, screen: Size) {
+        if screen == self.interaction.screen() {
+            return;
+        }
 
-        self.redisplay(
-            document,
-            interaction,
-            interaction.preferences(),
-            screen,
-            placement,
-        )
+        let preferences = self.interaction.preferences();
+        let placement = Placement::Anchor(AnchorLine::PaneTop);
+        self.interaction = self.redisplay(document, preferences, screen, placement);
     }
 
     /// The same page with `preferences` on a `screen`-sized terminal, its first line placed
@@ -99,12 +100,11 @@ impl Navigation {
     fn redisplay(
         &mut self,
         document: &PreparedDocument,
-        interaction: &Interaction,
         preferences: ViewPreferences,
         screen: Size,
         placement: Placement,
     ) -> Interaction {
-        let current = interaction.scroll().position();
+        let current = self.interaction.scroll().position();
         let view = EffectiveView::of(preferences, screen);
         let settings = settings_of(preferences, &view);
 
@@ -129,8 +129,9 @@ impl Navigation {
             vertical,
             ..current
         };
-        let scroll = DisplayBounds::of(&self.extent, &self.view).clamp(start);
-        interaction.shown(interaction.page(), preferences, screen, scroll)
+        let scroll = bounds_of(&self.extent, &self.view).clamp(start);
+        let page = self.interaction.page();
+        self.interaction.shown(page, preferences, screen, scroll)
     }
 
     /// The diff-pane line `anchor` names in the view shown now.
@@ -151,18 +152,31 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
     }
 }
 
+/// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
+fn bounds_of(extent: &DisplayExtent, view: &EffectiveView) -> DisplayBounds {
+    let content = view.pane_content();
+
+    DisplayBounds::new(
+        extent.line_count().saturating_sub(content.height),
+        extent.width().saturating_sub(content.width),
+        content.height,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::layout::Size;
 
-    use super::Navigation;
+    use super::{
+        Navigation,
+        interaction::{Effect, Placement},
+        scroll::{Movement, ScrollPosition},
+    };
     use crate::{
-        interaction::{Effect, Interaction, Placement},
         parser::parse_patch,
         preferences::{PreferenceChange, ViewPreferences},
         prepared::PreparedDocument,
         screen::{Cells, ScreenLines},
-        scroll::{Movement, ScrollPosition},
     };
 
     /// architecture.md (View model): cycling layouts and toggling detail keep the page and
@@ -172,21 +186,22 @@ mod tests {
         let document = parse_patch(b"--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
-        let start = Interaction::start(ViewPreferences::INITIAL, Size::new(80, 4));
-        let mut navigation = Navigation::new(&prepared, &start);
-        let start = navigation.step(&prepared, &start, Effect::Scroll(Movement::Down));
-        let mut redisplayed = |interaction: &Interaction, change| {
+        let mut navigation =
+            Navigation::start(&prepared, ViewPreferences::INITIAL, Size::new(80, 4));
+        navigation.step(&prepared, Effect::Scroll(Movement::Down));
+        let start = *navigation.interaction();
+        let mut redisplayed = |change| {
             let effect = Effect::Redisplay {
-                preferences: interaction.preferences().after(change),
+                preferences: navigation.interaction().preferences().after(change),
                 placement: Placement::Keep,
             };
-            navigation.step(&prepared, interaction, effect)
+            navigation.step(&prepared, effect);
+            *navigation.interaction()
         };
 
-        let vertical = redisplayed(&start, PreferenceChange::NextLayout);
-        let stacked = redisplayed(&vertical, PreferenceChange::NextLayout);
-        let unified = redisplayed(&stacked, PreferenceChange::NextLayout);
-        let character = redisplayed(&start, PreferenceChange::ToggleGranularity);
+        let layouts = [PreferenceChange::NextLayout; 3].map(&mut redisplayed);
+        let unified = layouts[2];
+        let character = redisplayed(PreferenceChange::ToggleGranularity);
 
         let one_line_down = ScrollPosition {
             vertical: ScreenLines::ONE,

@@ -3,15 +3,15 @@
 
 use ratatui::layout::Size;
 
+use super::scroll::{BoundedScroll, Movement};
 use crate::{
     preferences::{PreferenceChange, ViewPreferences},
     prepared::{PageCount, PageIndex},
-    scroll::{BoundedScroll, Movement},
 };
 
 /// The selected page, the view preferences, the screen size, the scroll position within the
-/// bounds of what it shows, and the keymap popup. Only [`Interaction::start`] and
-/// navigation build one.
+/// bounds of what it shows, and the keymap popup. Only navigation builds one, and it holds
+/// the one it leads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interaction {
     page: PageIndex,
@@ -23,7 +23,7 @@ pub struct Interaction {
 
 impl Interaction {
     /// The first page of a document on a `screen`-sized terminal, scrolled to its start.
-    pub fn start(preferences: ViewPreferences, screen: Size) -> Self {
+    pub(super) fn start(preferences: ViewPreferences, screen: Size) -> Self {
         Self {
             page: PageIndex::FIRST,
             preferences,
@@ -73,12 +73,12 @@ impl Interaction {
     }
 
     /// This interaction scrolled to `scroll`.
-    pub(crate) fn scrolled(self, scroll: BoundedScroll) -> Self {
+    pub(super) fn scrolled(self, scroll: BoundedScroll) -> Self {
         Self { scroll, ..self }
     }
 
     /// `page` with `preferences` on a `screen`-sized terminal, scrolled to `scroll`.
-    pub(crate) fn shown(
+    pub(super) fn shown(
         self,
         page: PageIndex,
         preferences: ViewPreferences,
@@ -94,7 +94,7 @@ impl Interaction {
         }
     }
 
-    pub(crate) fn with_keymap(self, keymap: KeymapPopup) -> Self {
+    pub(super) fn with_keymap(self, keymap: KeymapPopup) -> Self {
         Self { keymap, ..self }
     }
 }

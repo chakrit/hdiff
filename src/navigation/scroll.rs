@@ -2,11 +2,7 @@
 //! it scrolls built it. Rules: `docs/spec/architecture.md` (Viewport coordinates, Keyboard
 //! bindings).
 
-use crate::{
-    effective_view::EffectiveView,
-    extent::DisplayExtent,
-    screen::{Cells, ScreenLines},
-};
+use crate::screen::{Cells, ScreenLines};
 
 /// The first visible screen line and the synchronized horizontal offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,13 +12,13 @@ pub struct ScrollPosition {
 }
 
 /// A scroll position within the bounds of what it scrolls. Only the start of a page and
-/// [`DisplayBounds::clamp`] build one.
+/// [`DisplayBounds::clamp`], which only navigation reaches, build one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundedScroll(ScrollPosition);
 
 impl BoundedScroll {
     /// The start of a page, which is within every bound.
-    pub const START: Self = Self(ScrollPosition {
+    pub(super) const START: Self = Self(ScrollPosition {
         vertical: ScreenLines::ZERO,
         horizontal: Cells::ZERO,
     });
@@ -32,14 +28,14 @@ impl BoundedScroll {
     }
 
     /// This position after `movement`, within `bounds`.
-    pub fn moved(self, movement: Movement, bounds: DisplayBounds) -> Self {
+    pub(super) fn moved(self, movement: Movement, bounds: DisplayBounds) -> Self {
         let scroll = self.0;
         let horizontal = |horizontal| ScrollPosition {
             horizontal,
             ..scroll
         };
         let vertical = |vertical| ScrollPosition { vertical, ..scroll };
-        let one_cell = Cells::new(1);
+        let one_cell = Cells::ONE;
         let one_line = ScreenLines::ONE;
         let half_page = bounds.pane_lines.half().max(one_line);
 
@@ -84,19 +80,22 @@ pub struct DisplayBounds {
 }
 
 impl DisplayBounds {
-    /// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
-    pub fn of(extent: &DisplayExtent, view: &EffectiveView) -> Self {
-        let content = view.pane_content();
-
+    /// Bounds that scroll until `maximum_vertical_offset` and `maximum_horizontal_offset`,
+    /// over panes of `pane_lines` lines.
+    pub(super) const fn new(
+        maximum_vertical_offset: ScreenLines,
+        maximum_horizontal_offset: Cells,
+        pane_lines: ScreenLines,
+    ) -> Self {
         Self {
-            maximum_vertical_offset: extent.line_count().saturating_sub(content.height),
-            maximum_horizontal_offset: extent.width().saturating_sub(content.width),
-            pane_lines: content.height,
+            maximum_vertical_offset,
+            maximum_horizontal_offset,
+            pane_lines,
         }
     }
 
     /// `scroll` brought within these bounds.
-    pub fn clamp(self, scroll: ScrollPosition) -> BoundedScroll {
+    pub(super) fn clamp(self, scroll: ScrollPosition) -> BoundedScroll {
         BoundedScroll(ScrollPosition {
             vertical: scroll.vertical.min(self.maximum_vertical_offset),
             horizontal: scroll.horizontal.min(self.maximum_horizontal_offset),

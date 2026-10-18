@@ -5,10 +5,9 @@
 use ratatui::layout::Size;
 
 use crate::{
-    extent::WrapWidth,
     geometry::{PaneContent, PaneShape, ScreenGeometry},
-    preferences::ViewPreferences,
-    screen::ScreenLines,
+    preferences::{ViewPreferences, Wrapping},
+    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
 };
 
 /// The renderable combination of the view preferences and the screen size: the pane shape,
@@ -73,12 +72,47 @@ impl EffectiveView {
     }
 }
 
+/// The width at which rows break into screen lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WrapWidth {
+    /// Every row is one line, scrolled horizontally.
+    Unbounded,
+    /// Payloads wrap at this many cells.
+    At(NonZeroCells),
+}
+
+impl WrapWidth {
+    /// The wrap width `wrapping` selects for panes whose narrowest content is
+    /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
+    /// width. A pane with no room for payload wraps one cell per line.
+    fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
+        let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
+        let wrap_width = NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN);
+
+        match wrapping {
+            Wrapping::Disabled => Self::Unbounded,
+            Wrapping::Enabled => Self::At(wrap_width),
+        }
+    }
+
+    /// Cells of a payload `width` cells wide that the pane must scroll through.
+    pub(crate) fn visible_width(self, width: Cells) -> Cells {
+        match self {
+            Self::Unbounded => width,
+            Self::At(cells) => width.min(cells.get()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::layout::Size;
 
-    use super::{EffectiveView, TooSmall};
-    use crate::preferences::{DiffLayout, ViewPreferences};
+    use super::{EffectiveView, TooSmall, WrapWidth};
+    use crate::{
+        preferences::{DiffLayout, ViewPreferences, Wrapping},
+        screen::{Cells, NonZeroCells},
+    };
 
     /// What a screen shows: a message, or its panes with or without the file list.
     #[derive(Debug, PartialEq, Eq)]
@@ -127,5 +161,18 @@ mod tests {
 
             assert_eq!(shown, expected, "{width}×{height} {layout:?}");
         }
+    }
+
+    #[test]
+    fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
+        let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
+        let wrap_at = |cells| {
+            WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
+        };
+
+        assert_eq!(wrap(Wrapping::Enabled, 24), wrap_at(22));
+        assert_eq!(wrap(Wrapping::Enabled, 51), wrap_at(49));
+        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Unbounded);
+        assert_eq!(wrap(Wrapping::Enabled, 78), wrap_at(76));
     }
 }

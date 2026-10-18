@@ -248,7 +248,8 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
-        extent::{DisplayExtent, ExtentSettings, ShownLines, WrapWidth},
+        effective_view::WrapWidth,
+        extent::{DisplayExtent, ExtentSettings, ShownLines},
         geometry::PaneShape,
         parser::parse_patch,
         preferences::DiffGranularity,

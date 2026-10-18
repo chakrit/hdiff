@@ -5,11 +5,11 @@
 use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
-    effective_view::TooSmall,
-    extent::{ScreenLine, ShownLines, WrapWidth},
+    effective_view::{TooSmall, WrapWidth},
+    extent::{ScreenLine, ShownLines},
     geometry::{SplitDirection, SplitPanes},
-    interaction::{Interaction, KeymapPopup},
     navigation::Navigation,
+    navigation::interaction::KeymapPopup,
     page_rows::SideBySideRow,
     prepared::PreparedDocument,
     screen::{Cells, ScreenLines},
@@ -27,15 +27,15 @@ use super::{
     rows::PaneRow,
 };
 
-/// Draws `document` as `navigation` shows `interaction`: the page of its scroll extent
+/// Draws `document` as `navigation` shows its interaction: the page of its scroll extent
 /// through its effective view, beside the file list.
 pub(super) fn render_prepared_frame(
     frame: &mut Frame,
     document: &PreparedDocument,
     navigation: &Navigation,
-    interaction: &Interaction,
     theme: &Theme,
 ) {
+    let interaction = navigation.interaction();
     let view = navigation.view();
     let geometry = view.geometry();
     let screen = geometry.screen();
@@ -75,8 +75,7 @@ pub(super) fn render_prepared_frame(
                     })
                 })
                 .collect();
-            let split = geometry.split_panes(direction);
-            render_split_rows(frame, lines, split, direction, &panes);
+            render_split_rows(frame, lines, geometry.split_panes(direction), &panes);
         }
     }
 
@@ -147,16 +146,16 @@ impl PaneRows<'_> {
     }
 }
 
-/// Draws side-by-side lines in the old and new panes of `split`, split in `direction`,
-/// with their separator.
+/// Draws side-by-side lines in the old and new panes of `split`, with their separator.
 fn render_split_rows(
     frame: &mut Frame,
     lines: Vec<ScreenLine<SideBySideRow<StyledRow>>>,
     split: SplitPanes,
-    direction: SplitDirection,
     pane_rows: &PaneRows,
 ) {
-    let panes = split.panes.map(ContinuityFrame::diff_pane);
+    let direction = split.direction();
+    let separator = split.separator();
+    let panes = split.panes().map(ContinuityFrame::diff_pane);
     let shown = ScreenLines::new(lines.len());
     let (old_lines, new_lines): (Vec<_>, Vec<_>) = lines
         .into_iter()
@@ -172,11 +171,11 @@ fn render_split_rows(
         SplitDirection::Vertical => {
             let content = panes.old.content();
             let height = content.height.min(frame_rows(shown));
-            let separator = Rect::new(split.separator.x, content.y, split.separator.width, height);
-            draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
+            let shown_separator = Rect::new(separator.x, content.y, separator.width, height);
+            draw_inner_separator(frame.buffer_mut(), shown_separator, direction, palette);
         }
         SplitDirection::Stacked => {
-            draw_inner_separator(frame.buffer_mut(), split.separator, direction, palette);
+            draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
     }
     pane_rows.render(frame, panes.old, old_lines);
