@@ -83,14 +83,13 @@ drastic refactor or a multi-threaded parsing architecture; the accepted architec
 remains single-threaded.
 
 The eager-preparation contract, benchmark mode, retained prepared-file representation,
-whole-document preparation, and pinned-corpus measurements are complete.
-Remaining preparation work is to remove only measured redundant work, including inactive
-layouts, rows outside the viewport, allocations, cloning, palette construction, and span
-ordering. Each resumed slice requires its specification amendment, tests, verification, audit,
-and commit under the [performance contract](performance.md).
-Before the first resumed comparison, change `bench/kubernetes.sh` to key its improvement
-verdict on retired instructions as the performance contract requires; it still keys on
-cycles.
+whole-document preparation, and pinned-corpus measurements are complete. Remaining
+preparation work is to remove only measured redundant work, including inactive layouts,
+rows outside the viewport, allocations, cloning, palette construction, and span ordering.
+Each resumed slice requires its specification amendment, tests, verification, audit, and
+commit under the [performance contract](performance.md). Before the first resumed
+comparison, change `bench/kubernetes.sh` to key its improvement verdict on retired
+instructions as the performance contract requires; it still keys on cycles.
 
 ## Deferred work
 
@@ -129,9 +128,9 @@ implementation remains unapproved.
 ### Product slices
 
 1. Shortcuts: the `? help` hint below the file list, `e` to show and hide the file list,
-   with the hint floating in a box while the list is hidden, and the grouped `?` keymap popup, per the
-   [interaction model](architecture.md#interaction-model) and
-   [keyboard bindings](architecture.md#keyboard-bindings).
+   with the hint floating in a box while the list is hidden, and the grouped `?` keymap
+   popup, per the [interaction model](architecture.md#interaction-model) and [keyboard
+   bindings](architecture.md#keyboard-bindings).
 
    Human check: in every layout, hide and show the file list with `e` and confirm the diff
    widens and narrows while the middle line stays put; confirm the `? help` box shows only
@@ -144,26 +143,29 @@ implementation remains unapproved.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
-   Human check: open supported and unsupported source files in the same diff. Supported files
-   gain semantic detail when available; unsupported files remain readable with textual diffing,
-   and neither case changes the selected layout unexpectedly.
+   Human check: open supported and unsupported source files in the same diff. Supported
+   files gain semantic detail when available; unsupported files remain readable with
+   textual diffing, and neither case changes the selected layout unexpectedly.
 
 4. Add Tree-sitter syntax highlighting for TOML, Markdown, and JSON.
 
-   Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains readable
-   across unified, vertical, and stacked layouts.
+   Human check: open TOML, Markdown, and JSON changes and verify syntax detail remains
+   readable across unified, vertical, and stacked layouts.
 
-5. Refine highlighting coverage and additional navigation after the core interaction is stable.
+5. Refine highlighting coverage and additional navigation after the core interaction is
+   stable.
 
-   Human check: exercise every displayed shortcut on a mixed-language diff and verify that the
-   help hint and keymap popup match the key behavior, additions and deletions remain
-   distinguishable, and low contrast remains readable without saturating the whole terminal.
+   Human check: exercise every displayed shortcut on a mixed-language diff and verify that
+   the help hint and keymap popup match the key behavior, additions and deletions remain
+   distinguishable, and low contrast remains readable without saturating the whole
+   terminal.
 
-6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting the
-   previous result.
+6. Add search mode entered with `/`, with `n` selecting the next result and `p` selecting
+   the previous result.
 
-   Human check: search a multi-file diff, verify every match is reachable in both directions with
-   `n` and `p`, and confirm the selected result remains visible in its file and viewport.
+   Human check: search a multi-file diff, verify every match is reachable in both
+   directions with `n` and `p`, and confirm the selected result remains visible in its
+   file and viewport.
 
 ## Working rule
 

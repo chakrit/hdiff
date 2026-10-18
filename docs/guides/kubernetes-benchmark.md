@@ -75,6 +75,7 @@ input mutation, failed work, and sampling outcomes.
 
 Keep optimization summaries in `.ace/bench/kubernetes/results.txt` with their raw
 measurements and provenance. Report the measured retired-instruction saving first, then
-cycle and preparation-time savings, from those records. Instrumentation overhead and diagnostic profiles retain their actual
-verdicts separately from accepted optimizations. Update the completed or rejected
-investigation boundaries in `docs/spec/performance.md` when a slice settles one.
+cycle and preparation-time savings, from those records. Instrumentation overhead and
+diagnostic profiles retain their actual verdicts separately from accepted optimizations.
+Update the completed or rejected investigation boundaries in `docs/spec/performance.md`
+when a slice settles one.

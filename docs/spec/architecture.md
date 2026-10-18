@@ -4,8 +4,8 @@ status: accepted
 
 # hdiff architecture
 
-This document records the accepted first-release architecture for `hdiff`. Statements under
-“Open decisions” remain intentionally unresolved.
+This document records the accepted first-release architecture for `hdiff`. Statements
+under “Open decisions” remain intentionally unresolved.
 
 [performance.md](performance.md) is authoritative for preparation and performance
 optimization. [roadmap.md](roadmap.md) owns delivery status and pending work.
@@ -14,20 +14,21 @@ Commit provenance belongs in raw evidence, not these durable documents.
 ## Product intent
 
 `hdiff` is an interactive terminal diff viewer for understanding a change set quickly. It
-should make the structure of a diff—files, hunks, additions, deletions, and context—easy to
-navigate without requiring the reader to remember a command-line sequence or leave the
+should make the structure of a diff—files, hunks, additions, deletions, and context—easy
+to navigate without requiring the reader to remember a command-line sequence or leave the
 terminal.
 
-The primary reader is a developer reviewing local or generated diff output. The first release
-optimizes for a single user at one terminal, fast startup, predictable keyboard interaction,
-and faithful rendering of the supplied diff.
+The primary reader is a developer reviewing local or generated diff output. The first
+release optimizes for a single user at one terminal, fast startup, predictable keyboard
+interaction, and faithful rendering of the supplied diff.
 
 ## Engineering standard
 
-Every change must make the system more correct, more elegant, and easier to understand. The
-best abstraction is also the fast path: clear ownership, direct data flow, idiomatic Rust, and
-no accidental work. A benchmark, milestone, or target never justifies a shortcut, a speculative
-micro-optimization, or a design that a future reader cannot understand in one pass.
+Every change must make the system more correct, more elegant, and easier to understand.
+The best abstraction is also the fast path: clear ownership, direct data flow, idiomatic
+Rust, and no accidental work. A benchmark, milestone, or target never justifies a
+shortcut, a speculative micro-optimization, or a design that a future reader cannot
+understand in one pass.
 
 The package requires Rust 1.98.0 and uses the Rust 2024 edition.
 
@@ -44,8 +45,8 @@ Shell script filenames use dashes between words.
 - Navigate files and linearly move the diff viewport with a small discoverable keymap.
 - Scroll vertically without losing the current location.
 - Resize cleanly and redraw from retained state.
-- Cycle unified, vertical-split, and stacked-split views without silently changing the selected
-  mode.
+- Cycle unified, vertical-split, and stacked-split views without silently changing the
+  selected mode.
 - Provide a pager-first TUI with a muted `? help` hint and a popup listing every shortcut.
 - Make user-facing settings adjustable through shortcuts and re-render the affected view
   immediately.
@@ -55,8 +56,8 @@ Shell script filenames use dashes between words.
 ### Explicitly out of scope
 
 - Editing files or applying patches.
-- Git repository operations, staging, commits, or network access, except `--install` writing
-  the global setting that registers hdiff as the `git diff` pager.
+- Git repository operations, staging, commits, or network access, except `--install`
+  writing the global setting that registers hdiff as the `git diff` pager.
 - A persistent database, daemon, or background service.
 - A plugin system or user scripting API.
 - Reproducing every feature of an existing pager before the core navigation is reliable.
@@ -74,13 +75,13 @@ input bytes
   -> terminal renderer
 ```
 
-The parser owns interpretation of unified diff syntax. The document owns the loss-preserving
-representation of what was received. Preparation owns retained display rows, split pairs,
-and style partitions. Interaction state owns selection, scroll position, and view mode.
-Visible layout derives pane geometry and visibility from prepared content, interaction
-state, and terminal size. The terminal adapter owns raw-mode setup, input events,
-drawing, resize events, and restoration on exit. Finite output renders the document
-directly without entering the interactive preparation and terminal path.
+The parser owns interpretation of unified diff syntax. The document owns the
+loss-preserving representation of what was received. Preparation owns retained display
+rows, split pairs, and style partitions. Interaction state owns selection, scroll
+position, and view mode. Visible layout derives pane geometry and visibility from prepared
+content, interaction state, and terminal size. The terminal adapter owns raw-mode setup,
+input events, drawing, resize events, and restoration on exit. Finite output renders the
+document directly without entering the interactive preparation and terminal path.
 
 ### Interactive loop
 
@@ -106,20 +107,20 @@ Output is Ratatui's `Terminal<B: Backend>`. Input is any
 `TerminalSession` restores the terminal as the
 [input and terminal boundary](#input-and-terminal-boundary) describes.
 
-No layer should inspect another layer’s internal representation. In particular, rendering must
-not parse diff text, and input handling must not mutate parsed records in place.
+No layer should inspect another layer’s internal representation. In particular, rendering
+must not parse diff text, and input handling must not mutate parsed records in place.
 
 ## Core model
 
-The document is the source of truth and retains enough original content to render unknown but
-valid diff lines without data loss.
+The document is the source of truth and retains enough original content to render unknown
+but valid diff lines without data loss.
 
 - `DiffDocument`: ordered text sections and file-diff sections.
-- `FileView`: a borrowed navigation projection of a file and its surrounding text.
-  Leading text appears above the following file; final trailing text appears after
-  the last file. Repeated paths remain separate file occurrences.
-  Each file occurrence is one navigation page; a document that holds no file is one page of
-  its surrounding text, with an empty file list.
+- `FileView`: a borrowed navigation projection of a file and its surrounding text. Leading
+  text appears above the following file; final trailing text appears after the last file.
+  Repeated paths remain separate file occurrences. Each file occurrence is one navigation
+  page; a document that holds no file is one page of its surrounding text, with an empty
+  file list.
 - `DiffFile`: file identity, headers, and ordered hunks. Identity (state and path) and
   decoded header paths are derived when the file is parsed; the file tree and syntax
   highlighting read them rather than raw header text.
@@ -142,28 +143,29 @@ valid diff lines without data loss.
   offset. The interaction holds a `BoundedScroll`, a position that only the bounds of what
   it scrolls can build.
 - `PageRows`: retained rendered rows, split pairs, and source addresses.
-- Visible layout: derived panes, effective visibility, the help hint, and the keymap popup.
+- Visible layout: derived panes, effective visibility, the help hint, and the keymap
+  popup.
 
-The interaction state is a value that transitions in response to an event: a bound command,
-or a session event (interrupt or resize) that applies in every mode, so no mode can
-intercept one. A resize event names no size: the terminal is the one source of the screen
-size. An event's transition returns an outcome: exit, redraw, or an effect, which
+The interaction state is a value that transitions in response to an event: a bound
+command, or a session event (interrupt or resize) that applies in every mode, so no mode
+can intercept one. A resize event names no size: the terminal is the one source of the
+screen size. An event's transition returns an outcome: exit, redraw, or an effect, which
 navigation applies to give the next state; every continuing step then draws. A transition
-does not reach into the terminal or document. The selected page, viewport position, and preferences are
-authoritative interaction state. Wrapping, row numbers, pane geometry, and rendered rows
-are derived. Navigation, which finds the display an event leads to and its bounds, is
-independent of the terminal. This makes navigation testable without a real terminal and
-keeps invalid positions out of the renderer.
+does not reach into the terminal or document. The selected page, viewport position, and
+preferences are authoritative interaction state. Wrapping, row numbers, pane geometry, and
+rendered rows are derived. Navigation, which finds the display an event leads to and its
+bounds, is independent of the terminal. This makes navigation testable without a real
+terminal and keeps invalid positions out of the renderer.
 
 ## Input contract
 
 The intended command follows the POSIX `diff` operand model where practical. Two file
 operands compare files; two directory operands compare corresponding entries; `-r` enables
 recursive directory comparison; and `-` denotes standard input. hdiff adds viewer modes
-for one existing patch or diff file and for a unified diff supplied on standard input.
-It accepts unified diffs from any producer. `--install` is the sole Git integration: it
-backs up the exact global config file Git will write to a sibling file named by appending
-`.bak` to its name, then overwrites `pager.diff` through `git config --global`; hdiff never
+for one existing patch or diff file and for a unified diff supplied on standard input. It
+accepts unified diffs from any producer. `--install` is the sole Git integration: it backs
+up the exact global config file Git will write to a sibling file named by appending `.bak`
+to its name, then overwrites `pager.diff` through `git config --global`; hdiff never
 parses or rewrites Git config text. Every path and command is validated before the first
 write.
 
@@ -183,7 +185,7 @@ input containing no diff. Comparison output is exempt: it is shown even when it 
 surrounding text, such as `Binary files … differ`. Automatic `pager.show` registration is
 outside this scope.
 
-Surrounding text has document-level ownership. Prepared layouts render each text line
+Surrounding text has document-level ownership. `PageRows` render each text line
 once and share its row index across split panes. Text receives no source syntax or
 character-detail spans.
 
@@ -193,22 +195,22 @@ Surrounding text does not provide recovery from malformed recognized diff sectio
 The input selector reads stdin with zero operands or a lone `-`, reads a patch file with
 one other operand, and invokes `diff -u -N [-r] -- <before> <after>` with two, so added
 and removed files render as diffs; `-N` is not POSIX, and GNU and Apple `diff` both
-support it. More than two operands produce `expected zero, one, or two operands`. `-r`
-is recognized anywhere in the input arguments and requires two operands; otherwise it
-produces `-r requires two comparison operands`. A `-` comparison operand is passed to `diff`,
-which reads hdiff's standard input. Other dash-leading arguments are paths.
+support it. More than two operands produce `expected zero, one, or two operands`. `-r` is
+recognized anywhere in the input arguments and requires two operands; otherwise it
+produces `-r requires two comparison operands`. A `-` comparison operand is passed to
+`diff`, which reads hdiff's standard input. Other dash-leading arguments are paths.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached
-unambiguously, but malformed or truncated input is rejected with a contextual non-zero error
-before the interactive TUI starts. The first release does not model partial documents in the
-TUI.
+unambiguously, but malformed or truncated input is rejected with a contextual non-zero
+error before the interactive TUI starts. The first release does not model partial
+documents in the TUI.
 
-Git extended headers beginning with `diff --git` are ordered per-file metadata and render before
-that file's unified headers. ANSI control sequences are ignored for structural recognition while
-the original source bytes remain available for safe rendering.
+Git extended headers beginning with `diff --git` are ordered per-file metadata and render
+before that file's unified headers. ANSI control sequences are ignored for structural
+recognition while the original source bytes remain available for safe rendering.
 
-Metadata-only Git sections, including binary changes, pure renames, and mode-only changes, are
-valid review content and render without requiring unified headers or hunks.
+Metadata-only Git sections, including binary changes, pure renames, and mode-only changes,
+are valid review content and render without requiring unified headers or hunks.
 
 ## Initial CLI surface
 
@@ -218,15 +220,15 @@ The first command should be intentionally small:
 hdiff [OPTIONS] [FILE ...]
 ```
 
-Options describe representations or input policy, not interactive procedures. Runtime display
-changes are session-local. An rc file may provide defaults, but hdiff never writes those
-changes back during a session.
+Options describe representations or input policy, not interactive procedures. Runtime
+display changes are session-local. An rc file may provide defaults, but hdiff never writes
+those changes back during a session.
 
-`hdiff --install` registers the current executable as the user-level pager for `git diff`. Git
-passes its complete unified diff to hdiff on standard input, preserving the entire file list in
-one interactive session. `core.pager` remains unchanged. After successful writes, `--install`
-prints a shell-safe `cp` command when it created a backup and the `git config --global pager.diff`
-command it applied.
+`hdiff --install` registers the current executable as the user-level pager for `git diff`.
+Git passes its complete unified diff to hdiff on standard input, preserving the entire
+file list in one interactive session. `core.pager` remains unchanged. After successful
+writes, `--install` prints a shell-safe `cp` command when it created a backup and the `git
+config --global pager.diff` command it applied.
 
 `hdiff --help` prints the command usage, operands, and options without reading diff input.
 `hdiff --version` prints the Cargo package version followed by the short source commit
@@ -234,9 +236,9 @@ hash in parentheses. Both commands exit successfully after printing their output
 
 ### Current argument selection
 
-`--help` and `--version` select their commands only when supplied alone. `--bench <driver>`
-selects measurement only as the first argument; the remaining zero, one, or two arguments
-select input as described above. Their output contracts are in
+`--help` and `--version` select their commands only when supplied alone. `--bench
+<driver>` selects measurement only as the first argument; the remaining zero, one, or two
+arguments select input as described above. Their output contracts are in
 [`performance.md`](performance.md).
 
 `--install` is recognized anywhere in the argument list and must be the sole argument.
@@ -259,25 +261,24 @@ still exits with status 2.
 
 The primary interaction is pager-like rather than a dashboard: the diff occupies the main
 viewport, and a muted `? help` hint points to the keymap popup. The hint and popup are a
-navigational aid, not a second control plane; every setting has one keyboard path, and changing it produces a
-new interaction state and immediate redraw.
+navigational aid, not a second control plane; every setting has one keyboard path, and
+changing it produces a new interaction state and immediate redraw.
 
 The compact surface has a file list on the left, a diff view on the right, and one
 vertical separator padded by one space on each side, with no pane borders or labels.
 
-The left file list is the primary navigation pane. `e` shows and hides it; it starts shown.
-As width decreases it collapses before the diff view. The help hint sits on the bottom row of
-the file list; while the file list is hidden, it floats in a small bordered box over the
-bottom-left corner of the diff.
-If the terminal is too narrow or too short for the minimum layout, the only rendered content
-is `screen too narrow` or `screen too short`. The minimum layout shows one content line in
-each diff pane.
-The selected layout is never silently replaced by another layout.
+The left file list is the primary navigation pane. `e` shows and hides it; it starts
+shown. As width decreases it collapses before the diff view. The help hint sits on the
+bottom row of the file list; while the file list is hidden, it floats in a small bordered
+box over the bottom-left corner of the diff. If the terminal is too narrow or too short
+for the minimum layout, the only rendered content is `screen too narrow` or `screen too
+short`. The minimum layout shows one content line in each diff pane. The selected layout
+is never silently replaced by another layout.
 
-`?` opens a centered, bordered popup over the diff that lists every shortcut, grouped under
-headings. While it is open, `?`, `Esc`, and `q` close it, `q` without exiting, `Ctrl-C`
-exits, and every other key does nothing; closing it restores the view. The pager-first model
-and live shortcut-driven settings are settled product requirements.
+`?` opens a centered, bordered popup over the diff that lists every shortcut, grouped
+under headings. While it is open, `?`, `Esc`, and `q` close it, `q` without exiting,
+`Ctrl-C` exits, and every other key does nothing; closing it restores the view. The
+pager-first model and live shortcut-driven settings are settled product requirements.
 
 Unselected file names use a medium-muted neutral tone, one level brighter than the
 separator and the help hint; their markers take their state's color, as the
@@ -329,29 +330,33 @@ View choices are orthogonal rather than one growing mode enum:
 
 - `DiffLayout`: unified, vertical split, or stacked split;
 - `DiffGranularity`: line-based or character-based;
-- `DiffSemantics`: textual or Tree-sitter semantic strategy;
-- navigation-pane state: file list visibility and active pane;
-- display preferences: wrapping, context-line count, highlighting, and color capability.
+- navigation-pane state: file list visibility;
+- display preferences: wrapping and context-line count.
 
-`EffectiveView` derives the renderable combination from these preferences and the terminal
-dimensions; document capabilities and language support join it when semantic strategies land. Tree-sitter semantic diff is used when
-the language and parser are available, with textual fallback otherwise. The user-selected
-layout is preserved through resizes; hdiff does not automatically switch between layouts. `v`
-cycles unified, vertical split, and stacked split in that order, preserving the
-selected file and viewport.
+Pending delivery: `DiffSemantics` (textual or Tree-sitter semantic strategy), an active
+navigation pane, and a highlighting preference. Color capability is not a preference: the
+terminal's color depth selects the theme.
+
+`EffectiveView` derives the renderable combination from these preferences and the
+terminal dimensions; document capabilities and language support join it when semantic
+strategies land. Tree-sitter semantic diff is used when the language and parser are
+available, with textual fallback otherwise. The user-selected layout is preserved through
+resizes; hdiff does not automatically switch between layouts. `v` cycles unified, vertical
+split, and stacked split in that order, preserving the selected file and viewport.
 
 Semantic diff strategies remain pending delivery. The current viewer uses textual
 comparisons and the `low` palette.
 
-Vertical split renders each changed block as aligned before/after pairs, adding a markerless
-alignment peer with the corresponding dim addition or deletion background on the shorter side.
-Each alignment peer uses the background and dim modifier of its own pane: before peers use
-deletion styling and after peers use addition styling, regardless of the counterpart row.
-Alignment peers are layout-only counterparts for unmatched change rows, not source context lines.
-Shared context and structural rows render in both panes. A more dimmed separator divides the before
-and after panes; each pane retains the marker column and payload spacer used by unified rendering.
-Stacked split derives the same pairs and renders the same alignment peers, so both panes retain
-equal content height while shared hunk headers and context retain orientation.
+Vertical split renders each changed block as aligned before/after pairs, adding a
+markerless alignment peer with the corresponding dim addition or deletion background on
+the shorter side. Each alignment peer uses the background and dim modifier of its own
+pane: before peers use deletion styling and after peers use addition styling, regardless
+of the counterpart row. Alignment peers are layout-only counterparts for unmatched change
+rows, not source context lines. Shared context and structural rows render in both panes. A
+more dimmed separator divides the before and after panes; each pane retains the marker
+column and payload spacer used by unified rendering. Stacked split derives the same pairs
+and renders the same alignment peers, so both panes retain equal content height while
+shared hunk headers and context retain orientation.
 
 Wrapping is session-local and toggled independently from layout. Wrapping starts disabled.
 When wrapping is disabled, horizontal movement uses one synchronized offset for
@@ -392,29 +397,30 @@ The file list has the same reserved row above and below its rows, with no side c
 below the last.
 
 Resizing keeps the record on the diff pane's top line at the top, on the same line within
-that record where it still exists. Context visibility is
-session-local: hdiff initially retains three context records on either side of each changed
-block within a hunk, `+` increases that bound, and `-` decreases it to zero. Context changes
-recompute the visible layout without mutating the document or selected file; the row on
-the diff pane's middle line stays on that line.
+that record where it still exists. Context visibility is session-local: hdiff initially
+retains three context records on either side of each changed block within a hunk, `+`
+increases that bound, and `-` decreases it to zero. Context changes recompute the visible
+layout without mutating the document or selected file; the row on the diff pane's middle
+line stays on that line.
 
-The `low` palette is the only palette and the locked preferred display: additions are strongest; deletion text and
-syntax spans are muted by a row-wide dim modifier over a dim red background; context is quieter
-neutral text, and raw records take the same unchanged-record tone. Character detail carries the
-side of the change it marks. Every rendered row reserves a marker
-column and one payload spacer: addition and deletion markers occupy that column, while metadata,
-hunks, and context leave it blank so all payloads align. The separator remains neutral, and each
-change background begins after its right-hand gutter. The palette applies consistently in
-unified and side-by-side layouts. `DiffGranularity` controls whether differences are
-represented as lines or characters.
+The `low` palette is the only palette and the locked preferred display: additions are
+strongest; deletion text and syntax spans are muted by a row-wide dim modifier over a dim
+red background; context is quieter neutral text, and raw records take the same
+unchanged-record tone. Character detail carries the side of the change it marks. Every
+rendered row reserves a marker column and one payload spacer: addition and deletion
+markers occupy that column, while metadata, hunks, and context leave it blank so all
+payloads align. The separator remains neutral, and each change background begins after
+its right-hand gutter. The palette applies consistently in unified and side-by-side
+layouts. `DiffGranularity` controls whether differences are represented as lines or
+characters.
 
-Character detail does not use reverse video. It first preserves matching identifier/word and
-delimiter tokens, then uses grapheme spans only for similar replacement words; unrelated words
-remain whole-token changes rather than matching coincidental letters. It coalesces an equal island
-of at most three graphemes bracketed by changed spans, so incidental short matches do not fragment
-a change. Its changed spans use undimmed green on addition rows and undimmed red on deletion
-rows, reusing the line-change marker colors; unchanged text on rows with detail spans is one
-step dimmer than the row's line-mode text.
+Character detail does not use reverse video. It first preserves matching identifier/word
+and delimiter tokens, then uses grapheme spans only for similar replacement words;
+unrelated words remain whole-token changes rather than matching coincidental letters. It
+coalesces an equal island of at most three graphemes bracketed by changed spans, so
+incidental short matches do not fragment a change. Its changed spans use undimmed green on
+addition rows and undimmed red on deletion rows, reusing the line-change marker colors;
+unchanged text on rows with detail spans is one step dimmer than the row's line-mode text.
 Rows without detail spans retain syntax styling.
 
 In character mode, unmatched additions and deletions use their green or red
@@ -424,11 +430,11 @@ marker and row background, and alignment peers retain their markerless pane styl
 Paired lines retain token/grapheme comparison, and returning to line mode restores syntax
 presentation from the same prepared data.
 
-Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and `---`/`+++`
-file headers retain neutral metadata styling.
+Hunk headers beginning with `@@` are muted cyan-blue structural lines. Git metadata and
+`---`/`+++` file headers retain neutral metadata styling.
 
-Addition and deletion backgrounds extend through the right edge of the diff pane's content area, including
-cells after the final source character.
+Addition and deletion backgrounds extend through the right edge of the diff pane's content
+area, including cells after the final source character.
 
 ### Keyboard bindings
 
@@ -461,61 +467,61 @@ Hunk jumps remain absent until a visible hunk focus makes their destination legi
 Half-page movement is smooth.
 
 The keymap popup is drawn from the key bindings themselves, its close row listing every
-key that closes the open popup, and lists every shortcut in the table above under four headings: Scroll, Files, View, and Keymap and exit. Scroll shows
-`h`, `j`, `k`, and `l` as a diamond. It never advertises a deferred shortcut. The groups
-sit in two columns when the screen is wide enough and in one column otherwise. Headings
-take the hunk-header tone in bold, keys the syntax function color, actions the file-name
-tone, and the border the separator tone.
+key that closes the open popup, and lists every shortcut in the table above under four
+headings: Scroll, Files, View, and Keymap and exit. Scroll shows `h`, `j`, `k`, and `l` as
+a diamond. It never advertises a deferred shortcut. The groups sit in two columns when the
+screen is wide enough and in one column otherwise. Headings take the hunk-header tone in
+bold, keys the syntax function color, actions the file-name tone, and the border the
+separator tone.
 
 ## Technology direction
 
-Rust is the implementation language. `ratatui` owns layout and rendering; CROSSTERM 0.29 with
-`use-dev-tty` owns terminal I/O, events, resize, raw mode, alternate-screen handling, and
-lifecycle operations.
-The backend must support event reads from an explicit controlling-terminal handle when stdin
-contains diff data. Syntax highlighting is assigned to Tree-sitter through an hdiff-owned
-boundary; the parser set and performance rationale are recorded in
-`docs/vendor/syntax-highlighting.md`.
-Syntax highlighting projects each hunk's old and new
-records into separate bounded virtual source buffers, maps returned spans back to sanitized
-record payloads, and leaves unsupported languages as plain text. Every bundled grammar and its
-highlight query load; the bundled-grammar test checks each one.
-Projection records are ordered by virtual source range, so span mapping visits only records that
-overlap the returned source span.
-Safe rendering is the single source of display rows: each rendered record row retains its
-kind, hunk and record address, and its sanitized payload with the cells it covers. Page rows
-and their scroll extents derive geometry and navigation offsets from those rows without
-syntax state. Preparation computes syntax and character-detail spans before the terminal
-loop begins, then the terminal renders only the prepared active viewport. Additions use the
-new path's language and deletions use the old path's language; context records remain
-textual when the paths select different languages. Headers, metadata, raw records, and diff
-markers remain textual.
+Rust is the implementation language. `ratatui` owns layout and rendering; CROSSTERM 0.29
+with `use-dev-tty` owns terminal I/O, events, resize, raw mode, alternate-screen handling,
+and lifecycle operations. The backend must support event reads from an explicit
+controlling-terminal handle when stdin contains diff data. Syntax highlighting is assigned
+to Tree-sitter through an hdiff-owned boundary; the parser set and performance rationale
+are recorded in `docs/vendor/syntax-highlighting.md`. Syntax highlighting projects each
+hunk's old and new records into separate bounded virtual source buffers, maps returned
+spans back to sanitized record payloads, and leaves unsupported languages as plain text.
+Every bundled grammar and its highlight query load; the bundled-grammar test checks each
+one. Projection records are ordered by virtual source range, so span mapping visits only
+records that overlap the returned source span. Safe rendering is the single source of
+display rows: each rendered record row retains its kind, hunk and record address, and its
+sanitized payload with the cells it covers. Page rows and their scroll extents derive
+geometry and navigation offsets from those rows without syntax state. Preparation computes
+syntax and character-detail spans before the terminal loop begins, then the terminal
+renders only the prepared active viewport. Additions use the new path's language and
+deletions use the old path's language; context records remain textual when the paths
+select different languages. Headers, metadata, raw records, and diff markers remain
+textual.
 
 When both paths select the same language, only the new projection supplies context
 styling. Both projections retain context text for parsing. Overlapping syntax captures
 use the shortest covering capture; later capture encounter order breaks equal-length
 ties. Capture length is measured before row clipping.
 
-The first test boundary is terminal-independent: parser fixtures, state-transition tests, layout
-snapshots, and renderer output tests. Live interaction tests run the `Tui` in-process in a
-`live` test target under plain `cargo test`: each test loads a fixture document into a `Tui`,
-drives it with `tui.step` one key at a time against a 120-by-36 `Terminal<TestBackend>`, and
-asserts on the backend buffer after each step. A `macro_rules!` matrix runs scenarios across
-layouts and detail modes. Tests never assert timing and never start the `hdiff` executable.
+The first test boundary is terminal-independent: parser fixtures, state-transition tests,
+layout snapshots, and renderer output tests. Live interaction tests run the `Tui`
+in-process in a `live` test target under plain `cargo test`: each test loads a fixture
+document into a `Tui`, drives it with `tui.step` one key at a time against a 120-by-36
+`Terminal<TestBackend>`, and asserts on the backend buffer after each step. A
+`macro_rules!` matrix runs scenarios across layouts and detail modes. Tests never assert
+timing and never start the `hdiff` executable.
 
 ## Input and terminal boundary
 
-The first release reads the complete input before entering raw mode. Input selection distinguishes
-standard input, one existing patch file, and two comparison operands; combining piped standard
-input with file arguments must produce an explicit usage error. Standard input is piped
-when it is a pipe or socket; file arguments are accepted with piped standard input only
-when a `-` operand reads it. Interactive mode requires a controlling
-terminal independent of the data source, so `stdin` supplies diff bytes while the controlling
-terminal supplies events and output. If no controlling terminal is available, hdiff produces
-finite non-interactive output. hdiff is the pager and must not launch or depend on an external
-pager. The output contract decides whether interactive mode is attempted before a controlling
-terminal is opened. The terminal backend must read events from an explicit controlling-terminal
-handle rather than rebinding standard input.
+The first release reads the complete input before entering raw mode. Input selection
+distinguishes standard input, one existing patch file, and two comparison operands;
+combining piped standard input with file arguments must produce an explicit usage error.
+Standard input is piped when it is a pipe or socket; file arguments are accepted with
+piped standard input only when a `-` operand reads it. Interactive mode requires a
+controlling terminal independent of the data source, so `stdin` supplies diff bytes while
+the controlling terminal supplies events and output. If no controlling terminal is
+available, hdiff produces finite non-interactive output. hdiff is the pager and must not
+launch or depend on an external pager. The output contract decides whether interactive
+mode is attempted before a controlling terminal is opened. The terminal backend must read
+events from an explicit controlling-terminal handle rather than rebinding standard input.
 
 Interactive mode is attempted when stdout is a terminal. hdiff then opens `/dev/tty`
 and draws there; when it cannot be opened, hdiff writes finite output to stdout instead.
@@ -523,10 +529,11 @@ Setup errors after the controlling terminal opens propagate.
 
 ## Interaction and layout state
 
-Interaction state is split into selection, viewport, preferences, and derived layout.
-Resize is an event; visible layout is recomputed from retained content and the latest
-dimensions, following the [interaction model](#interaction-model). Zero-sized layouts
-remain valid values rather than arithmetic errors.
+Interaction state holds the selection, the viewport, the preferences, and the keymap
+popup; navigation derives the effective view. Resize is an event; visible layout is
+recomputed from retained content and the latest dimensions, following the [interaction
+model](#interaction-model). Zero-sized layouts remain valid values rather than arithmetic
+errors.
 
 ### Viewport coordinates
 
@@ -536,12 +543,13 @@ several. The frame shows the lines from that offset, and scroll limits count lin
 visible rows, their lines, and their widest row are derived once per selected page,
 layout, context count, and wrap width, and not on movement. Unified rows are lines and
 side-by-side rows are pairs, each indexed in its own space; an anchored row is named by
-the line it starts with. A scroll extent and its anchors belong to the page they were built
-from, so their indexes reach only that page's rows. Cell columns and screen lines are distinct units, held at full
-width and narrowed only where a frame is drawn, so no offset type caps how far a row
-reaches. One effective view, derived from the screen size and view preferences, serves
-both navigation bounds and drawing, and a scroll extent carries the wrap width and pane
-shape it was built with. Each step adopts the terminal's size before it responds, and each
+the line it starts with. A scroll extent belongs to the page it was built from, so its
+indexes reach only that page's rows, and a rebuild that keeps a row in place keeps the
+page. Cell columns and screen lines are distinct units, held at full width and narrowed
+only where a frame is drawn, so no offset type caps how far a row reaches. One effective
+view, derived from the screen size and view preferences, serves both navigation bounds
+and drawing, and a scroll extent carries the page, wrap width, pane shape, and context
+count it was built with. Each step adopts the terminal's size before it responds, and each
 frame adopts the size it is drawn at before it draws, so a key that arrives before its
 resize event still draws a full frame, and a resize event that arrives after the size
 changed again moves nothing.
@@ -553,11 +561,11 @@ are defined in [performance.md](performance.md#preparation-boundary).
 
 ## Lossless and safe rendering
 
-Layout or span construction must make rendering duplicate source text impossible
+Page-row or span construction must make rendering duplicate source text impossible
 by construction.
 
 Preparation partitions each retained row's payload into adjacent styled portions.
-The partition and its source row are accessed together through the prepared file;
+The partition and its source row are accessed together through the prepared page;
 rendering consumes the source once, and annotations select styles only. Syntax and
 character-detail presentation share this boundary. Rows with character-detail spans
 use detail styling with plain gaps; rows without them retain syntax styling.
@@ -579,32 +587,32 @@ Ratatui's `layout-cache` feature is enabled.
 The authoritative document is never truncated; only decoding, highlighting, wrapping,
 and visible-row work may be bounded.
 
-The terminal-independent test boundary must cover invalid UTF-8, CRLF, embedded SGR/OSC/CSI,
-combining marks, double-width graphemes, tabs, zero- and one-row terminals, long lines,
-resizing while focused on a wrapped record, resize storms, read errors after partial input,
-draw errors, Ctrl-C, and broken pipes.
+The terminal-independent test boundary must cover invalid UTF-8, CRLF, embedded
+SGR/OSC/CSI, combining marks, double-width graphemes, tabs, zero- and one-row terminals,
+long lines, resizing while focused on a wrapped record, resize storms, read errors after
+partial input, draw errors, Ctrl-C, and broken pipes.
 
 ## Failure and safety posture
 
 - Never modify the input files.
 - Preserve unknown diff lines rather than silently dropping them.
 - Reject malformed or truncated input with context before entering the interactive TUI.
-- Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when the
-  terminal supports it, falling back by capability. The color depth is decided once per
-  session, and one `Theme` per depth owns every syntax, row, and chrome color, so
+- Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when
+  the terminal supports it, falling back by capability. The color depth is decided once
+  per session, and one `Theme` per depth owns every syntax, row, and chrome color, so
   user-configurable themes can replace that built-in palette later.
 
 ## Terminal lifecycle
 
-Interactive mode is decided from the output contract before a controlling terminal is opened.
-Terminal setup is staged and idempotent, with ownership unwound in reverse order. Quit and
-Ctrl-C restore terminal state cleanly. Every return path after acquisition restores raw
-mode, the alternate screen, cursor state, and controlling-terminal attributes.
-Resize events coalesce to the latest dimensions and
-trigger a redraw. Draw and read failures report diagnostics after cleanup. Broken pipes are
-quiet success only for finite non-interactive output. Suspend/resume is supported only through
-a safe public backend transaction; otherwise it remains deferred. A cleanup guard or panic hook
-is best effort; SIGKILL and abort-style termination cannot be restored.
+Interactive mode is decided from the output contract before a controlling terminal is
+opened. Terminal setup is staged and idempotent, with ownership unwound in reverse order.
+Quit and Ctrl-C restore terminal state cleanly. Every return path after acquisition
+restores raw mode, the alternate screen, cursor state, and controlling-terminal
+attributes. Resize events coalesce to the latest dimensions and trigger a redraw. Draw and
+read failures report diagnostics after cleanup. Broken pipes are quiet success only for
+finite non-interactive output. Suspend/resume is supported only through a safe public
+backend transaction; otherwise it remains deferred. A cleanup guard or panic hook is best
+effort; SIGKILL and abort-style termination cannot be restored.
 
 ## Open decisions for review
 

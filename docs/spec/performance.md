@@ -45,13 +45,13 @@ The second line has this versioned schema, with integer nanosecond durations:
 startup version=1 input_ns=N parse_ns=N preparation_ns=N ready_ns=N bytes=N
 ```
 
-Input time includes reading stdin or the patch file, or producing a two-operand comparison.
-Parse time covers unified-diff parsing. Ready time runs from immediately before input
-acquisition until preparation completes, including orchestration overhead. Reporting,
-terminal setup, first draw, and process teardown are excluded. Input bytes count the
-complete acquired patch. Preparation time has the same meaning in both result lines.
-Whole-process measurements remain separate. Prepared patch runs exclude upstream Git
-production latency; reading a live pipe can include waiting on its producer.
+Input time includes reading stdin or the patch file, or producing a two-operand
+comparison. Parse time covers unified-diff parsing. Ready time runs from immediately
+before input acquisition until preparation completes, including orchestration overhead.
+Reporting, terminal setup, first draw, and process teardown are excluded. Input bytes
+count the complete acquired patch. Preparation time has the same meaning in both result
+lines. Whole-process measurements remain separate. Prepared patch runs exclude upstream
+Git production latency; reading a live pipe can include waiting on its producer.
 
 ### `stages`
 
@@ -294,19 +294,20 @@ candidate build.
 
 The runner also supports `--mode measure` and `--mode profile` (`--bench stages`) for a
 clean or dirty current checkout. Comparison is the default mode. Measurement repeats the
-current binary three times after two warmups and does not produce an improvement verdict. Profiles run
-separately and preserve stage output and an OS stack sample. A stack sample reports its
-sampling window and completion status and never claims whole-process coverage when
-attachment or completion cuts that window short. Sampling records distinguish captured,
-empty, and unavailable stacks and preserve the sampler exit status. A failed sampler
-leaves the successful stage report available.
+current binary three times after two warmups and does not produce an improvement verdict.
+Profiles run separately and preserve stage output and an OS stack sample. A stack sample
+reports its sampling window and completion status and never claims whole-process coverage
+when attachment or completion cuts that window short. Sampling records distinguish
+captured, empty, and unavailable stacks and preserve the sampler exit status. A failed
+sampler leaves the successful stage report available.
 
 Every run preserves a manifest and raw files beneath a unique run directory, including
 failed runs. Provenance includes UTC time, hardware and OS, Rust and Cargo versions, build
 flags and commands, source revision and build-input diff, runner digest, binary digests,
-and corpus digest and size. Both binaries use the same explicit installed stable Rust toolchain and
-locked dependencies. Source and binary identity are checked across measurement. Builds
-and corpus generation happen outside the timed interval, with workloads run serially.
+and corpus digest and size. Both binaries use the same explicit installed stable Rust
+toolchain and locked dependencies. Source and binary identity are checked across
+measurement. Builds and corpus generation happen outside the timed interval, with
+workloads run serially.
 
 Each Kubernetes range warms the baseline and candidate twice, then measures three pairs
 in baseline-candidate, candidate-baseline, baseline-candidate order. A pair's saving is
@@ -379,8 +380,8 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   rendered row's exact-sized immutable byte buffer.
 - **Index-owned rendered rows.** The prepared layout owns rendered rows directly; both
   layout projections carry indices instead of reference-counted row copies.
-- **Tree-sitter 0.27 parser core.** Syntax preparation uses the upstream ASCII decoding and
-  position-advance fast paths while retaining the public query boundary.
+- **Tree-sitter 0.27 parser core.** Syntax preparation uses the upstream ASCII decoding
+  and position-advance fast paths while retaining the public query boundary.
 - **Per-file syntax projection.** Concatenating each side's hunks into one projection per
   file regressed preparation time and is rejected.
 
@@ -397,6 +398,6 @@ output remain correct because the design makes them correct. When no clean and m
 improvement exists, leave the code alone.
 
 Each optimization slice reports its measured retired-instruction saving first, then its
-cycle and preparation-time savings, from the benchmark comparison. Savings are derived from the authoritative measurements;
-they are not stored as a second fact. A candidate that is not accepted does not advance
-the optimization record.
+cycle and preparation-time savings, from the benchmark comparison. Savings are derived
+from the authoritative measurements; they are not stored as a second fact. A candidate
+that is not accepted does not advance the optimization record.
