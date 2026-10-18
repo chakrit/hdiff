@@ -115,6 +115,10 @@ implementation remains unapproved.
 
 - [ ] Add smooth scrolling. Not yet planned.
 
+### Theme support
+
+- [ ] Add theme support. Not yet planned.
+
 ### Product slices
 
 1. Shortcuts: compact file-list hints, `e` to show and hide the file list with a floating
