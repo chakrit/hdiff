@@ -5,7 +5,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::TestEnv;
+use common::{TestEnv, assert_trouble};
 
 #[test]
 fn install_backs_up_and_configures_the_global_diff_pager() {
@@ -86,7 +86,7 @@ fn git_show_without_diff_content_is_rejected() {
     ] {
         let viewed = pipe_git_to_hdiff(&env, &arguments);
 
-        assert_eq!(viewed.status.code(), Some(2), "{arguments:?}: {viewed:?}");
+        assert_trouble(&viewed);
         assert!(viewed.stdout.is_empty());
         assert!(!viewed.stderr.is_empty());
     }

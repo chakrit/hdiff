@@ -6,7 +6,11 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::TestEnv;
+use common::{TestEnv, assert_trouble};
+use hdiff::{
+    bench::Driver,
+    measurement::{Parent, Stage},
+};
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
@@ -36,22 +40,55 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
     let output = run("prepare", PATCH);
     assert!(output.status.success(), "{:?}", output);
     assert!(output.stderr.is_empty());
+
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let lines = text.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 2, "preparation and startup records");
     assert!(lines[0].starts_with("preparation "));
     assert!(lines[1].starts_with("startup "));
+
     let preparation = fields(lines[0]);
     let startup = fields(lines[1]);
+    let patch_bytes = u128::try_from(PATCH.len()).expect("patch length fits u128");
+
     assert_eq!(preparation["files"], 1);
     assert_eq!(preparation["records"], 2);
     assert_eq!(startup["version"], 1);
-    assert_eq!(startup["bytes"], PATCH.len() as u128);
+    assert_eq!(startup["bytes"], patch_bytes);
     assert_eq!(startup["preparation_ns"], preparation["duration_ns"]);
     assert!(
         startup["ready_ns"]
             >= startup["input_ns"] + startup["parse_ns"] + startup["preparation_ns"]
     );
+}
+
+/// One `stage` record's parent, name, and duration.
+fn stage_record(line: &str) -> ((&str, &str), u128) {
+    let parts = line.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(parts.len(), 4, "{line}");
+    assert_eq!(parts[0], "stage");
+
+    let name = parts[1].strip_prefix("name=").expect("stage name");
+    let parent = parts[2].strip_prefix("parent=").expect("stage parent");
+    let duration = parts[3]
+        .strip_prefix("duration_ns=")
+        .expect("duration")
+        .parse()
+        .expect("nanoseconds");
+
+    ((parent, name), duration)
+}
+
+/// Every stage under its parent, plus each parent's unattributed remainder.
+fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
+    let stages = Stage::ALL
+        .into_iter()
+        .map(|stage| (stage.parent().label(), stage.label()));
+    let remainders = Parent::ALL
+        .into_iter()
+        .map(|parent| (parent.label(), "unattributed"));
+
+    stages.chain(remainders).collect()
 }
 
 #[test]
@@ -60,29 +97,29 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
     assert!(output.status.success(), "{:?}", output);
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let lines = text.lines().collect::<Vec<_>>();
+
+    let startup = fields(lines[1]);
+    let stages = lines[3..lines.len() - 1]
+        .iter()
+        .map(|line| stage_record(line))
+        .collect::<BTreeMap<_, _>>();
+    let parent_sum = |parent: &str| -> u128 {
+        stages
+            .iter()
+            .filter(|((owner, _), _)| *owner == parent)
+            .map(|(_, duration)| duration)
+            .sum()
+    };
+    let work = fields(lines.last().expect("work counters"));
+
     assert!(lines[0].starts_with("diagnostic "));
     assert_eq!(lines[2], "profile version=1");
-    let startup = fields(lines[1]);
-    let mut sums = BTreeMap::new();
-    let mut stages = BTreeMap::new();
-    for line in &lines[3..lines.len() - 1] {
-        let parts = line.split_whitespace().collect::<Vec<_>>();
-        assert_eq!(parts.len(), 4);
-        assert_eq!(parts[0], "stage");
-        let name = parts[1].strip_prefix("name=").expect("stage name");
-        let parent = parts[2].strip_prefix("parent=").expect("stage parent");
-        let duration: u128 = parts[3]
-            .strip_prefix("duration_ns=")
-            .expect("duration")
-            .parse()
-            .expect("nanoseconds");
-        assert!(stages.insert((parent, name), duration).is_none());
-        *sums.entry(parent).or_insert(0) += duration;
-    }
-    assert_eq!(stages.len(), 10);
-    assert_eq!(sums["preparation"], startup["preparation_ns"]);
-    assert_eq!(sums["syntax"], stages[&("preparation", "syntax")]);
-    let work = fields(lines.last().expect("work counters"));
+    assert_eq!(
+        stages.keys().copied().collect::<BTreeSet<_>>(),
+        expected_stages()
+    );
+    assert_eq!(parent_sum("preparation"), startup["preparation_ns"]);
+    assert_eq!(parent_sum("syntax"), stages[&("preparation", "syntax")]);
     assert_eq!(work["hunks"], 1);
     assert_eq!(work["parse_calls"], 2);
     assert_eq!(work["projected_bytes"], 24);
@@ -91,9 +128,10 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
 
 #[test]
 fn malformed_input_never_emits_success_measurements() {
-    for mode in ["prepare", "stages", "movement"] {
-        let output = run(mode, "not a patch\n");
-        assert_eq!(output.status.code(), Some(2), "{mode}: {output:?}");
+    for driver in Driver::ALL {
+        let output = run(driver.label(), "not a patch\n");
+
+        assert_trouble(&output);
         assert!(output.stdout.is_empty());
         assert!(!output.stderr.is_empty());
     }

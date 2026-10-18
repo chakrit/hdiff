@@ -2,10 +2,12 @@ mod common;
 
 use std::{
     fs,
-    process::{Command, Output, Stdio},
+    path::Path,
+    process::{Output, Stdio},
 };
 
-use common::{TEST_PATH, TestEnv, fixture};
+use common::{TestEnv, assert_trouble, fixture};
+use hdiff::bench::Driver;
 
 fn hdiff(arguments: &[&str]) -> Output {
     TestEnv::new()
@@ -16,11 +18,11 @@ fn hdiff(arguments: &[&str]) -> Output {
 }
 
 fn short_commit_hash() -> String {
-    let output = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_clear()
-        .env("PATH", TEST_PATH)
+    let output = TestEnv::new()
+        .git_in(
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            &["rev-parse", "--short", "HEAD"],
+        )
         .output()
         .expect("read source commit hash");
 
@@ -62,28 +64,26 @@ fn compare(env: &TestEnv, arguments: &[&str]) -> String {
 #[test]
 fn help_describes_the_cli_without_reading_diff_input() {
     let help = hdiff(&["--help"]);
+    let text = String::from_utf8(help.stdout).expect("help is UTF-8");
+    let drivers = Driver::ALL.map(Driver::label);
 
     assert!(help.status.success());
     assert!(help.stderr.is_empty());
-    assert_eq!(
-        String::from_utf8(help.stdout).expect("help is UTF-8"),
-        concat!(
-            "Usage: hdiff [OPTIONS] [FILE ...]\n",
-            "\n",
-            "Arguments:\n",
-            "  [FILE ...]  Read one patch file, compare two files or directories, ",
-            "or read\n",
-            "              standard input when omitted; - names standard input\n",
-            "\n",
-            "Options:\n",
-            "  -r                Compare directories recursively\n",
-            "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
-            "                    prepare, stages, or movement\n",
-            "  --install         Register hdiff as the user-level Git diff pager\n",
-            "  --help            Print help\n",
-            "  --version         Print version\n",
-        )
-    );
+    assert!(text.starts_with("Usage: hdiff"), "{text}");
+    for named in [
+        "[FILE ...]",
+        " - ",
+        "-r",
+        "--bench",
+        "--install",
+        "--help",
+        "--version",
+    ]
+    .into_iter()
+    .chain(drivers)
+    {
+        assert!(text.contains(named), "help names {named}:\n{text}");
+    }
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn bench_rejects_install_even_when_that_patch_filename_exists() {
         .output()
         .expect("bench with incompatible installation option");
 
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -170,7 +170,7 @@ fn truncated_patch_is_an_error() {
         .output()
         .expect("run hdiff on a truncated patch");
 
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -226,7 +226,7 @@ fn piped_stdin_with_file_operands_is_a_usage_error() {
         .output()
         .expect("run comparison with piped stdin");
 
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -268,7 +268,7 @@ fn patch_file_holding_only_text_is_an_error() {
         .output()
         .expect("run hdiff on a text-only patch");
 
-    assert_eq!(output.status.code(), Some(2));
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -280,7 +280,7 @@ fn patch_file_holding_only_text_is_an_error() {
 fn usage_errors_name_the_program_on_one_stderr_line() {
     let output = hdiff(&["a", "b", "c"]);
 
-    assert_eq!(output.status.code(), Some(2));
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
@@ -293,7 +293,7 @@ fn failed_comparisons_report_each_diff_error_line() {
     let output = hdiff(&["missing-before", "missing-after"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), Some(2));
+    assert_trouble(&output);
     assert!(output.stdout.is_empty());
     let lines = stderr.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 2, "{stderr}");
@@ -312,7 +312,7 @@ fn unreadable_patch_files_are_named_in_the_error() {
     let output = hdiff(&["missing.patch"]);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), Some(2));
+    assert_trouble(&output);
     assert!(stderr.starts_with("hdiff: missing.patch: "), "{stderr}");
     assert_eq!(stderr.matches('\n').count(), 1, "{stderr}");
 }

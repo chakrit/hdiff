@@ -7,9 +7,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Output},
 };
 
+use hdiff::exit_status::DiffStatus;
 use tempfile::TempDir;
 
 /// The only `PATH` any test process sees.
@@ -61,8 +62,14 @@ impl TestEnv {
     /// Git running in the root, isolated from system and user configuration.
     #[allow(dead_code)]
     pub fn git(&self, arguments: &[&str]) -> Command {
+        self.git_in(&self.root(), arguments)
+    }
+
+    /// Git running in `directory`, isolated like [`TestEnv::git`].
+    #[allow(dead_code)]
+    pub fn git_in(&self, directory: &Path, arguments: &[&str]) -> Command {
         let mut command = Command::new("git");
-        command.args(arguments).current_dir(self.root());
+        command.args(arguments).current_dir(directory);
         self.isolate(&mut command);
         command
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -82,6 +89,16 @@ impl TestEnv {
             .env("PATH", TEST_PATH)
             .env("TERM", TEST_TERM);
     }
+}
+
+/// Asserts that hdiff exited with the trouble status its errors use.
+#[allow(dead_code)]
+pub fn assert_trouble(output: &Output) {
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(DiffStatus::Trouble.code())),
+        "{output:?}"
+    );
 }
 
 /// A file under `tests/fixtures/`, as an absolute path usable from any sandbox.
