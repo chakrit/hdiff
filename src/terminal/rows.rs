@@ -1,8 +1,9 @@
 use ratatui::style::{Modifier, Style};
 
 use crate::{
-    interaction::{DiffGranularity, Viewport},
+    interaction::Viewport,
     layout::{ScrollExtent, SideBySideRow},
+    preferences::DiffGranularity,
     prepared::PreparedPage,
     styling::{RowKind, StyledRow, TextStyle},
     theme::{RowPalette, Theme},

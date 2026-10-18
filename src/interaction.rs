@@ -1,5 +1,7 @@
 use std::num::NonZeroUsize;
 
+use crate::preferences::ViewPreferences;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewport {
     pub vertical_offset: usize,
@@ -50,144 +52,6 @@ impl KeymapPopup {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffLayout {
-    Unified,
-    Vertical,
-    Stacked,
-}
-
-impl DiffLayout {
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Unified => Self::Vertical,
-            Self::Vertical => Self::Stacked,
-            Self::Stacked => Self::Unified,
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Unified => "unified",
-            Self::Vertical => "vertical",
-            Self::Stacked => "stacked",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ViewPreferences {
-    pub layout: DiffLayout,
-    pub granularity: DiffGranularity,
-    pub wrapping: Wrapping,
-    pub context_lines: usize,
-    pub file_list: FileList,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileList {
-    Shown,
-    Hidden,
-}
-
-impl FileList {
-    const fn toggled(self) -> Self {
-        match self {
-            Self::Shown => Self::Hidden,
-            Self::Hidden => Self::Shown,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Wrapping {
-    Disabled,
-    Enabled,
-}
-
-impl Wrapping {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Disabled => "off",
-            Self::Enabled => "on",
-        }
-    }
-
-    const fn toggled(self) -> Self {
-        match self {
-            Self::Disabled => Self::Enabled,
-            Self::Enabled => Self::Disabled,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffGranularity {
-    Line,
-    Character,
-}
-
-impl DiffGranularity {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Line => "line",
-            Self::Character => "character",
-        }
-    }
-}
-
-impl ViewPreferences {
-    pub const fn line(layout: DiffLayout) -> Self {
-        Self {
-            layout,
-            granularity: DiffGranularity::Line,
-            wrapping: Wrapping::Disabled,
-            context_lines: 3,
-            file_list: FileList::Shown,
-        }
-    }
-
-    /// The preferences `input` selects; every other input keeps them.
-    pub fn after(self, input: &Input) -> Self {
-        match input {
-            Input::NextLayout => Self {
-                layout: self.layout.next(),
-                ..self
-            },
-            Input::ToggleGranularity => Self {
-                granularity: self.granularity.toggled(),
-                ..self
-            },
-            Input::ToggleWrapping => Self {
-                wrapping: self.wrapping.toggled(),
-                ..self
-            },
-            Input::IncreaseContext => Self {
-                context_lines: self.context_lines.saturating_add(1),
-                ..self
-            },
-            Input::DecreaseContext => Self {
-                context_lines: self.context_lines.saturating_sub(1),
-                ..self
-            },
-            Input::ToggleFileList => Self {
-                file_list: self.file_list.toggled(),
-                ..self
-            },
-            _ => self,
-        }
-    }
-}
-
-impl DiffGranularity {
-    const fn toggled(self) -> Self {
-        match self {
-            Self::Line => Self::Character,
-            Self::Character => Self::Line,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct NavigationBounds {
     pub page_count: NonZeroUsize,
@@ -231,6 +95,37 @@ pub enum Input {
     Resize { width: u16, height: u16 },
 }
 
+/// The preferences `input` selects; every other input keeps them.
+pub fn preferences_after(preferences: ViewPreferences, input: &Input) -> ViewPreferences {
+    match input {
+        Input::NextLayout => ViewPreferences {
+            layout: preferences.layout.next(),
+            ..preferences
+        },
+        Input::ToggleGranularity => ViewPreferences {
+            granularity: preferences.granularity.toggled(),
+            ..preferences
+        },
+        Input::ToggleWrapping => ViewPreferences {
+            wrapping: preferences.wrapping.toggled(),
+            ..preferences
+        },
+        Input::IncreaseContext => ViewPreferences {
+            context_lines: preferences.context_lines.saturating_add(1),
+            ..preferences
+        },
+        Input::DecreaseContext => ViewPreferences {
+            context_lines: preferences.context_lines.saturating_sub(1),
+            ..preferences
+        },
+        Input::ToggleFileList => ViewPreferences {
+            file_list: preferences.file_list.toggled(),
+            ..preferences
+        },
+        _ => preferences,
+    }
+}
+
 pub fn transition_interaction(
     interaction: &Interaction,
     input: Input,
@@ -238,7 +133,7 @@ pub fn transition_interaction(
 ) -> Transition {
     let viewport = &interaction.viewport;
     let display = bounds.target_display;
-    let preferences = interaction.preferences.after(&input);
+    let preferences = preferences_after(interaction.preferences, &input);
 
     match input {
         Input::NextFile => return select_next_file(interaction, bounds.page_count),
@@ -450,10 +345,10 @@ mod tests {
     use std::num::NonZeroUsize;
 
     use super::{
-        DiffGranularity, DiffLayout, DisplayBounds, FileList, Input, Interaction, KeymapPopup,
-        NavigationBounds, Transition, ViewPreferences, Viewport, Wrapping, transition,
-        transition_interaction,
+        DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds, Transition, Viewport,
+        transition, transition_interaction,
     };
+    use crate::preferences::{DiffGranularity, DiffLayout, FileList, ViewPreferences, Wrapping};
 
     const TWO_PAGES: NonZeroUsize = NonZeroUsize::new(2).expect("two is nonzero");
 
@@ -491,7 +386,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 2,
@@ -542,7 +437,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 2,
@@ -602,7 +497,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 2,
                 horizontal_offset: 4,
@@ -648,7 +543,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport {
                 vertical_offset: 2,
                 horizontal_offset: 4,
@@ -682,7 +577,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 3,
@@ -707,7 +602,7 @@ mod tests {
             Transition::RedrawInteraction(Interaction {
                 keymap: KeymapPopup::Closed,
                 selected_file: 0,
-                preferences: ViewPreferences::line(DiffLayout::Unified),
+                preferences: ViewPreferences::initial(DiffLayout::Unified),
                 viewport: Viewport {
                     vertical_offset: 0,
                     horizontal_offset: 0,
@@ -723,7 +618,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 3,
@@ -748,7 +643,7 @@ mod tests {
             Transition::RedrawInteraction(Interaction {
                 keymap: KeymapPopup::Closed,
                 selected_file: 1,
-                preferences: ViewPreferences::line(DiffLayout::Unified),
+                preferences: ViewPreferences::initial(DiffLayout::Unified),
                 viewport: Viewport {
                     vertical_offset: 0,
                     horizontal_offset: 0,
@@ -764,7 +659,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 3,
@@ -808,7 +703,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 3,
@@ -877,7 +772,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport {
                 vertical_offset: 4,
                 horizontal_offset: 3,
@@ -917,7 +812,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport {
                 vertical_offset: 2,
                 horizontal_offset: 9,

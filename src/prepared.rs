@@ -4,9 +4,9 @@ use crate::{
     detail::detail_rows,
     document::{DiffDocument, FileView},
     file_tree::{FileListing, FileTree, ListedFile},
-    interaction::DiffGranularity,
     layout::{Layout, file_layout, text_layout},
     measurement::{Observer, Stage, Unobserved},
+    preferences::DiffGranularity,
     render::RenderedLineKind,
     styling::{StyledLayout, StyledRow},
     syntax::{SyntaxHighlighter, SyntaxSpan},
@@ -154,7 +154,7 @@ impl PreparedPage {
 #[cfg(test)]
 mod tests {
     use super::PreparedDocument;
-    use crate::{interaction::DiffGranularity, parser::parse_unified_diff, styling::TextStyle};
+    use crate::{parser::parse_unified_diff, preferences::DiffGranularity, styling::TextStyle};
 
     #[test]
     fn retains_surrounding_text_with_separate_repeated_file_views() {

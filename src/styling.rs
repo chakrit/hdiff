@@ -2,8 +2,8 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
     detail::DetailSpan,
-    interaction::DiffGranularity,
     layout::Layout,
+    preferences::DiffGranularity,
     render::{RenderedLine, RenderedLineKind},
     syntax::{SyntaxClass, SyntaxSpan},
 };

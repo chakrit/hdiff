@@ -6,8 +6,9 @@ use ratatui::{
 
 use crate::{
     file_tree::FileTree,
-    interaction::{DiffLayout, Interaction, KeymapPopup},
+    interaction::{Interaction, KeymapPopup},
     layout::{PaneLayout, ScrollExtent, Wrap, pane_height, pane_layout},
+    preferences::DiffLayout,
     prepared::PreparedPage,
     styling::StyledRow,
     theme::Theme,
@@ -293,10 +294,11 @@ mod tests {
     use super::{render_document, render_prepared_frame};
     use crate::{
         interaction::{
-            DiffLayout, DisplayBounds, FileList, Input, Interaction, KeymapPopup, NavigationBounds,
-            Transition, ViewPreferences, Viewport, transition_interaction,
+            DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds, Transition, Viewport,
+            transition_interaction,
         },
         parser::parse_unified_diff,
+        preferences::{DiffLayout, FileList, ViewPreferences},
         prepared::PreparedDocument,
         theme::{ColorDepth, Theme},
     };
@@ -312,7 +314,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).expect("test terminal");
@@ -350,7 +352,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(23, 8),
         };
         let mut terminal = Terminal::new(TestBackend::new(23, 8)).expect("test terminal");
@@ -373,7 +375,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport::new(80, 9),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
@@ -421,7 +423,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(80, 8),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -446,7 +448,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport {
                 vertical_offset: 0,
                 horizontal_offset: 2,
@@ -474,7 +476,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Vertical),
+            preferences: ViewPreferences::initial(DiffLayout::Vertical),
             viewport: Viewport::new(80, 8),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 8)).expect("test terminal");
@@ -510,7 +512,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Stacked),
+            preferences: ViewPreferences::initial(DiffLayout::Stacked),
             viewport: Viewport::new(80, 20),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("test terminal");
@@ -555,7 +557,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(80, 9),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
@@ -649,8 +651,8 @@ mod tests {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
             preferences: ViewPreferences {
-                granularity: crate::interaction::DiffGranularity::Character,
-                ..ViewPreferences::line(DiffLayout::Unified)
+                granularity: crate::preferences::DiffGranularity::Character,
+                ..ViewPreferences::initial(DiffLayout::Unified)
             },
             viewport: Viewport::new(80, 8),
         };
@@ -726,7 +728,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 1,
-            preferences: ViewPreferences::line(diff_layout),
+            preferences: ViewPreferences::initial(diff_layout),
             viewport: Viewport {
                 vertical_offset: 1,
                 horizontal_offset: 1,
@@ -810,7 +812,7 @@ mod tests {
         let interaction = Interaction {
             keymap: KeymapPopup::Closed,
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(80, 9),
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 9)).expect("test terminal");
@@ -861,7 +863,7 @@ mod tests {
             selected_file: 0,
             preferences: ViewPreferences {
                 file_list,
-                ..ViewPreferences::line(DiffLayout::Unified)
+                ..ViewPreferences::initial(DiffLayout::Unified)
             },
             viewport: Viewport::new(width, usize::from(height)),
         }

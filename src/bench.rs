@@ -16,9 +16,9 @@ use ratatui::{
 
 use crate::{
     input,
-    interaction::ViewPreferences,
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
     parser::ParseError,
+    preferences::ViewPreferences,
     prepared::PreparedDocument,
     terminal::Tui,
 };

@@ -2,8 +2,8 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    interaction::DiffGranularity,
     layout::{Layout, SideBySideRow},
+    preferences::DiffGranularity,
 };
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
@@ -325,7 +325,7 @@ fn record_payload(bytes: &[u8]) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{ChangedPairDetail, DetailSpan, changed_pair_detail, detail_rows};
-    use crate::{interaction::DiffGranularity, layout::file_layout, parser::parse_unified_diff};
+    use crate::{layout::file_layout, parser::parse_unified_diff, preferences::DiffGranularity};
 
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {

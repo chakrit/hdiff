@@ -1,7 +1,7 @@
 use crate::{
     document::FileView,
-    interaction::{DiffLayout, FileList, ViewPreferences, Wrapping},
     line_breaks::wrapped_line_count,
+    preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
     render::{RecordAddress, RenderedLine, RenderedLineKind, render_file_lines, render_text_lines},
     source_text::SourceLine,
     styling::payload,
@@ -522,8 +522,8 @@ mod tests {
         file_layout, maximum_horizontal_offset, pane_layout,
     };
     use crate::{
-        interaction::{DiffLayout, FileList, ViewPreferences, Wrapping},
         parser::parse_unified_diff,
+        preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
         render::RenderedLineKind,
     };
 
@@ -715,7 +715,7 @@ mod tests {
         ViewPreferences {
             wrapping,
             file_list,
-            ..ViewPreferences::line(layout)
+            ..ViewPreferences::initial(layout)
         }
     }
 
@@ -764,7 +764,7 @@ mod tests {
         // architecture.md: the minimum layout shows one content line in each diff pane.
         for ((width, height), layout, expected) in cases {
             assert_eq!(
-                pane_layout(width, height, ViewPreferences::line(layout)),
+                pane_layout(width, height, ViewPreferences::initial(layout)),
                 expected,
                 "{width}×{height} {layout:?}"
             );
@@ -782,8 +782,9 @@ mod tests {
 
     #[test]
     fn derives_the_narrowest_content_pane_width_for_each_layout() {
-        let width =
-            |screen_width, layout| content_pane_width(screen_width, ViewPreferences::line(layout));
+        let width = |screen_width, layout| {
+            content_pane_width(screen_width, ViewPreferences::initial(layout))
+        };
 
         assert_eq!(width(80, DiffLayout::Unified), 51);
         assert_eq!(width(80, DiffLayout::Vertical), 24);

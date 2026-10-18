@@ -13,6 +13,7 @@ pub mod layout;
 pub mod line_breaks;
 pub mod measurement;
 pub mod parser;
+pub mod preferences;
 pub mod prepared;
 pub mod render;
 pub mod source_text;

@@ -247,9 +247,10 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
-        interaction::{DiffGranularity, DiffLayout, Viewport},
+        interaction::Viewport,
         layout::Wrap,
         parser::parse_unified_diff,
+        preferences::{DiffGranularity, DiffLayout},
         prepared::PreparedDocument,
         terminal::rows::{PaneRow, visible_diff_rows},
         theme::{ColorDepth, Theme},

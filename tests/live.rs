@@ -4,9 +4,9 @@
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
-    interaction::{DiffGranularity, DiffLayout, ViewPreferences},
     layout::content_pane_height,
     parser::parse_unified_diff,
+    preferences::{DiffGranularity, DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
     terminal::{Step, Tui},
 };
@@ -672,7 +672,7 @@ fn preferences_start_in_unified_line_mode() {
 
     assert_eq!(
         live.tui.preferences(),
-        ViewPreferences::line(DiffLayout::Unified)
+        ViewPreferences::initial(DiffLayout::Unified)
     );
 }
 

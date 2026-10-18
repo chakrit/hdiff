@@ -5,13 +5,14 @@ use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
     interaction::{
-        self, DiffLayout, DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds,
-        Transition, ViewPreferences, Viewport,
+        self, DisplayBounds, Input, Interaction, KeymapPopup, NavigationBounds, Transition,
+        Viewport,
     },
     layout::{
         ScreenLine, ScrollExtent, Wrap, content_pane_height, content_pane_width,
         maximum_horizontal_offset,
     },
+    preferences::{DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},
 };
@@ -56,7 +57,7 @@ impl Tui {
     pub fn new(document: PreparedDocument, area: Size, color_depth: ColorDepth) -> Self {
         let interaction = Interaction {
             selected_file: 0,
-            preferences: ViewPreferences::line(DiffLayout::Unified),
+            preferences: ViewPreferences::initial(DiffLayout::Unified),
             viewport: Viewport::new(area.width, usize::from(area.height)),
             keymap: KeymapPopup::Closed,
         };
@@ -116,7 +117,7 @@ impl Tui {
         let (target_width, _) = target_screen(&self.interaction, &input);
         let target = ExtentKey::new(
             self.interaction.selected_file,
-            self.interaction.preferences.after(&input),
+            interaction::preferences_after(self.interaction.preferences, &input),
             target_width,
         );
         let target_extent = self.extent.select(&self.document, target);
@@ -289,7 +290,7 @@ fn navigation_bounds(
     target_extent: &ScrollExtent,
     focus: Option<Focus>,
 ) -> NavigationBounds {
-    let display_preferences = interaction.preferences.after(input);
+    let display_preferences = interaction::preferences_after(interaction.preferences, input);
     let (screen_width, screen_height) = target_screen(interaction, input);
     let pane_width = content_pane_width(screen_width, display_preferences);
     let pane_height = content_pane_height(screen_height, display_preferences.layout);
@@ -366,9 +367,10 @@ mod tests {
     #[test]
     fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
         use crate::{
-            interaction::{DiffLayout, Interaction, ViewPreferences, Viewport},
+            interaction::{Interaction, Viewport},
             layout::Wrap,
             parser::parse_unified_diff,
+            preferences::{DiffLayout, ViewPreferences},
             prepared::PreparedDocument,
         };
         use ratatui::{Terminal, backend::TestBackend};
@@ -390,7 +392,7 @@ mod tests {
                 let interaction = Interaction {
                     keymap: KeymapPopup::Closed,
                     selected_file,
-                    preferences: ViewPreferences::line(layout),
+                    preferences: ViewPreferences::initial(layout),
                     viewport: Viewport::new(120, 30),
                 };
                 let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("test terminal");
