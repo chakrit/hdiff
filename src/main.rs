@@ -136,7 +136,7 @@ impl fmt::Display for RunError {
         match self {
             Self::Usage(error) => write!(formatter, "{error}"),
             Self::Input(error) => write!(formatter, "{error}"),
-            Self::Parse(error) => formatter.write_str(&error.message),
+            Self::Parse(error) => write!(formatter, "{error}"),
             Self::Executable(error) => {
                 write!(formatter, "cannot locate the hdiff executable: {error}")
             }

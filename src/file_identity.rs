@@ -3,7 +3,7 @@
 
 use std::str::CharIndices;
 
-use crate::document::SourceLine;
+use crate::source_text::SourceLine;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileState {
@@ -47,7 +47,7 @@ impl FileIdentity {
         match located {
             Some((state, path)) => Self::Path { state, path },
             None => Self::Unknown {
-                header: first_line.structural_text.clone(),
+                header: first_line.sanitized().to_owned(),
             },
         }
     }
@@ -144,7 +144,7 @@ fn locate_metadata(change: GitChange, header: &SourceLine) -> Option<(FileState,
 fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
     lines
         .iter()
-        .map(|line| line.structural_text.as_str())
+        .map(|line| line.sanitized())
         .try_fold(GitChange::Unmarked, |change, line| {
             if line.starts_with("new file mode ") {
                 return Some(GitChange::Added);
@@ -165,7 +165,7 @@ fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
 
 /// The name a `diff --git <old> <new>` line gives: the path suffix its halves share.
 fn git_header_path(line: &SourceLine) -> Option<String> {
-    let names = line.structural_text.strip_prefix("diff --git ")?;
+    let names = line.sanitized().strip_prefix("diff --git ")?;
     if !names.starts_with('"') {
         return unquoted_git_name(names);
     }

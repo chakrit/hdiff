@@ -79,7 +79,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Input(error) => error.fmt(formatter),
-            Self::Parse(error) => formatter.write_str(&error.message),
+            Self::Parse(error) => write!(formatter, "{error}"),
             Self::Terminal(error) => error.fmt(formatter),
         }
     }

@@ -15,6 +15,7 @@ pub mod measurement;
 pub mod parser;
 pub mod prepared;
 pub mod render;
+pub mod source_text;
 pub mod styling;
 pub mod syntax;
 pub mod tab_stops;

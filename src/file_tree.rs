@@ -2,8 +2,9 @@
 //! in input order. Contract: docs/spec/architecture.md#file-tree.
 
 use crate::{
-    document::{FileView, sanitize},
+    document::FileView,
     file_identity::{FileIdentity, FileState},
+    source_text::sanitize,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -58,7 +59,10 @@ impl FileTree {
         for (view, identity) in top_level.into_iter().chain(nested) {
             let (file_directory, name) = placement(identity);
             if file_directory != directory {
-                rows.push(TreeRow::Directory(format!("{}/", sanitize(file_directory))));
+                rows.push(TreeRow::Directory(format!(
+                    "{}/",
+                    sanitize(file_directory.as_bytes())
+                )));
                 directory = file_directory;
             }
             files.push(ListedFile {
@@ -67,7 +71,7 @@ impl FileTree {
             });
             rows.push(TreeRow::File {
                 marker: marker(identity),
-                name: sanitize(name),
+                name: sanitize(name.as_bytes()),
             });
         }
 

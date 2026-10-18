@@ -315,7 +315,7 @@ impl Projection {
             };
             if belongs {
                 let start = source.len();
-                source.extend_from_slice(record.payload.structural_text.as_bytes());
+                source.extend_from_slice(record.payload.sanitized().as_bytes());
                 let owns_styling = match side {
                     Side::Old => record.kind == RecordKind::Deletion,
                     Side::New => true,

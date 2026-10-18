@@ -529,7 +529,8 @@ rendering consumes the source once, and annotations select styles only. Syntax a
 character-detail presentation share this boundary. Rows with character-detail spans
 use detail styling with plain gaps; rows without them retain syntax styling.
 
-Each record retains exact source bytes, decoded and sanitized text, and classification.
+Each record retains exact source bytes, sanitized text, and classification. One scanner
+recognizes control sequences for both sanitizing and locating a record's marker.
 Prepared partitions own display styling. Parsing uses ANSI-free text; rendering strips
 input control sequences, including SGR colors, and applies hdiff's own styling.
 It never replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal.

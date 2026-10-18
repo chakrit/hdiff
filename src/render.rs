@@ -1,4 +1,7 @@
-use crate::document::{DiffDocument, DiffFile, RecordKind, Section, SourceLine};
+use crate::{
+    document::{DiffDocument, DiffFile, Section},
+    source_text::SourceLine,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {
@@ -41,7 +44,7 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 pub fn render_text_lines(lines: &[SourceLine]) -> Vec<RenderedLine> {
     lines
         .iter()
-        .map(|line| rendered_line(RenderedLineKind::Text, None, line))
+        .map(|line| rendered_line(RenderedLineKind::Text, "", line))
         .collect()
 }
 
@@ -58,27 +61,27 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     match file {
         DiffFile::Metadata { header, lines, .. } => {
             for line in std::iter::once(header).chain(lines) {
-                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, None, line));
+                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, "", line));
             }
         }
         DiffFile::Unified(file) => {
             for line in &file.metadata {
-                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, None, line));
+                rendered_lines.push(rendered_line(RenderedLineKind::Metadata, "", line));
             }
             rendered_lines.push(rendered_line(
                 RenderedLineKind::FileHeader,
-                None,
+                "",
                 &file.old_header,
             ));
             rendered_lines.push(rendered_line(
                 RenderedLineKind::FileHeader,
-                None,
+                "",
                 &file.new_header,
             ));
             for (hunk_index, hunk) in file.hunks.iter().enumerate() {
                 rendered_lines.push(rendered_line(
                     RenderedLineKind::HunkHeader,
-                    None,
+                    "",
                     &hunk.header,
                 ));
                 for (record_index, record) in hunk.records.iter().enumerate() {
@@ -88,7 +91,7 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
                     };
                     rendered_lines.push(rendered_line(
                         RenderedLineKind::Record(address),
-                        marker(&record.kind),
+                        record.kind.marker(),
                         &record.payload,
                     ));
                 }
@@ -99,36 +102,25 @@ pub fn render_file_lines(file: &DiffFile) -> Vec<RenderedLine> {
     rendered_lines
 }
 
-fn rendered_line(kind: RenderedLineKind, marker: Option<u8>, line: &SourceLine) -> RenderedLine {
-    let line_ending: &[u8] = if line.bytes.ends_with(b"\r\n") {
+fn rendered_line(kind: RenderedLineKind, marker: &str, line: &SourceLine) -> RenderedLine {
+    let source = line.bytes();
+    let line_ending: &[u8] = if source.ends_with(b"\r\n") {
         b"\r\n"
-    } else if line.bytes.ends_with(b"\n") {
+    } else if source.ends_with(b"\n") {
         b"\n"
     } else {
         b""
     };
-    let final_length =
-        usize::from(marker.is_some()) + line.structural_text.len() + line_ending.len();
+    let final_length = marker.len() + line.sanitized().len() + line_ending.len();
     let mut bytes = Vec::with_capacity(final_length);
 
-    if let Some(marker) = marker {
-        bytes.push(marker);
-    }
-    bytes.extend_from_slice(line.structural_text.as_bytes());
+    bytes.extend_from_slice(marker.as_bytes());
+    bytes.extend_from_slice(line.sanitized().as_bytes());
     bytes.extend_from_slice(line_ending);
 
     RenderedLine {
         bytes: bytes.into_boxed_slice(),
         kind,
-    }
-}
-
-fn marker(kind: &RecordKind) -> Option<u8> {
-    match kind {
-        RecordKind::Context => Some(b' '),
-        RecordKind::Addition => Some(b'+'),
-        RecordKind::Deletion => Some(b'-'),
-        RecordKind::Raw => None,
     }
 }
 

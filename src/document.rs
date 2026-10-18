@@ -1,4 +1,7 @@
-use crate::file_identity::{FileIdentity, HeaderPath};
+use crate::{
+    file_identity::{FileIdentity, HeaderPath},
+    source_text::SourceLine,
+};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
@@ -62,29 +65,6 @@ impl DiffDocument {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct SourceLine {
-    pub bytes: Vec<u8>,
-    pub text: String,
-    pub structural_text: String,
-}
-
-impl SourceLine {
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let without_line_feed = bytes.strip_suffix(b"\n").unwrap_or(bytes);
-        let content = without_line_feed
-            .strip_suffix(b"\r")
-            .unwrap_or(without_line_feed);
-        let text = String::from_utf8_lossy(content).into_owned();
-
-        Self {
-            bytes: bytes.to_vec(),
-            structural_text: sanitize(&text),
-            text,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
 pub enum DiffFile {
     /// A Git section without unified headers: its `diff --git` line and the metadata
     /// lines that follow it.
@@ -128,7 +108,7 @@ pub struct Record {
     pub payload: SourceLine,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordKind {
     Context,
     Addition,
@@ -136,43 +116,24 @@ pub enum RecordKind {
     Raw,
 }
 
-pub(crate) fn sanitize(text: &str) -> String {
-    #[derive(Clone, Copy)]
-    enum State {
-        Text,
-        Escape,
-        ControlSequence,
-        StringSequence,
-        StringEscape,
+impl RecordKind {
+    /// The kind a hunk line's leading marker gives, or `None` for an unmarked line.
+    pub fn of_marker(marker: char) -> Option<Self> {
+        match marker {
+            ' ' => Some(Self::Context),
+            '+' => Some(Self::Addition),
+            '-' => Some(Self::Deletion),
+            _ => None,
+        }
     }
 
-    let mut output = String::new();
-    let mut state = State::Text;
-    for character in text.chars() {
-        state = match (state, character) {
-            (State::Text, '\u{1b}') => State::Escape,
-            (State::Text, '\t') => {
-                output.push(character);
-                State::Text
-            }
-            (State::Text, character) if !character.is_control() => {
-                output.push(character);
-                State::Text
-            }
-            (State::Text, _) => State::Text,
-            (State::Escape, '[') => State::ControlSequence,
-            (State::Escape, ']' | 'P' | 'X' | '^' | '_') => State::StringSequence,
-            (State::Escape, _) => State::Text,
-            (State::ControlSequence, '@'..='~') => State::Text,
-            (State::ControlSequence, _) => State::ControlSequence,
-            (State::StringSequence, '\u{7}') => State::Text,
-            (State::StringSequence, '\u{1b}') => State::StringEscape,
-            (State::StringSequence, _) => State::StringSequence,
-            (State::StringEscape, '\\') => State::Text,
-            (State::StringEscape, '\u{1b}') => State::StringEscape,
-            (State::StringEscape, _) => State::StringSequence,
-        };
+    /// The marker that precedes the payload; a raw line has none.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Context => " ",
+            Self::Addition => "+",
+            Self::Deletion => "-",
+            Self::Raw => "",
+        }
     }
-
-    output
 }
