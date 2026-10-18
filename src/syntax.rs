@@ -1,4 +1,4 @@
-use std::{fmt, ops::Range};
+use std::ops::Range;
 
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
@@ -48,19 +48,11 @@ pub struct SyntaxSpan {
     pub class: SyntaxClass,
 }
 
-/// Highlights files, keeping each language's highlighter, or the reason it failed to
-/// load, across files.
+/// Highlights files, keeping each language's highlighter across files.
+#[derive(Default)]
 pub struct SyntaxHighlighter {
-    /// Each language's highlighter once first used, at its [`Language::slot`].
-    languages: [Option<Result<LanguageHighlighter, LanguageError>>; Language::ALL.len()],
-}
-
-impl Default for SyntaxHighlighter {
-    fn default() -> Self {
-        Self {
-            languages: [const { None }; Language::ALL.len()],
-        }
-    }
+    /// Each language's highlighter once first used.
+    languages: LanguageTable<Option<LanguageHighlighter>>,
 }
 
 impl SyntaxHighlighter {
@@ -81,7 +73,6 @@ impl SyntaxHighlighter {
         observer: &mut impl Observer,
     ) -> Box<[Vec<SyntaxSpan>]> {
         observer.count(Work::Hunk);
-        let mut spans = hunk.records.iter().map(|_| Vec::new()).collect::<Vec<_>>();
         let old_language = Language::for_header(&file.old.path);
         let new_language = Language::for_header(&file.new.path);
         // architecture.md: context stays textual when the paths select different languages.
@@ -99,45 +90,45 @@ impl SyntaxHighlighter {
             (old, new)
         });
 
-        match shared_language {
+        let passes = match shared_language {
             Some(language) => {
-                let base = self
-                    .highlight_projection(language, &old, None, &mut spans, observer)
-                    .map(|tree| (&old, tree));
-                self.highlight_projection(language, &new, base, &mut spans, observer);
+                let old_pass = self.highlight_projection(language, &old, None, observer);
+                let (old_spans, base) = match old_pass {
+                    Some(pass) => (pass.spans, Some((&old, pass.tree))),
+                    None => (Vec::new(), None),
+                };
+                let new_pass = self.highlight_projection(language, &new, base, observer);
+                [old_spans, new_pass.map_or_else(Vec::new, |pass| pass.spans)]
             }
-            None => {
-                for (language, projection) in [(old_language, &old), (new_language, &new)] {
-                    let Some(language) = language else {
-                        continue;
-                    };
-                    self.highlight_projection(language, projection, None, &mut spans, observer);
-                }
-            }
-        }
+            None => [(old_language, &old), (new_language, &new)].map(|(language, projection)| {
+                language
+                    .and_then(|language| {
+                        self.highlight_projection(language, projection, None, observer)
+                    })
+                    .map_or_else(Vec::new, |pass| pass.spans)
+            }),
+        };
 
+        let mut spans = hunk.records.iter().map(|_| Vec::new()).collect::<Vec<_>>();
+        for (record, span) in passes.into_iter().flatten() {
+            spans[record.0].push(span);
+        }
         spans.into_boxed_slice()
     }
 
-    /// Highlights `projection`, parsing it as an edit of `base`'s tree when given, and
-    /// returns its tree. A projection without styled records is not parsed, and a
-    /// language that failed to load highlights nothing.
+    /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A
+    /// projection without styled records is not parsed.
     fn highlight_projection(
         &mut self,
         language: Language,
         projection: &Projection,
         base: Option<(&Projection, Tree)>,
-        spans: &mut [Vec<SyntaxSpan>],
         observer: &mut impl Observer,
-    ) -> Option<Tree> {
+    ) -> Option<Highlighted> {
         if projection.records.is_empty() {
             return None;
         }
-        let Ok(highlighter) = observer.measure(Stage::Language, |_| self.highlighter_for(language))
-        else {
-            // architecture.md: a language that fails to load stays textual.
-            return None;
-        };
+        let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
 
         let tree = observer.measure(Stage::Parse, |observer| {
             let edited_base = base.map(|(base_projection, mut tree)| {
@@ -147,24 +138,25 @@ impl SyntaxHighlighter {
             observer.count(Work::Parse);
             highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
         });
-        observer.measure(Stage::Query, |observer| {
-            highlighter.highlight(projection, &tree, spans, observer)
+        let spans = observer.measure(Stage::Query, |observer| {
+            highlighter.highlight(projection, &tree, observer)
         });
 
-        Some(tree)
+        Some(Highlighted { tree, spans })
     }
 
-    /// The highlighter for `language`, loaded on first use; a language that failed to load
-    /// keeps its error and is not loaded again.
-    fn highlighter_for(
-        &mut self,
-        language: Language,
-    ) -> Result<&mut LanguageHighlighter, &LanguageError> {
-        self.languages[language.slot()]
+    /// The highlighter for `language`, loaded on first use.
+    fn highlighter_for(&mut self, language: Language) -> &mut LanguageHighlighter {
+        self.languages
+            .get_mut(language)
             .get_or_insert_with(|| LanguageHighlighter::new(language))
-            .as_mut()
-            .map_err(|error| &*error)
     }
+}
+
+/// One projection's parse tree and the spans its captures give its records.
+struct Highlighted {
+    tree: Tree,
+    spans: Vec<(HunkRecord, SyntaxSpan)>,
 }
 
 // Languages
@@ -179,7 +171,8 @@ enum Language {
 }
 
 impl Language {
-    /// Every language, in [`slot`](Self::slot) order.
+    /// Every language.
+    #[cfg(test)]
     const ALL: [Self; 5] = [
         Self::Rust,
         Self::JavaScript,
@@ -187,17 +180,6 @@ impl Language {
         Self::Go,
         Self::C,
     ];
-
-    /// The language's position in [`ALL`](Self::ALL).
-    const fn slot(self) -> usize {
-        match self {
-            Self::Rust => 0,
-            Self::JavaScript => 1,
-            Self::Python => 2,
-            Self::Go => 3,
-            Self::C => 4,
-        }
-    }
 
     fn for_header(path: &HeaderPath) -> Option<Self> {
         let HeaderPath::Path(path) = path else {
@@ -215,23 +197,27 @@ impl Language {
     }
 }
 
-/// Why a bundled grammar or its highlight query could not be loaded.
-#[derive(Debug)]
-enum LanguageError {
-    Grammar(tree_sitter::LanguageError),
-    Query(tree_sitter::QueryError),
+/// One value for each language.
+#[derive(Default)]
+struct LanguageTable<T> {
+    rust: T,
+    javascript: T,
+    python: T,
+    go: T,
+    c: T,
 }
 
-impl fmt::Display for LanguageError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Grammar(error) => write!(formatter, "incompatible grammar: {error}"),
-            Self::Query(error) => write!(formatter, "invalid highlight query: {error}"),
+impl<T> LanguageTable<T> {
+    fn get_mut(&mut self, language: Language) -> &mut T {
+        match language {
+            Language::Rust => &mut self.rust,
+            Language::JavaScript => &mut self.javascript,
+            Language::Python => &mut self.python,
+            Language::Go => &mut self.go,
+            Language::C => &mut self.c,
         }
     }
 }
-
-impl std::error::Error for LanguageError {}
 
 struct LanguageHighlighter {
     parser: Parser,
@@ -240,7 +226,11 @@ struct LanguageHighlighter {
 }
 
 impl LanguageHighlighter {
-    fn new(language: Language) -> Result<Self, LanguageError> {
+    /// The highlighter of a bundled grammar and its highlight query.
+    ///
+    /// Panics when the bundled grammar or query does not load, which the bundled-grammar
+    /// test rules out for every language.
+    fn new(language: Language) -> Self {
         let (grammar, highlights) = match language {
             Language::Rust => (
                 tree_sitter_rust::LANGUAGE.into(),
@@ -267,14 +257,14 @@ impl LanguageHighlighter {
         let mut parser = Parser::new();
         parser
             .set_language(&grammar)
-            .map_err(LanguageError::Grammar)?;
-        let query = Query::new(&grammar, highlights).map_err(LanguageError::Query)?;
+            .expect("a bundled grammar matches the linked tree-sitter");
+        let query = Query::new(&grammar, highlights).expect("a bundled highlight query is valid");
 
-        Ok(Self {
+        Self {
             parser,
             query,
             cursor: QueryCursor::new(),
-        })
+        }
     }
 
     fn parse(&mut self, source: &[u8], old_tree: Option<&Tree>) -> Tree {
@@ -283,32 +273,30 @@ impl LanguageHighlighter {
             .expect("a parser with a language, no timeout, and no cancellation returns a tree")
     }
 
+    /// The spans the query's captures over `tree` give `projection`'s records.
     fn highlight(
         &mut self,
         projection: &Projection,
         tree: &Tree,
-        spans: &mut [Vec<SyntaxSpan>],
         observer: &mut impl Observer,
-    ) {
+    ) -> Vec<(HunkRecord, SyntaxSpan)> {
         let capture_names = self.query.capture_names();
         let mut captures =
             self.cursor
                 .captures(&self.query, tree.root_node(), projection.source.as_bytes());
+        let mut spans = Vec::new();
 
         while let Some((query_match, index)) = captures.next() {
             observer.count(Work::Capture);
             let capture = query_match.captures()[*index];
-            let Some(class) = SyntaxClass::from_capture_name(capture_names[capture.index as usize])
-            else {
+            let name = usize::try_from(capture.index).expect("capture indexes fit in usize");
+            let Some(class) = SyntaxClass::from_capture_name(capture_names[name]) else {
                 continue;
             };
-            projection.map_span(
-                capture.node.start_byte(),
-                capture.node.end_byte(),
-                class,
-                spans,
-            );
+            let node = capture.node;
+            spans.extend(projection.map_span(node.start_byte(), node.end_byte(), class));
         }
+        spans
     }
 }
 
@@ -330,9 +318,13 @@ struct Projection {
     records: Vec<ProjectedRecord>,
 }
 
+/// A record's position among its hunk's records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HunkRecord(usize);
+
 /// A record's payload range in its projection's source.
 struct ProjectedRecord {
-    record_index: usize,
+    record: HunkRecord,
     source: Range<usize>,
 }
 
@@ -347,7 +339,7 @@ impl Projection {
             .enumerate()
             .filter(|(_, record)| record.kind.on_side(side));
 
-        for (record_index, record) in side_records {
+        for (position, record) in side_records {
             let start = source.len();
             source.push_str(record.payload.sanitized());
             let styled = match styles {
@@ -356,7 +348,7 @@ impl Projection {
             };
             if styled {
                 records.push(ProjectedRecord {
-                    record_index,
+                    record: HunkRecord(position),
                     source: start..source.len(),
                 });
             }
@@ -366,35 +358,31 @@ impl Projection {
         Self { source, records }
     }
 
+    /// The spans the source range `start..end` gives the records it overlaps, clipped to
+    /// each record's payload.
     fn map_span(
         &self,
         start: usize,
         end: usize,
         class: SyntaxClass,
-        spans: &mut [Vec<SyntaxSpan>],
-    ) {
+    ) -> impl Iterator<Item = (HunkRecord, SyntaxSpan)> + '_ {
         let first_record = self.first_overlapping_record(start);
-        for record in self
-            .records
+
+        self.records
             .iter()
             .skip(first_record)
-            .take_while(|record| record.source.start < end)
-        {
-            let mapped_start = start.max(record.source.start);
-            let mapped_end = end.min(record.source.end);
-            if mapped_start < mapped_end {
+            .take_while(move |record| record.source.start < end)
+            .filter_map(move |record| {
+                let mapped_start = start.max(record.source.start) - record.source.start;
+                let mapped_end = end.min(record.source.end) - record.source.start;
                 let payload = &self.source[record.source.clone()];
-                spans[record.record_index].push(SyntaxSpan {
-                    span: PayloadSpan::within(
-                        payload,
-                        mapped_start - record.source.start,
-                        mapped_end - record.source.start,
-                    ),
+                let span = SyntaxSpan {
+                    span: PayloadSpan::within(payload, mapped_start, mapped_end),
                     capture_length: end - start,
                     class,
-                });
-            }
-        }
+                };
+                (mapped_start < mapped_end).then_some((record.record, span))
+            })
     }
 
     fn edit_to(&self, newer: &Self) -> InputEdit {
@@ -447,8 +435,8 @@ fn point_at(source: &[u8], byte: usize) -> Point {
 #[cfg(test)]
 mod tests {
     use super::{
-        Language, LanguageHighlighter, ProjectedRecord, Projection, Styles, SyntaxClass,
-        SyntaxHighlighter,
+        HunkRecord, Language, LanguageHighlighter, ProjectedRecord, Projection, Styles,
+        SyntaxClass, SyntaxHighlighter,
     };
     use crate::{
         document::{FileBody, Side},
@@ -548,19 +536,18 @@ mod tests {
         let mut incremental = SyntaxHighlighter::default();
         let incremental_spans = incremental.highlight_hunk(file, &file.hunks[0], &mut Unobserved);
         let mut full = SyntaxHighlighter::default();
-        let mut full_spans = (0..file.hunks[0].records.len())
-            .map(|_| Vec::new())
+
+        let full_pass = full
+            .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
+            .expect("the new side has styled records");
+        let full_spans = full_pass
+            .spans
+            .into_iter()
+            .filter(|(record, _)| *record == HunkRecord(1))
+            .map(|(_, span)| span)
             .collect::<Vec<_>>();
 
-        full.highlight_projection(
-            Language::Rust,
-            &new_projection,
-            None,
-            &mut full_spans,
-            &mut Unobserved,
-        );
-
-        assert_eq!(incremental_spans[1], full_spans[1]);
+        assert_eq!(incremental_spans[1], full_spans);
         assert_eq!(incremental_spans[1][0].class, SyntaxClass::Keyword);
     }
 
@@ -582,16 +569,12 @@ mod tests {
             source: "aaaa\nbbbb\ncccc\n".to_owned(),
             records: projected(&[0..4, 5..9, 10..14]),
         };
-        let mut spans = vec![Vec::new(), Vec::new(), Vec::new()];
+        let spans = projection
+            .map_span(2, 12, SyntaxClass::Keyword)
+            .map(|(record, span)| (record.0, span.span.start(), span.span.end()))
+            .collect::<Vec<_>>();
 
-        projection.map_span(2, 12, SyntaxClass::Keyword, &mut spans);
-
-        assert_eq!(spans[0][0].span.start(), 2);
-        assert_eq!(spans[0][0].span.end(), 4);
-        assert_eq!(spans[1][0].span.start(), 0);
-        assert_eq!(spans[1][0].span.end(), 4);
-        assert_eq!(spans[2][0].span.start(), 0);
-        assert_eq!(spans[2][0].span.end(), 2);
+        assert_eq!(spans, [(0, 2, 4), (1, 0, 4), (2, 0, 2)]);
     }
 
     #[test]
@@ -600,11 +583,7 @@ mod tests {
             source: "aaaa\nbbbb\n".to_owned(),
             records: projected(&[0..4, 5..9]),
         };
-        let mut spans = vec![Vec::new(), Vec::new()];
-
-        projection.map_span(4, 5, SyntaxClass::Keyword, &mut spans);
-
-        assert!(spans.iter().all(Vec::is_empty));
+        assert_eq!(projection.map_span(4, 5, SyntaxClass::Keyword).count(), 0);
     }
 
     #[test]
@@ -637,15 +616,7 @@ mod tests {
     #[test]
     fn every_bundled_language_loads_its_grammar_and_highlight_query() {
         for language in Language::ALL {
-            LanguageHighlighter::new(language)
-                .unwrap_or_else(|error| panic!("{language:?} failed to load: {error}"));
-        }
-    }
-
-    #[test]
-    fn each_language_keeps_its_highlighter_in_its_own_slot() {
-        for (position, language) in Language::ALL.into_iter().enumerate() {
-            assert_eq!(language.slot(), position, "{language:?}");
+            LanguageHighlighter::new(language);
         }
     }
 
@@ -669,8 +640,8 @@ mod tests {
         ranges
             .iter()
             .enumerate()
-            .map(|(record_index, source)| ProjectedRecord {
-                record_index,
+            .map(|(position, source)| ProjectedRecord {
+                record: HunkRecord(position),
                 source: source.clone(),
             })
             .collect()

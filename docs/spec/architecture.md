@@ -470,7 +470,8 @@ boundary; the parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
 Syntax highlighting projects each hunk's old and new
 records into separate bounded virtual source buffers, maps returned spans back to sanitized
-record payloads, and leaves unsupported languages and highlighting failures as plain text.
+record payloads, and leaves unsupported languages as plain text. Every bundled grammar and its
+highlight query load; the bundled-grammar test checks each one.
 Projection records are ordered by virtual source range, so span mapping visits only records that
 overlap the returned source span.
 Safe rendering is the single source of display rows: each rendered record row retains its kind,
