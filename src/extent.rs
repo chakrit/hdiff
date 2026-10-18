@@ -2,19 +2,14 @@
 //! screen lines, the widest row, and the anchors that find a row again across rebuilds.
 //! Rules: `docs/spec/architecture.md` (Viewport coordinates).
 
-use std::num::NonZeroUsize;
-
 use crate::{
-    compact::{narrow, widen},
+    compact::Count,
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
     page_rows::{LineIndex, PageRows, PairIndex},
     preferences::Wrapping,
-    screen::{Cells, ScreenLines},
+    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
 };
-
-/// Cells of the marker gutter that precedes every row's payload.
-pub const MARKER_GUTTER_WIDTH: usize = 2;
 
 /// A row named by the line it starts with, and one of its wrapped lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +24,7 @@ pub enum WrapWidth {
     /// Every row is one line, scrolled horizontally.
     Unbounded,
     /// Payloads wrap at this many cells.
-    At(NonZeroUsize),
+    At(NonZeroCells),
 }
 
 impl WrapWidth {
@@ -37,8 +32,8 @@ impl WrapWidth {
     /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
     /// width. A pane with no room for payload wraps one cell per line.
     pub fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
-        let payload_width = content_width.get().saturating_sub(MARKER_GUTTER_WIDTH);
-        let wrap_width = NonZeroUsize::new(payload_width).unwrap_or(NonZeroUsize::MIN);
+        let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
+        let wrap_width = NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN);
 
         match wrapping {
             Wrapping::Disabled => Self::Unbounded,
@@ -47,7 +42,7 @@ impl WrapWidth {
     }
 
     /// Cells of a payload `width` cells wide that the pane must scroll through.
-    fn visible_width(self, width: usize) -> usize {
+    fn visible_width(self, width: Cells) -> Cells {
         match self {
             Self::Unbounded => width,
             Self::At(cells) => width.min(cells.get()),
@@ -57,8 +52,8 @@ impl WrapWidth {
 
 struct VisibleRow<R> {
     index: R,
-    width: usize,
-    height: usize,
+    width: Cells,
+    height: ScreenLines,
 }
 
 /// One screen line: wrapped line `wrapped_line` of row `row`.
@@ -180,11 +175,11 @@ fn visible_row<R>(
         .clone()
         .map(|line| rows.payload_width(line))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(Cells::ZERO);
     let height = lines
         .map(|line| line_height(rows, line, wrap))
         .max()
-        .unwrap_or(1);
+        .unwrap_or(ScreenLines::ONE);
 
     VisibleRow {
         index,
@@ -194,13 +189,13 @@ fn visible_row<R>(
 }
 
 /// Screen lines the line takes; only lines wider than the wrap width are measured.
-fn line_height(rows: &PageRows, index: LineIndex, wrap: WrapWidth) -> usize {
+fn line_height(rows: &PageRows, index: LineIndex, wrap: WrapWidth) -> ScreenLines {
     let WrapWidth::At(cells) = wrap else {
-        return 1;
+        return ScreenLines::ONE;
     };
     let payload = rows.measured_payload(index);
     if payload.cells() <= cells.get() {
-        return 1;
+        return ScreenLines::ONE;
     }
 
     wrapped_line_count(payload, cells)
@@ -214,7 +209,7 @@ pub struct ScrollExtent<R> {
     /// Visible rows in display order.
     rows: Box<[R]>,
     /// For each visible row, the line just past its last screen line.
-    line_ends: Box<[u32]>,
+    line_ends: Box<[Count]>,
     /// Cells of the widest visible row, including the marker gutter.
     width: Cells,
     wrap: WrapWidth,
@@ -225,24 +220,24 @@ impl<R: Copy + Ord> ScrollExtent<R> {
         let mut indices = Vec::new();
         let mut line_ends = Vec::new();
         let mut line_end = 0;
-        let mut width = 0;
+        let mut width = Cells::ZERO;
 
         for row in rows {
-            line_end += row.height;
+            line_end += row.height.get();
             indices.push(row.index);
-            line_ends.push(narrow(line_end));
+            line_ends.push(Count::of(line_end));
             width = width.max(row.width);
         }
         Self {
             rows: indices.into_boxed_slice(),
             line_ends: line_ends.into_boxed_slice(),
-            width: Cells::new(width),
+            width,
             wrap,
         }
     }
 
     pub fn line_count(&self) -> ScreenLines {
-        ScreenLines::new(self.line_ends.last().map_or(0, |end| widen(*end)))
+        ScreenLines::new(self.line_ends.last().map_or(0, |end| end.get()))
     }
 
     /// Up to `limit` screen lines from line `offset`.
@@ -252,13 +247,13 @@ impl<R: Copy + Ord> ScrollExtent<R> {
         limit: ScreenLines,
     ) -> impl Iterator<Item = ScreenLine<R>> + '_ {
         let offset = offset.get();
-        let first = self.line_ends.partition_point(|end| widen(*end) <= offset);
+        let first = self.line_ends.partition_point(|end| end.get() <= offset);
 
         (first..self.rows.len())
             .flat_map(move |position| {
                 let row = self.rows[position];
                 let row_start = self.line_start(position);
-                let row_end = widen(self.line_ends[position]);
+                let row_end = self.line_ends[position].get();
 
                 (row_start.max(offset)..row_end).map(move |line| ScreenLine {
                     row,
@@ -280,7 +275,7 @@ impl<R: Copy + Ord> ScrollExtent<R> {
         let shown = self.rows.get(position).is_some_and(|row| *row == index);
 
         let offset = match shown {
-            true => start + wrapped_line.min(widen(self.line_ends[position]) - start - 1),
+            true => start + wrapped_line.min(self.line_ends[position].get() - start - 1),
             false => start,
         };
         ScreenLines::new(offset)
@@ -289,22 +284,20 @@ impl<R: Copy + Ord> ScrollExtent<R> {
     fn line_start(&self, position: usize) -> usize {
         match position {
             0 => 0,
-            _ => widen(self.line_ends[position - 1]),
+            _ => self.line_ends[position - 1].get(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
-
     use super::{DisplayExtent, ScreenLine, ScrollExtent, WrapWidth};
     use crate::{
         geometry::{PaneShape, SplitDirection},
         page_rows::{LineIndex, PageRows, PairIndex},
         parser::parse_patch,
         preferences::Wrapping,
-        screen::{Cells, ScreenLines},
+        screen::{Cells, NonZeroCells, ScreenLines},
     };
 
     const SIDE_BY_SIDE: PaneShape = PaneShape::Split(SplitDirection::SideBySide);
@@ -328,7 +321,7 @@ mod tests {
     }
 
     fn wrap_at(cells: usize) -> WrapWidth {
-        WrapWidth::At(NonZeroUsize::new(cells).expect("a nonzero test wrap width"))
+        WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
     }
 
     fn lines(count: usize) -> ScreenLines {

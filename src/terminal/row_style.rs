@@ -4,7 +4,7 @@
 use ratatui::style::{Modifier, Style};
 
 use crate::{
-    extent::MARKER_GUTTER_WIDTH,
+    screen::MARKER_GUTTER_WIDTH,
     styling::{RowTone, TextStyle},
     theme::{RowPalette, Theme},
 };
@@ -13,7 +13,7 @@ use crate::{
 pub(super) fn gutter(
     tone: RowTone,
     palette: &RowPalette,
-) -> [(&'static str, Style); MARKER_GUTTER_WIDTH] {
+) -> [(&'static str, Style); MARKER_GUTTER_WIDTH.get()] {
     let spacing = (" ", Style::default());
 
     match tone {

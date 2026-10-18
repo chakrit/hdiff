@@ -1,10 +1,7 @@
 //! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
 //! and safe rendering, View model).
 
-use std::{
-    num::NonZeroUsize,
-    ops::{ControlFlow, Range},
-};
+use std::ops::{ControlFlow, Range};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -14,10 +11,8 @@ use super::{
     rows::PaneRow,
 };
 use crate::{
-    cells::cluster_cells,
-    extent::MARKER_GUTTER_WIDTH,
     line_breaks::LineBreaks,
-    screen::Cells,
+    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
     styling::{StyledRow, TextStyle},
     tab_stops::TabStops,
     theme::Theme,
@@ -29,7 +24,10 @@ pub(super) enum RowPlacement {
     /// The whole row, from column `horizontal_offset` onward.
     Scrolled { horizontal_offset: Cells },
     /// Wrapped line `line` of the row's payload, wrapped at `width` cells.
-    Wrapped { line: usize, width: NonZeroUsize },
+    Wrapped {
+        line: ScreenLines,
+        width: NonZeroCells,
+    },
 }
 
 /// Whether a written line left cells of its row outside the pane on either side.
@@ -72,22 +70,23 @@ pub(super) fn write_row(
     let cursor = RowCursor {
         buffer,
         area,
-        horizontal_offset: 0,
-        column: 0,
+        horizontal_offset: Cells::ZERO,
+        column: Cells::ZERO,
         clip: Clip::default(),
     };
 
     match placement {
         RowPlacement::Scrolled { horizontal_offset } => {
             let cursor = RowCursor {
-                horizontal_offset: horizontal_offset.get(),
+                horizontal_offset,
                 ..cursor
             };
             write_clusters(cursor, gutter.into_iter().chain(payload_clusters))
         }
-        RowPlacement::Wrapped { line: 0, width } => {
-            write_wrapped_line(cursor, gutter, payload_clusters, 0, width)
-        }
+        RowPlacement::Wrapped {
+            line: ScreenLines::ZERO,
+            width,
+        } => write_wrapped_line(cursor, gutter, payload_clusters, ScreenLines::ZERO, width),
         RowPlacement::Wrapped { line, width } => {
             let cursor = RowCursor {
                 column: MARKER_GUTTER_WIDTH,
@@ -115,8 +114,8 @@ fn write_wrapped_line<'c>(
     cursor: RowCursor<'_>,
     gutter: impl IntoIterator<Item = (&'c str, Style)>,
     payload_clusters: impl Iterator<Item = (&'c str, Style)>,
-    line: usize,
-    width: NonZeroUsize,
+    line: ScreenLines,
+    width: NonZeroCells,
 ) -> Clip {
     let mut breaks = LineBreaks::new(width);
     let line_clusters = payload_clusters
@@ -173,15 +172,15 @@ impl ExpandedPayload {
 struct RowCursor<'b> {
     buffer: &'b mut Buffer,
     area: Rect,
-    horizontal_offset: usize,
-    column: usize,
+    horizontal_offset: Cells,
+    column: Cells,
     clip: Clip,
 }
 
 impl RowCursor<'_> {
     fn write(&mut self, cluster: &str, style: Style) -> ControlFlow<()> {
-        let width = cluster_cells(cluster);
-        if width == 0 {
+        let width = Cells::of_cluster(cluster);
+        if width == Cells::ZERO {
             return ControlFlow::Continue(());
         }
 
@@ -191,17 +190,20 @@ impl RowCursor<'_> {
         if start < self.horizontal_offset {
             self.clip.left = true;
         }
-        if end <= self.horizontal_offset {
+        let Some(visible_end) = end.checked_sub(self.horizontal_offset) else {
+            return ControlFlow::Continue(());
+        };
+        if visible_end == Cells::ZERO {
             return ControlFlow::Continue(());
         }
-        if end - self.horizontal_offset > usize::from(self.area.width) {
+        if visible_end > Cells::from(self.area.width) {
             self.clip.right = true;
             return ControlFlow::Break(());
         }
 
         match start.checked_sub(self.horizontal_offset) {
-            None => self.fill_blank(0..end - self.horizontal_offset, style),
-            Some(visible_start) => self.put(visible_start, width, cluster, style),
+            None => self.fill_blank(0..visible_end.get(), style),
+            Some(visible_start) => self.put(visible_start.get(), width.get(), cluster, style),
         }
         ControlFlow::Continue(())
     }
@@ -236,8 +238,6 @@ impl RowCursor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
-
     use ratatui::{
         buffer::{Buffer, CellWidth},
         layout::Rect,
@@ -252,7 +252,7 @@ mod tests {
         parser::parse_patch,
         preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
-        screen::{Cells, ScreenLines},
+        screen::{Cells, NonZeroCells, ScreenLines},
         terminal::rows::{PaneRow, visible_diff_rows},
         theme::{ColorDepth, Theme},
     };
@@ -352,7 +352,7 @@ mod tests {
                 PaneRow::Text(addition),
                 6,
                 RowPlacement::Wrapped {
-                    line,
+                    line: ScreenLines::new(line),
                     width: cells(4),
                 },
             )
@@ -398,7 +398,7 @@ mod tests {
                 row,
                 3,
                 RowPlacement::Wrapped {
-                    line: 1,
+                    line: ScreenLines::new(1),
                     width: cells(1)
                 }
             )
@@ -416,8 +416,8 @@ mod tests {
         assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));
     }
 
-    fn cells(width: usize) -> NonZeroUsize {
-        NonZeroUsize::new(width).expect("a nonzero test width")
+    fn cells(width: usize) -> NonZeroCells {
+        NonZeroCells::new(Cells::new(width)).expect("a nonzero test width")
     }
 
     fn prepare(diff: &[u8]) -> PreparedDocument {

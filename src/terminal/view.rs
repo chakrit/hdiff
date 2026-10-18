@@ -138,7 +138,7 @@ impl PaneRows<'_> {
                 horizontal_offset: self.horizontal_offset,
             },
             WrapWidth::At(width) => RowPlacement::Wrapped {
-                line: wrapped_line,
+                line: ScreenLines::new(wrapped_line),
                 width,
             },
         }

@@ -1,7 +1,7 @@
 //! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
 //! rendering) for the 2-column tab-stop rule.
 
-use crate::cells::text_cells;
+use crate::screen::Cells;
 
 const TAB_WIDTH: usize = 2;
 
@@ -9,7 +9,7 @@ const TAB_WIDTH: usize = 2;
 /// across consecutive segments of one row.
 #[derive(Default)]
 pub struct TabStops {
-    column: usize,
+    column: Cells,
 }
 
 impl TabStops {
@@ -30,27 +30,54 @@ impl TabStops {
                 _ => self.advance_to_tab_stop(),
             };
             visit(padding, chunk);
-            self.column += text_cells(chunk);
+            self.column += Cells::of_text(chunk);
         }
     }
 
     fn advance_to_tab_stop(&mut self) -> usize {
-        let padding = TAB_WIDTH - self.column % TAB_WIDTH;
-        self.column += padding;
+        let padding = TAB_WIDTH - self.column.get() % TAB_WIDTH;
+        self.column += Cells::new(padding);
         padding
     }
 }
 
-/// Terminal cells `text` occupies once its tabs are expanded.
-pub fn expanded_width(text: &str) -> usize {
-    let mut tab_stops = TabStops::default();
-    tab_stops.walk(text, |_, _| {});
-    tab_stops.column
+/// A payload and the terminal cells it covers once its tabs are expanded.
+#[derive(Clone, Copy, Debug)]
+pub struct MeasuredPayload<'a> {
+    text: &'a str,
+    cells: Cells,
+}
+
+impl<'a> MeasuredPayload<'a> {
+    /// `text`, measured once its tabs are expanded.
+    pub fn new(text: &'a str) -> Self {
+        let mut tab_stops = TabStops::default();
+        tab_stops.walk(text, |_, _| {});
+
+        Self {
+            text,
+            cells: tab_stops.column,
+        }
+    }
+
+    /// `text`, which an earlier measurement found to cover `cells`.
+    pub fn measured(text: &'a str, cells: Cells) -> Self {
+        Self { text, cells }
+    }
+
+    pub fn text(self) -> &'a str {
+        self.text
+    }
+
+    pub fn cells(self) -> Cells {
+        self.cells
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TabStops, expanded_width};
+    use super::{MeasuredPayload, TabStops};
+    use crate::screen::Cells;
 
     #[test]
     fn measures_halfwidth_sound_marks_as_the_frame_draws_them() {
@@ -58,8 +85,8 @@ mod tests {
         TabStops::default().expand_into("ｶﾞ\tx", &mut expanded);
 
         // Terminals draw U+FF9E in its own cell, so `ｶﾞ` covers two cells.
-        assert_eq!(expanded_width("ｶﾞ"), 2);
+        assert_eq!(MeasuredPayload::new("ｶﾞ").cells(), Cells::new(2));
         assert_eq!(expanded, "ｶﾞ  x");
-        assert_eq!(expanded_width("ｶﾞ\tx"), 5);
+        assert_eq!(MeasuredPayload::new("ｶﾞ\tx").cells(), Cells::new(5));
     }
 }

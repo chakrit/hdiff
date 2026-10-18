@@ -2,7 +2,7 @@
 //! docs/spec/architecture.md#core-model.
 
 use crate::{
-    compact::{narrow, widen},
+    compact::Count,
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader},
     source_text::SourceLine,
@@ -220,24 +220,24 @@ impl Side {
 /// A record's place in its file: its hunk, then its position among the hunk's records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordAddress {
-    hunk: u32,
-    record: u32,
+    hunk: Count,
+    record: Count,
 }
 
 impl RecordAddress {
     /// The record at position `record` of hunk `hunk`.
     ///
-    /// Panics when either position does not fit in `u32`.
+    /// Panics when either position does not fit in a [`Count`].
     pub fn new(hunk: usize, record: usize) -> Self {
         Self {
-            hunk: narrow(hunk),
-            record: narrow(record),
+            hunk: Count::of(hunk),
+            record: Count::of(record),
         }
     }
 
     /// Records between this record and `other` when both are in one hunk; records of
     /// different hunks have no distance.
-    pub fn records_from(self, other: Self) -> Option<u32> {
+    pub fn records_from(self, other: Self) -> Option<Count> {
         (self.hunk == other.hunk).then(|| self.record.abs_diff(other.record))
     }
 }
@@ -261,6 +261,6 @@ impl<T> RecordMap<T> {
     ///
     /// Panics when `address` names no record of the map's file.
     pub fn get(&self, address: RecordAddress) -> &T {
-        &self.hunks[widen(address.hunk)][widen(address.record)]
+        &self.hunks[address.hunk.get()][address.record.get()]
     }
 }

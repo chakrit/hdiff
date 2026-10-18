@@ -3,40 +3,49 @@
 //! (Core model, Viewport coordinates).
 
 use crate::{
-    compact::{narrow, widen},
+    compact::Count,
     document::{FileView, RecordAddress, RecordKind, Side},
     render::{LineKind, RenderedLine, render_file_lines, render_text_lines},
+    screen::Cells,
     source_text::SourceLine,
-    tab_stops::expanded_width,
+    tab_stops::MeasuredPayload,
 };
 
 /// The position of a rendered line among its page's lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LineIndex(u32);
+pub struct LineIndex(Count);
 
 /// The position of a side-by-side row among its page's pairs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PairIndex(u32);
+pub struct PairIndex(Count);
 
 impl LineIndex {
+    fn at(position: usize) -> Self {
+        Self(Count::of(position))
+    }
+
     fn get(self) -> usize {
-        widen(self.0)
+        self.0.get()
     }
 
     #[cfg(test)]
     pub(crate) fn new(position: usize) -> Self {
-        Self(narrow(position))
+        Self::at(position)
     }
 }
 
 impl PairIndex {
+    fn at(position: usize) -> Self {
+        Self(Count::of(position))
+    }
+
     fn get(self) -> usize {
-        widen(self.0)
+        self.0.get()
     }
 
     #[cfg(test)]
     pub(crate) fn new(position: usize) -> Self {
-        Self(narrow(position))
+        Self::at(position)
     }
 }
 
@@ -84,30 +93,6 @@ impl<T> SideBySideRow<T> {
     }
 }
 
-/// A payload and the terminal cells it covers once its tabs are expanded.
-#[derive(Clone, Copy, Debug)]
-pub struct MeasuredPayload<'a> {
-    text: &'a str,
-    cells: usize,
-}
-
-impl<'a> MeasuredPayload<'a> {
-    pub fn new(text: &'a str) -> Self {
-        Self {
-            text,
-            cells: expanded_width(text),
-        }
-    }
-
-    pub fn text(self) -> &'a str {
-        self.text
-    }
-
-    pub fn cells(self) -> usize {
-        self.cells
-    }
-}
-
 /// One value for each line of a page's rows, looked up by [`LineIndex`]; only those rows
 /// build one.
 #[derive(Debug, PartialEq, Eq)]
@@ -136,7 +121,7 @@ pub struct PageRows {
 struct LineMetrics {
     visibility: RowVisibility,
     /// Terminal cells of the line's payload, without the marker gutter.
-    payload_width: u32,
+    payload_width: Count,
 }
 
 /// When a rendered line shows.
@@ -144,7 +129,7 @@ struct LineMetrics {
 enum RowVisibility {
     Always,
     /// A context row this many records from the nearest change in its hunk.
-    NearChange(u32),
+    NearChange(Count),
     /// A context row in a hunk without changes.
     Never,
 }
@@ -172,7 +157,7 @@ impl PageRows {
             .zip(&lines)
             .map(|(visibility, line)| LineMetrics {
                 visibility,
-                payload_width: narrow(MeasuredPayload::new(line.payload()).cells()),
+                payload_width: Count::of(MeasuredPayload::new(line.payload()).cells().get()),
             })
             .collect();
 
@@ -193,7 +178,7 @@ impl PageRows {
     }
 
     pub fn line_indices(&self) -> impl Iterator<Item = LineIndex> + use<> {
-        (0..narrow(self.lines.len())).map(LineIndex)
+        (0..self.lines.len()).map(LineIndex::at)
     }
 
     /// One value for each line, computed from the line and its index, in line order.
@@ -232,7 +217,7 @@ impl PageRows {
     }
 
     pub(crate) fn pair_indices(&self) -> impl Iterator<Item = PairIndex> + use<> {
-        (0..narrow(self.pairs.len())).map(PairIndex)
+        (0..self.pairs.len()).map(PairIndex::at)
     }
 
     /// The pair holding `line`.
@@ -245,7 +230,7 @@ impl PageRows {
     pub(crate) fn shows_line(&self, index: LineIndex, context_lines: usize) -> bool {
         match self.line_metrics.get(index).visibility {
             RowVisibility::Always => true,
-            RowVisibility::NearChange(distance) => widen(distance) <= context_lines,
+            RowVisibility::NearChange(distance) => distance.get() <= context_lines,
             RowVisibility::Never => false,
         }
     }
@@ -257,16 +242,13 @@ impl PageRows {
     }
 
     /// Terminal cells of the line's payload, without the marker gutter.
-    pub(crate) fn payload_width(&self, index: LineIndex) -> usize {
-        widen(self.line_metrics.get(index).payload_width)
+    pub(crate) fn payload_width(&self, index: LineIndex) -> Cells {
+        Cells::new(self.line_metrics.get(index).payload_width.get())
     }
 
     /// The line's payload with the width measured when the rows were built.
     pub(crate) fn measured_payload(&self, index: LineIndex) -> MeasuredPayload<'_> {
-        MeasuredPayload {
-            text: self.line(index).payload(),
-            cells: self.payload_width(index),
-        }
+        MeasuredPayload::measured(self.line(index).payload(), self.payload_width(index))
     }
 }
 
@@ -281,7 +263,7 @@ impl PageRows {
             "line {position} is in the page rows"
         );
 
-        LineIndex(narrow(position))
+        LineIndex::at(position)
     }
 }
 
@@ -294,7 +276,7 @@ fn side_by_side_rows(
 
     while index < rendered_lines.len() {
         if rendered_lines[index].kind().changed_side().is_none() {
-            rows.push(SideBySideRow::Shared(LineIndex(narrow(index))));
+            rows.push(SideBySideRow::Shared(LineIndex::at(index)));
             index += 1;
             continue;
         }
@@ -305,7 +287,7 @@ fn side_by_side_rows(
             .get(index)
             .and_then(|line| line.kind().changed_side())
         {
-            let line = LineIndex(narrow(index));
+            let line = LineIndex::at(index);
             match side {
                 Side::Old => before.push(line),
                 Side::New => after.push(line),
@@ -326,10 +308,10 @@ fn side_by_side_rows(
         }
     }
 
-    let mut pair_of_line = vec![PairIndex(0); rendered_lines.len()];
+    let mut pair_of_line = vec![PairIndex::at(0); rendered_lines.len()];
     for (pair, row) in rows.iter().enumerate() {
         for line in row.lines() {
-            pair_of_line[line.get()] = PairIndex(narrow(pair));
+            pair_of_line[line.get()] = PairIndex::at(pair);
         }
     }
     (rows, LineMap(pair_of_line.into_boxed_slice()))
@@ -361,7 +343,7 @@ fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
 /// last change seen in the same hunk.
 fn distances_from_previous_change<'a>(
     lines: impl Iterator<Item = &'a RenderedLine>,
-) -> Vec<Option<u32>> {
+) -> Vec<Option<Count>> {
     let mut last_change: Option<RecordAddress> = None;
 
     lines
