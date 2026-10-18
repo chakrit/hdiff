@@ -6,7 +6,7 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::TooSmall,
-    extent::{PaneExtent, ScreenLine, WrapWidth},
+    extent::{ScreenLine, ShownLines, WrapWidth},
     geometry::{SplitDirection, SplitPanes},
     interaction::{Interaction, KeymapPopup},
     navigation::Navigation,
@@ -46,7 +46,7 @@ pub(super) fn render_prepared_frame(
 
     let extent = navigation.extent();
     let page = document.page(extent.page());
-    let scroll = interaction.scroll();
+    let scroll = interaction.scroll().position();
     let granularity = interaction.preferences().granularity;
     let pane_lines = view.pane_content().height;
     let panes = PaneRows {
@@ -58,17 +58,15 @@ pub(super) fn render_prepared_frame(
         horizontal_offset: scroll.horizontal,
         theme,
     };
-    match extent.panes() {
-        PaneExtent::Single(lines) => {
-            let lines = lines
-                .lines(scroll.vertical, pane_lines)
-                .map(|line| line.map(|line| PaneRow::Text(page.row(line, granularity))));
+    match extent.lines(scroll.vertical, pane_lines) {
+        ShownLines::Single(lines) => {
+            let lines =
+                lines.map(|line| line.map(|line| PaneRow::Text(page.row(line, granularity))));
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
             panes.render(frame, pane, lines);
         }
-        PaneExtent::Split { direction, extent } => {
-            let lines = extent
-                .lines(scroll.vertical, pane_lines)
+        ShownLines::Split { direction, lines } => {
+            let lines = lines
                 .map(|line| {
                     line.map(|pair| {
                         page.rows()
@@ -77,8 +75,8 @@ pub(super) fn render_prepared_frame(
                     })
                 })
                 .collect();
-            let split = geometry.split_panes(*direction);
-            render_split_rows(frame, lines, split, *direction, &panes);
+            let split = geometry.split_panes(direction);
+            render_split_rows(frame, lines, split, direction, &panes);
         }
     }
 
@@ -149,41 +147,40 @@ impl PaneRows<'_> {
     }
 }
 
-/// Draws side-by-side lines in the before and after panes of `panes`, split in
-/// `direction`, with their separator.
+/// Draws side-by-side lines in the old and new panes of `split`, split in `direction`,
+/// with their separator.
 fn render_split_rows(
     frame: &mut Frame,
     lines: Vec<ScreenLine<SideBySideRow<StyledRow>>>,
-    panes: SplitPanes,
+    split: SplitPanes,
     direction: SplitDirection,
     pane_rows: &PaneRows,
 ) {
-    let before_pane = ContinuityFrame::diff_pane(panes.before);
-    let after_pane = ContinuityFrame::diff_pane(panes.after);
+    let panes = split.panes.map(ContinuityFrame::diff_pane);
     let shown = ScreenLines::new(lines.len());
-    let (before_lines, after_lines): (Vec<_>, Vec<_>) = lines
+    let (old_lines, new_lines): (Vec<_>, Vec<_>) = lines
         .into_iter()
         .map(|line| {
-            let panes = line.row.pane_pair();
-            (line.map(|_| panes.old), line.map(|_| panes.new))
+            let rows = line.row.pane_pair();
+            (line.map(|_| rows.old), line.map(|_| rows.new))
         })
         .unzip();
 
     let palette = &pane_rows.theme.chrome;
     match direction {
         // The separator runs beside the shown lines only.
-        SplitDirection::SideBySide => {
-            let content = before_pane.content();
+        SplitDirection::Vertical => {
+            let content = panes.old.content();
             let height = content.height.min(frame_rows(shown));
-            let separator = Rect::new(panes.separator.x, content.y, panes.separator.width, height);
+            let separator = Rect::new(split.separator.x, content.y, split.separator.width, height);
             draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
         SplitDirection::Stacked => {
-            draw_inner_separator(frame.buffer_mut(), panes.separator, direction, palette);
+            draw_inner_separator(frame.buffer_mut(), split.separator, direction, palette);
         }
     }
-    pane_rows.render(frame, before_pane, before_lines);
-    pane_rows.render(frame, after_pane, after_lines);
+    pane_rows.render(frame, panes.old, old_lines);
+    pane_rows.render(frame, panes.new, new_lines);
 }
 
 /// Frame rows `lines` take; lines are collected up to a pane's height, so they fit.

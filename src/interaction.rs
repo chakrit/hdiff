@@ -6,18 +6,18 @@ use ratatui::layout::Size;
 use crate::{
     preferences::{PreferenceChange, ViewPreferences},
     prepared::{PageCount, PageIndex},
-    screen::{Cells, ScreenLines},
+    scroll::{BoundedScroll, Movement},
 };
 
-/// The selected page, the view preferences, the screen size, the scroll position, and the
-/// keymap popup. Only [`Interaction::start`] and navigation build one, and navigation keeps
-/// its scroll position within the bounds of what it shows.
+/// The selected page, the view preferences, the screen size, the scroll position within the
+/// bounds of what it shows, and the keymap popup. Only [`Interaction::start`] and
+/// navigation build one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interaction {
     page: PageIndex,
     preferences: ViewPreferences,
     screen: Size,
-    scroll: ScrollPosition,
+    scroll: BoundedScroll,
     keymap: KeymapPopup,
 }
 
@@ -28,7 +28,7 @@ impl Interaction {
             page: PageIndex::FIRST,
             preferences,
             screen,
-            scroll: ScrollPosition::START,
+            scroll: BoundedScroll::START,
             keymap: KeymapPopup::Closed,
         }
     }
@@ -45,7 +45,7 @@ impl Interaction {
         self.screen
     }
 
-    pub fn scroll(&self) -> ScrollPosition {
+    pub fn scroll(&self) -> BoundedScroll {
         self.scroll
     }
 
@@ -57,43 +57,33 @@ impl Interaction {
     pub fn respond(&self, event: Event, pages: PageCount) -> Outcome {
         let effect = match event {
             Event::Interrupt | Event::Command(Command::Quit) => return Outcome::Exit,
+            // The terminal is the one source of the screen size, which every step adopts
+            // before it responds and every frame adopts as it draws.
+            Event::Resize => return Outcome::Redraw,
             Event::Command(Command::Movement(movement)) => Effect::Scroll(movement),
             Event::Command(Command::Page(step)) => Effect::TurnPage(step.applied(self.page, pages)),
             Event::Command(Command::Keymap(command)) => Effect::Keymap(self.keymap.after(command)),
             Event::Command(Command::Preference(change)) => Effect::Redisplay {
                 preferences: self.preferences.after(change),
-                screen: self.screen,
                 placement: placement_after(change),
             },
-            Event::Resize(screen) => self.resize(screen),
         };
 
         Outcome::Effect(effect)
     }
 
-    /// The same page shown on a `screen`-sized terminal, keeping the row on the diff pane's
-    /// top line there.
-    pub fn resize(&self, screen: Size) -> Effect {
-        Effect::Redisplay {
-            preferences: self.preferences,
-            screen,
-            placement: Placement::Anchor(AnchorLine::PaneTop),
-        }
-    }
-
-    /// This interaction scrolled to `scroll`, which navigation keeps within bounds.
-    pub(crate) fn scrolled(self, scroll: ScrollPosition) -> Self {
+    /// This interaction scrolled to `scroll`.
+    pub(crate) fn scrolled(self, scroll: BoundedScroll) -> Self {
         Self { scroll, ..self }
     }
 
-    /// `page` with `preferences` on a `screen`-sized terminal, scrolled to `scroll`, which
-    /// navigation keeps within bounds.
+    /// `page` with `preferences` on a `screen`-sized terminal, scrolled to `scroll`.
     pub(crate) fn shown(
         self,
         page: PageIndex,
         preferences: ViewPreferences,
         screen: Size,
-        scroll: ScrollPosition,
+        scroll: BoundedScroll,
     ) -> Self {
         Self {
             page,
@@ -119,21 +109,6 @@ const fn placement_after(change: PreferenceChange) -> Placement {
         | PreferenceChange::ToggleFileList => Placement::Anchor(AnchorLine::PaneMiddle),
         PreferenceChange::NextLayout | PreferenceChange::ToggleGranularity => Placement::Keep,
     }
-}
-
-/// The first visible screen line and the synchronized horizontal offset. Rules:
-/// `docs/spec/architecture.md` (Viewport coordinates).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScrollPosition {
-    pub vertical: ScreenLines,
-    pub horizontal: Cells,
-}
-
-impl ScrollPosition {
-    pub const START: Self = Self {
-        vertical: ScreenLines::ZERO,
-        horizontal: Cells::ZERO,
-    };
 }
 
 /// The popup listing every shortcut. Rules: `docs/spec/architecture.md` (Interaction model).
@@ -173,12 +148,12 @@ pub enum KeymapCommand {
 }
 
 /// One event of the interactive session: a bound command, or a session event that applies
-/// in every mode.
+/// in every mode. A resize names no size; the terminal holds it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     Command(Command),
     Interrupt,
-    Resize(Size),
+    Resize,
 }
 
 impl Event {
@@ -186,7 +161,7 @@ impl Event {
     pub fn admitted(self, keymap: KeymapPopup) -> Option<Self> {
         match self {
             Self::Command(command) => keymap.admit(command).map(Self::Command),
-            Self::Interrupt | Self::Resize(_) => Some(self),
+            Self::Interrupt | Self::Resize => Some(self),
         }
     }
 }
@@ -199,20 +174,6 @@ pub enum Command {
     Preference(PreferenceChange),
     Keymap(KeymapCommand),
     Quit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Movement {
-    Left,
-    Right,
-    FarLeft,
-    FarRight,
-    Down,
-    Up,
-    HalfPageDown,
-    HalfPageUp,
-    Top,
-    Bottom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,10 +191,12 @@ impl PageStep {
     }
 }
 
-/// What an event asks of the session: to end it, or to change the interaction.
+/// What an event asks of the session: to end it, to draw it again at the terminal's size,
+/// or to change the interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Exit,
+    Redraw,
     Effect(Effect),
 }
 
@@ -244,10 +207,9 @@ pub enum Effect {
     Scroll(Movement),
     /// Shows another page from its start.
     TurnPage(PageIndex),
-    /// Shows the same page with `preferences` on a `screen`-sized terminal.
+    /// Shows the same page with `preferences`.
     Redisplay {
         preferences: ViewPreferences,
-        screen: Size,
         placement: Placement,
     },
     Keymap(KeymapPopup),
@@ -320,13 +282,11 @@ mod tests {
     ) -> (ViewPreferences, Placement) {
         let Effect::Redisplay {
             preferences,
-            screen,
             placement,
         } = effect(interaction, command(Command::Preference(change)))
         else {
             panic!("{change:?} redisplays the page");
         };
-        assert_eq!(screen, interaction.screen, "{change:?} keeps the screen");
         (preferences, placement)
     }
 
@@ -339,19 +299,13 @@ mod tests {
         }
     }
 
+    /// architecture.md (Viewport coordinates): the terminal is the one source of the screen
+    /// size, so a resize event asks only for a frame at the terminal's size.
     #[test]
-    fn resizes_at_the_pane_top_anchor() {
+    fn redraws_for_a_resize() {
         let start = interaction(PageIndex::FIRST, DiffLayout::Unified);
-        let screen = Size::new(80, 20);
 
-        assert_eq!(
-            effect(&start, Event::Resize(screen)),
-            Effect::Redisplay {
-                preferences: start.preferences,
-                screen,
-                placement: Placement::Anchor(AnchorLine::PaneTop),
-            }
-        );
+        assert_eq!(start.respond(Event::Resize, TWO_PAGES), Outcome::Redraw);
     }
 
     /// architecture.md (View model): wrapping, context changes, and showing or hiding the
@@ -427,7 +381,7 @@ mod tests {
     fn admits_only_closing_keys_interrupts_and_resizes_while_the_keymap_is_open() {
         let open = KeymapPopup::Open;
         let close = Command::Keymap(KeymapCommand::Close);
-        let resize = Event::Resize(SCREEN);
+        let resize = Event::Resize;
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(open.admit(closing), Some(close));

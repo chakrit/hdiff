@@ -1,5 +1,5 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     preferences::{DiffLayout, ViewPreferences},
     terminal::Step,
@@ -22,7 +22,8 @@ matrix!(
     bottom_past_hidden_context,
     keymap_popup,
     half_page_movement,
-    key_before_resize_event
+    key_before_resize_event,
+    stale_resize_event
 );
 
 fn vertical_movement(mode: Mode) {
@@ -186,6 +187,25 @@ fn key_before_resize_event(mode: Mode) {
         live.buffer(),
         expected,
         "the resize event that follows changes nothing"
+    );
+}
+
+/// architecture.md (Viewport coordinates): the terminal is the one source of the screen
+/// size, so a resize event naming a size the terminal no longer has moves nothing.
+fn stale_resize_event(mode: Mode) {
+    let mut resized = Live::load(&long_patch(), mode);
+    resized.resize(80, 20);
+    resized.press('G');
+    let expected = resized.buffer();
+
+    let mut live = Live::load(&long_patch(), mode);
+    live.resize(80, 20);
+    live.press('G');
+    live.event(Event::Resize(WIDTH, HEIGHT));
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "a stale resize event keeps the view at the bottom"
     );
 }
 

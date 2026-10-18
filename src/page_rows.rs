@@ -76,20 +76,22 @@ impl<T> SideBySideRow<T> {
 
     /// The row's lines in display order: one, or the old line then the new line.
     pub(crate) fn lines(self) -> Chain<Once<T>, option::IntoIter<T>> {
-        let (first, second) = match self {
-            Self::Paired(lines) => (lines.old, Some(lines.new)),
-            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => (line, None),
-        };
+        let (first, second) = self.split_first();
 
         iter::once(first).chain(second)
     }
 
+    /// The line the row starts with, and the new line when it pairs two.
+    pub(crate) fn split_first(self) -> (T, Option<T>) {
+        match self {
+            Self::Paired(lines) => (lines.old, Some(lines.new)),
+            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => (line, None),
+        }
+    }
+
     /// The line the row starts with, which names the row across layouts.
     pub(crate) fn first(self) -> T {
-        match self {
-            Self::Paired(lines) => lines.old,
-            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => line,
-        }
+        self.split_first().0
     }
 }
 

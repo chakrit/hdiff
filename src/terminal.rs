@@ -111,15 +111,17 @@ impl Tui {
         );
 
         match self.interaction.respond(event, self.document.page_count()) {
-            Outcome::Exit => Ok(Step::Exit),
+            Outcome::Exit => return Ok(Step::Exit),
+            Outcome::Redraw => {}
             Outcome::Effect(effect) => {
                 self.interaction = self
                     .navigation
                     .step(&self.document, &self.interaction, effect);
-                self.draw(terminal)?;
-                Ok(Step::Continue)
             }
         }
+
+        self.draw(terminal)?;
+        Ok(Step::Continue)
     }
 
     /// Draws the interaction, first adopting the size of the frame it draws, so bounds and
@@ -158,9 +160,8 @@ fn adopt_screen(
     if screen == interaction.screen() {
         return;
     }
-    let resized = navigation.step(document, interaction, interaction.resize(screen));
 
-    *interaction = resized;
+    *interaction = navigation.resize(document, interaction, screen);
 }
 
 /// Blocking terminal events with consecutive resizes coalesced into the latest one.

@@ -8,6 +8,7 @@ use ratatui::layout::{Constraint, Flex, Layout, Position, Rect, Size};
 use crate::{
     preferences::{DiffLayout, FileList},
     screen::{Cells, ScreenLines},
+    side::BySide,
 };
 
 /// Rows each pane's continuity-marker frame takes: one above and one below.
@@ -36,7 +37,7 @@ impl PaneShape {
     pub const fn of(layout: DiffLayout) -> Self {
         match layout {
             DiffLayout::Unified => Self::Single,
-            DiffLayout::Vertical => Self::Split(SplitDirection::SideBySide),
+            DiffLayout::Vertical => Self::Split(SplitDirection::Vertical),
             DiffLayout::Stacked => Self::Split(SplitDirection::Stacked),
         }
     }
@@ -44,9 +45,9 @@ impl PaneShape {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SplitDirection {
-    /// The before pane left of the after pane.
-    SideBySide,
-    /// The before pane above the after pane.
+    /// The old pane left of the new pane.
+    Vertical,
+    /// The old pane above the new pane.
     Stacked,
 }
 
@@ -64,13 +65,12 @@ pub struct FileColumn {
     pub separator: Rect,
 }
 
-/// The before and after panes of a split shape, frames included, and the separator
-/// between them.
+/// The old and new panes of a split shape, frames included, and the separator between
+/// them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SplitPanes {
-    pub before: Rect,
+    pub panes: BySide<Rect>,
     pub separator: Rect,
-    pub after: Rect,
 }
 
 /// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
@@ -156,8 +156,8 @@ impl FileColumn {
 
 impl SplitPanes {
     fn of(area: Rect, direction: SplitDirection) -> Self {
-        let [before, separator, after] = match direction {
-            SplitDirection::SideBySide => Layout::horizontal([
+        let [old, separator, new] = match direction {
+            SplitDirection::Vertical => Layout::horizontal([
                 Constraint::Percentage(50),
                 Constraint::Length(SEPARATOR_WIDTH),
                 Constraint::Percentage(50),
@@ -176,16 +176,15 @@ impl SplitPanes {
         };
 
         Self {
-            before,
+            panes: BySide { old, new },
             separator,
-            after,
         }
     }
 
     fn content_width(self) -> u16 {
-        frame_interior(self.before)
-            .width
-            .min(frame_interior(self.after).width)
+        let widths = self.panes.map(|pane| frame_interior(pane).width);
+
+        widths.old.min(widths.new)
     }
 }
 
@@ -226,7 +225,7 @@ fn shows_file_list(width: u16, file_list: FileList) -> bool {
 /// one-row separator.
 fn pane_height(screen_height: u16, shape: PaneShape) -> u16 {
     match shape {
-        PaneShape::Single | PaneShape::Split(SplitDirection::SideBySide) => screen_height,
+        PaneShape::Single | PaneShape::Split(SplitDirection::Vertical) => screen_height,
         PaneShape::Split(SplitDirection::Stacked) => {
             screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2
         }

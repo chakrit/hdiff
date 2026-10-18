@@ -2,18 +2,18 @@
 //! Rules: `docs/spec/architecture.md` (Interaction model, Keyboard bindings).
 
 use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::layout::Size;
 
 use crate::{
-    interaction::{Command, Event, KeymapCommand, KeymapPopup, Movement, PageStep},
+    interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
     preferences::PreferenceChange,
+    scroll::Movement,
 };
 
 /// The session event a terminal event stands for, if any.
 pub(super) fn event_for(event: TerminalEvent) -> Option<Event> {
     match event {
         TerminalEvent::Key(key) if key.kind == KeyEventKind::Press => event_for_key(key),
-        TerminalEvent::Resize(width, height) => Some(Event::Resize(Size::new(width, height))),
+        TerminalEvent::Resize(..) => Some(Event::Resize),
         _ => None,
     }
 }
@@ -327,12 +327,12 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::layout::Size;
 
     use super::{Key, all_bindings, event_for, keymap_closing_keys};
     use crate::{
-        interaction::{Command, Event, KeymapCommand, Movement, PageStep},
+        interaction::{Command, Event, KeymapCommand, PageStep},
         preferences::PreferenceChange,
+        scroll::Movement,
     };
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
@@ -404,7 +404,7 @@ mod tests {
         }
         assert_eq!(
             event_for(TerminalEvent::Resize(100, 30)),
-            Some(Event::Resize(Size::new(100, 30)))
+            Some(Event::Resize)
         );
         assert_eq!(
             key(KeyCode::Char('c'), KeyModifiers::CONTROL),

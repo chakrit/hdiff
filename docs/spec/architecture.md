@@ -90,11 +90,11 @@ document; it owns neither the terminal nor the input source.
 ```text
 Tui::new(document, screen, color depth)  starts at the first page
 tui.run(&mut terminal, events)           draws, then steps each event until Exit
-tui.step(&mut terminal, event)           event -> Event -> Exit | Effect -> Interaction -> draw
+tui.step(&mut terminal, event)           event -> Event -> Exit | Redraw | Effect -> draw
 ```
 
 Output is Ratatui's `Terminal<B: Backend>`. Input is any
-`Iterator<Item = io::Result<Event>>`.
+`Iterator<Item = io::Result<crossterm::event::Event>>`.
 
 | Caller          | Terminal                                         | Events                         | Drives       |
 |-----------------|--------------------------------------------------|--------------------------------|--------------|
@@ -139,14 +139,17 @@ valid diff lines without data loss.
   screen geometry, the content each diff pane shows, the wrap width, and whether the
   screen is too small for panes.
 - `ScrollPosition`: the vertical screen-line offset and the synchronized horizontal cell
-  offset.
+  offset. The interaction holds a `BoundedScroll`, a position that only the bounds of what
+  it scrolls can build.
 - `PageRows`: retained rendered rows, split pairs, and source addresses.
 - Visible layout: derived panes, effective visibility, the help hint, and the keymap popup.
 
 The interaction state is a value that transitions in response to an event: a bound command,
 or a session event (interrupt or resize) that applies in every mode, so no mode can
-intercept one. A transition returns a new state and a rendering request; it does not reach
-into the terminal or document. The selected page, viewport position, and preferences are
+intercept one. A resize event names no size: the terminal is the one source of the screen
+size. An event's transition returns an outcome: exit, redraw, or an effect, which
+navigation applies to give the next state; every continuing step then draws. A transition
+does not reach into the terminal or document. The selected page, viewport position, and preferences are
 authoritative interaction state. Wrapping, row numbers, pane geometry, and rendered rows
 are derived. Navigation, which finds the display an event leads to and its bounds, is
 independent of the terminal. This makes navigation testable without a real terminal and
@@ -538,8 +541,10 @@ from, so their indexes reach only that page's rows. Cell columns and screen line
 width and narrowed only where a frame is drawn, so no offset type caps how far a row
 reaches. One effective view, derived from the screen size and view preferences, serves
 both navigation bounds and drawing, and a scroll extent carries the wrap width and pane
-shape it was built with. Each frame adopts the size it is drawn at before it draws, so a
-key that arrives before its resize event still draws a full frame.
+shape it was built with. Each step adopts the terminal's size before it responds, and each
+frame adopts the size it is drawn at before it draws, so a key that arrives before its
+resize event still draws a full frame, and a resize event that arrives after the size
+changed again moves nothing.
 
 ### Eager prepared rendering
 

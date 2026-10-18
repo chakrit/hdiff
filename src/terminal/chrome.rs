@@ -88,7 +88,7 @@ pub(super) fn draw_inner_separator(
 ) {
     let style = Style::default().fg(palette.dim_separator);
     let symbol = match direction {
-        SplitDirection::SideBySide => "│",
+        SplitDirection::Vertical => "│",
         SplitDirection::Stacked => "─",
     };
 

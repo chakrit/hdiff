@@ -25,6 +25,7 @@ pub mod preferences;
 pub mod prepared;
 pub mod render;
 pub mod screen;
+pub mod scroll;
 pub mod shell_words;
 pub mod side;
 pub mod source_text;
