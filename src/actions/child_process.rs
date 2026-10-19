@@ -1,7 +1,9 @@
 use std::{
-    fmt, io,
+    fmt,
     process::{Command, ExitStatus, Output},
 };
+
+use super::Error;
 
 /// Runs `command` to completion and returns its output when `accepts` admits its exit
 /// status. `name` is the command as messages name it, such as `git config`.
@@ -9,39 +11,18 @@ pub fn run(
     name: &'static str,
     command: &mut Command,
     accepts: impl FnOnce(ExitStatus) -> bool,
-) -> Result<Output, ProcessError> {
+) -> Result<Output, Error> {
     let output = command
         .output()
-        .map_err(|source| ProcessError::Spawn { name, source })?;
+        .map_err(|source| Error::Spawn { name, source })?;
 
     match accepts(output.status) {
         true => Ok(output),
-        false => Err(ProcessError::Failed(ProcessFailure::of_output(
+        false => Err(Error::ProcessFailed(ProcessFailure::of_output(
             name, &output,
         ))),
     }
 }
-
-/// A child process that could not start or exited with a status its caller rejects.
-#[derive(Debug)]
-pub enum ProcessError {
-    Spawn {
-        name: &'static str,
-        source: io::Error,
-    },
-    Failed(ProcessFailure),
-}
-
-impl fmt::Display for ProcessError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Spawn { name, source } => write!(formatter, "cannot run {name}: {source}"),
-            Self::Failed(failure) => write!(formatter, "{failure}"),
-        }
-    }
-}
-
-impl std::error::Error for ProcessError {}
 
 /// A child process that exited with a rejected status, explained by its standard error
 /// when it wrote one and otherwise by its exit status.
