@@ -379,4 +379,15 @@ mod tests {
             unknown("--- \"a/broken\\q\"")
         );
     }
+
+    /// docs/spec/architecture.md#file-tree: a header that names no path is an unknown
+    /// entry, labelled with its header line.
+    #[test]
+    fn marks_sections_with_an_empty_header_path_unknown() {
+        for (old, new) in [("", "b/x"), ("a/x", ""), ("", "")] {
+            let input = format!("--- {old}\n+++ {new}\n@@ -1 +1 @@\n-a\n+b\n");
+
+            assert_eq!(identity(&input), unknown(&format!("--- {old}")), "{input}");
+        }
+    }
 }
