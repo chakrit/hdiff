@@ -1,12 +1,12 @@
-//! Frame chrome around the diff panes: the file list, the `? help` hint, separators, and
-//! continuity markers.
+//! Frame chrome around the diff panes: the file list, the `? help` hint, separators,
+//! continuity markers, and the floating box the help hint and keymap popup draw in.
 
 use std::num::NonZeroUsize;
 
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph},
@@ -66,7 +66,7 @@ pub(super) fn render_file_column(
 /// list is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
     let hint_width = Cells::of_text(HELP_HINT).frame_columns();
-    let help_box = FloatingBox::bottom_left_of(area, hint_width, HELP_HINT_HEIGHT);
+    let help_box = FloatingBox::bottom_left_of(area, Size::new(hint_width, HELP_HINT_HEIGHT));
 
     let content = help_box.render(frame, palette);
     let text = Line::styled(HELP_HINT, Style::default().fg(palette.hint));
@@ -85,25 +85,19 @@ impl FloatingBox {
     /// Rows the border takes down a box.
     const FRAME_HEIGHT: u16 = 2 * FLOATING_BOX_BORDER;
 
-    /// A box of `width` by `height` content in the bottom-left corner of `area`.
-    fn bottom_left_of(area: Rect, width: u16, height: u16) -> Self {
-        let height = height + Self::FRAME_HEIGHT;
-        let box_area = Rect::new(
-            area.x,
-            area.bottom().saturating_sub(height),
-            width + Self::FRAME_WIDTH,
-            height,
-        );
+    /// A box around `content` in the bottom-left corner of `area`.
+    fn bottom_left_of(area: Rect, content: Size) -> Self {
+        let Size { width, height } = Self::framed(content);
+        let box_area = Rect::new(area.x, area.bottom().saturating_sub(height), width, height);
 
         Self {
             area: box_area.intersection(area),
         }
     }
 
-    /// A box of `width` by `height` content centered over `area`.
-    pub(super) fn centered_in(area: Rect, width: u16, height: u16) -> Self {
-        let width = width + Self::FRAME_WIDTH;
-        let height = height + Self::FRAME_HEIGHT;
+    /// A box around `content` centered over `area`.
+    pub(super) fn centered_in(area: Rect, content: Size) -> Self {
+        let Size { width, height } = Self::framed(content);
         let box_area = Rect::new(
             area.x + area.width.saturating_sub(width) / 2,
             area.y + area.height.saturating_sub(height) / 2,
@@ -114,6 +108,14 @@ impl FloatingBox {
         Self {
             area: box_area.intersection(area),
         }
+    }
+
+    /// The size of a box around `content`, with its border and padding.
+    const fn framed(content: Size) -> Size {
+        Size::new(
+            content.width + Self::FRAME_WIDTH,
+            content.height + Self::FRAME_HEIGHT,
+        )
     }
 
     /// Clears the box and draws its border, returning the content area inside the border

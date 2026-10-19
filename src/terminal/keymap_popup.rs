@@ -4,7 +4,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -80,7 +80,8 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
         .max()
         .expect("the keymap has groups");
 
-    let popup = FloatingBox::centered_in(area, columns.content_width(), tallest.frame_rows());
+    let content_size = Size::new(columns.content_width(), tallest.frame_rows());
+    let popup = FloatingBox::centered_in(area, content_size);
     let content = popup.render(frame, &theme.chrome);
     let column_areas = Layout::horizontal(vec![
         Constraint::Length(COLUMN_WIDTH);
