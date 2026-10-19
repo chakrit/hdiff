@@ -554,6 +554,9 @@ mod tests {
         side::{BySide, Side},
     };
 
+    /// The no-newline marker line diff and Git write after a record that ends its file.
+    const NO_NEWLINE: &str = "\\ No newline at end of file";
+
     /// The rows of `patch`'s only file.
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_patch(patch).expect("valid diff");
@@ -589,7 +592,8 @@ mod tests {
     #[test]
     fn payloads_exclude_the_record_marker_and_line_ending() {
         let rows = rows_of(
-            b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file",
+            format!("before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n{NO_NEWLINE}")
+                .as_bytes(),
         );
 
         let payloads = rows
@@ -606,7 +610,7 @@ mod tests {
                 "@@ -1 +1 @@",
                 "old",
                 "new",
-                "\\ No newline at end of file"
+                NO_NEWLINE
             ]
         );
     }
@@ -619,7 +623,7 @@ mod tests {
         .expect("valid multi-file diff");
         let views = document.file_views().collect::<Vec<_>>();
         let [_, second] = views.as_slice() else {
-            panic!("the patch holds two files: {} files", views.len());
+            panic!("the patch holds two files, not {}", views.len());
         };
         let rows = PageRows::of_file_view(*second);
 
@@ -700,10 +704,11 @@ mod tests {
     /// stays in its record's block and on its record's side.
     #[test]
     fn pairs_an_end_of_file_edit_with_each_side_s_no_newline_marker() {
-        let marker = "\\ No newline at end of file";
         let rows = rows_of(
-            format!("--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n{marker}\n+new\n{marker}\n")
-                .as_bytes(),
+            format!(
+                "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n{NO_NEWLINE}\n+new\n{NO_NEWLINE}\n"
+            )
+            .as_bytes(),
         );
 
         assert_eq!(
@@ -714,8 +719,8 @@ mod tests {
                     new: "+new".to_owned(),
                 }),
                 SideBySideRow::Paired(BySide {
-                    old: marker.to_owned(),
-                    new: marker.to_owned(),
+                    old: NO_NEWLINE.to_owned(),
+                    new: NO_NEWLINE.to_owned(),
                 }),
             ]
         );
@@ -726,9 +731,9 @@ mod tests {
     /// more records.
     #[test]
     fn keeps_a_no_newline_marker_right_after_its_record_in_an_uneven_block() {
-        let marker = "\\ No newline at end of file";
         let rows = rows_of(
-            format!("--- a/f\n+++ b/f\n@@ -1,2 +1,3 @@\n-a\n-b\n{marker}\n+c\n+d\n+e\n").as_bytes(),
+            format!("--- a/f\n+++ b/f\n@@ -1,2 +1,3 @@\n-a\n-b\n{NO_NEWLINE}\n+c\n+d\n+e\n")
+                .as_bytes(),
         );
 
         assert_eq!(
@@ -743,7 +748,7 @@ mod tests {
                     new: "+d".to_owned(),
                 }),
                 SideBySideRow::Paired(BySide {
-                    old: marker.to_owned(),
+                    old: NO_NEWLINE.to_owned(),
                     new: "+e".to_owned(),
                 }),
             ]
@@ -756,7 +761,8 @@ mod tests {
     #[test]
     fn hides_a_no_newline_marker_with_the_context_record_it_follows() {
         let rows = rows_of(
-            b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-a\n+b\n last\n\\ No newline at end of file\n",
+            format!("--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-a\n+b\n last\n{NO_NEWLINE}\n")
+                .as_bytes(),
         );
         let address_of = |kind| match kind {
             LineKind::Record { address, .. } => Some(address),
