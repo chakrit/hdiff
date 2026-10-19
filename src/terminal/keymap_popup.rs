@@ -2,6 +2,8 @@
 //! docs/spec/architecture.md#interaction-model and
 //! docs/spec/architecture.md#keyboard-bindings.
 
+use std::iter;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect, Size},
@@ -140,9 +142,7 @@ fn column_lines(groups: &[ShortcutGroup], styles: &PopupStyles) -> Vec<Line<'sta
             .iter()
             .flat_map(|shortcut| shortcut_lines(shortcut, styles));
 
-        std::iter::once(heading)
-            .chain(shortcuts)
-            .collect::<Vec<_>>()
+        iter::once(heading).chain(shortcuts).collect::<Vec<_>>()
     });
 
     group_lines.collect::<Vec<_>>().join(&Line::default())
@@ -151,8 +151,11 @@ fn column_lines(groups: &[ShortcutGroup], styles: &PopupStyles) -> Vec<Line<'sta
 /// The popup lines of one shortcut row.
 fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static>> {
     match shortcut {
-        Shortcut::Keys { keys, action } => {
-            let keys = keys.iter().map(|binding| binding.key);
+        Shortcut::Keys {
+            keys: bindings,
+            action,
+        } => {
+            let keys = bindings.iter().map(|binding| binding.key);
             vec![styles.shortcut_line(key_labels(keys), action)]
         }
         Shortcut::ClosesKeymap { action, .. } => {
@@ -165,10 +168,13 @@ fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static
             down,
             action,
         } => {
-            let left = left.key.label();
+            let left_label = left.key.label();
             // The up and down keys sit over the dot.
-            let over_dot = blank(Cells::of_text(&left) + Cells::of_text(DIAMOND_SPACE));
-            let middle = format!("{left}{DIAMOND_SPACE}·{DIAMOND_SPACE}{}", right.key.label());
+            let over_dot = blank(Cells::of_text(&left_label) + Cells::of_text(DIAMOND_SPACE));
+            let middle = format!(
+                "{left_label}{DIAMOND_SPACE}·{DIAMOND_SPACE}{}",
+                right.key.label()
+            );
 
             vec![
                 Line::from(styles.keys_span(format!("{over_dot}{}", up.key.label()))),
@@ -295,8 +301,8 @@ mod tests {
     fn colors_headings_keys_and_actions_from_the_existing_palettes() {
         let buffer = render_popup(60);
         let at = |text: &str| {
-            let symbols = text.chars().map(String::from).collect::<Vec<_>>();
-            let symbols = symbols.iter().map(String::as_str).collect::<Vec<_>>();
+            let owned = text.chars().map(String::from).collect::<Vec<_>>();
+            let symbols = owned.iter().map(String::as_str).collect::<Vec<_>>();
             position(&buffer, &symbols).unwrap_or_else(|| panic!("{text} is drawn"))
         };
 

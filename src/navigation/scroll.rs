@@ -73,7 +73,7 @@ pub enum Movement {
 }
 
 /// The limits of a scroll position, and the lines one pane shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct ScrollBounds {
     maximum_vertical_offset: ScreenLines,
     maximum_horizontal_offset: Cells,

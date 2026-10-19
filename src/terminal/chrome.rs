@@ -40,10 +40,10 @@ pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
     tree: &FileTree,
-    page: PageKind,
+    page_kind: PageKind,
     palette: &ChromePalette,
 ) {
-    let selected_row = match page {
+    let selected_row = match page_kind {
         PageKind::File { row } => Some(row),
         PageKind::Text => None,
     };
@@ -329,13 +329,19 @@ mod tests {
         let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
-        let page = prepared.page(PageIndex::FIRST).kind();
+        let page_kind = prepared.page(PageIndex::FIRST).kind();
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
         let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
             .draw(|frame| {
-                render_file_column(frame, frame.area(), prepared.file_tree(), page, palette)
+                render_file_column(
+                    frame,
+                    frame.area(),
+                    prepared.file_tree(),
+                    page_kind,
+                    palette,
+                )
             })
             .expect("render file column");
 

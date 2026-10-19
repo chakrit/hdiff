@@ -52,7 +52,7 @@ pub enum SplitDirection {
     Stacked,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub struct ScreenGeometry {
     screen: Rect,
     file_column: Option<FileColumn>,
@@ -68,7 +68,7 @@ pub struct FileColumn {
 
 /// The old and new panes of a split in one direction, frames included, and the separator
 /// between them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub struct SplitPanes {
     direction: SplitDirection,
     panes: BySide<Rect>,
@@ -77,14 +77,14 @@ pub struct SplitPanes {
 
 /// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
 /// lines every pane shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub struct PaneContent {
     pub width: Cells,
     pub height: ScreenLines,
 }
 
 /// An area with a continuity-marker frame, and the content inside the frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub struct FramedArea {
     area: Rect,
     content: Rect,
