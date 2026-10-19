@@ -102,8 +102,8 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
     }
 }
 
-/// Headings take the hunk-header tone, since both head sections, and keys the syntax
-/// function color.
+/// The popup's heading, key and action styles: headings take the hunk-header tone, since
+/// both head sections, keys the syntax function color, and actions the file-name tone.
 struct PopupStyles {
     heading: Style,
     keys: Style,

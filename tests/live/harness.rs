@@ -44,13 +44,13 @@ impl Live {
         Self::sized(patch, mode, SCREEN)
     }
 
-    /// `patch` on a terminal of `size`.
+    /// `patch` on a terminal of `size`, in `mode`.
     pub fn sized(patch: &str, mode: Mode, size: Size) -> Self {
         let document = parse_patch(patch.as_bytes()).expect("valid fixture patch");
         Self::start(PreparedDocument::prepare(&document), mode, size)
     }
 
-    /// The output of comparing file operands.
+    /// `output` of comparing file operands on the default screen, in `mode`.
     pub fn comparison(output: &str, mode: Mode) -> Self {
         let document = parse_comparison(output.as_bytes()).expect("valid comparison output");
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
@@ -87,7 +87,7 @@ impl Live {
         self.send(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE))
     }
 
-    /// The key event `key`.
+    /// Steps the session through the key event `key`.
     pub fn send(&mut self, key: KeyEvent) -> Step {
         self.event(Event::Key(key))
     }
