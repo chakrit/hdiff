@@ -32,12 +32,12 @@ impl SourceLine {
         &self.sanitized
     }
 
-    /// The first visible character and the rest of the line after it.
+    /// The first visible character and the rest of the line after it. The rest's
+    /// sanitized text is this line's after that character, so the rest is read in the
+    /// scanner state the character left, which may be inside a sequence.
     pub fn split_first(&self) -> Option<(char, SourceLine)> {
         let DecodedChar { source, character } = visible(&self.bytes).next()?;
 
-        // Visible text resumes from plain text after a visible character, so the rest's
-        // sanitized text is the remainder of this line's.
         let rest = Self {
             bytes: self.bytes[source.end..].into(),
             sanitized: self.sanitized[character.len_utf8()..].into(),
@@ -57,23 +57,41 @@ struct DecodedChar {
     character: char,
 }
 
-/// Each visible character of `bytes`, decoded as lossy UTF-8. Terminal control
-/// sequences and control characters other than tab are not visible.
-fn visible(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
-    let mut state = State::Ground;
+/// Each visible character of some input, decoded as lossy UTF-8, with the scanner state
+/// reading has reached. Terminal control sequences and control characters other than tab
+/// are not visible.
+struct Visible<I> {
+    decoded: I,
+    state: State,
+}
 
-    decoded(bytes).filter(
-        move |decoded| match state.read(Class::of(decoded.character)) {
-            Step::Shown => {
-                state = State::Ground;
-                true
+/// The visible characters of `bytes`, read from plain text.
+fn visible(bytes: &[u8]) -> Visible<impl Iterator<Item = DecodedChar>> {
+    Visible {
+        decoded: decoded(bytes),
+        state: State::Ground,
+    }
+}
+
+impl<I: Iterator<Item = DecodedChar>> Iterator for Visible<I> {
+    type Item = DecodedChar;
+
+    fn next(&mut self) -> Option<DecodedChar> {
+        self.decoded.by_ref().find_map(|decoded| {
+            let step = self.state.read(Class::of(decoded.character));
+
+            match step {
+                Step::Shown(next) => {
+                    self.state = next;
+                    Some(decoded)
+                }
+                Step::Hidden(next) => {
+                    self.state = next;
+                    None
+                }
             }
-            Step::Hidden(next) => {
-                state = next;
-                false
-            }
-        },
-    )
+        })
+    }
 }
 
 /// Lossy UTF-8 decoding of `bytes`; an invalid sequence decodes to one replacement
@@ -107,7 +125,7 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
 
 /// Where the scanner is within terminal control sequences: the states of the DEC
 /// terminal parser that differ in what they show, as
-/// docs/vendor/terminal-control-parser.md records them.
+/// docs/vendor/terminal-control-parser.md maps them.
 #[derive(Clone, Copy)]
 enum State {
     /// Plain text.
@@ -118,14 +136,17 @@ enum State {
     EscapeIntermediate,
     /// Inside a control sequence (CSI), before its final byte.
     ControlSequence,
-    /// Inside a command string (OSC, DCS, SOS, PM or APC), before its terminator.
+    /// Inside an operating system command (OSC), before its terminator.
+    OscString,
+    /// Inside a device control string, or an SOS, PM or APC string, before its
+    /// terminator.
     CommandString,
 }
 
-/// What reading one character does: shows it, which leaves the scanner in plain text,
-/// or hides it and moves the scanner to a state.
+/// What reading one character does: shows it or hides it, and the state reading moves
+/// the scanner to.
 enum Step {
-    Shown,
+    Shown(State),
     Hidden(State),
 }
 
@@ -133,6 +154,7 @@ enum Step {
 #[derive(Clone, Copy)]
 enum Sequence {
     Control,
+    Osc,
     CommandString,
 }
 
@@ -140,6 +162,7 @@ impl Sequence {
     fn state(self) -> State {
         match self {
             Self::Control => State::ControlSequence,
+            Self::Osc => State::OscString,
             Self::CommandString => State::CommandString,
         }
     }
@@ -152,7 +175,7 @@ enum Class {
     Cancel,
     /// `ESC`: opens an escape anywhere.
     Escape,
-    /// BEL: ends a command string, as xterm reads it.
+    /// BEL: ends an OSC string, as xterm reads it.
     Bell,
     /// Tab: the one visible control character.
     Tab,
@@ -168,7 +191,7 @@ enum Class {
     Final(Option<Sequence>),
     /// A C1 introducer: opens its sequence anywhere.
     Introducer(Sequence),
-    /// ST: ends a command string, and any other sequence.
+    /// ST: ends a string, and any other sequence.
     StringTerminator,
     /// Any other C1 control: ends any sequence.
     OtherC1,
@@ -188,12 +211,12 @@ impl Class {
             '\u{20}'..='\u{2f}' => Self::Intermediate,
             '\u{30}'..='\u{3f}' => Self::Parameter,
             '[' => Self::Final(Some(Sequence::Control)),
-            ']' | 'P' | 'X' | '^' | '_' => Self::Final(Some(Sequence::CommandString)),
+            ']' => Self::Final(Some(Sequence::Osc)),
+            'P' | 'X' | '^' | '_' => Self::Final(Some(Sequence::CommandString)),
             '\u{40}'..='\u{7e}' => Self::Final(None),
             '\u{9b}' => Self::Introducer(Sequence::Control),
-            '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}' => {
-                Self::Introducer(Sequence::CommandString)
-            }
+            '\u{9d}' => Self::Introducer(Sequence::Osc),
+            '\u{90}' | '\u{98}' | '\u{9e}' | '\u{9f}' => Self::Introducer(Sequence::CommandString),
             '\u{9c}' => Self::StringTerminator,
             '\u{80}'..='\u{9f}' => Self::OtherC1,
             '\u{a0}'..='\u{10ffff}' => Self::Printable,
@@ -202,17 +225,20 @@ impl Class {
 }
 
 impl State {
-    /// What reading a character of `class` in this state does. `ESC`, C1 introducers,
-    /// CAN, SUB, ST and every other C1 control act the same in every sequence; C0
-    /// controls and DEL execute inside an escape or control sequence without ending it.
-    /// A tab or printable character ends an escape and shows, since no escape may hold
-    /// it; inside a control sequence a printable character stays part of the sequence.
+    /// What reading a character of `class` in this state does, as the DEC parser reads
+    /// it. `ESC`, C1 introducers, CAN, SUB, ST and every other C1 control act the same in
+    /// every state. Inside an escape or control sequence a C0 control executes without
+    /// ending the sequence, so a tab shows there and the sequence continues. Strings hold
+    /// every other character; only an OSC string also ends at BEL. A non-ASCII character,
+    /// which no escape may hold, ends an escape and shows.
     fn read(self, class: Class) -> Step {
-        use State::{CommandString, ControlSequence, EscapeIntermediate, Ground};
+        use State::{
+            CommandString, ControlSequence, Escape, EscapeIntermediate, Ground, OscString,
+        };
 
         match (self, class) {
-            (Ground, Class::Tab | Class::Intermediate | Class::Parameter) => Step::Shown,
-            (Ground, Class::Final(_) | Class::Printable) => Step::Shown,
+            (Ground, Class::Tab | Class::Intermediate | Class::Parameter) => Step::Shown(Ground),
+            (Ground, Class::Final(_) | Class::Printable) => Step::Shown(Ground),
             (
                 Ground,
                 Class::Cancel
@@ -222,42 +248,30 @@ impl State {
                 | Class::StringTerminator
                 | Class::OtherC1,
             ) => Step::Hidden(Ground),
+            (_, Class::Escape) => Step::Hidden(Escape),
+            (_, Class::Introducer(sequence)) => Step::Hidden(sequence.state()),
             (
-                Ground | Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
-                Class::Escape,
-            ) => Step::Hidden(Self::Escape),
-            (
-                Ground | Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
-                Class::Introducer(sequence),
-            ) => Step::Hidden(sequence.state()),
-            (
-                Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
+                Escape | EscapeIntermediate | ControlSequence | OscString | CommandString,
                 Class::Cancel | Class::StringTerminator | Class::OtherC1,
             ) => Step::Hidden(Ground),
-            (Self::Escape | EscapeIntermediate, Class::Bell | Class::OtherC0 | Class::Delete) => {
-                Step::Hidden(self)
-            }
-            (Self::Escape | EscapeIntermediate, Class::Tab | Class::Printable) => Step::Shown,
-            (Self::Escape | EscapeIntermediate, Class::Intermediate) => {
-                Step::Hidden(EscapeIntermediate)
-            }
-            (Self::Escape, Class::Final(Some(sequence))) => Step::Hidden(sequence.state()),
-            (Self::Escape, Class::Parameter | Class::Final(None)) => Step::Hidden(Ground),
+            (
+                Escape | EscapeIntermediate | ControlSequence,
+                Class::Bell | Class::OtherC0 | Class::Delete,
+            ) => Step::Hidden(self),
+            (Escape | EscapeIntermediate | ControlSequence, Class::Tab) => Step::Shown(self),
+            (Escape | EscapeIntermediate, Class::Printable) => Step::Shown(Ground),
+            (Escape | EscapeIntermediate, Class::Intermediate) => Step::Hidden(EscapeIntermediate),
+            (Escape, Class::Final(Some(sequence))) => Step::Hidden(sequence.state()),
+            (Escape, Class::Parameter | Class::Final(None)) => Step::Hidden(Ground),
             (EscapeIntermediate, Class::Parameter | Class::Final(_)) => Step::Hidden(Ground),
-            (
-                ControlSequence,
-                Class::Bell
-                | Class::Tab
-                | Class::OtherC0
-                | Class::Delete
-                | Class::Intermediate
-                | Class::Parameter
-                | Class::Printable,
-            ) => Step::Hidden(ControlSequence),
+            (ControlSequence, Class::Intermediate | Class::Parameter | Class::Printable) => {
+                Step::Hidden(ControlSequence)
+            }
             (ControlSequence, Class::Final(_)) => Step::Hidden(Ground),
-            (CommandString, Class::Bell) => Step::Hidden(Ground),
+            (OscString, Class::Bell) => Step::Hidden(Ground),
+            (CommandString, Class::Bell) => Step::Hidden(CommandString),
             (
-                CommandString,
+                OscString | CommandString,
                 Class::Tab
                 | Class::OtherC0
                 | Class::Delete
@@ -265,17 +279,20 @@ impl State {
                 | Class::Parameter
                 | Class::Final(_)
                 | Class::Printable,
-            ) => Step::Hidden(CommandString),
+            ) => Step::Hidden(self),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceLine, sanitize};
+    use super::{SourceLine, Visible, decoded, sanitize, visible};
 
+    /// The rest after the first visible character is the rest of the line read in the
+    /// scanner state that character left, so a tab shown inside a sequence leaves the
+    /// rest inside it.
     #[test]
-    fn splitting_matches_decoding_the_rest_separately() {
+    fn splitting_matches_decoding_the_rest_in_the_state_the_first_character_left() {
         for line in [
             b"-old\n".as_slice(),
             b"\xc2\x85+new\r\n",
@@ -283,14 +300,23 @@ mod tests {
             b"\x1b]x\x1b\x07a\x1b\\ context\n",
             b"\xff\xfe-after invalid",
             b"\x1b\xc3\xa9-after a broken escape",
-            b"\x1b\t-after a broken escape",
+            b"\x1b\t-old",
+            b"\x1b[3\t1mred",
         ] {
+            let mut first = visible(line);
+            first.next().expect("visible text");
             let (_, rest) = SourceLine::decode(line)
                 .split_first()
                 .expect("visible text");
             let suffix = &line[line.len() - rest.bytes().len()..];
 
-            assert_eq!(rest, SourceLine::decode(suffix), "{line:?}");
+            let read_on = Visible {
+                decoded: decoded(suffix),
+                state: first.state,
+            };
+            let rest_text: String = read_on.map(|decoded| decoded.character).collect();
+
+            assert_eq!(rest.sanitized(), rest_text, "{line:?}");
         }
     }
 
@@ -334,7 +360,7 @@ mod tests {
             ),
             (b"\xc2\x90dcs\x1b\\after", b"\x1bPdcs\x1b\\after"),
             (b"\xc2\x98sos\xc2\x9cafter", b"\x1bXsos\x1b\\after"),
-            (b"\xc2\x9epm\x07after", b"\x1b^pm\x07after"),
+            (b"\xc2\x9epm\xc2\x9cafter", b"\x1b^pm\x1b\\after"),
             (b"\xc2\x9fapc\x1b\\after", b"\x1b_apc\x1b\\after"),
         ] {
             assert_eq!(sanitize(c1), sanitize(escape), "{c1:?}");
@@ -379,16 +405,37 @@ mod tests {
         }
     }
 
+    /// A tab a terminal executes inside an escape or control sequence shows and leaves
+    /// the sequence open, and only an OSC string ends at BEL, so the line shows exactly
+    /// what a terminal shows.
+    ///
+    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    #[test]
+    fn shows_a_tab_inside_a_sequence_and_ends_only_osc_strings_at_bel() {
+        for (line, shown) in [
+            (b"a\x1b\t[31mred".as_slice(), "a\tred"),
+            (b"\x1b(\tBred", "\tred"),
+            (b"\x1b\t-old", "\tld"),
+            (b"a\x1b[3\t1mred", "a\tred"),
+            (b"a\x1bPq\x07sixel\x1b\\b", "ab"),
+            (b"\x1bPq\x07red\x1b\\Z", "Z"),
+            (b"\x1b_apc\x07red\x1b\\Z", "Z"),
+            (b"\x1b]0;title\x07red", "red"),
+        ] {
+            assert_eq!(sanitize(line), shown, "{line:?}");
+        }
+    }
+
     /// A control character a terminal executes inside a sequence leaves the sequence
-    /// open, any other C1 control ends it, and a visible character that no escape may
-    /// hold ends the escape and shows, so the line loses no visible source text.
+    /// open, any other C1 control ends it, and a non-ASCII character after `ESC`, which
+    /// no escape may hold, ends the escape and shows, so the line loses no visible
+    /// source text.
     ///
     /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
     #[test]
     fn executes_controls_inside_sequences_and_shows_what_breaks_an_escape() {
         for (line, shown) in [
             (b"\x1b\xc3\xa9-old".as_slice(), "\u{e9}-old"),
-            (b"\x1b\t-old", "\t-old"),
             (b"\x1b\x07[31mred", "red"),
             (b"\x1b(\x7fBred", "red"),
             (b"\x1b[31\xc2\x9cred", "red"),
