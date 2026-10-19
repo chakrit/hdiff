@@ -206,8 +206,10 @@ followed by a comma and a count, in ASCII digits, and a range without a count is
 Inside a hunk's declared counts, every line is a record marked ` `, `+`, or `-`, or an
 empty line, which is a blank context line as GNU `diff --suppress-blank-empty` writes it.
 A line starting with `\ ` is a no-newline marker whatever language follows the prefix; it
-follows a record that is not itself a marker, and may follow the hunk's last record. Any
-other line inside a hunk is malformed.
+follows a record that is not itself a marker, and may follow the hunk's last record. A
+marker ends its record's side of the file, or both sides after a context record, so a
+later record on an ended side, in the same hunk or a later hunk of the file, is malformed.
+Any other line inside a hunk is malformed.
 
 The input selector reads stdin with zero operands or a lone `-`, reads a patch file with
 one other operand, and invokes `diff -u -N [-r] -- <before> <after>` with two, so added
