@@ -60,29 +60,6 @@ pub enum PreferenceChange {
     ToggleFileList,
 }
 
-/// How many context records show on either side of a change within its hunk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ContextRecords(usize);
-
-impl ContextRecords {
-    pub const fn new(records: usize) -> Self {
-        Self(records)
-    }
-
-    pub const fn increased(self) -> Self {
-        Self(self.0.saturating_add(1))
-    }
-
-    pub const fn decreased(self) -> Self {
-        Self(self.0.saturating_sub(1))
-    }
-
-    /// Whether a context record `distance` records from the nearest change shows.
-    pub fn admits(self, distance: Count) -> bool {
-        distance.get() <= self.0
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLayout {
     Unified,
@@ -149,6 +126,29 @@ impl Wrapping {
             Self::Disabled => Self::Enabled,
             Self::Enabled => Self::Disabled,
         }
+    }
+}
+
+/// How many context records show on either side of a change within its hunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextRecords(usize);
+
+impl ContextRecords {
+    pub const fn new(records: usize) -> Self {
+        Self(records)
+    }
+
+    pub const fn increased(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    pub const fn decreased(self) -> Self {
+        Self(self.0.saturating_sub(1))
+    }
+
+    /// Whether a context record `distance` records from the nearest change shows.
+    pub fn admits(self, distance: Count) -> bool {
+        distance.get() <= self.0
     }
 }
 
