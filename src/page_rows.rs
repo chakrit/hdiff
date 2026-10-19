@@ -373,7 +373,7 @@ impl SideBySideLayout {
             .enumerate()
             .map(|(position, line)| LineSide {
                 line: LineIndex::at(position),
-                side: ChangedSide::of(line.kind()),
+                side: line.kind().changed_side(),
             })
             .collect::<Vec<_>>();
         let blocks = sides
@@ -398,8 +398,8 @@ impl SideBySideLayout {
     }
 }
 
-/// A line with the side it changes: `Option<ChangedSide>` before a block is known to be
-/// changed, `ChangedSide` within a changed block.
+/// A line with the side it changes: `Option<Side>` before a block is known to be
+/// changed, `Side` within a changed block.
 struct LineSide<S> {
     line: LineIndex,
     side: S,
@@ -414,7 +414,7 @@ struct BlockRows {
 
 impl BlockRows {
     /// The rows of `block`, the first of which is the page's pair `first_pair`.
-    fn of(block: &[LineSide<Option<ChangedSide>>], first_pair: PairIndex) -> Self {
+    fn of(block: &[LineSide<Option<Side>>], first_pair: PairIndex) -> Self {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
@@ -440,32 +440,29 @@ impl BlockRows {
         }
     }
 
-    /// A changed block pairs its *i*th old record with its *i*th new record in row *i*.
-    /// The no-newline markers after each side's last record share one row after them, so
-    /// each marker sits right after its record in its own side's column.
-    fn changed(block: &[LineSide<ChangedSide>], first_pair: PairIndex) -> Self {
-        let lines_of = |side, part| {
+    /// A changed block's *i*th old line and *i*th new line share row *i*. Each side's
+    /// lines keep their order, so a no-newline marker sits right after its record in its
+    /// side's column, and every line of the block takes a row.
+    fn changed(block: &[LineSide<Side>], first_pair: PairIndex) -> Self {
+        let column = |side| {
             block
                 .iter()
-                .filter(move |line_side| line_side.side == ChangedSide { side, part })
+                .filter(|line_side| line_side.side == side)
                 .map(|line_side| line_side.line)
+                .collect::<Vec<_>>()
         };
-        let records = BySide {
-            old: lines_of(Side::Old, RecordPart::Payload).collect::<Vec<_>>(),
-            new: lines_of(Side::New, RecordPart::Payload).collect::<Vec<_>>(),
-        };
-        let markers = BySide {
-            old: lines_of(Side::Old, RecordPart::NoNewlineMarker).next(),
-            new: lines_of(Side::New, RecordPart::NoNewlineMarker).next(),
+        let columns = BySide {
+            old: column(Side::Old),
+            new: column(Side::New),
         };
 
-        let record_rows = (0..records.old.len().max(records.new.len())).map(|row| BySide {
-            old: records.old.get(row).copied(),
-            new: records.new.get(row).copied(),
-        });
-        let pairs = record_rows
-            .chain(iter::once(markers))
-            .filter_map(changed_row)
+        let pairs = (0..columns.old.len().max(columns.new.len()))
+            .filter_map(|position| {
+                changed_row(BySide {
+                    old: columns.old.get(position).copied(),
+                    new: columns.new.get(position).copied(),
+                })
+            })
             .collect::<Vec<_>>();
 
         let mut placed = pairs
@@ -499,24 +496,6 @@ fn changed_row(lines: BySide<Option<LineIndex>>) -> Option<SideBySideRow<LineInd
         (Some(old), None) => Some(SideBySideRow::OldOnly(old)),
         (None, Some(new)) => Some(SideBySideRow::NewOnly(new)),
         (None, None) => None,
-    }
-}
-
-/// The side a changed line changes, and which of its record's lines it is.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct ChangedSide {
-    side: Side,
-    part: RecordPart,
-}
-
-impl ChangedSide {
-    /// The changed side of a line of `kind`; a line that changes no side has none.
-    fn of(kind: LineKind) -> Option<Self> {
-        let LineKind::Record { kind, part, .. } = kind else {
-            return None;
-        };
-
-        kind.changed_side().map(|side| Self { side, part })
     }
 }
 
@@ -590,6 +569,15 @@ mod tests {
     fn shown_lines(rows: &PageRows) -> Vec<String> {
         rows.line_indices()
             .map(|line| shown(rows.line(line)))
+            .collect()
+    }
+
+    /// Every row of `rows` that holds changed lines, as a reader sees its lines.
+    fn changed_pairs(rows: &PageRows) -> Vec<SideBySideRow<String>> {
+        rows.pair_indices()
+            .map(|index| rows.pair(index))
+            .filter(|row| !matches!(row, SideBySideRow::Shared(_)))
+            .map(|row| row.map(|line| shown(rows.line(line))))
             .collect()
     }
 
@@ -706,15 +694,9 @@ mod tests {
             format!("--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n{marker}\n+new\n{marker}\n")
                 .as_bytes(),
         );
-        let text = |line| shown(rows.line(line));
-        let changed_pairs = rows
-            .pair_indices()
-            .skip(3)
-            .map(|index| rows.pair(index).map(text))
-            .collect::<Vec<_>>();
 
         assert_eq!(
-            changed_pairs,
+            changed_pairs(&rows),
             [
                 SideBySideRow::Paired(BySide {
                     old: "-old".to_owned(),
@@ -728,6 +710,35 @@ mod tests {
         );
     }
 
+    /// docs/spec/architecture.md#view-model: a no-newline marker shows on its record's
+    /// side, right after its record, even when the other side of its changed block holds
+    /// more records.
+    #[test]
+    fn keeps_a_no_newline_marker_right_after_its_record_in_an_uneven_block() {
+        let marker = "\\ No newline at end of file";
+        let rows = rows_of(
+            format!("--- a/f\n+++ b/f\n@@ -1,2 +1,3 @@\n-a\n-b\n{marker}\n+c\n+d\n+e\n").as_bytes(),
+        );
+
+        assert_eq!(
+            changed_pairs(&rows),
+            [
+                SideBySideRow::Paired(BySide {
+                    old: "-a".to_owned(),
+                    new: "+c".to_owned(),
+                }),
+                SideBySideRow::Paired(BySide {
+                    old: "-b".to_owned(),
+                    new: "+d".to_owned(),
+                }),
+                SideBySideRow::Paired(BySide {
+                    old: marker.to_owned(),
+                    new: "+e".to_owned(),
+                }),
+            ]
+        );
+    }
+
     /// docs/spec/architecture.md#view-model: context records show within the
     /// context-record count of a change; a no-newline marker shows exactly when the
     /// record it follows does.
@@ -736,15 +747,28 @@ mod tests {
         let rows = rows_of(
             b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-a\n+b\n last\n\\ No newline at end of file\n",
         );
-        let marker = rows
+        let address_of = |kind| match kind {
+            LineKind::Record { address, .. } => Some(address),
+            LineKind::Text | LineKind::Metadata | LineKind::FileHeader | LineKind::HunkHeader => {
+                None
+            }
+        };
+        let (marker, marker_kind) = rows
             .lines()
-            .find(|(_, line)| line.payload().starts_with("\\ "))
-            .map(|(index, _)| index)
+            .map(|(index, line)| (index, line.kind()))
+            .find(|(_, kind)| kind.is_no_newline_marker())
             .expect("the hunk ends with a no-newline marker");
+        let record = rows
+            .lines()
+            .find(|(index, line)| {
+                *index != marker && address_of(line.kind()) == address_of(marker_kind)
+            })
+            .map(|(index, _)| index)
+            .expect("the marker's record shares its address");
 
         for records in [0, 1] {
             let context = ContextRecords::new(records);
-            let record_shown = rows.shows_line(rows.line_index(marker.get() - 1), context);
+            let record_shown = rows.shows_line(record, context);
 
             assert_eq!(
                 rows.shows_line(marker, context),

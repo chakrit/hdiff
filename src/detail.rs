@@ -16,32 +16,59 @@ use crate::{
 /// absorbed into one span.
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
-/// The character-detail spans of each `rows` line that has changed spans: a paired
-/// row marks the spans that differ from its peer, and an unmatched row is changed as a
-/// whole. Each changed line takes its side's detail from the pair holding it. A
-/// no-newline marker's row says something about its record, not a change, so it has
-/// none.
+/// The character-detail spans of each `rows` line that has changed spans: a changed
+/// payload beside its peer's payload marks the spans that differ from it, and a changed
+/// payload without one is changed as a whole. Each changed line takes its side's detail
+/// from the pair holding it. A no-newline marker says something about its record, not a
+/// change, so it has none and is no payload's peer.
 pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
-    let payload = |line: LineIndex| rows.line(line).payload();
-    let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
-    let marks_no_newline = |row: SideBySideRow<LineIndex>| {
-        row.lines()
-            .all(|line| rows.line(line).kind().is_no_newline_marker())
+    let payload_line = |line: LineIndex| {
+        let is_payload = !rows.line(line).kind().is_no_newline_marker();
+        is_payload.then_some(line)
     };
 
-    rows.line_values_by_pair(|row| match (row, marks_no_newline(row)) {
-        (_, true) | (SideBySideRow::Shared(_), false) => BySide::default(),
-        (SideBySideRow::Paired(lines), false) => changed_pair_spans(lines.map(payload))
+    rows.line_values_by_pair(|row| match row {
+        SideBySideRow::Shared(_) => BySide::default(),
+        SideBySideRow::Paired(lines) => changed_payload_details(rows, lines.map(payload_line)),
+        SideBySideRow::OldOnly(line) => changed_payload_details(
+            rows,
+            BySide {
+                old: payload_line(line),
+                new: None,
+            },
+        ),
+        SideBySideRow::NewOnly(line) => changed_payload_details(
+            rows,
+            BySide {
+                old: None,
+                new: payload_line(line),
+            },
+        ),
+    })
+}
+
+/// The detail of a changed row's payload `lines`: a payload beside its peer marks the
+/// spans that differ, and a payload alone is changed as a whole.
+fn changed_payload_details(
+    rows: &PageRows,
+    lines: BySide<Option<LineIndex>>,
+) -> BySide<Option<ChangedDetail>> {
+    let payload = |line: LineIndex| rows.line(line).payload();
+    let whole = |side, line| ChangedDetail::of(side, Box::new([PayloadSpan::whole(payload(line))]));
+
+    match (lines.old, lines.new) {
+        (Some(old), Some(new)) => changed_pair_spans(BySide { old, new }.map(payload))
             .map_sides(|side, spans| ChangedDetail::of(side, spans.into_boxed_slice())),
-        (SideBySideRow::OldOnly(line), false) => BySide {
-            old: ChangedDetail::of(Side::Old, whole(line)),
+        (Some(old), None) => BySide {
+            old: whole(Side::Old, old),
             new: None,
         },
-        (SideBySideRow::NewOnly(line), false) => BySide {
+        (None, Some(new)) => BySide {
             old: None,
-            new: ChangedDetail::of(Side::New, whole(line)),
+            new: whole(Side::New, new),
         },
-    })
+        (None, None) => BySide::default(),
+    }
 }
 
 /// The changed spans of a line that changes `side`.
@@ -381,6 +408,17 @@ mod tests {
                     ("-let café = old;", 12..15),
                     ("-café", 0..5),
                     ("+let café = new;", 12..15),
+                ],
+            ),
+            (
+                "-1,2 +1,3",
+                "-old a\n-old b\n\\ No newline at end of file\n+new a\n+new b\n+café\n",
+                vec![
+                    ("-old a", 0..3),
+                    ("+new a", 0..3),
+                    ("-old b", 0..3),
+                    ("+new b", 0..3),
+                    ("+café", 0..5),
                 ],
             ),
         ] {
