@@ -62,10 +62,6 @@ pub enum PreferenceChange {
     ToggleFileList,
 }
 
-// Evaluates `DiffLayout::ALL` in every build, so a broken layout cycle fails to compile
-// even where nothing else reads the list.
-const _: [DiffLayout; 3] = DiffLayout::ALL;
-
 /// How a diff's two sides are laid out: one unified pane, or two panes side by side
 /// (vertical split) or one above the other (stacked).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,10 +73,8 @@ pub enum DiffLayout {
 
 impl DiffLayout {
     /// Every layout, in the order the layout shortcut cycles through them, starting at
-    /// unified. Walked from `next`, which names every layout's successor, so the cycle
-    /// order is written once; the build fails unless the walk closes after exactly
-    /// these layouts.
-    pub const ALL: [Self; 3] = Self::cycle_from(Self::Unified);
+    /// unified. A test checks that `next` walks this list in order.
+    pub const ALL: [Self; 3] = [Self::Unified, Self::Vertical, Self::Stacked];
 
     /// The layout the layout shortcut switches to.
     pub const fn next(self) -> Self {
@@ -89,25 +83,6 @@ impl DiffLayout {
             Self::Vertical => Self::Stacked,
             Self::Stacked => Self::Unified,
         }
-    }
-
-    /// The layouts `next` reaches from `first`, in order, checked to return to `first`
-    /// only after the last of them.
-    const fn cycle_from<const COUNT: usize>(first: Self) -> [Self; COUNT] {
-        let mut layouts = [first; COUNT];
-        let mut index = 1;
-        while index < COUNT {
-            let next = layouts[index - 1].next();
-            assert!(next as u8 != first as u8, "the layout cycle closes early");
-            layouts[index] = next;
-            index += 1;
-        }
-
-        assert!(
-            layouts[COUNT - 1].next() as u8 == first as u8,
-            "the layout cycle is longer than ALL"
-        );
-        layouts
     }
 
     /// The layout's name in benchmark movement records.
@@ -210,5 +185,31 @@ impl FileList {
             Self::Shown => Self::Hidden,
             Self::Hidden => Self::Shown,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter;
+
+    use super::DiffLayout;
+
+    /// Rules: docs/spec/architecture.md#keyboard-bindings: `v` cycles unified, vertical
+    /// and stacked layouts.
+    #[test]
+    fn cycles_through_every_layout_in_order_and_back() {
+        let [first, ..] = DiffLayout::ALL;
+
+        let visited: Vec<_> = iter::successors(Some(first), |layout| Some(layout.next()))
+            .take(DiffLayout::ALL.len() + 1)
+            .collect();
+
+        let (last, cycle) = visited.split_last().expect("the walk visits each layout");
+        assert_eq!(
+            cycle,
+            DiffLayout::ALL,
+            "the walk from {first:?}: {visited:?}"
+        );
+        assert_eq!(*last, first, "the walk returns to {first:?}: {visited:?}");
     }
 }
