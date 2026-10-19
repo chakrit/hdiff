@@ -64,7 +64,7 @@ impl Navigation {
                 self.interaction =
                     interaction.scrolled(interaction.scroll().moved(movement, bounds));
             }
-            Effect::Keymap(keymap) => self.interaction = interaction.with_keymap(keymap),
+            Effect::Keymap(keymap) => self.interaction = interaction.keymap_switched(keymap),
             Effect::TurnPage(page) => {
                 // A page turn keeps the preferences and screen the view derives from.
                 let settings = settings_of(interaction.preferences(), &self.view);
@@ -128,8 +128,7 @@ impl Navigation {
             ..current
         };
         let scroll = bounds_of(&self.extent, &self.view).clamp(start);
-        let page = self.interaction.page();
-        self.interaction = self.interaction.shown(page, preferences, screen, scroll);
+        self.interaction = self.interaction.redisplayed(preferences, screen, scroll);
     }
 }
 
