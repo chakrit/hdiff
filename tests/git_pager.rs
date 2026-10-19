@@ -7,7 +7,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_error};
+use common::{TestEnv, assert_error, success_output};
 
 const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
 
@@ -24,7 +24,7 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
 
     let (config_path, installation) = install(&env, &executable);
 
-    assert!(installation.status.success(), "{installation:?}");
+    success_output(&installation);
     assert_eq!(
         fs::read_to_string(env.path("gitconfig.bak")).expect("read backup"),
         ORIGINAL_CONFIG
@@ -34,8 +34,7 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
         .shell(&format!("{pager} --version"))
         .output()
         .expect("run the configured pager");
-    assert!(pager_version.status.success(), "{pager_version:?}");
-    assert_eq!(pager_version.stdout, hdiff_version(&env));
+    assert_eq!(success_output(&pager_version), hdiff_version(&env));
 }
 
 /// docs/spec/architecture.md#initial-cli-surface: `--install` prints the `cp` and
@@ -45,9 +44,8 @@ fn install_prints_the_commands_it_applied() {
     let env = TestEnv::new();
     let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
     let (config_path, installation) = install(&env, &executable);
-    assert!(installation.status.success(), "{installation:?}");
 
-    let printed = String::from_utf8(installation.stdout).expect("UTF-8 commands");
+    let printed = success_output(&installation);
     let [copy_command, config_command] = printed.lines().collect::<Vec<_>>()[..] else {
         panic!("expected a cp and a git config command, got {printed:?}");
     };
@@ -110,10 +108,8 @@ fn git_show_preserves_commit_text_and_repeated_file_paths() {
     let expected = git_output(&env, &arguments);
     let viewed = pipe_git_to_hdiff(&env, &arguments);
 
-    assert!(viewed.status.success(), "{viewed:?}");
-    assert!(viewed.stderr.is_empty(), "{viewed:?}");
-    assert_eq!(viewed.stdout, expected);
-    let text = String::from_utf8(viewed.stdout).expect("UTF-8 Git history");
+    let text = success_output(&viewed);
+    assert_eq!(text.as_bytes(), expected);
     assert!(text.contains("First change"), "{text}");
     assert!(text.contains("Second change"), "{text}");
     assert_eq!(
@@ -145,9 +141,7 @@ fn git_show_sanitizes_colored_commit_text_and_diff() {
         ],
     );
 
-    assert!(viewed.status.success(), "{viewed:?}");
-    assert!(viewed.stderr.is_empty(), "{viewed:?}");
-    assert_eq!(viewed.stdout, expected);
+    assert_eq!(success_output(&viewed).as_bytes(), expected);
 }
 
 #[test]
@@ -187,15 +181,14 @@ fn install(env: &TestEnv, executable: &Path) -> (PathBuf, Output) {
     (config_path, installation)
 }
 
-fn hdiff_version(env: &TestEnv) -> Vec<u8> {
+fn hdiff_version(env: &TestEnv) -> String {
     let version = env
         .hdiff()
         .arg("--version")
         .output()
         .expect("run hdiff --version");
 
-    assert!(version.status.success(), "{version:?}");
-    version.stdout
+    success_output(&version)
 }
 
 fn set_mode(path: &Path, mode: u32) {
