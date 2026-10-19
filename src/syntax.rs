@@ -53,7 +53,7 @@ pub struct SyntaxSpan {
 #[derive(Default)]
 pub struct SyntaxHighlighter {
     /// Each language's highlighter once first used.
-    languages: LanguageTable<Option<LanguageHighlighter>>,
+    languages: ByLanguage<Option<LanguageHighlighter>>,
 }
 
 impl SyntaxHighlighter {
@@ -191,7 +191,7 @@ impl Language {
 
 /// One value for each language.
 #[derive(Default)]
-struct LanguageTable<T> {
+struct ByLanguage<T> {
     rust: T,
     javascript: T,
     python: T,
@@ -199,7 +199,7 @@ struct LanguageTable<T> {
     c: T,
 }
 
-impl<T> LanguageTable<T> {
+impl<T> ByLanguage<T> {
     /// A table holding `value` of every language; naming each field means a new
     /// language cannot be left out.
     #[cfg(test)]
@@ -299,7 +299,7 @@ impl LanguageHighlighter {
                 continue;
             };
             let node = capture.node;
-            spans.extend(projection.map_span(node.start_byte(), node.end_byte(), class));
+            spans.extend(projection.map_span(node.byte_range(), class));
         }
         spans
     }
@@ -357,14 +357,14 @@ impl<'h> Projection<'h> {
         Self { source, records }
     }
 
-    /// The spans the source range `start..end` gives the records it overlaps, clipped to
-    /// each record's payload.
+    /// The spans the `source` range gives the records it overlaps, clipped to each
+    /// record's payload.
     fn map_span(
         &self,
-        start: usize,
-        end: usize,
+        source: Range<usize>,
         class: SyntaxClass,
     ) -> impl Iterator<Item = (RecordPosition<'h>, SyntaxSpan)> + '_ {
+        let Range { start, end } = source;
         let first_record = self.first_overlapping_record(start);
 
         self.records
@@ -434,7 +434,7 @@ fn point_at(source: &[u8], byte: usize) -> Point {
 #[cfg(test)]
 mod tests {
     use super::{
-        Language, LanguageHighlighter, LanguageTable, Projection, Styles, SyntaxClass,
+        ByLanguage, Language, LanguageHighlighter, Projection, Styles, SyntaxClass,
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
@@ -546,7 +546,7 @@ mod tests {
     fn maps_only_records_overlapping_a_source_span() {
         let spans = with_added_projection(&["aaaa", "bbbb", "cccc"], |projection| {
             projection
-                .map_span(2, 12, SyntaxClass::Keyword)
+                .map_span(2..12, SyntaxClass::Keyword)
                 .map(|(position, span)| {
                     let record = projection
                         .records
@@ -564,7 +564,7 @@ mod tests {
     #[test]
     fn does_not_map_a_source_span_in_a_record_separator() {
         with_added_projection(&["aaaa", "bbbb"], |projection| {
-            assert_eq!(projection.map_span(4, 5, SyntaxClass::Keyword).count(), 0);
+            assert_eq!(projection.map_span(4..5, SyntaxClass::Keyword).count(), 0);
         });
     }
 
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn every_bundled_language_loads_its_grammar_and_highlight_query() {
-        LanguageTable::from_fn(LanguageHighlighter::new);
+        ByLanguage::from_fn(LanguageHighlighter::new);
     }
 
     #[test]
