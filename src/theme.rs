@@ -231,7 +231,7 @@ static BASIC: Theme = Theme {
             old: ChangeColors {
                 background: Color::Red,
                 body: Color::DarkGray,
-                unchanged: Color::DarkGray,
+                unchanged: Color::Black,
                 marker: Color::Red,
                 body_modifier: Modifier::DIM,
             },
@@ -295,6 +295,36 @@ mod tests {
             for color in colors(Theme::for_depth(depth)) {
                 assert!(shows(depth, color), "{depth:?} draws {color:?}");
             }
+        }
+    }
+
+    /// docs/spec/architecture.md#continuity-markers: unchanged text on rows with detail
+    /// spans is one step dimmer than the row's line-mode text.
+    #[test]
+    fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
+        for depth in every_depth() {
+            let change = &Theme::for_depth(depth).rows.change;
+            for (side, colors) in [("old", &change.old), ("new", &change.new)] {
+                assert!(
+                    gray_level(colors.unchanged) < gray_level(colors.body),
+                    "{depth:?} {side}: {:?} is not dimmer than {:?}",
+                    colors.unchanged,
+                    colors.body
+                );
+            }
+        }
+    }
+
+    /// How bright a gray text color is, comparable within one color depth.
+    fn gray_level(color: Color) -> u16 {
+        match color {
+            Color::Rgb(red, green, blue) => u16::from(red) + u16::from(green) + u16::from(blue),
+            Color::Indexed(index @ 232..=255) => u16::from(index),
+            Color::Black => 0,
+            Color::DarkGray => 1,
+            Color::Gray => 2,
+            Color::White => 3,
+            _ => panic!("{color:?} is not a gray text color"),
         }
     }
 
