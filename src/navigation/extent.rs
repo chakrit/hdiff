@@ -142,7 +142,7 @@ impl ScrollExtent {
 
     /// How far these rows scroll horizontally in panes `content_width` cells wide, at the
     /// wrap width they were measured at.
-    pub fn horizontal_range(&self, content_width: Cells) -> Cells {
+    pub(super) fn horizontal_range(&self, content_width: Cells) -> Cells {
         self.wrap.horizontal_range(self.width(), content_width)
     }
 
