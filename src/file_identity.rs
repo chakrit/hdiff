@@ -2,7 +2,9 @@
 //! `---` / `+++` headers. Rules: docs/spec/architecture.md#file-tree.
 
 use crate::{
-    headers::{FileHeader, GitHeader, HeaderPath, quoted_or_plain, unquote},
+    headers::{
+        FileHeader, GitHeader, GitMetadata, HeaderPath, git_header_names, quoted_or_plain, unquote,
+    },
     side::BySide,
     source_text::{SourceLine, sanitize},
 };
@@ -147,26 +149,21 @@ fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
         .iter()
         .map(|line| line.sanitized())
         .try_fold(GitChange::Unmarked, |change, line| {
-            if line.starts_with("new file mode ") {
-                return Some(GitChange::Added);
+            match GitMetadata::of(line) {
+                Some(GitMetadata::Added) => Some(GitChange::Added),
+                Some(GitMetadata::Deleted) => Some(GitChange::Deleted),
+                Some(GitMetadata::RenameTo(field)) => {
+                    quoted_or_plain(field).map(GitChange::Renamed)
+                }
+                Some(GitMetadata::CopyTo(field)) => quoted_or_plain(field).map(GitChange::Copied),
+                Some(GitMetadata::Other) | None => Some(change),
             }
-            if line.starts_with("deleted file mode ") {
-                return Some(GitChange::Deleted);
-            }
-            if let Some(path) = line.strip_prefix("rename to ") {
-                return quoted_or_plain(path).map(GitChange::Renamed);
-            }
-            if let Some(path) = line.strip_prefix("copy to ") {
-                return quoted_or_plain(path).map(GitChange::Copied);
-            }
-
-            Some(change)
         })
 }
 
 /// The name a `diff --git <old> <new>` line gives: the path suffix its halves share.
 fn git_header_path(line: &SourceLine) -> Option<Box<str>> {
-    let names = line.sanitized().strip_prefix("diff --git ")?;
+    let names = git_header_names(line.sanitized())?;
     if !names.starts_with('"') {
         return unquoted_git_name(names);
     }
