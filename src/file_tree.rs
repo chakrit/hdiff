@@ -104,7 +104,7 @@ impl<'a> ListedTree<'a> {
     /// The file list of `files`, top-level files first, with each file's row.
     pub fn build(files: &'a DiffFiles) -> Self {
         let placed = files.views().map(|view| Placed::of(*view));
-        let ordered = list_order(&placed);
+        let ordered = list_order(placed);
 
         let mut rows = TreeRows::default();
         let first = rows.push(ordered.first());
@@ -251,20 +251,8 @@ impl<'a> TreeRows<'a> {
 
 /// `placed` in list order: top-level files come first, so a directory heading never needs
 /// to be closed, and each group keeps input order.
-fn list_order<'a>(placed: &NonEmpty<Placed<'a>>) -> NonEmpty<Placed<'a>> {
-    let first = *placed.first();
-    let (top_level, nested): (Vec<_>, Vec<_>) = placed
-        .rest()
-        .iter()
-        .copied()
-        .partition(Placed::is_top_level);
-    let mut top_level = top_level.into_iter();
-
-    match (first.is_top_level(), top_level.next()) {
-        (true, next) => NonEmpty::new(first, next.into_iter().chain(top_level).chain(nested)),
-        (false, Some(head)) => NonEmpty::new(head, top_level.chain([first]).chain(nested)),
-        (false, None) => NonEmpty::new(first, nested),
-    }
+fn list_order(placed: NonEmpty<Placed<'_>>) -> NonEmpty<Placed<'_>> {
+    placed.sorted_by_key(|file| !file.is_top_level())
 }
 
 #[cfg(test)]

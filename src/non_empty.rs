@@ -63,12 +63,31 @@ impl<T> NonEmpty<T> {
         };
 
         let first = convert(&self.first);
-        let middle = between.iter().map(&mut convert).collect::<Vec<_>>();
+        let rest = between
+            .iter()
+            .map(convert)
+            .chain(iter::once_with(|| convert_last(last)));
 
-        NonEmpty::new(
-            first,
-            middle.into_iter().chain(iter::once(convert_last(last))),
-        )
+        NonEmpty::new(first, rest)
+    }
+
+    /// The items stably sorted by `key`: reordered with none lost, and items with equal
+    /// keys in their original order.
+    pub fn sorted_by_key<K: Ord>(self, mut key: impl FnMut(&T) -> K) -> Self {
+        let Self { first, rest } = self;
+        let mut rest = rest.into_vec();
+        rest.sort_by_key(&mut key);
+
+        // `first` came before every item in `rest`, so it leads the items its key ties.
+        let first_key = key(&first);
+        let before_first = rest.partition_point(|item| key(item) < first_key);
+        let behind = rest.split_off(before_first);
+        let mut ahead = rest.into_iter();
+
+        match ahead.next() {
+            None => Self::new(first, behind),
+            Some(head) => Self::new(head, ahead.chain(iter::once(first)).chain(behind)),
+        }
     }
 }
 
@@ -107,6 +126,19 @@ mod tests {
 
         assert_eq!(mapped.iter().collect::<Vec<_>>(), [&'A', &'B', &'c']);
         assert_eq!(only.iter().collect::<Vec<_>>(), [&'a']);
+    }
+
+    #[test]
+    fn sorts_stably_whether_or_not_the_first_item_moves() {
+        let by_tens = |item: &u8| item / 10;
+
+        let first_stays = NonEmpty::new(1, [21, 2, 11]).sorted_by_key(by_tens);
+        let first_moves = NonEmpty::new(21, [3, 22, 4]).sorted_by_key(by_tens);
+        let ties_keep_order = NonEmpty::new(5, [6, 7]).sorted_by_key(by_tens);
+
+        assert_eq!(first_stays.iter().collect::<Vec<_>>(), [&1, &2, &11, &21]);
+        assert_eq!(first_moves.iter().collect::<Vec<_>>(), [&3, &4, &21, &22]);
+        assert_eq!(ties_keep_order.iter().collect::<Vec<_>>(), [&5, &6, &7]);
     }
 
     #[test]
