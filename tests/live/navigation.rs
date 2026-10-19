@@ -1,6 +1,6 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::Event;
 use hdiff::{
     parser::parse_patch,
     preferences::{ContextRecords, DiffGranularity, DiffLayout, FileList},
@@ -93,7 +93,7 @@ fn file_rotation(mode: Mode) {
         live.shows("const char *greeting(void)"),
         "Shift-Tab wraps to the last file"
     );
-    live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT));
+    live.shift_tab();
     assert!(
         live.shows("func greeting() string"),
         "Shift-Tab selects the previous file"
@@ -127,7 +127,7 @@ fn detail_toggle(mode: Mode) {
     let start = live.buffer();
 
     live.press('c');
-    assert_ne!(live.tui.preferences().granularity, mode.detail);
+    assert_ne!(live.tui.preferences().granularity, mode.granularity);
     assert_ne!(live.buffer(), start, "c changes change emphasis");
     live.press('c');
     assert_eq!(live.buffer(), start, "c toggles back");
@@ -176,8 +176,7 @@ fn quit(mode: Mode) {
     assert_eq!(live.press('q'), Step::Exit);
 
     let mut live = Live::load(MIXED_LANGUAGES, mode);
-    let interrupt = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    assert_eq!(live.send(interrupt), Step::Exit);
+    assert_eq!(live.interrupt(), Step::Exit);
 }
 
 fn bottom_past_hidden_context(mode: Mode) {
@@ -196,9 +195,7 @@ fn bottom_past_hidden_context(mode: Mode) {
 fn keymap_popup(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     let start = live.buffer();
-    let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-    let interrupt = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    assert_eq!(live.send(escape), Step::Continue);
+    assert_eq!(live.escape(), Step::Continue);
     assert_eq!(live.buffer(), start, "Esc does nothing without the popup");
 
     for close in ['?', 'q'] {
@@ -217,15 +214,11 @@ fn keymap_popup(mode: Mode) {
     }
 
     live.press('?');
-    live.send(escape);
+    live.escape();
     assert_eq!(live.buffer(), start, "Esc closes the popup");
 
     live.press('?');
-    assert_eq!(
-        live.send(interrupt),
-        Step::Exit,
-        "Ctrl-C exits from the popup"
-    );
+    assert_eq!(live.interrupt(), Step::Exit, "Ctrl-C exits from the popup");
 }
 
 /// docs/spec/architecture.md#keyboard-bindings: `Ctrl-D` and `Ctrl-U` move by half of a
@@ -240,13 +233,13 @@ fn half_page_movement(mode: Mode) {
     let pane_lines = live.old_label_lines();
     let top = top_label(&live);
 
-    live.send(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+    live.control('d');
     assert_eq!(
         top_label(&live),
         top + pane_lines / 2,
         "Ctrl-D moves half a pane"
     );
-    live.send(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    live.control('u');
     assert_eq!(live.buffer(), start, "Ctrl-U moves back");
 }
 
