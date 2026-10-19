@@ -109,7 +109,7 @@ impl DiffFile {
         mut entries: impl for<'h> FnMut(
             &BySide<FileHeader>,
             HunkRecords<'_, 'h>,
-        ) -> Vec<(RecordPosition<'h>, E)>,
+        ) -> Vec<RecordEntry<'h, E>>,
     ) -> RecordMap<Vec<E>> {
         let FileBody::Unified(body) = &self.body else {
             return RecordMap::empty();
@@ -125,8 +125,8 @@ impl DiffFile {
                         .iter()
                         .map(|_| Vec::new())
                         .collect::<Box<[_]>>();
-                    for (position, entry) in entries(&body.headers, records) {
-                        values[position.index].push(entry);
+                    for RecordEntry { position, value } in entries(&body.headers, records) {
+                        values[position.index].push(value);
                     }
                     values
                 })
@@ -234,6 +234,12 @@ impl<'a, 'h> HunkRecords<'a, 'h> {
 pub struct RecordPosition<'h> {
     index: usize,
     brand: Brand<'h>,
+}
+
+/// A value for the record at `position`, as [`DiffFile::record_map`] gathers them.
+pub struct RecordEntry<'h, E> {
+    pub position: RecordPosition<'h>,
+    pub value: E,
 }
 
 /// An invariant lifetime marker: `'h` can neither grow nor shrink, so two brands unify

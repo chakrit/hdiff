@@ -3,7 +3,7 @@ use std::ops::Range;
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::{
-    document::{DiffFile, HunkRecords, RecordMap, RecordPosition},
+    document::{DiffFile, HunkRecords, RecordEntry, RecordMap, RecordPosition},
     headers::{FileHeader, HeaderPath},
     measurement::{Observer, Stage, Work},
     side::{BySide, Side},
@@ -75,7 +75,7 @@ impl SyntaxHighlighter {
         headers: &BySide<FileHeader>,
         hunk: HunkRecords<'_, 'h>,
         observer: &mut impl Observer,
-    ) -> Vec<(RecordPosition<'h>, SyntaxSpan)> {
+    ) -> Vec<RecordEntry<'h, SyntaxSpan>> {
         observer.count(Work::Hunk);
         let languages = headers
             .as_ref()
@@ -179,7 +179,7 @@ impl SyntaxHighlighter {
 /// One projection's parse tree and the spans its captures give its records.
 struct Highlighted<'h> {
     tree: Tree,
-    spans: Vec<(RecordPosition<'h>, SyntaxSpan)>,
+    spans: Vec<RecordEntry<'h, SyntaxSpan>>,
 }
 
 /// The tree an edited parse starts from, with the projection it was parsed from.
@@ -311,7 +311,7 @@ impl LanguageHighlighter {
         projection: &Projection<'h>,
         tree: &Tree,
         observer: &mut impl Observer,
-    ) -> Vec<(RecordPosition<'h>, SyntaxSpan)> {
+    ) -> Vec<RecordEntry<'h, SyntaxSpan>> {
         let capture_names = self.query.capture_names();
         let mut captures =
             self.cursor
@@ -352,7 +352,7 @@ struct Projection<'h> {
 
 /// A record's payload range in its projection's source.
 struct ProjectedRecord<'h> {
-    record: RecordPosition<'h>,
+    position: RecordPosition<'h>,
     source: Range<usize>,
 }
 
@@ -374,7 +374,7 @@ impl<'h> Projection<'h> {
             };
             if styled {
                 records.push(ProjectedRecord {
-                    record: position,
+                    position,
                     source: start..source.len(),
                 });
             }
@@ -390,7 +390,7 @@ impl<'h> Projection<'h> {
         &self,
         source: Range<usize>,
         class: SyntaxClass,
-    ) -> impl Iterator<Item = (RecordPosition<'h>, SyntaxSpan)> + '_ {
+    ) -> impl Iterator<Item = RecordEntry<'h, SyntaxSpan>> + '_ {
         let first_record = self.first_overlapping_record(source.start);
         let capture_end = source.end;
         let capture_length = source.len();
@@ -414,7 +414,10 @@ impl<'h> Projection<'h> {
                     capture_length,
                     class,
                 };
-                Some((record.record, span))
+                Some(RecordEntry {
+                    position: record.position,
+                    value: span,
+                })
             })
     }
 
@@ -474,7 +477,7 @@ mod tests {
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{DiffFile, FileBody, HunkRecords, UnifiedBody},
+        document::{DiffFile, FileBody, HunkRecords, RecordEntry, UnifiedBody},
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
@@ -602,8 +605,8 @@ mod tests {
             full_pass
                 .spans
                 .into_iter()
-                .filter(|(position, _)| *position == addition)
-                .map(|(_, span)| span)
+                .filter(|entry| entry.position == addition)
+                .map(|entry| entry.value)
                 .collect::<Vec<_>>()
         });
 
@@ -626,14 +629,19 @@ mod tests {
         let spans = with_added_projection(&["aaaa", "bbbb", "cccc"], |projection| {
             projection
                 .map_span(2..12, SyntaxClass::Keyword)
-                .map(|(position, span)| {
-                    let projected_index = projection
-                        .records
-                        .iter()
-                        .position(|projected| projected.record == position)
-                        .expect("a mapped span names a projected record");
-                    (projected_index, span.bytes)
-                })
+                .map(
+                    |RecordEntry {
+                         position,
+                         value: span,
+                     }| {
+                        let projected_index = projection
+                            .records
+                            .iter()
+                            .position(|projected| projected.position == position)
+                            .expect("a mapped span names a projected record");
+                        (projected_index, span.bytes)
+                    },
+                )
                 .collect::<Vec<_>>()
         });
 
