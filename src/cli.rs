@@ -53,7 +53,7 @@ pub enum Invocation {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum UsageError {
+pub enum Error {
     InstallWithOperands,
     MissingBenchDriver,
     UnknownBenchDriver(OsString),
@@ -62,7 +62,7 @@ pub enum UsageError {
     TooManyOperands,
 }
 
-impl fmt::Display for UsageError {
+impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InstallWithOperands => {
@@ -86,16 +86,13 @@ impl fmt::Display for UsageError {
     }
 }
 
-impl std::error::Error for UsageError {}
+impl std::error::Error for Error {}
 
-pub fn select_invocation(
-    arguments: &[OsString],
-    stdin: StdinState,
-) -> Result<Invocation, UsageError> {
+pub fn select_invocation(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
     if arguments.iter().any(|argument| argument == "--install") {
         return match arguments {
             [_] => Ok(Invocation::Install),
-            _ => Err(UsageError::InstallWithOperands),
+            _ => Err(Error::InstallWithOperands),
         };
     }
 
@@ -107,27 +104,27 @@ pub fn select_invocation(
     }
 }
 
-fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, UsageError> {
+fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
     let Some((name, operands)) = arguments.split_first() else {
-        return Err(UsageError::MissingBenchDriver);
+        return Err(Error::MissingBenchDriver);
     };
     let Some(driver) = Driver::from_name(name) else {
-        return Err(UsageError::UnknownBenchDriver(name.clone()));
+        return Err(Error::UnknownBenchDriver(name.clone()));
     };
 
     select_input(operands, stdin).map(|source| Invocation::Bench { driver, source })
 }
 
-fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, UsageError> {
+fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Error> {
     let source = select_source(arguments)?;
 
     match (stdin, source.reads_stdin()) {
-        (StdinState::Piped, false) => Err(UsageError::PipedStdinIgnored),
+        (StdinState::Piped, false) => Err(Error::PipedStdinIgnored),
         (StdinState::Piped, true) | (StdinState::Unpiped, _) => Ok(source),
     }
 }
 
-fn select_source(arguments: &[OsString]) -> Result<Source, UsageError> {
+fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
     let (recursion_flags, operand_arguments): (Vec<_>, Vec<_>) =
         arguments.iter().partition(|argument| *argument == "-r");
     let depth = match recursion_flags.is_empty() {
@@ -149,11 +146,11 @@ fn select_source(arguments: &[OsString]) -> Result<Source, UsageError> {
 }
 
 /// The source of any number of operands but two: a second one means more than two.
-fn single_source(operands: Vec<Operand>, depth: Depth) -> Result<Source, UsageError> {
+fn single_source(operands: Vec<Operand>, depth: Depth) -> Result<Source, Error> {
     let mut operands = operands.into_iter();
     match (operands.next(), operands.next(), depth) {
-        (_, Some(_), _) => Err(UsageError::TooManyOperands),
-        (_, None, Depth::Recursive) => Err(UsageError::RecursionWithoutComparison),
+        (_, Some(_), _) => Err(Error::TooManyOperands),
+        (_, None, Depth::Recursive) => Err(Error::RecursionWithoutComparison),
         (None | Some(Operand::Stdin), None, Depth::TopLevel) => Ok(Source::Stdin),
         (Some(Operand::Path(path)), None, Depth::TopLevel) => Ok(Source::PatchFile(path)),
     }
@@ -173,15 +170,15 @@ mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
     use super::{
-        BySide, Comparison, Depth, Driver, Invocation, Operand, Source, StdinState, UsageError,
+        BySide, Comparison, Depth, Driver, Error, Invocation, Operand, Source, StdinState,
         select_input, select_invocation,
     };
 
-    fn select_invocation_unpiped(words: &[&str]) -> Result<Invocation, UsageError> {
+    fn select_invocation_unpiped(words: &[&str]) -> Result<Invocation, Error> {
         select_invocation(&arguments(words), StdinState::Unpiped)
     }
 
-    fn select_input_unpiped(words: &[&str]) -> Result<Source, UsageError> {
+    fn select_input_unpiped(words: &[&str]) -> Result<Source, Error> {
         select_input(&arguments(words), StdinState::Unpiped)
     }
 
@@ -205,7 +202,7 @@ mod tests {
             let arguments = arguments(words);
             assert_eq!(
                 select_input(&arguments, StdinState::Piped),
-                Err(UsageError::PipedStdinIgnored),
+                Err(Error::PipedStdinIgnored),
                 "{arguments:?}"
             );
         }
@@ -217,7 +214,7 @@ mod tests {
 
         assert_eq!(
             select_invocation(&arguments, StdinState::Piped),
-            Err(UsageError::PipedStdinIgnored)
+            Err(Error::PipedStdinIgnored)
         );
     }
 
@@ -233,7 +230,7 @@ mod tests {
     fn rejects_install_with_input_operands() {
         assert_eq!(
             select_invocation_unpiped(&["--install", "change.patch"]),
-            Err(UsageError::InstallWithOperands)
+            Err(Error::InstallWithOperands)
         );
     }
 
@@ -261,11 +258,11 @@ mod tests {
     fn rejects_bench_without_a_known_driver() {
         assert_eq!(
             select_invocation_unpiped(&["--bench"]),
-            Err(UsageError::MissingBenchDriver)
+            Err(Error::MissingBenchDriver)
         );
         assert_eq!(
             select_invocation_unpiped(&["--bench", "a.patch"]),
-            Err(UsageError::UnknownBenchDriver(OsString::from("a.patch")))
+            Err(Error::UnknownBenchDriver(OsString::from("a.patch")))
         );
     }
 
@@ -288,7 +285,7 @@ mod tests {
     fn rejects_more_than_two_operands() {
         assert_eq!(
             select_input_unpiped(&["a", "b", "c"]),
-            Err(UsageError::TooManyOperands)
+            Err(Error::TooManyOperands)
         );
     }
 
@@ -333,11 +330,11 @@ mod tests {
     fn rejects_recursion_without_two_operands() {
         assert_eq!(
             select_input_unpiped(&["-r"]),
-            Err(UsageError::RecursionWithoutComparison)
+            Err(Error::RecursionWithoutComparison)
         );
         assert_eq!(
             select_input_unpiped(&["-r", "change.patch"]),
-            Err(UsageError::RecursionWithoutComparison)
+            Err(Error::RecursionWithoutComparison)
         );
     }
 }

@@ -16,14 +16,14 @@ use crate::{
 
 /// Why input was rejected.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParseError {
+pub enum Error {
     /// Nonempty viewer input holds no file diff.
     NoDiff,
     /// A recognized diff section is malformed at a 1-based input line.
     Malformed { line: usize, reason: Malformed },
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoDiff => formatter.write_str("input contains no diff"),
@@ -34,7 +34,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for Error {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Malformed {
@@ -74,18 +74,18 @@ impl Malformed {
 }
 
 /// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
-pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
+pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, Error> {
     let document = parse_comparison(input)?;
 
     match (&document, input.is_empty()) {
         (DiffDocument::Files(_), _) | (DiffDocument::Text(_), true) => Ok(document),
-        (DiffDocument::Text(_), false) => Err(ParseError::NoDiff),
+        (DiffDocument::Text(_), false) => Err(Error::NoDiff),
     }
 }
 
 /// Parses `diff` output into its surrounding text and file sections. It may hold only
 /// surrounding text, such as `Binary files … differ`.
-pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
+pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, Error> {
     let mut lines = SourceLines::new(input);
     let mut sections = Vec::new();
     let mut text = Vec::new();
@@ -150,10 +150,7 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 }
 
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata.
-fn parse_git_section(
-    header: SourceLine,
-    lines: &mut SourceLines<'_>,
-) -> Result<DiffFile, ParseError> {
+fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
     let mut metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(binary_patch) = lines.next_if(|text| text == "GIT binary patch") {
         metadata.push(binary_patch);
@@ -180,7 +177,7 @@ fn is_git_metadata(text: &str) -> bool {
 
 /// The `literal` and `delta` blocks after `GIT binary patch`, each with its payload and
 /// blank separator.
-fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, ParseError> {
+fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Error> {
     let mut patch = Vec::new();
 
     while let Some(Taken {
@@ -227,7 +224,7 @@ fn parse_unified(
     git: Option<GitHeader>,
     old: FileHeader,
     lines: &mut SourceLines<'_>,
-) -> Result<DiffFile, ParseError> {
+) -> Result<DiffFile, Error> {
     let Some(new) = lines.next_file_header(Side::New) else {
         let error = match lines.peek() {
             None => lines.last_line_error(Malformed::MissingNewFileHeader),
@@ -272,7 +269,7 @@ fn parse_hunk(
     header: SourceLine,
     expected: BySide<usize>,
     lines: &mut SourceLines<'_>,
-) -> Result<Hunk, ParseError> {
+) -> Result<Hunk, Error> {
     let exhausted = BySide::<usize>::default();
     let mut remaining = expected;
     let mut records = Vec::new();
@@ -432,21 +429,21 @@ impl<'a> SourceLines<'a> {
     }
 
     /// `result`, with a malformation located at the line most recently taken.
-    fn at_last_line<T>(&self, result: Result<T, Malformed>) -> Result<T, ParseError> {
+    fn at_last_line<T>(&self, result: Result<T, Malformed>) -> Result<T, Error> {
         result.map_err(|reason| self.last_line_error(reason))
     }
 
     /// An error at the line most recently taken.
-    fn last_line_error(&self, reason: Malformed) -> ParseError {
-        ParseError::Malformed {
+    fn last_line_error(&self, reason: Malformed) -> Error {
+        Error::Malformed {
             line: self.taken,
             reason,
         }
     }
 
     /// An error at the line that would be taken next, or just past the end.
-    fn next_line_error(&self, reason: Malformed) -> ParseError {
-        ParseError::Malformed {
+    fn next_line_error(&self, reason: Malformed) -> Error {
+        Error::Malformed {
             line: self.taken + 1,
             reason,
         }
@@ -455,14 +452,14 @@ impl<'a> SourceLines<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Malformed, ParseError, parse_comparison, parse_patch};
+    use super::{Error, Malformed, parse_comparison, parse_patch};
     use crate::{
         document::{DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
         finite_output,
     };
 
-    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, ParseError> {
-        Err(ParseError::Malformed { line, reason })
+    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, Error> {
+        Err(Error::Malformed { line, reason })
     }
 
     /// Every file's unified body, in input order; each fixture file must be unified.
@@ -505,7 +502,7 @@ mod tests {
     #[test]
     fn rejects_nonempty_text_only_input() {
         for input in [b"ordinary text\n".as_slice(), b" \t\r\n", b"\n"] {
-            assert_eq!(parse_patch(input), Err(ParseError::NoDiff));
+            assert_eq!(parse_patch(input), Err(Error::NoDiff));
         }
         assert_eq!(parse_patch(b""), Ok(DiffDocument::Text(Box::default())));
     }

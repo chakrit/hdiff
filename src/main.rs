@@ -11,12 +11,12 @@ use hdiff::{
         write_output::{OutputContext, WriteOutput},
     },
     bench::{self, Driver},
-    cli::{self, Invocation, UsageError},
+    cli::{self, Invocation},
     document::DiffDocument,
     exit_status::DiffStatus,
     finite_output,
     input::{self, StdinState},
-    parser::ParseError,
+    parser,
     prepared::PreparedDocument,
     terminal,
 };
@@ -122,14 +122,14 @@ fn report(error: &RunError) -> Result<(), actions::Error> {
 
 #[derive(Debug)]
 enum RunError {
-    Usage(UsageError),
+    Usage(cli::Error),
     Input(input::Error),
-    Parse(ParseError),
+    Parse(parser::Error),
     Executable(io::Error),
     Install(actions::Error),
     Bench(io::Error),
     Output(actions::Error),
-    Terminal(terminal::SessionError),
+    Terminal(terminal::Error),
 }
 
 impl fmt::Display for RunError {

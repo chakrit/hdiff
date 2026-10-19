@@ -36,15 +36,15 @@ pub fn open_controlling_terminal() -> io::Result<File> {
 pub fn run_interactive(
     controlling_terminal: File,
     document: PreparedDocument,
-) -> Result<(), SessionError> {
+) -> Result<(), Error> {
     let mut session = TerminalSession::start(controlling_terminal)?;
 
     let result = run_loop(session.terminal_mut(), document);
 
     match (result, session.finish()) {
         (Ok(()), Ok(())) => Ok(()),
-        (Ok(()), Err(failures)) => Err(SessionError::Restore(failures)),
-        (Err(error), restored) => Err(SessionError::Failed {
+        (Ok(()), Err(failures)) => Err(Error::Restore(failures)),
+        (Err(error), restored) => Err(Error::Failed {
             stage: SessionStage::Run,
             error,
             restored,
@@ -65,7 +65,7 @@ fn run_loop(
 
 /// Why an interactive session failed, with every terminal restore step that failed too.
 #[derive(Debug)]
-pub enum SessionError {
+pub enum Error {
     /// A stage of the session failed.
     Failed {
         stage: SessionStage,
@@ -76,7 +76,7 @@ pub enum SessionError {
     Restore(RestoreFailures),
 }
 
-impl fmt::Display for SessionError {
+impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Failed {
@@ -98,7 +98,7 @@ impl fmt::Display for SessionError {
     }
 }
 
-impl std::error::Error for SessionError {}
+impl std::error::Error for Error {}
 
 /// The part of a session that failed.
 #[derive(Debug)]
@@ -209,7 +209,7 @@ struct TerminalSession {
 impl TerminalSession {
     /// Sets up the terminal at its size, enters raw mode, then the alternate screen,
     /// leaving raw mode again when the alternate screen fails.
-    fn start(controlling_terminal: File) -> Result<Self, SessionError> {
+    fn start(controlling_terminal: File) -> Result<Self, Error> {
         let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))
             .map_err(|error| start_failed(error, Ok(())))?;
         terminal::enable_raw_mode().map_err(|error| start_failed(error, Ok(())))?;
@@ -241,8 +241,8 @@ impl TerminalSession {
 
 /// A session that failed to start on `error`, with whatever restoring the steps already
 /// taken left behind.
-fn start_failed(error: io::Error, restored: Result<(), RestoreFailures>) -> SessionError {
-    SessionError::Failed {
+fn start_failed(error: io::Error, restored: Result<(), RestoreFailures>) -> Error {
+    Error::Failed {
         stage: SessionStage::Start,
         error,
         restored,

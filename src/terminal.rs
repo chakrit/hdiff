@@ -24,7 +24,7 @@ mod view;
 
 pub(crate) use bindings::character_for;
 pub use session::{
-    RestoreFailures, SessionError, SessionStage, open_controlling_terminal, run_interactive,
+    Error, RestoreFailures, SessionStage, open_controlling_terminal, run_interactive,
 };
 
 /// How the viewer writes its output. Rules:

@@ -15,7 +15,7 @@ use crate::{
     },
     comparison::Comparison,
     document::DiffDocument,
-    parser::{self, ParseError},
+    parser,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -97,7 +97,7 @@ impl Content {
     }
 
     /// Parses the content, releasing its buffer: the document keeps every line it needs.
-    pub fn parse(self) -> Result<DiffDocument, ParseError> {
+    pub fn parse(self) -> Result<DiffDocument, parser::Error> {
         match self {
             Self::Patch(bytes) => parser::parse_patch(&bytes),
             Self::Comparison(bytes) => parser::parse_comparison(&bytes),
