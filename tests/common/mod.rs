@@ -5,6 +5,7 @@
 //! items that some crates leave unused carry `#[allow(dead_code)]`.
 
 use std::{
+    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -54,6 +55,18 @@ impl TestEnv {
     /// hdiff running in the root with only `HOME`, `PATH`, and `TERM` set.
     pub fn hdiff(&self) -> Command {
         self.program(Path::new(env!("CARGO_BIN_EXE_hdiff")))
+    }
+
+    /// The output of hdiff run in the root with `arguments`, isolated like
+    /// [`TestEnv::hdiff`], with no standard input.
+    #[allow(dead_code)]
+    pub fn run(&self, arguments: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Output {
+        let mut command = self.hdiff();
+        command.args(arguments);
+
+        command
+            .output()
+            .unwrap_or_else(|error| panic!("{error}: {command:?}"))
     }
 
     /// `program` running in the root, isolated like [`TestEnv::hdiff`].
@@ -117,6 +130,19 @@ pub fn success_output(output: &Output) -> String {
     str::from_utf8(&output.stdout)
         .unwrap_or_else(|error| panic!("{error}: {output:?}"))
         .to_owned()
+}
+
+/// Runs a fixture command, such as Git, that must succeed, and returns its UTF-8
+/// standard output; a failure shows the command and its whole output.
+#[allow(dead_code)]
+pub fn run_fixture(command: &mut Command) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|error| panic!("{error}: {command:?}"));
+    assert!(output.status.success(), "{command:?}: {output:?}");
+
+    String::from_utf8(output.stdout.clone())
+        .unwrap_or_else(|error| panic!("{error}: {command:?}: {output:?}"))
 }
 
 /// The standard error of an hdiff run that failed: it exited with the trouble status
