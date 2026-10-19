@@ -17,10 +17,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 use super::{TtyEvents, Tui};
 use crate::{
-    actions::write_output::{OutputContext, WriteOutput},
-    error_output,
-    non_empty::NonEmpty,
-    prepared::PreparedDocument,
+    actions::report_error::ReportError, non_empty::NonEmpty, prepared::PreparedDocument,
     theme::ColorDepth,
 };
 
@@ -292,15 +289,7 @@ fn restore_after_panic() -> Result<(), PanicRestoreFailure> {
 /// Writes `failure` to standard error as every error is written, before the panic
 /// message. Rules: docs/spec/architecture.md#error-output.
 fn report_after_panic(failure: &PanicRestoreFailure) {
-    let message = error_output::prefixed(&failure.to_string());
-    let reported = WriteOutput {
-        bytes: message.as_bytes(),
-    }
-    .run(&mut OutputContext {
-        writer: &mut io::stderr(),
-    });
-
-    match reported {
+    match (ReportError { error: failure }).run() {
         Ok(()) => {}
         // Standard error was the last channel left; the panic message still follows on
         // it, if it can.
