@@ -386,26 +386,28 @@ fn starts_hunk_header(text: &str) -> bool {
     text.starts_with("@@ ")
 }
 
-/// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
+/// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares. The
+/// fields are single-spaced, and only a section heading after a space may follow.
 fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
-    let mut parts = header.split_whitespace();
-    let [Some("@@"), Some(old), Some(new), Some("@@")] =
-        [parts.next(), parts.next(), parts.next(), parts.next()]
-    else {
+    let ranges = header
+        .strip_prefix("@@ -")
+        .and_then(|rest| rest.split_once(" @@"))
+        .filter(|(_, heading)| heading.is_empty() || heading.starts_with(' '));
+    let Some((old, new)) = ranges.and_then(|(ranges, _)| ranges.split_once(" +")) else {
         return Err(Malformed::InvalidHunkHeader);
     };
 
-    let old = range_count(old, '-');
-    let new = range_count(new, '+');
-    BySide { old, new }
-        .transpose()
-        .ok_or(Malformed::InvalidHunkHeader)
+    BySide {
+        old: range_count(old),
+        new: range_count(new),
+    }
+    .transpose()
+    .ok_or(Malformed::InvalidHunkHeader)
 }
 
-/// The line count a `-start,count` or `+start,count` hunk range states; a range without
-/// a count states one line.
-fn range_count(range: &str, prefix: char) -> Option<usize> {
-    let range = range.strip_prefix(prefix)?;
+/// The line count a `start,count` hunk range states, after its `-` or `+`; a range
+/// without a count states one line.
+fn range_count(range: &str) -> Option<usize> {
     let (start, count) = match range.split_once(',') {
         Some((start, count)) => (start, decimal_count(count)?),
         None => (range, 1),
@@ -700,6 +702,34 @@ mod tests {
                 "{hunk}"
             );
         }
+    }
+
+    /// docs/spec/architecture.md#input-contract: a hunk header is
+    /// `@@ -<range> +<range> @@`, single-spaced as producers write it and `git apply`
+    /// reads it.
+    #[test]
+    fn rejects_hunk_headers_spaced_other_than_producers_write() {
+        let files = "--- a/x\n+++ b/x\n";
+        for header in [
+            "@@  -1  +1  @@",
+            "@@ -1\t+1 @@",
+            "@@ -1 +1  @@",
+            "@@ -1  +1 @@",
+        ] {
+            let input = format!("{files}{header}\n-a\n+b\n");
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(3, Malformed::InvalidHunkHeader),
+                "{header:?}"
+            );
+        }
+
+        let headed = format!("{files}@@ -1 +1 @@ fn main() {{\n-a\n+b\n");
+        assert!(
+            parse_patch(headed.as_bytes()).is_ok(),
+            "a section heading follows"
+        );
     }
 
     #[test]
