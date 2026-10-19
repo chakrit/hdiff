@@ -78,18 +78,19 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
         .as_ref()
         .merge(|old, new| diff_slices(Algorithm::Myers, old, new))
         .into_iter()
+        .map(|(tag, run)| (changed_side(tag), run))
         .peekable();
     let mut cursor = PairCursor::new(payloads);
 
-    while let Some((tag, run)) = changes.next() {
-        let replacement = changed_side(tag).and_then(|side| {
+    while let Some((changed, run)) = changes.next() {
+        let replacement = changed.and_then(|side| {
             changes
-                .next_if(|(next, _)| changed_side(*next).is_some_and(|next| next != side))
+                .next_if(|(next, _)| next.is_some_and(|next| next != side))
                 .map(|(_, opposite)| BySide::of_side(side, run, opposite))
         });
         let token_run = match replacement {
             Some(runs) => TokenRun::Replaced(runs),
-            None => TokenRun::Marked(MarkedRun::of(tag, tokens_len(run))),
+            None => TokenRun::Marked(MarkedRun::of(changed, tokens_len(run))),
         };
         token_run.advance(&mut cursor);
     }
@@ -265,10 +266,10 @@ enum MarkedRun {
 }
 
 impl MarkedRun {
-    /// The run `tag` names: an equal run is kept, a deletion changes the old side, and an
-    /// insertion changes the new side.
-    fn of(tag: ChangeTag, bytes: usize) -> Self {
-        match changed_side(tag) {
+    /// The run of `bytes` that `changed` names: a run changing no side is kept, and one
+    /// changing a side marks that side.
+    fn of(changed: Option<Side>, bytes: usize) -> Self {
+        match changed {
             None => Self::Kept(bytes),
             Some(side) => Self::Changed { side, bytes },
         }
@@ -313,7 +314,7 @@ fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<MarkedRun>> {
 
     let grapheme_changes = changes.into_iter().map(|(tag, graphemes)| {
         let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-        MarkedRun::of(tag, bytes)
+        MarkedRun::of(changed_side(tag), bytes)
     });
     Some(grapheme_changes.collect())
 }
