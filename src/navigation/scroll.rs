@@ -12,7 +12,7 @@ pub struct ScrollPosition {
 }
 
 /// A scroll position within the bounds of what it scrolls. Only the start of a page and
-/// [`DisplayBounds::clamp`], which only navigation reaches, build one.
+/// [`ScrollBounds::clamp`], which only navigation reaches, build one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundedScroll(ScrollPosition);
 
@@ -28,7 +28,7 @@ impl BoundedScroll {
     }
 
     /// This position after `movement`, within `bounds`.
-    pub(super) fn moved(self, movement: Movement, bounds: DisplayBounds) -> Self {
+    pub(super) fn moved(self, movement: Movement, bounds: ScrollBounds) -> Self {
         let scroll = self.0;
         let at_column = |column| ScrollPosition {
             horizontal: column,
@@ -74,13 +74,13 @@ pub enum Movement {
 
 /// The limits of a scroll position, and the lines one pane shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplayBounds {
+pub struct ScrollBounds {
     maximum_vertical_offset: ScreenLines,
     maximum_horizontal_offset: Cells,
     pane_lines: ScreenLines,
 }
 
-impl DisplayBounds {
+impl ScrollBounds {
     /// Bounds that scroll until `maximum_vertical_offset` and
     /// `maximum_horizontal_offset`, over panes of `pane_lines` lines.
     pub(super) const fn new(
@@ -106,7 +106,7 @@ impl DisplayBounds {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoundedScroll, DisplayBounds, Movement, ScrollPosition};
+    use super::{BoundedScroll, Movement, ScrollBounds, ScrollPosition};
     use crate::screen::{Cells, ScreenLines};
 
     fn scroll(vertical: usize, horizontal: usize) -> ScrollPosition {
@@ -116,8 +116,8 @@ mod tests {
         }
     }
 
-    fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: usize) -> DisplayBounds {
-        DisplayBounds {
+    fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: usize) -> ScrollBounds {
+        ScrollBounds {
             maximum_vertical_offset: ScreenLines::new(maximum_vertical_offset),
             maximum_horizontal_offset: Cells::new(maximum_horizontal_offset),
             pane_lines: ScreenLines::new(8),
@@ -125,7 +125,7 @@ mod tests {
     }
 
     /// `scroll` within `bounds`, moved by `movement`.
-    fn moved(movement: Movement, scroll: ScrollPosition, bounds: DisplayBounds) -> ScrollPosition {
+    fn moved(movement: Movement, scroll: ScrollPosition, bounds: ScrollBounds) -> ScrollPosition {
         bounds.clamp(scroll).moved(movement, bounds).position()
     }
 
@@ -166,7 +166,7 @@ mod tests {
     /// pane's lines.
     #[test]
     fn moves_half_a_pane_by_half_page() {
-        let limits = DisplayBounds {
+        let limits = ScrollBounds {
             pane_lines: ScreenLines::new(15),
             ..bounds(100, 0)
         };
@@ -182,7 +182,7 @@ mod tests {
     /// caps how far a row reaches.
     #[test]
     fn bounds_horizontal_movement_to_the_widest_row() {
-        let wide = DisplayBounds {
+        let wide = ScrollBounds {
             maximum_horizontal_offset: Cells::new(usize::MAX - 1),
             ..bounds(0, 0)
         };

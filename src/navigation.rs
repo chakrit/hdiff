@@ -10,7 +10,7 @@ use ratatui::layout::Size;
 
 use self::{
     interaction::{AnchorLine, Effect, Interaction, Placement},
-    scroll::{DisplayBounds, ScrollPosition},
+    scroll::{ScrollBounds, ScrollPosition},
 };
 use crate::{
     effective_view::EffectiveView,
@@ -150,11 +150,11 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
 
 /// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
 /// The vertical offset always names a line, even when a too-short screen shows no pane.
-fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> DisplayBounds {
+fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
     let content = view.pane_content();
     let shown_lines = content.height.max(ScreenLines::ONE);
 
-    DisplayBounds::new(
+    ScrollBounds::new(
         extent.line_count().saturating_sub(shown_lines),
         extent.width().saturating_sub(content.width),
         content.height,
