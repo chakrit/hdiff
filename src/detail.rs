@@ -357,47 +357,55 @@ mod tests {
         changed_pair_spans(BySide { old, new })
     }
 
+    /// The span of `payload` that its first `changed` text covers.
+    fn changed_span(payload: &str, changed: &str) -> PayloadSpan {
+        let start = payload
+            .find(changed)
+            .expect("the payload holds the changed text");
+        PayloadSpan::within(payload, start..start + changed.len())
+    }
+
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
         for (hunk, records, expected) in [
-            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", 0..5)]),
-            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", 0..5)]),
+            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", "café")]),
+            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", "café")]),
             (
                 "-1 +1,2",
                 "-let café = old;\n+let café = new;\n+café\n",
                 vec![
-                    ("-let café = old;", 12..15),
-                    ("+let café = new;", 12..15),
-                    ("+café", 0..5),
+                    ("-let café = old;", "old"),
+                    ("+let café = new;", "new"),
+                    ("+café", "café"),
                 ],
             ),
             (
                 "-1,2 +1",
                 "-let café = old;\n-café\n+let café = new;\n",
                 vec![
-                    ("-let café = old;", 12..15),
-                    ("-café", 0..5),
-                    ("+let café = new;", 12..15),
+                    ("-let café = old;", "old"),
+                    ("-café", "café"),
+                    ("+let café = new;", "new"),
                 ],
             ),
             (
                 "-1,2 +1",
                 "-let café = old;\n-café\n\\ No newline at end of file\n+let café = new;\n",
                 vec![
-                    ("-let café = old;", 12..15),
-                    ("-café", 0..5),
-                    ("+let café = new;", 12..15),
+                    ("-let café = old;", "old"),
+                    ("-café", "café"),
+                    ("+let café = new;", "new"),
                 ],
             ),
             (
                 "-1,2 +1,3",
                 "-old a\n-old b\n\\ No newline at end of file\n+new a\n+new b\n+café\n",
                 vec![
-                    ("-old a", 0..3),
-                    ("+new a", 0..3),
-                    ("-old b", 0..3),
-                    ("+new b", 0..3),
-                    ("+café", 0..5),
+                    ("-old a", "old"),
+                    ("+new a", "new"),
+                    ("-old b", "old"),
+                    ("+new b", "new"),
+                    ("+café", "café"),
                 ],
             ),
         ] {
@@ -413,8 +421,7 @@ mod tests {
                     .map_or(&[][..], |detail| detail.spans());
                 let shown = format!("{}{}", line.kind().marker(), line.payload());
                 let wanted = expected.iter().find(|(text, _)| *text == shown);
-                let wanted_span =
-                    wanted.map(|(_, bytes)| PayloadSpan::within(line.payload(), bytes.clone()));
+                let wanted_span = wanted.map(|(_, changed)| changed_span(line.payload(), changed));
                 assert_eq!(found, wanted_span.as_slice(), "{hunk}: {shown:?}");
             }
         }
@@ -427,8 +434,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: vec![PayloadSpan::within(old, 12..15)],
-                new: vec![PayloadSpan::within(new, 12..15)],
+                old: vec![changed_span(old, "old")],
+                new: vec![changed_span(new, "new")],
             }
         );
     }
@@ -440,8 +447,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: vec![PayloadSpan::within(old, 0..10)],
-                new: vec![PayloadSpan::within(new, 0..15)],
+                old: vec![changed_span(old, old)],
+                new: vec![changed_span(new, new)],
             }
         );
     }
@@ -453,8 +460,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: vec![PayloadSpan::within(old, 6..10)],
-                new: vec![PayloadSpan::within(new, 6..10)],
+                old: vec![changed_span(old, "Path")],
+                new: vec![changed_span(new, "File")],
             }
         );
     }
@@ -466,8 +473,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: vec![PayloadSpan::within(old, 0..12)],
-                new: vec![PayloadSpan::within(new, 0..14)],
+                old: vec![changed_span(old, old)],
+                new: vec![changed_span(new, new)],
             }
         );
     }
