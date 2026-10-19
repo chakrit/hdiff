@@ -2,10 +2,11 @@
 
 use crossterm::event::Event;
 use hdiff::{
+    navigation::Step,
     parser::parse_patch,
     preferences::{ContextRecords, DiffGranularity, DiffLayout, FileList},
     prepared::PreparedDocument,
-    terminal::{Step, Tui},
+    terminal::Tui,
     theme::ColorDepth,
 };
 use ratatui::layout::Size;

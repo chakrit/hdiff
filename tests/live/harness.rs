@@ -4,11 +4,12 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     effective_view::EffectiveView,
+    navigation::Step,
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
     screen::Cells,
-    terminal::{Step, Tui},
+    terminal::Tui,
     theme::{ColorDepth, Theme},
 };
 use ratatui::{
