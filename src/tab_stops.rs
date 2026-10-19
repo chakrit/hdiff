@@ -21,26 +21,31 @@ pub struct TabStops {
 impl TabStops {
     /// Appends `text` to `expanded` with its tabs replaced by spaces.
     pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
-        self.walk(text, |chunk, padding| {
-            expanded.push_str(chunk);
-            expanded.extend(iter::repeat_n(' ', padding.get()));
-        });
+        for piece in self.pieces(text) {
+            expanded.push_str(piece.chunk);
+            expanded.extend(iter::repeat_n(' ', piece.padding.get()));
+        }
     }
 
-    /// Visits each tab-free chunk of `text`, then the spaces the tab that ends it expands
-    /// to; a chunk without a tab ends `text`.
-    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(&'t str, Cells)) {
-        for piece in text.split_inclusive('\t') {
+    /// Each tab-free chunk of `text` with the spaces the tab that ends it expands to; a
+    /// chunk without a tab ends `text`. Reading the pieces advances the column.
+    fn pieces<'t>(&mut self, text: &'t str) -> impl Iterator<Item = ExpandedPiece<'t>> {
+        text.split_inclusive('\t').scan(self, |tab_stops, piece| {
             let before_tab = piece.strip_suffix('\t');
             let chunk = before_tab.unwrap_or(piece);
-            self.column += Cells::of_text(chunk);
+            let chunk_cells = Cells::of_text(chunk);
+            tab_stops.column += chunk_cells;
 
             let padding = match before_tab {
-                Some(_) => self.advance_to_tab_stop(),
+                Some(_) => tab_stops.advance_to_tab_stop(),
                 None => Cells::ZERO,
             };
-            visit(chunk, padding);
-        }
+            Some(ExpandedPiece {
+                chunk,
+                chunk_cells,
+                padding,
+            })
+        })
     }
 
     /// Moves to the next tab stop, returning the cells a tab there covers.
@@ -48,6 +53,20 @@ impl TabStops {
         let padding = self.column.padding_to_next_multiple_of(TAB_WIDTH);
         self.column += padding;
         padding
+    }
+}
+
+/// One tab-free chunk of a payload and the spaces the tab after it expands to.
+struct ExpandedPiece<'t> {
+    chunk: &'t str,
+    chunk_cells: Cells,
+    padding: Cells,
+}
+
+impl ExpandedPiece<'_> {
+    /// The cells the chunk and its padding cover.
+    fn cells(&self) -> Cells {
+        self.chunk_cells + self.padding
     }
 }
 
@@ -62,13 +81,12 @@ pub struct MeasuredTextRef<'a> {
 impl<'a> MeasuredTextRef<'a> {
     /// `text`, measured once its tabs are expanded.
     pub fn of_text(text: &'a str) -> Self {
-        let mut tab_stops = TabStops::default();
-        tab_stops.walk(text, |_, _| {});
+        let cells = TabStops::default()
+            .pieces(text)
+            .map(|piece| piece.cells())
+            .sum();
 
-        Self {
-            text,
-            cells: tab_stops.column,
-        }
+        Self { text, cells }
     }
 
     pub fn text(self) -> &'a str {
