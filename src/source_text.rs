@@ -121,17 +121,22 @@ impl State {
         }
     }
 
-    /// The state after `character`.
+    /// The state after `character`. Each introducer has a 7-bit spelling (`ESC` and a
+    /// letter) and a single-character C1 spelling, and both open the same sequence.
     fn after(self, character: char) -> Self {
         match (self, character) {
             (Self::Text, '\u{1b}') => Self::Escape,
+            (Self::Text, '\u{9b}') => Self::ControlSequence,
+            (Self::Text, '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}') => {
+                Self::StringSequence
+            }
             (Self::Text, _) => Self::Text,
             (Self::Escape, '[') => Self::ControlSequence,
             (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => Self::StringSequence,
             (Self::Escape, _) => Self::Text,
             (Self::ControlSequence, '@'..='~') => Self::Text,
             (Self::ControlSequence, _) => Self::ControlSequence,
-            (Self::StringSequence, '\u{7}') => Self::Text,
+            (Self::StringSequence, '\u{7}' | '\u{9c}') => Self::Text,
             (Self::StringSequence, '\u{1b}') => Self::StringEscape,
             (Self::StringSequence, _) => Self::StringSequence,
             (Self::StringEscape, '\\') => Self::Text,
@@ -185,9 +190,29 @@ mod tests {
     fn keeps_printable_text_and_tabs_only() {
         assert_eq!(
             sanitize(
-                b"\x1b[31mred\x1b[0m\ttab \x1b]8;;u\x07link\x1bPdcs\x1b\\\x01\xc2\x9b\xffend\r\n"
+                b"\x1b[31mred\x1b[0m\ttab \x1b]8;;u\x07link\x1bPdcs\x1b\\\x01\xc2\x85\xffend\r\n"
             ),
             "red\ttab link\u{fffd}end"
         );
+    }
+
+    /// A single-character C1 introducer opens the same sequence as its 7-bit `ESC`
+    /// spelling, so the whole sequence is stripped either way.
+    #[test]
+    fn strips_c1_introduced_sequences_like_their_escape_spellings() {
+        for (c1, escape) in [
+            (b"\xc2\x9b31mred".as_slice(), b"\x1b[31mred".as_slice()),
+            (
+                b"\xc2\x9d8;;https://x\x07link",
+                b"\x1b]8;;https://x\x07link",
+            ),
+            (b"\xc2\x90dcs\x1b\\after", b"\x1bPdcs\x1b\\after"),
+            (b"\xc2\x98sos\xc2\x9cafter", b"\x1bXsos\x1b\\after"),
+            (b"\xc2\x9epm\x07after", b"\x1b^pm\x07after"),
+            (b"\xc2\x9fapc\x1b\\after", b"\x1b_apc\x1b\\after"),
+        ] {
+            assert_eq!(sanitize(c1), sanitize(escape), "{c1:?}");
+        }
+        assert_eq!(sanitize(b"\xc2\x9b31mred \xc2\x9d8;;u\x07link"), "red link");
     }
 }
