@@ -121,7 +121,7 @@ fn section_after(text: &mut Vec<SourceLine>, file: DiffFile) -> FileSection {
 // Sections
 
 /// How a line outside a file section starts.
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 enum LineStart {
     Text,
     GitHeader,
@@ -186,9 +186,9 @@ fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Er
 
     loop {
         let header = match lines.next_header(binary_block_header) {
-            HeaderRead::Other => break,
-            HeaderRead::Read(Taken { line, value: () }) => line,
-            HeaderRead::Malformed(error) => return Err(error),
+            None => break,
+            Some(Header::Read(Taken { line, value: () })) => line,
+            Some(Header::Malformed(error)) => return Err(error),
         };
         patch.push(header);
 
@@ -211,18 +211,17 @@ fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Er
     }
 }
 
-/// What `text` reads as where a `literal` or `delta` block header may start.
-fn binary_block_header(text: &str) -> HeaderRead<(), Malformed> {
+/// What `text` reads as where a `literal` or `delta` block header may start; any other
+/// line is no block header.
+fn binary_block_header(text: &str) -> Option<Header<(), Malformed>> {
     let literal = text.strip_prefix("literal ");
     let delta = text.strip_prefix("delta ");
-    let Some(size) = literal.or(delta) else {
-        return HeaderRead::Other;
-    };
+    let size = literal.or(delta)?;
 
-    match is_decimal_count(size) {
-        true => HeaderRead::Read(()),
-        false => HeaderRead::Malformed(Malformed::InvalidBinaryPatchHeader),
-    }
+    Some(match is_decimal_count(size) {
+        true => Header::Read(()),
+        false => Header::Malformed(Malformed::InvalidBinaryPatchHeader),
+    })
 }
 
 /// A section with `---` / `+++` headers, after its Git header when it has one.
@@ -245,9 +244,9 @@ fn parse_unified(
             line: header,
             value: expected,
         } = match lines.next_header(hunk_header) {
-            HeaderRead::Other => break,
-            HeaderRead::Read(taken) => taken,
-            HeaderRead::Malformed(error) => return Err(error),
+            None => break,
+            Some(Header::Read(taken)) => taken,
+            Some(Header::Malformed(error)) => return Err(error),
         };
         hunks.push(parse_hunk(header, expected, lines)?);
     }
@@ -345,16 +344,16 @@ fn is_excess_record(line: &SourceLine) -> bool {
 }
 
 /// What `text` reads as where a hunk header may start: an `@@ ` line is a hunk header,
-/// and states its counts or is malformed.
-fn hunk_header(text: &str) -> HeaderRead<BySide<usize>, Malformed> {
+/// and states its counts or is malformed; any other line is no hunk header.
+fn hunk_header(text: &str) -> Option<Header<BySide<usize>, Malformed>> {
     if !text.starts_with("@@ ") {
-        return HeaderRead::Other;
+        return None;
     }
 
-    match hunk_counts(text) {
-        Some(counts) => HeaderRead::Read(counts),
-        None => HeaderRead::Malformed(Malformed::InvalidHunkHeader),
-    }
+    Some(match hunk_counts(text) {
+        Some(counts) => Header::Read(counts),
+        None => Header::Malformed(Malformed::InvalidHunkHeader),
+    })
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
@@ -406,13 +405,12 @@ struct Taken<T> {
     value: T,
 }
 
-/// What a line reads as where a header of one kind may start.
-enum HeaderRead<T, E> {
-    /// Not a header of this kind.
-    Other,
-    /// A header of this kind, with the value it states.
+/// A line that is a header of one kind: well-formed with the value it states, or
+/// malformed.
+enum Header<T, E> {
+    /// A header that states its value.
     Read(T),
-    /// A header of this kind that states its value wrongly.
+    /// A header that states its value wrongly.
     Malformed(E),
 }
 
@@ -470,21 +468,14 @@ impl<'a> SourceLines<'a> {
     /// malformed header's error is located at that line.
     fn next_header<T>(
         &mut self,
-        read: impl FnOnce(&str) -> HeaderRead<T, Malformed>,
-    ) -> HeaderRead<Taken<T>, Error> {
-        let read = self
-            .peek()
-            .map_or(HeaderRead::Other, |line| read(line.sanitized()));
-        let is_header = !matches!(read, HeaderRead::Other);
-        let Some(line) = self.next_if(|_| is_header) else {
-            return HeaderRead::Other;
-        };
+        read: impl FnOnce(&str) -> Option<Header<T, Malformed>>,
+    ) -> Option<Header<Taken<T>, Error>> {
+        let Taken { line, value } = self.next_if_map(read)?;
 
-        match read {
-            HeaderRead::Other => HeaderRead::Other,
-            HeaderRead::Read(value) => HeaderRead::Read(Taken { line, value }),
-            HeaderRead::Malformed(reason) => HeaderRead::Malformed(self.last_line_error(reason)),
-        }
+        Some(match value {
+            Header::Read(value) => Header::Read(Taken { line, value }),
+            Header::Malformed(reason) => Header::Malformed(self.last_line_error(reason)),
+        })
     }
 
     /// Takes the next line when it is `side`'s file header.
@@ -674,7 +665,9 @@ mod tests {
             header
                 .metadata
                 .iter()
-                .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B")
+                .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B"),
+            "the binary payload line is kept in {:?}",
+            header.metadata
         );
         assert_eq!(finite_output::of_document(&document), input);
     }
@@ -695,9 +688,11 @@ mod tests {
             parse_patch(patch("--- a/next").as_bytes()),
             malformed(5, Malformed::TruncatedBinaryPatch)
         );
+        let stat_payload = parse_patch(patch("diff --stat").as_bytes());
         assert!(
-            parse_patch(patch("diff --stat").as_bytes()).is_ok(),
-            "a line that starts no section is not a new section inside a payload either"
+            stat_payload.is_ok(),
+            "a line that starts no section is not a new section inside a payload either: \
+             {stat_payload:?}"
         );
     }
 
@@ -742,11 +737,12 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
+        let body = &document.files().next().expect("first file").body;
 
-        assert!(matches!(
-            document.files().next().expect("first file").body,
-            FileBody::Metadata(_)
-        ));
+        assert!(
+            matches!(body, FileBody::Metadata(_)),
+            "a section without a file header is metadata: {body:?}"
+        );
     }
 
     #[test]
@@ -755,11 +751,13 @@ mod tests {
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
 
+        let body = &document.files().next().expect("first file").body;
+
         assert_eq!(document.files().count(), 1);
-        assert!(matches!(
-            document.files().next().expect("first file").body,
-            FileBody::Metadata(_)
-        ));
+        assert!(
+            matches!(body, FileBody::Metadata(_)),
+            "a rename-only section is metadata: {body:?}"
+        );
     }
 
     #[test]
