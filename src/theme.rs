@@ -35,6 +35,7 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// The built-in theme for `depth`.
     pub const fn for_depth(depth: ColorDepth) -> &'static Self {
         match depth {
             ColorDepth::TrueColor => &TRUECOLOR,
@@ -58,6 +59,7 @@ pub struct SyntaxPalette {
 }
 
 impl SyntaxPalette {
+    /// The color text of `class` is drawn in.
     pub fn color(&self, class: SyntaxClass) -> Color {
         match class {
             SyntaxClass::Keyword | SyntaxClass::Constant => self.keyword,
@@ -77,13 +79,17 @@ impl SyntaxPalette {
 pub struct RowPalette {
     /// The colors of rows that change each side: deletions, then additions.
     pub change: BySide<ChangeColors>,
+    /// The text of unchanged records.
     pub context_body: Color,
+    /// The text of hunk headers.
     pub hunk_header: Color,
 }
 
 /// The colors of rows that change one side.
 pub struct ChangeColors {
+    /// Behind the whole row.
     pub background: Color,
+    /// The row's text without syntax or character detail.
     pub body: Color,
     /// Text between the changed spans of a row with character detail.
     pub unchanged: Color,
@@ -95,21 +101,32 @@ pub struct ChangeColors {
 
 /// Colors for the file list, the help hint, separators, and continuity markers.
 pub struct ChromePalette {
+    /// A directory heading in the file list.
     pub directory_heading: Color,
+    /// A file name in the file list, and the marker of a file in an unknown state.
     pub file_name: Color,
+    /// The state marker of a modified file.
     pub modified_marker: Color,
+    /// The state marker of an added file.
     pub added_marker: Color,
+    /// The state marker of a deleted file.
     pub deleted_marker: Color,
+    /// The state marker of a renamed file.
     pub renamed_marker: Color,
+    /// The text of the selected file's row.
     pub selected_file: Color,
+    /// Behind the selected file's row.
     pub selected_file_background: Color,
+    /// The outer separator beside the file list.
     pub separator: Color,
     /// The inner separator between side-by-side panes and the continuity markers.
     pub dim_separator: Color,
+    /// The help hint.
     pub hint: Color,
 }
 
 impl ChromePalette {
+    /// The color of a file list row's state `marker`.
     pub fn marker(&self, marker: StateMarker) -> Color {
         match marker {
             StateMarker::State(FileState::Modified) => self.modified_marker,
@@ -121,6 +138,7 @@ impl ChromePalette {
     }
 }
 
+/// The theme for terminals that show 24-bit color.
 static TRUECOLOR: Theme = Theme {
     syntax: SyntaxPalette {
         keyword: Color::Rgb(86, 156, 214),
@@ -168,6 +186,7 @@ static TRUECOLOR: Theme = Theme {
     },
 };
 
+/// The theme for terminals that show the 256-color palette.
 static INDEXED: Theme = Theme {
     syntax: SyntaxPalette {
         keyword: Color::Indexed(75),
@@ -215,6 +234,7 @@ static INDEXED: Theme = Theme {
     },
 };
 
+/// The theme for terminals that show only the 16 basic colors.
 static BASIC: Theme = Theme {
     syntax: SyntaxPalette {
         keyword: Color::Blue,

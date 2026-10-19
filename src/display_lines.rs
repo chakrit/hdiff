@@ -79,6 +79,7 @@ enum LineEnding {
 }
 
 impl LineEnding {
+    /// The ending `bytes` end with.
     fn of(bytes: &[u8]) -> Self {
         if bytes.ends_with(b"\r\n") {
             Self::CrLf
@@ -89,6 +90,7 @@ impl LineEnding {
         }
     }
 
+    /// The ending as written.
     fn text(self) -> &'static str {
         match self {
             Self::None => "",
@@ -163,6 +165,7 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
     git.chain(file_headers).chain(hunks)
 }
 
+/// The Git header's `diff --git` line, then its metadata lines.
 fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
     iter::once(&git.line)
         .chain(&git.metadata)
