@@ -521,20 +521,20 @@ fn distances_from_previous_change<'a>(
 ) -> Vec<Option<Count>> {
     lines
         .scan(None, |last_change: &mut Option<RecordAddress>, line| {
-            let (address, kind) = match line.kind() {
-                LineKind::Record { address, kind, .. } => (address, kind),
+            let distance = match line.kind() {
+                LineKind::Record { address, kind, .. } => {
+                    if kind.changed_side().is_some() {
+                        *last_change = Some(address);
+                    }
+                    last_change.and_then(|change| change.records_from(address))
+                }
                 LineKind::Text
                 | LineKind::Metadata
                 | LineKind::FileHeader
-                | LineKind::HunkHeader => {
-                    return Some(None);
-                }
+                | LineKind::HunkHeader => None,
             };
-            if kind.changed_side().is_some() {
-                *last_change = Some(address);
-            }
 
-            Some(last_change.and_then(|change| change.records_from(address)))
+            Some(distance)
         })
         .collect()
 }
