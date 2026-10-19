@@ -223,12 +223,15 @@ impl<I: Iterator<Item = DecodedChar>> Iterator for Visible<I> {
 /// Lossy UTF-8 decoding of `bytes`; an invalid sequence decodes to one replacement
 /// character.
 fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
-    let mut start = 0;
+    let chunks_with_starts = bytes.utf8_chunks().scan(0, |start, chunk| {
+        let valid_start = *start;
+        *start += chunk.valid().len() + chunk.invalid().len();
+        Some((valid_start, chunk))
+    });
 
-    bytes.utf8_chunks().flat_map(move |chunk| {
-        let valid_start = start;
+    chunks_with_starts.flat_map(|(valid_start, chunk)| {
         let invalid_start = valid_start + chunk.valid().len();
-        start = invalid_start + chunk.invalid().len();
+        let invalid_end = invalid_start + chunk.invalid().len();
 
         let valid = chunk
             .valid()
@@ -241,7 +244,7 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
                 }
             });
         let invalid = (!chunk.invalid().is_empty()).then_some(DecodedChar {
-            source: invalid_start..start,
+            source: invalid_start..invalid_end,
             character: char::REPLACEMENT_CHARACTER,
         });
 
@@ -291,6 +294,7 @@ enum Sequence {
 }
 
 impl Sequence {
+    /// The scanner state the sequence's introducer moves to.
     fn state(self) -> State {
         match self {
             Self::Control => State::ControlSequence,
@@ -339,6 +343,8 @@ enum Class {
 }
 
 impl Class {
+    /// The class `character` reads as in every scanner state; the scanner decides it
+    /// once per character.
     fn of(character: char) -> Self {
         match character {
             '\u{18}' | '\u{1a}' => Self::Cancel,
