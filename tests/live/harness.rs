@@ -67,7 +67,7 @@ impl Live {
         while self.tui.preferences().layout != mode.layout {
             self.press('v');
         }
-        if self.tui.preferences().granularity != mode.detail {
+        if self.tui.preferences().granularity != mode.granularity {
             self.press('c');
         }
     }
@@ -86,6 +86,25 @@ impl Live {
 
     pub fn previous_file(&mut self) -> Step {
         self.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+    }
+
+    /// Tab with the Shift modifier, as terminals that do not report BackTab send it.
+    pub fn shift_tab(&mut self) -> Step {
+        self.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT))
+    }
+
+    /// `key` with the Control modifier.
+    pub fn control(&mut self, key: char) -> Step {
+        self.send(KeyEvent::new(KeyCode::Char(key), KeyModifiers::CONTROL))
+    }
+
+    /// Ctrl-C.
+    pub fn interrupt(&mut self) -> Step {
+        self.control('c')
+    }
+
+    pub fn escape(&mut self) -> Step {
+        self.send(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
     }
 
     pub fn resize(&mut self, width: u16, height: u16) -> Step {
@@ -216,21 +235,21 @@ pub fn cells(text: &str) -> u16 {
 #[derive(Debug, Clone, Copy)]
 pub struct Mode {
     pub layout: DiffLayout,
-    pub detail: DiffGranularity,
+    pub granularity: DiffGranularity,
 }
 
 impl Mode {
     pub const fn line(layout: DiffLayout) -> Self {
         Self {
             layout,
-            detail: DiffGranularity::Line,
+            granularity: DiffGranularity::Line,
         }
     }
 
     pub const fn character(layout: DiffLayout) -> Self {
         Self {
             layout,
-            detail: DiffGranularity::Character,
+            granularity: DiffGranularity::Character,
         }
     }
 }
