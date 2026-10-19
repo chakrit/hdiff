@@ -6,6 +6,7 @@ use std::num::NonZeroUsize;
 use crate::{
     document::FileView,
     file_identity::{FileIdentity, FileState},
+    screen::ScreenLines,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -42,6 +43,11 @@ impl TreeRowIndex {
 
     pub fn get(self) -> usize {
         self.0
+    }
+
+    /// The screen line this row takes among the list's lines: a tree row is one line.
+    pub fn screen_line(self) -> ScreenLines {
+        ScreenLines::new(self.0)
     }
 
     /// The `height`-row window that ends at this row, or starts at the list's top when
@@ -122,6 +128,11 @@ impl<'a> ListedTree<'a> {
 impl FileTree {
     pub fn rows(&self) -> &[TreeRow] {
         &self.rows
+    }
+
+    /// The screen lines the list takes: one per row.
+    pub fn line_count(&self) -> ScreenLines {
+        ScreenLines::new(self.rows.len())
     }
 
     /// The rows from `first` down.
