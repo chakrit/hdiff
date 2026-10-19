@@ -16,11 +16,8 @@ use self::{
     scroll::{ScrollBounds, ScrollPosition},
 };
 use crate::{
-    effective_view::EffectiveView,
-    file_tree::FileSelection,
-    preferences::ViewPreferences,
-    prepared::{PreparedDocument, PreparedPage},
-    screen::ScreenLines,
+    effective_view::EffectiveView, file_tree::FileSelection, preferences::ViewPreferences,
+    prepared::PreparedDocument, screen::ScreenLines,
 };
 
 /// Whether the session goes on after an event.
@@ -56,11 +53,6 @@ impl Navigation {
             view,
             extent,
         }
-    }
-
-    /// The page the interaction is at.
-    pub fn page(&self) -> &PreparedPage {
-        self.document.page(self.interaction.page())
     }
 
     /// The file list with the row of the file the interaction is at; a document without
@@ -243,8 +235,7 @@ mod tests {
             *navigation.interaction()
         };
 
-        let layouts = [PreferenceChange::NextLayout; 3].map(&mut redisplayed);
-        let unified = layouts[2];
+        let [_, _, unified] = [PreferenceChange::NextLayout; 3].map(&mut redisplayed);
         let character = redisplayed(PreferenceChange::ToggleGranularity);
 
         let one_line_down = ScrollPosition {
