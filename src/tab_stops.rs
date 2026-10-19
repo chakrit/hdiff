@@ -19,36 +19,26 @@ pub struct TabStops {
 impl TabStops {
     /// Appends `text` to `expanded` with its tabs replaced by spaces.
     pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
-        self.walk(text, |padding, chunk| {
-            expanded.extend(std::iter::repeat_n(' ', padding.get()));
+        self.walk(text, |chunk, padding| {
             expanded.push_str(chunk);
+            expanded.extend(std::iter::repeat_n(' ', padding.get()));
         });
     }
 
-    /// Visits each tab-free chunk of `text` with the spaces the tab before it expands to;
-    /// the first chunk follows no tab.
-    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(Cells, &'t str)) {
-        let mut chunks = text.split('\t');
-        let Some(first) = chunks.next() else {
-            return;
-        };
+    /// Visits each tab-free chunk of `text`, then the spaces the tab that ends it expands
+    /// to; a chunk without a tab ends `text`.
+    fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(&'t str, Cells)) {
+        for piece in text.split_inclusive('\t') {
+            let chunk = piece.strip_suffix('\t');
+            let text = chunk.unwrap_or(piece);
+            self.column += Cells::of_text(text);
 
-        self.visit_chunk(Cells::ZERO, first, &mut visit);
-        for chunk in chunks {
-            let padding = self.advance_to_tab_stop();
-            self.visit_chunk(padding, chunk, &mut visit);
+            let padding = match chunk {
+                Some(_) => self.advance_to_tab_stop(),
+                None => Cells::ZERO,
+            };
+            visit(text, padding);
         }
-    }
-
-    /// Visits `chunk` after `padding` cells, then moves past it.
-    fn visit_chunk<'t>(
-        &mut self,
-        padding: Cells,
-        chunk: &'t str,
-        visit: &mut impl FnMut(Cells, &'t str),
-    ) {
-        visit(padding, chunk);
-        self.column += Cells::of_text(chunk);
     }
 
     /// Moves to the next tab stop, returning the cells a tab there covers.
