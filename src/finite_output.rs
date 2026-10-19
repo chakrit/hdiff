@@ -117,10 +117,10 @@ mod tests {
     }
 
     #[test]
-    fn preserves_raw_no_newline_marker_without_adding_a_line_ending() {
+    fn preserves_a_no_newline_marker_without_adding_a_line_ending() {
         let input =
             b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file";
-        let document = parse_patch(input).expect("valid diff with raw marker");
+        let document = parse_patch(input).expect("valid diff with a no-newline marker");
 
         let rendered = of_document(&document);
 

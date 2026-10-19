@@ -131,7 +131,7 @@ but valid diff lines without data loss.
 - File-list paths follow the [file tree](#file-tree) path naming, while rendered diff
   headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
-- `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
+- `Record`: context, addition, deletion, or no-newline marker, with original payload.
 - `PageIndex`: the selected page in file-list order; the viewport offset is the reader's
   current cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, wrapping, context-record count, file-list
@@ -196,6 +196,12 @@ character-detail spans.
 
 An immediate record-looking continuation after a hunk's declared counts is an error.
 Surrounding text does not provide recovery from malformed recognized diff sections.
+
+Inside a hunk's declared counts, every line is a record marked ` `, `+`, or `-`, or an
+empty line, which is a blank context line as GNU `diff --suppress-blank-empty` writes it.
+A line starting with `\ ` is a no-newline marker whatever language follows the prefix; it
+follows a record that is not itself a marker, and may follow the hunk's last record. Any
+other line inside a hunk is malformed.
 
 The input selector reads stdin with zero operands or a lone `-`, reads a patch file with
 one other operand, and invokes `diff -u -N [-r] -- <before> <after>` with two, so added
@@ -412,7 +418,7 @@ below the last.
 
 The `low` palette is the only palette and the locked preferred display: additions are
 strongest; deletion text and syntax spans are muted by a row-wide dim modifier over a dim
-red background; context is quieter neutral text, and raw records take the same
+red background; context is quieter neutral text, and no-newline markers take the same
 unchanged-record tone. Character detail carries the side of the change it marks. Every
 rendered row reserves a marker column and one payload spacer: addition and deletion
 markers occupy that column, while metadata, hunks, and context leave it blank so all
@@ -500,7 +506,7 @@ geometry and navigation offsets from those rows without syntax state. Preparatio
 syntax and character-detail spans before the terminal loop begins, then the terminal
 renders only the prepared active viewport. Additions use the new path's language and
 deletions use the old path's language; context records remain textual when the paths
-select different languages. Headers, metadata, raw records, and diff markers remain
+select different languages. Headers, metadata, no-newline markers, and diff markers remain
 textual.
 
 When both paths select the same language, only the new projection supplies context
