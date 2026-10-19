@@ -4,10 +4,15 @@
 use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;
 
-use crate::harness::{Live, Mode, THEME};
+use crate::{
+    fixtures::EXTRA_DELETION,
+    harness::{Live, Mode, THEME},
+};
 
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
+
+const TEN_ROWS: Size = Size::new(80, 10);
 
 /// The text of screen row `y` with trailing blanks trimmed.
 fn row_text(live: &Live, y: usize) -> String {
@@ -18,11 +23,7 @@ fn row_text(live: &Live, y: usize) -> String {
 /// separator, and the diff pane, with the help hint below the list.
 #[test]
 fn renders_compact_file_and_diff_panes_with_one_separator() {
-    let mut live = Live::sized(
-        TWO_FILES,
-        Mode::line(DiffLayout::Unified),
-        Size::new(80, 10),
-    );
+    let mut live = Live::sized(TWO_FILES, Mode::line(DiffLayout::Unified), TEN_ROWS);
     live.next_file();
 
     let rendered = live.buffer();
@@ -65,7 +66,7 @@ fn collapses_the_file_list_before_the_diff_pane() {
 #[test]
 fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
     let live = Live::sized(
-        "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+        EXTRA_DELETION,
         Mode::line(DiffLayout::Vertical),
         Size::new(80, 9),
     );
@@ -110,11 +111,7 @@ fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
 /// screen.
 #[test]
 fn floats_a_help_box_while_the_file_list_is_hidden() {
-    let mut hidden = Live::sized(
-        TWO_FILES,
-        Mode::line(DiffLayout::Unified),
-        Size::new(80, 10),
-    );
+    let mut hidden = Live::sized(TWO_FILES, Mode::line(DiffLayout::Unified), TEN_ROWS);
     hidden.press('e');
     let narrow = Live::sized(
         TWO_FILES,

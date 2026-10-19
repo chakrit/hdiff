@@ -97,3 +97,10 @@ pub fn paired_patch() -> String {
         .collect::<String>();
     format!("--- a/pairs.rs\n+++ b/pairs.rs\n@@ -1,100 +1,100 @@\n{removed}{added}")
 }
+
+/// Two deletions beside one addition: the second deletion pairs with an alignment peer.
+pub const EXTRA_DELETION: &str =
+    "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n";
+
+/// One word changed by one letter.
+pub const ONE_LETTER_CHANGE: &str = "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n";
