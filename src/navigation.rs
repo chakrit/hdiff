@@ -201,6 +201,8 @@ fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use ratatui::layout::Size;
 
     use super::{
@@ -237,7 +239,10 @@ mod tests {
             *navigation.interaction()
         };
 
-        let [.., unified] = DiffLayout::ALL.map(|_| redisplayed(PreferenceChange::NextLayout));
+        let unified = iter::repeat_with(|| redisplayed(PreferenceChange::NextLayout))
+            .take(DiffLayout::ALL.len())
+            .last()
+            .expect("there is at least one layout");
         let character = redisplayed(PreferenceChange::ToggleGranularity);
 
         let one_line_down = ScrollPosition {
