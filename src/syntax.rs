@@ -173,7 +173,7 @@ impl SyntaxHighlighter {
     fn highlighter_for(&mut self, language: Language) -> &mut LanguageHighlighter {
         self.languages
             .get_mut(language)
-            .get_or_insert_with(|| LanguageHighlighter::new(language))
+            .get_or_insert_with(|| LanguageHighlighter::of(language))
     }
 }
 
@@ -298,7 +298,7 @@ impl LanguageHighlighter {
     ///
     /// Panics when the bundled grammar or query does not load, which the bundled-grammar
     /// test rules out for every language.
-    fn new(language: Language) -> Self {
+    fn of(language: Language) -> Self {
         let BundledGrammar {
             grammar,
             highlights,
@@ -347,6 +347,7 @@ impl LanguageHighlighter {
             let node = capture.node;
             spans.extend(projection.map_span(node.byte_range(), class));
         }
+
         spans
     }
 }
@@ -766,7 +767,7 @@ mod tests {
 
     #[test]
     fn every_bundled_language_loads_its_grammar_and_highlight_query() {
-        ByLanguage::from_fn(LanguageHighlighter::new);
+        ByLanguage::from_fn(LanguageHighlighter::of);
     }
 
     #[test]
