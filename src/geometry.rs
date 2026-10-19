@@ -66,20 +66,23 @@ impl ScreenGeometry {
     /// The areas of a screen of `size` at the origin.
     pub fn of(size: Size, file_list: FileList) -> Self {
         let screen = Rect::from((Position::ORIGIN, size));
-        let (file_column, diff) = match shows_file_list(screen.width, file_list) {
+
+        match shows_file_list(screen.width, file_list) {
             true => {
                 let [column, diff] =
                     Layout::horizontal([Constraint::Length(FILE_COLUMN_WIDTH), Constraint::Min(0)])
                         .areas(screen);
-                (Some(FileColumn::of(column)), diff)
+                Self {
+                    screen,
+                    file_column: Some(FileColumn::of(column)),
+                    diff,
+                }
             }
-            false => (None, screen),
-        };
-
-        Self {
-            screen,
-            file_column,
-            diff,
+            false => Self {
+                screen,
+                file_column: None,
+                diff: screen,
+            },
         }
     }
 
@@ -331,6 +334,7 @@ mod tests {
         screen::{Cells, ScreenLines},
     };
 
+    /// The areas of a `width` by `height` screen with the file list shown.
     fn geometry(width: u16, height: u16) -> ScreenGeometry {
         ScreenGeometry::of(Size::new(width, height), FileList::Shown)
     }
