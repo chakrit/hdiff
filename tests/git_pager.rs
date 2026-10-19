@@ -15,7 +15,7 @@ const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
 /// registered pager runs only when it is quoted as one shell word.
 const SPECIAL_EXECUTABLE: &str = "it's a $dir/hdiff";
 
-/// architecture.md#input-contract: `--install` backs up the global config and registers
+/// docs/spec/architecture.md#input-contract: `--install` backs up the global config and registers
 /// the running executable as `pager.diff`, which Git runs through `sh`.
 #[test]
 fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
@@ -38,7 +38,7 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
     assert_eq!(pager_version.stdout, hdiff_version(&env));
 }
 
-/// architecture.md#input-contract: `--install` prints the `cp` and `git config` commands
+/// docs/spec/architecture.md#input-contract: `--install` prints the `cp` and `git config` commands
 /// it applied, so running them reproduces its writes.
 #[test]
 fn install_prints_the_commands_it_applied() {
@@ -75,7 +75,7 @@ fn install_prints_the_commands_it_applied() {
     );
 }
 
-/// architecture.md#error-output: unreadable files are named in the message.
+/// docs/spec/architecture.md#error-output: unreadable files are named in the message.
 #[test]
 fn install_names_a_config_path_it_cannot_inspect() {
     let env = TestEnv::new();

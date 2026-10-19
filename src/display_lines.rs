@@ -1,6 +1,6 @@
 //! The lines a document displays, in input order: what each line shows, and the safe text it
 //! displays. Finite output writes them directly, and page rows retain them. Rules:
-//! `docs/spec/architecture.md` (Lossless and safe rendering).
+//! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use crate::{
     document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind, Section},
