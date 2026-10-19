@@ -12,14 +12,22 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{
-        LONG_PATCH_ROWS, MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch,
-        paired_patch,
+        HIDDEN_CONTEXT_HUNKS, LONG_PATCH_ROWS, MIXED_LANGUAGES, context_patch,
+        hidden_context_patch, long_patch, paired_patch,
     },
     harness::{FIRST_CONTENT_LINE, Live, Mode, SCREEN, WIDTH, change_label},
 };
 
 /// The screen the resize scenarios shrink the terminal to.
 const RESIZED: Size = Size::new(80, 20);
+
+/// Lines the half-page scenario scrolls into the paired block first, so `Ctrl-U` has
+/// lines above the top one to move back to.
+const LINES_INTO_THE_BLOCK: usize = 10;
+
+/// Lines the context scenario scrolls first, so hunks whose context grows and shrinks
+/// sit above the middle row.
+const LINES_PAST_EARLIER_HUNKS: usize = 14;
 
 matrix!(
     vertical_movement,
@@ -190,8 +198,9 @@ fn bottom_past_hidden_context(mode: Mode) {
     let mut live = Live::load(&hidden_context_patch(), mode);
 
     live.press('G');
+    let last_row = format!("new_{}", HIDDEN_CONTEXT_HUNKS - 1);
     assert!(
-        live.shows("new_39"),
+        live.shows(&last_row),
         "G shows the last row when hidden context precedes it"
     );
 }
@@ -232,7 +241,7 @@ fn keymap_popup(mode: Mode) {
 /// diff pane's lines, so no line passes the pane unseen.
 fn half_page_movement(mode: Mode) {
     let mut live = Live::load(&paired_patch(), mode);
-    for _ in 0..10 {
+    for _ in 0..LINES_INTO_THE_BLOCK {
         live.press('j');
     }
     let start = live.buffer();
@@ -328,7 +337,7 @@ fn label_number(row: &str) -> usize {
 #[test]
 fn context_changes_keep_the_middle_row() {
     let mut live = Live::load(&hidden_context_patch(), Mode::line(DiffLayout::Unified));
-    for _ in 0..14 {
+    for _ in 0..LINES_PAST_EARLIER_HUNKS {
         live.press('j');
     }
     let middle_line = live.pane_middle_line();

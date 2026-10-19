@@ -9,6 +9,10 @@ use crate::{
     harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
 };
 
+/// Lines the file-list toggle scrolls first, so a labeled change row sits on the middle
+/// line, away from the block's start.
+const LINES_INTO_THE_BLOCK: usize = 20;
+
 /// How many continuity markers the file list shows above and below its rows.
 #[derive(Debug, PartialEq, Eq)]
 struct EdgeMarkers {
@@ -23,7 +27,7 @@ matrix!(file_list_toggle);
 /// keeping the middle line's row in place.
 fn file_list_toggle(mode: Mode) {
     let mut live = Live::load(&paired_patch(), mode);
-    for _ in 0..20 {
+    for _ in 0..LINES_INTO_THE_BLOCK {
         live.press('j');
     }
     let start = live.buffer();
