@@ -29,7 +29,10 @@ fn main() -> ExitCode {
     };
 
     let trouble = ExitCode::from(DiffStatus::Trouble.code());
-    match report(&error) {
+    let reported = ReportError { error: &error }.run(&mut OutputContext {
+        writer: &mut io::stderr(),
+    });
+    match reported {
         Ok(()) => trouble,
         // Standard error was the last channel left; the exit status still reports
         // trouble.
@@ -113,11 +116,6 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
             writer: &mut io::stdout(),
         })
         .map_err(RunError::Output)
-}
-
-/// Writes `error` to standard error with every line naming the program.
-fn report(error: &RunError) -> Result<(), actions::Error> {
-    ReportError { error }.run()
 }
 
 #[derive(Debug)]
