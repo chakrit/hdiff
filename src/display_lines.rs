@@ -2,6 +2,8 @@
 //! it displays. Finite output writes them directly, and page rows retain them. Rules:
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
+use std::iter;
+
 use crate::{
     document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind},
     headers::GitHeader,
@@ -144,7 +146,7 @@ pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
                     source: &record.payload,
                 }
             });
-            std::iter::once(header).chain(records)
+            iter::once(header).chain(records)
         });
 
     header
@@ -155,7 +157,7 @@ pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
 }
 
 fn git_header_lines(header: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
-    std::iter::once(&header.line)
+    iter::once(&header.line)
         .chain(&header.metadata)
         .map(|source| DisplayLine {
             kind: LineKind::Metadata,
