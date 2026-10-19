@@ -56,7 +56,7 @@ pub struct MeasuredTextRef<'a> {
 
 impl<'a> MeasuredTextRef<'a> {
     /// `text`, measured once its tabs are expanded.
-    pub fn new(text: &'a str) -> Self {
+    pub fn of_text(text: &'a str) -> Self {
         let mut tab_stops = TabStops::default();
         tab_stops.walk(text, |_, _| {});
 
@@ -85,8 +85,8 @@ pub struct MeasuredText {
 
 impl MeasuredText {
     /// `text`, measured once its tabs are expanded.
-    pub fn new(text: &str) -> Self {
-        let cells = MeasuredTextRef::new(text).cells();
+    pub fn of_text(text: &str) -> Self {
+        let cells = MeasuredTextRef::of_text(text).cells();
 
         Self {
             text: text.into(),
@@ -117,8 +117,8 @@ mod tests {
         TabStops::default().expand_into("ｶﾞ\tx", &mut expanded);
 
         // Terminals draw U+FF9E in its own cell, so `ｶﾞ` covers two cells.
-        assert_eq!(MeasuredTextRef::new("ｶﾞ").cells(), Cells::new(2));
+        assert_eq!(MeasuredTextRef::of_text("ｶﾞ").cells(), Cells::new(2));
         assert_eq!(expanded, "ｶﾞ  x");
-        assert_eq!(MeasuredTextRef::new("ｶﾞ\tx").cells(), Cells::new(5));
+        assert_eq!(MeasuredTextRef::of_text("ｶﾞ\tx").cells(), Cells::new(5));
     }
 }

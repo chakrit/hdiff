@@ -62,6 +62,7 @@ pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> 
     for cluster in expanded.graphemes(true) {
         breaks.place(cluster);
     }
+
     breaks.line_count()
 }
 
@@ -74,7 +75,7 @@ mod tests {
     };
 
     fn line_count(text: &str, cells: usize) -> ScreenLines {
-        wrapped_line_count(MeasuredTextRef::new(text), NonZeroCells::of(cells))
+        wrapped_line_count(MeasuredTextRef::of_text(text), NonZeroCells::of(cells))
     }
 
     fn placed(line: usize) -> Option<ScreenLines> {
@@ -142,7 +143,7 @@ mod tests {
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
         let mut breaks = LineBreaks::new(NonZeroCells::of(3));
-        for _ in 0..MeasuredTextRef::new(text).cells().get() {
+        for _ in 0..MeasuredTextRef::of_text(text).cells().get() {
             breaks.place("a");
         }
 

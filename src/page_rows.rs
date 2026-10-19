@@ -116,9 +116,9 @@ pub struct RenderedLine {
 }
 
 impl RenderedLine {
-    fn new(line: DisplayLine<'_>) -> Self {
+    fn of(line: DisplayLine<'_>) -> Self {
         Self {
-            payload: MeasuredText::new(line.payload()),
+            payload: MeasuredText::of_text(line.payload()),
             kind: line.kind,
         }
     }
@@ -188,7 +188,7 @@ impl PageRows {
     /// The rows of `lines`, with their side-by-side layout and each line's visibility
     /// derived once.
     fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
-        let lines = lines.map(RenderedLine::new).collect::<Vec<_>>();
+        let lines = lines.map(RenderedLine::of).collect::<Vec<_>>();
         let SideBySideLayout {
             pairs,
             pair_of_line,
@@ -424,7 +424,9 @@ impl BlockRows {
                     .iter()
                     .map(|line_side| SideBySideRow::Shared(line_side.line))
                     .collect(),
-                pair_of_line: (0..block.len()).map(|row| first_pair.offset(row)).collect(),
+                pair_of_line: (0..block.len())
+                    .map(|offset| first_pair.offset(offset))
+                    .collect(),
             },
             Some(changed) => Self::changed(&changed, first_pair),
         }
