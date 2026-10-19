@@ -1,5 +1,5 @@
 //! Character detail: the spans of each changed line that differ from its peer. Rules:
-//! `docs/spec/architecture.md` (View model).
+//! docs/spec/architecture.md#view-model.
 
 use std::iter;
 

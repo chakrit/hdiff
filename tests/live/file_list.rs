@@ -127,7 +127,8 @@ fn marks_files_beyond_the_file_list() {
         (list.matches('▴').count(), list.matches('▾').count())
     };
 
-    // architecture.md (Continuity markers): the file list marks rows past each edge.
+    // docs/spec/architecture.md#continuity-markers: the file list marks rows past each
+    // edge.
     assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
     assert_eq!(markers(&live), (0, 1), "files below the list");
     for _ in 0..36 {
@@ -161,8 +162,9 @@ fn keeps_a_selection_below_its_headings_visible() {
     );
 }
 
-/// architecture.md (Interaction model, View model): `e` hides and shows the file list,
-/// floating a `? help` box while it is hidden and keeping the middle line's row in place.
+/// docs/spec/architecture.md#interaction-model and docs/spec/architecture.md#view-model:
+/// `e` hides and shows the file list, floating a `? help` box while it is hidden and
+/// keeping the middle line's row in place.
 fn file_list_toggle(mode: Mode) {
     let mut live = Live::load(&paired_patch(), mode);
     for _ in 0..20 {

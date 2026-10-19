@@ -1,6 +1,7 @@
 //! The effective view: the view preferences laid out on a terminal screen. Navigation
-//! bounds and drawing both read this one value. Rules: `docs/spec/architecture.md` (View
-//! model, Viewport coordinates).
+//! bounds and drawing both read this one value. Rules:
+//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#viewport-coordinates.
 
 use ratatui::layout::Size;
 
@@ -147,7 +148,8 @@ mod tests {
             ((28, 7), DiffLayout::Stacked, Shown::Split),
         ];
 
-        // architecture.md: the minimum layout shows one content line in each diff pane.
+        // docs/spec/architecture.md#interaction-model: the minimum layout shows one
+        // content line in each diff pane.
         for ((width, height), layout, expected) in cases {
             let preferences = ViewPreferences {
                 layout,

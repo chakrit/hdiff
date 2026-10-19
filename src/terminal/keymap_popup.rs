@@ -1,5 +1,6 @@
 //! The keymap popup: every shortcut of the bindings, grouped under headings. Rules:
-//! `docs/spec/architecture.md` (Interaction model, Keyboard bindings).
+//! docs/spec/architecture.md#interaction-model and
+//! docs/spec/architecture.md#keyboard-bindings.
 
 use ratatui::{
     Frame,
@@ -245,8 +246,9 @@ mod tests {
         })
     }
 
-    /// architecture.md (Interaction model, Keyboard bindings): a bordered popup lists every
-    /// shortcut under four headings, in two columns when they fit.
+    /// docs/spec/architecture.md#interaction-model and
+    /// docs/spec/architecture.md#keyboard-bindings: a bordered popup lists every shortcut
+    /// under four headings, in two columns when they fit.
     #[test]
     fn groups_every_shortcut_under_headings_in_columns_that_fit() {
         let wide = popup_text(120);
@@ -295,7 +297,8 @@ mod tests {
         );
     }
 
-    /// architecture.md (Keyboard bindings): Scroll shows `h`, `j`, `k`, and `l` as a diamond.
+    /// docs/spec/architecture.md#keyboard-bindings: Scroll shows `h`, `j`, `k`, and `l`
+    /// as a diamond.
     fn assert_diamond(buffer: &Buffer) {
         let middle = position(buffer, &["h", " ", "·", " ", "l"]).expect("h · l is drawn");
         let center = middle.x + 2;
@@ -304,8 +307,8 @@ mod tests {
         assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
     }
 
-    /// architecture.md (Interaction model): headings take the hunk-header tone in bold, keys
-    /// the syntax function color, and actions the file-name tone.
+    /// docs/spec/architecture.md#interaction-model: headings take the hunk-header tone in
+    /// bold, keys the syntax function color, and actions the file-name tone.
     #[test]
     fn colors_headings_keys_and_actions_from_the_existing_palettes() {
         let buffer = render_popup(60);

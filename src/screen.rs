@@ -1,8 +1,8 @@
-//! Terminal measures in the two unit spaces that must not mix: cell columns across a row and
-//! screen lines down a pane, and the cells text covers when the row writer draws it. They
-//! convert from Ratatui's `u16` where a frame's size enters and back only where a frame is
-//! drawn. Rules: `docs/spec/architecture.md` (Viewport coordinates, Lossless and safe
-//! rendering).
+//! Terminal measures in the two unit spaces that must not mix: cell columns across a row
+//! and screen lines down a pane, and the cells text covers when the row writer draws it.
+//! They convert from Ratatui's `u16` where a frame's size enters and back only where a
+//! frame is drawn. Rules: docs/spec/architecture.md#viewport-coordinates and
+//! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use std::{
     num::NonZeroUsize,

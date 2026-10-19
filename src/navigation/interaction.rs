@@ -1,5 +1,6 @@
-//! Interaction state and what its events ask for. Rules: `docs/spec/architecture.md` (Core
-//! model, Interaction model, View model).
+//! Interaction state and what its events ask for. Rules:
+//! docs/spec/architecture.md#core-model and docs/spec/architecture.md#interaction-model
+//! and docs/spec/architecture.md#view-model.
 
 use ratatui::layout::Size;
 
@@ -107,8 +108,8 @@ impl Interaction {
     }
 }
 
-/// Where the reader stays after a preference change. Rules: `docs/spec/architecture.md`
-/// (View model).
+/// Where the reader stays after a preference change. Rules:
+/// docs/spec/architecture.md#view-model.
 const fn placement_after(change: PreferenceChange) -> Placement {
     match change {
         PreferenceChange::ToggleWrapping
@@ -119,7 +120,7 @@ const fn placement_after(change: PreferenceChange) -> Placement {
     }
 }
 
-/// The popup listing every shortcut. Rules: `docs/spec/architecture.md` (Interaction model).
+/// The popup listing every shortcut. Rules: docs/spec/architecture.md#interaction-model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapPopup {
     Closed,
@@ -308,8 +309,8 @@ mod tests {
         }
     }
 
-    /// architecture.md (Viewport coordinates): the terminal is the one source of the screen
-    /// size, so a resize event asks only for a frame at the terminal's size.
+    /// docs/spec/architecture.md#viewport-coordinates: the terminal is the one source of
+    /// the screen size, so a resize event asks only for a frame at the terminal's size.
     #[test]
     fn redraws_for_a_resize() {
         let start = interaction(PageIndex::FIRST, DiffLayout::Unified);
@@ -317,9 +318,9 @@ mod tests {
         assert_eq!(start.respond(Event::Resize, TWO_PAGES), Outcome::Redraw);
     }
 
-    /// architecture.md (View model): wrapping, context changes, and showing or hiding the
-    /// file list keep the row on the diff pane's middle line on that line; cycling layouts
-    /// and toggling detail keep the position.
+    /// docs/spec/architecture.md#view-model: wrapping, context changes, and showing or
+    /// hiding the file list keep the row on the diff pane's middle line on that line;
+    /// cycling layouts and toggling detail keep the position.
     #[test]
     fn anchors_preference_changes_that_move_rows_on_the_middle_line() {
         let start = interaction(second_page(), DiffLayout::Vertical);
@@ -387,8 +388,9 @@ mod tests {
         );
     }
 
-    /// architecture.md (Interaction model): while the keymap popup is open, `?`, `Esc`,
-    /// and `q` close it without exiting, `Ctrl-C` exits, and every other key does nothing.
+    /// docs/spec/architecture.md#interaction-model: while the keymap popup is open, `?`,
+    /// `Esc`, and `q` close it without exiting, `Ctrl-C` exits, and every other key does
+    /// nothing.
     #[test]
     fn admits_only_closing_keys_interrupts_and_resizes_while_the_keymap_is_open() {
         let open = KeymapPopup::Open;

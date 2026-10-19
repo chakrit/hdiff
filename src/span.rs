@@ -1,5 +1,5 @@
 //! Byte ranges of a displayed line's payload that syntax and character detail annotate.
-//! Rules: `docs/spec/architecture.md` (Lossless and safe rendering).
+//! Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
 
 /// A byte range of a payload that starts and ends on character boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -14,8 +14,8 @@ fn row_text(live: &Live, y: usize) -> String {
     live.rows()[y].trim_end().to_owned()
 }
 
-/// architecture.md (Interaction model): a compact file list, one padded separator, and the
-/// diff pane, with the help hint below the list.
+/// docs/spec/architecture.md#interaction-model: a compact file list, one padded
+/// separator, and the diff pane, with the help hint below the list.
 #[test]
 fn renders_compact_file_and_diff_panes_with_one_separator() {
     let mut live = Live::sized(
@@ -60,8 +60,8 @@ fn collapses_the_file_list_before_the_diff_pane() {
     assert_eq!(rendered[(2, 4)].symbol(), " ");
 }
 
-/// architecture.md (Interaction model): vertical panes sit on either side of a dimmer inner
-/// separator, and a one-sided change pairs with a markerless alignment peer.
+/// docs/spec/architecture.md#interaction-model: vertical panes sit on either side of a
+/// dimmer inner separator, and a one-sided change pairs with a markerless alignment peer.
 #[test]
 fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
     let live = Live::sized(
@@ -89,7 +89,8 @@ fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
     );
 }
 
-/// architecture.md (Interaction model): one horizontal offset scrolls both vertical panes.
+/// docs/spec/architecture.md#interaction-model: one horizontal offset scrolls both
+/// vertical panes.
 #[test]
 fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
     let tail = "_".repeat(40);
@@ -104,8 +105,9 @@ fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
     assert_eq!(rendered[(55, 4)].symbol(), "A", "after pane offset");
 }
 
-/// architecture.md (Interaction model): a `? help` box floats over the bottom-left corner
-/// of the diff while the file list is hidden, by `e` or by a narrow screen.
+/// docs/spec/architecture.md#interaction-model: a `? help` box floats over the
+/// bottom-left corner of the diff while the file list is hidden, by `e` or by a narrow
+/// screen.
 #[test]
 fn floats_a_help_box_while_the_file_list_is_hidden() {
     let mut hidden = Live::sized(
@@ -138,8 +140,8 @@ fn floats_a_help_box_while_the_file_list_is_hidden() {
     assert!(!hidden.shows("second"), "no file list");
 }
 
-/// architecture.md (Core model): text around each file shows with that file, once per
-/// pane, and the final text follows the last file.
+/// docs/spec/architecture.md#core-model: text around each file shows with that file, once
+/// per pane, and the final text follows the last file.
 #[test]
 fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
     let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
@@ -173,8 +175,8 @@ fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
     }
 }
 
-/// architecture.md (Input contract): comparison output that holds only surrounding text is
-/// shown, and stays shown through movement and file rotation.
+/// docs/spec/architecture.md#input-contract: comparison output that holds only
+/// surrounding text is shown, and stays shown through movement and file rotation.
 #[test]
 fn shows_comparison_output_that_holds_only_text() {
     let mut live = Live::comparison(

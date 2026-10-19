@@ -27,8 +27,8 @@ pub use session::{
     RestoreFailures, RestoreStep, SessionError, open_controlling_terminal, run_interactive,
 };
 
-/// How the viewer writes its output. Rules: `docs/spec/architecture.md` (Input and terminal
-/// boundary).
+/// How the viewer writes its output. Rules:
+/// docs/spec/architecture.md#input-and-terminal-boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Finite,

@@ -1,6 +1,6 @@
-//! Scroll positions and their bounds: a position is in bounds only when the bounds of what
-//! it scrolls built it. Rules: `docs/spec/architecture.md` (Viewport coordinates, Keyboard
-//! bindings).
+//! Scroll positions and their bounds: a position is in bounds only when the bounds of
+//! what it scrolls built it. Rules: docs/spec/architecture.md#viewport-coordinates and
+//! docs/spec/architecture.md#keyboard-bindings.
 
 use crate::screen::{Cells, ScreenLines};
 
@@ -161,7 +161,8 @@ mod tests {
         );
     }
 
-    /// architecture.md (Keyboard bindings): half-page movement moves half of a pane's lines.
+    /// docs/spec/architecture.md#keyboard-bindings: half-page movement moves half of a
+    /// pane's lines.
     #[test]
     fn moves_half_a_pane_by_half_page() {
         let limits = DisplayBounds {
@@ -176,8 +177,8 @@ mod tests {
         assert_eq!(up, scroll(4, 0));
     }
 
-    /// architecture.md (Lossless and safe rendering): no terminal offset type caps how far a
-    /// row reaches.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: no terminal offset type
+    /// caps how far a row reaches.
     #[test]
     fn bounds_horizontal_movement_to_the_widest_row() {
         let wide = DisplayBounds {

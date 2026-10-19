@@ -1,5 +1,6 @@
-//! The built-in palette for each terminal color depth. Rules: `docs/spec/architecture.md`
-//! (View model, Failure and safety posture).
+//! The built-in palette for each terminal color depth. Rules:
+//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#failure-and-safety-posture.
 
 use ratatui::style::{Color, Modifier};
 
@@ -278,8 +279,8 @@ mod tests {
         assert_eq!(ColorDepth::from_color_count(0), ColorDepth::Basic);
     }
 
-    /// architecture.md (Failure and safety posture): the palette falls back by capability,
-    /// so no depth draws a color its terminal cannot show.
+    /// docs/spec/architecture.md#failure-and-safety-posture: the palette falls back by
+    /// capability, so no depth draws a color its terminal cannot show.
     #[test]
     fn draws_each_depth_only_with_colors_that_depth_shows() {
         let shows = |depth, color| match (depth, color) {

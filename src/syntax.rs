@@ -78,7 +78,8 @@ impl SyntaxHighlighter {
         let languages = headers
             .as_ref()
             .map(|header| Language::for_header(&header.path));
-        // architecture.md: context stays textual when the paths select different languages.
+        // docs/spec/architecture.md#technology-direction: context stays textual when the
+        // paths select different languages.
         let shared_language = languages
             .old
             .filter(|language| Some(*language) == languages.new);
@@ -484,7 +485,8 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         );
 
-        // architecture.md: matching languages use the new projection for context styling.
+        // docs/spec/architecture.md#technology-direction: matching languages use the new
+        // projection for context styling.
         assert!(
             highlights[2]
                 .iter()
@@ -572,7 +574,8 @@ mod tests {
             b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
         );
 
-        // architecture.md: context remains textual when the paths select different languages.
+        // docs/spec/architecture.md#technology-direction: context remains textual when
+        // the paths select different languages.
         assert!(highlights[0].is_empty());
         assert!(
             highlights[1]

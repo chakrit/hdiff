@@ -1,6 +1,6 @@
-//! The rows one pane shape shows of one page at one context count and terminal-derived wrap
-//! width: their screen lines, the widest row, and how a row keeps its place when they are
-//! rebuilt. Rules: `docs/spec/architecture.md` (Viewport coordinates).
+//! The rows one pane shape shows of one page at one context count and terminal-derived
+//! wrap width: their screen lines, the widest row, and how a row keeps its place when
+//! they are rebuilt. Rules: docs/spec/architecture.md#viewport-coordinates.
 
 use crate::{
     compact::Count,
@@ -42,7 +42,7 @@ impl<R> RowLine<R> {
 /// The rows of one page that one pane shape shows at one context count and wrap width,
 /// their screen lines, and the widest row. A viewport's vertical offset indexes these
 /// lines, and the extent's indexes reach only its page's rows. Contract:
-/// `docs/spec/architecture.md` (Viewport coordinates).
+/// docs/spec/architecture.md#viewport-coordinates.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DisplayExtent {
     page: PageIndex,
@@ -615,8 +615,8 @@ mod tests {
         assert_eq!(pair_lines(&vertical, 5, 2), [pair(3, 2), pair(4, 0)]);
     }
 
-    /// architecture.md (View model): an anchored row keeps its place when its layout
-    /// rebuilds at another context count.
+    /// docs/spec/architecture.md#view-model: an anchored row keeps its place when its
+    /// layout rebuilds at another context count.
     #[test]
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
         let document =

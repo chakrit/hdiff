@@ -1,5 +1,5 @@
 //! Finite output: the document's safe text, written without the interactive preparation
-//! and terminal path. Rules: `docs/spec/architecture.md` (Lossless and safe rendering).
+//! and terminal path. Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use crate::{display_lines, document::DiffDocument};
 

@@ -1,7 +1,8 @@
 //! The screen's areas for one screen size and file-list choice: the file-list column, its
 //! separator, and the diff area, which each pane shape divides into diff panes. Rules:
-//! `docs/spec/architecture.md` (Interaction model, Continuity markers, Viewport
-//! coordinates).
+//! docs/spec/architecture.md#interaction-model and
+//! docs/spec/architecture.md#continuity-markers and
+//! docs/spec/architecture.md#viewport-coordinates.
 
 use ratatui::layout::{Constraint, Flex, Layout, Position, Rect, Size};
 
@@ -265,8 +266,8 @@ mod tests {
         ScreenGeometry::of(Size::new(width, height), FileList::Shown)
     }
 
-    /// architecture.md (Interaction model): one vertical separator, padded by one space on
-    /// each side, follows the file list.
+    /// docs/spec/architecture.md#interaction-model: one vertical separator, padded by one
+    /// space on each side, follows the file list.
     #[test]
     fn pads_the_separator_after_the_file_list() {
         let screen = geometry(28, 3);

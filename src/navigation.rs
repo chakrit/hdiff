@@ -1,6 +1,7 @@
 //! Where an effect leads the interaction: the interaction navigation holds, the effective
 //! view and scroll extent it shows, and the scroll position within their bounds. Rules:
-//! `docs/spec/architecture.md` (Core model, View model, Viewport coordinates).
+//! docs/spec/architecture.md#core-model and docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#viewport-coordinates.
 
 pub mod interaction;
 pub mod scroll;
@@ -178,8 +179,8 @@ mod tests {
         screen::{Cells, ScreenLines},
     };
 
-    /// architecture.md (View model): cycling layouts and toggling detail keep the page and
-    /// position, and three layout changes return to the start.
+    /// docs/spec/architecture.md#view-model: cycling layouts and toggling detail keep the
+    /// page and position, and three layout changes return to the start.
     #[test]
     fn keeps_the_page_and_position_through_kept_preference_changes() {
         let document = parse_patch(b"--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n")

@@ -31,8 +31,8 @@ fn leading_tabs(mode: Mode) {
     );
 }
 
-/// architecture.md (Continuity markers): each marker shows only while content continues
-/// past its edge.
+/// docs/spec/architecture.md#continuity-markers: each marker shows only while content
+/// continues past its edge.
 fn continuity_markers(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     let panes = match mode.layout {

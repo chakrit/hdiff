@@ -100,8 +100,8 @@ pub(super) fn draw_inner_separator(
     fill(buffer, area, symbol, style);
 }
 
-/// A content area inside a continuity-marker frame. Rules: `docs/spec/architecture.md`
-/// (Continuity markers).
+/// A content area inside a continuity-marker frame. Rules:
+/// docs/spec/architecture.md#continuity-markers.
 #[derive(Clone, Copy)]
 pub(super) struct ContinuityFrame {
     pane: Rect,
@@ -282,8 +282,8 @@ mod tests {
         theme::{ColorDepth, Theme},
     };
 
-    /// architecture.md (Interaction model): the help hint sits on the bottom row of the file
-    /// list.
+    /// docs/spec/architecture.md#interaction-model: the help hint sits on the bottom row
+    /// of the file list.
     #[test]
     fn ends_the_file_list_with_the_help_hint() {
         let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")

@@ -1,6 +1,7 @@
-//! Draws one frame: the diff panes of the shown page, the file-list column or the help box,
-//! and the keymap popup. Rules: `docs/spec/architecture.md` (Interaction model, View model,
-//! Viewport coordinates).
+//! Draws one frame: the diff panes of the shown page, the file-list column or the help
+//! box, and the keymap popup. Rules: docs/spec/architecture.md#interaction-model and
+//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#viewport-coordinates.
 
 use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 

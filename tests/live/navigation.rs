@@ -190,9 +190,9 @@ fn bottom_past_hidden_context(mode: Mode) {
     );
 }
 
-/// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,
-/// `?`, `Esc`, and `q` close it without exiting, `Ctrl-C` exits, and every other key does
-/// nothing.
+/// docs/spec/architecture.md#interaction-model: `?` opens the keymap popup; while it is
+/// open, `?`, `Esc`, and `q` close it without exiting, `Ctrl-C` exits, and every other
+/// key does nothing.
 fn keymap_popup(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     let start = live.buffer();
@@ -228,8 +228,8 @@ fn keymap_popup(mode: Mode) {
     );
 }
 
-/// architecture.md (Keyboard bindings): `Ctrl-D` and `Ctrl-U` move by half of a diff
-/// pane's lines, so no line passes the pane unseen.
+/// docs/spec/architecture.md#keyboard-bindings: `Ctrl-D` and `Ctrl-U` move by half of a
+/// diff pane's lines, so no line passes the pane unseen.
 fn half_page_movement(mode: Mode) {
     let mut live = Live::load(&paired_patch(), mode);
     for _ in 0..10 {
@@ -250,8 +250,9 @@ fn half_page_movement(mode: Mode) {
     assert_eq!(live.buffer(), start, "Ctrl-U moves back");
 }
 
-/// architecture.md (Viewport coordinates): each frame adopts the size it is drawn at, so a
-/// key that arrives between a size change and its resize event draws a full frame.
+/// docs/spec/architecture.md#viewport-coordinates: each frame adopts the size it is drawn
+/// at, so a key that arrives between a size change and its resize event draws a full
+/// frame.
 fn key_before_resize_event(mode: Mode) {
     let mut resized = Live::load(MIXED_LANGUAGES, mode);
     resized.resize(80, 20);
@@ -275,8 +276,8 @@ fn key_before_resize_event(mode: Mode) {
     );
 }
 
-/// architecture.md (Viewport coordinates): the terminal is the one source of the screen
-/// size, so a resize event naming a size the terminal no longer has moves nothing.
+/// docs/spec/architecture.md#viewport-coordinates: the terminal is the one source of the
+/// screen size, so a resize event naming a size the terminal no longer has moves nothing.
 fn stale_resize_event(mode: Mode) {
     let mut resized = Live::load(&long_patch(), mode);
     resized.resize(80, 20);
@@ -294,8 +295,9 @@ fn stale_resize_event(mode: Mode) {
     );
 }
 
-/// architecture.md (Viewport coordinates): the vertical offset indexes the screen lines, so
-/// `G` on a screen too short for panes still names the last line when the screen regrows.
+/// docs/spec/architecture.md#viewport-coordinates: the vertical offset indexes the screen
+/// lines, so `G` on a screen too short for panes still names the last line when the
+/// screen regrows.
 fn bottom_on_too_short_screen(mode: Mode) {
     let mut full = Live::load(&long_patch(), mode);
     full.press('G');
@@ -327,7 +329,8 @@ fn context_changes_keep_the_middle_row() {
     for _ in 0..14 {
         live.press('j');
     }
-    // architecture.md: context changes keep the middle row on the middle line.
+    // docs/spec/architecture.md#continuity-markers: context changes keep the middle row
+    // on the middle line.
     let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
 
@@ -337,8 +340,9 @@ fn context_changes_keep_the_middle_row() {
     assert_eq!(live.rows()[middle_line], middle, "- keeps the middle row");
 }
 
-/// A session starts in unified line mode. architecture.md (Interaction model): the file list
-/// starts shown; (View model) three context records show on either side of a change.
+/// A session starts in unified line mode. docs/spec/architecture.md#interaction-model:
+/// the file list starts shown; docs/spec/architecture.md#continuity-markers: three context
+/// records show on either side of a change.
 #[test]
 fn preferences_start_in_unified_line_mode() {
     let tui = Tui::new(
@@ -354,8 +358,8 @@ fn preferences_start_in_unified_line_mode() {
     assert_eq!(start.context, ContextRecords::new(3));
 }
 
-/// architecture.md (Lossless and safe rendering): the document is never truncated, so `$`
-/// reaches the end of a row wider than any terminal offset type.
+/// docs/spec/architecture.md#lossless-and-safe-rendering: the document is never
+/// truncated, so `$` reaches the end of a row wider than any terminal offset type.
 #[test]
 fn far_right_reaches_the_end_of_a_very_wide_row() {
     let patch = format!(

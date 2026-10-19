@@ -1,5 +1,5 @@
-//! Tab expansion for interactive rows; see `docs/spec/architecture.md` (Lossless and safe
-//! rendering) for the 2-column tab-stop rule.
+//! Tab expansion for interactive rows; see
+//! docs/spec/architecture.md#lossless-and-safe-rendering for the 2-column tab-stop rule.
 
 use crate::{
     compact::Count,

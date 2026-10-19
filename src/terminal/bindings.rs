@@ -1,5 +1,6 @@
-//! Key bindings: the event each key stands for, grouped under the keymap popup's headings.
-//! Rules: `docs/spec/architecture.md` (Interaction model, Keyboard bindings).
+//! Key bindings: the event each key stands for, grouped under the keymap popup's
+//! headings. Rules: docs/spec/architecture.md#interaction-model and
+//! docs/spec/architecture.md#keyboard-bindings.
 
 use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
@@ -416,7 +417,7 @@ mod tests {
         );
     }
 
-    /// architecture.md (Keyboard bindings): each key has one binding.
+    /// docs/spec/architecture.md#keyboard-bindings: each key has one binding.
     #[test]
     fn binds_each_key_once() {
         let keys = all_bindings()
@@ -429,7 +430,8 @@ mod tests {
         }
     }
 
-    /// architecture.md (Keyboard bindings): `?`, `Esc`, and `q` close the keymap popup.
+    /// docs/spec/architecture.md#keyboard-bindings: `?`, `Esc`, and `q` close the keymap
+    /// popup.
     #[test]
     fn lists_the_keys_that_close_the_open_keymap() {
         assert_eq!(

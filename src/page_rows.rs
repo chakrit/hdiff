@@ -1,6 +1,7 @@
 //! A page's retained rows: its rendered lines, their side-by-side pairs, and the facts
-//! each line's visibility and width derive from. Rules: `docs/spec/architecture.md`
-//! (Core model, Viewport coordinates).
+//! each line's visibility and width derive from. Rules:
+//! docs/spec/architecture.md#core-model and
+//! docs/spec/architecture.md#viewport-coordinates.
 
 use std::{
     iter::{self, Chain, Once},

@@ -1,5 +1,6 @@
-//! Writes one pane row into the frame buffer. Rules: `docs/spec/architecture.md` (Lossless
-//! and safe rendering, View model).
+//! Writes one pane row into the frame buffer. Rules:
+//! docs/spec/architecture.md#lossless-and-safe-rendering and
+//! docs/spec/architecture.md#view-model.
 
 use std::ops::ControlFlow;
 
@@ -273,7 +274,8 @@ mod tests {
             b"--- a/example.rs\n+++ b/example.rs\n@@ -1,3 +1,3 @@\n fn example() {\n-    let excluded = ace.excluded_mcp();\n+    let excluded = ace.excluded_mcp()?;\n }\n",
         );
 
-        // architecture.md: lossless rendering preserves source text through styling.
+        // docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering
+        // preserves source text through styling.
         assert_eq!(
             rendered_rows(&prepared, 120),
             [
@@ -318,7 +320,8 @@ mod tests {
 
         let buffer = write(PaneRow::Text(addition), 8, 0);
 
-        // architecture.md: style boundaries never split or drop a grapheme cluster.
+        // docs/spec/architecture.md#lossless-and-safe-rendering: style boundaries never
+        // split or drop a grapheme cluster.
         assert_eq!(buffer[(2, 0)].symbol(), "ก่");
     }
 
@@ -330,8 +333,9 @@ mod tests {
 
         let buffer = write(PaneRow::Text(addition), 8, 3);
 
-        // architecture.md: a wide grapheme cut by the left pane edge renders its visible
-        // cells blank, keeping later text in its column.
+        // docs/spec/architecture.md#lossless-and-safe-rendering: a wide grapheme cut by
+        // the left pane edge renders its visible cells blank, keeping later text in its
+        // column.
         assert_eq!(buffer[(0, 0)].symbol(), " ");
         assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
         assert_eq!(buffer[(1, 0)].symbol(), "x");
@@ -391,8 +395,8 @@ mod tests {
         };
         let sides = |left, right| Clip { left, right };
 
-        // architecture.md (Continuity markers): the row has cells left of the offset, or
-        // continues past the right edge.
+        // docs/spec/architecture.md#continuity-markers: the row has cells left of the
+        // offset, or continues past the right edge.
         assert_eq!(clip(7, 0), sides(false, false), "the row fits");
         assert_eq!(
             clip(6, 0),

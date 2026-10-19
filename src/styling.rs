@@ -1,5 +1,6 @@
 //! Row tones and the styled segments of each row's payload. Rules:
-//! `docs/spec/architecture.md` (View model, Technology direction).
+//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#technology-direction.
 
 use std::{cmp::Reverse, collections::BinaryHeap};
 
@@ -266,7 +267,8 @@ impl Partition {
             {
                 active.pop();
             }
-            // architecture.md: shortest capture wins; later encounters break ties.
+            // docs/spec/architecture.md#technology-direction: shortest capture wins;
+            // later encounters break ties.
             let style = active
                 .peek()
                 .map_or(uncovered, |(_, index)| annotations[*index].style);
@@ -338,8 +340,8 @@ mod tests {
         ];
         let partition = syntax_partition(text, &spans);
 
-        // architecture.md (Technology direction): overlap precedence applies styles
-        // without changing source text.
+        // docs/spec/architecture.md#technology-direction: overlap precedence applies
+        // styles without changing source text.
         assert_eq!(
             segments(text, &partition),
             [

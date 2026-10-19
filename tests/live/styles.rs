@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::harness::{Live, Mode, THEME, cells, positions};
 
-/// architecture.md (Continuity markers): markers take the dimmed separator tone.
+/// docs/spec/architecture.md#continuity-markers: markers take the dimmed separator tone.
 #[test]
 fn draws_continuity_markers_in_the_dimmed_separator_tone() {
     let rows = (0..20)
@@ -28,8 +28,8 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
     assert_eq!(marker.fg, THEME.chrome.dim_separator);
 }
 
-/// architecture.md (View model): an alignment peer keeps its change's background, and only
-/// a deletion's dimming.
+/// docs/spec/architecture.md#view-model: an alignment peer keeps its change's background,
+/// and only a deletion's dimming.
 #[test]
 fn renders_vertical_alignment_peers_with_their_change_background() {
     let addition_peer = Live::sized(
@@ -105,8 +105,8 @@ fn renders_stacked_alignment_peers_as_markerless_rows() {
     );
 }
 
-/// architecture.md (View model): syntax colors sit on low-contrast change rows whose
-/// backgrounds reach the diff pane's edge.
+/// docs/spec/architecture.md#view-model: syntax colors sit on low-contrast change rows
+/// whose backgrounds reach the diff pane's edge.
 #[test]
 fn renders_syntax_and_low_contrast_record_styles() {
     let live = Live::sized(
@@ -191,8 +191,9 @@ fn renders_syntax_and_low_contrast_record_styles() {
     );
 }
 
-/// architecture.md (View model, Interaction model): changed spans take undimmed change
-/// colors over text one step dimmer, and the selected file's row is one highlight.
+/// docs/spec/architecture.md#view-model and docs/spec/architecture.md#interaction-model:
+/// changed spans take undimmed change colors over text one step dimmer, and the selected
+/// file's row is one highlight.
 #[test]
 fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_files_cohesively() {
     let live = Live::sized(
@@ -235,8 +236,9 @@ fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_file
     );
 }
 
-/// architecture.md (View model): in character mode, unmatched source payloads take their
-/// change color with no unchanged characters, and line mode restores their syntax colors.
+/// docs/spec/architecture.md#view-model: in character mode, unmatched source payloads
+/// take their change color with no unchanged characters, and line mode restores their
+/// syntax colors.
 #[test]
 fn toggles_unmatched_payload_colors_in_every_layout() {
     for layout in [
@@ -286,8 +288,8 @@ fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
     &buffer.content[first..first + usize::from(cells(payload))]
 }
 
-/// architecture.md (View model): hunk headers are muted cyan-blue; file headers stay
-/// neutral.
+/// docs/spec/architecture.md#view-model: hunk headers are muted cyan-blue; file headers
+/// stay neutral.
 #[test]
 fn renders_hunk_headers_as_muted_cyan_blue() {
     let live = Live::sized(
