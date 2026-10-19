@@ -23,18 +23,21 @@ use crate::{
 
 /// Cells a shortcut row is indented under its heading.
 const KEYS_INDENT: u16 = 2;
+/// Cells of a shortcut's keys column.
 const KEYS_WIDTH: u16 = 9;
 /// Cells between the keys column and the action.
 const KEYS_ACTION_GAP: u16 = 1;
+/// Cells of a shortcut's action column.
 const ACTION_WIDTH: u16 = 21;
 /// A shortcut row: the indent, the keys, the gap, and the action.
 const COLUMN_WIDTH: u16 = KEYS_INDENT + KEYS_WIDTH + KEYS_ACTION_GAP + ACTION_WIDTH;
 /// What surrounds the dot between a diamond's left and right keys.
 const DIAMOND_SPACE: &str = " ";
+/// Cells between two columns of groups.
 const COLUMN_GAP: u16 = 3;
 
 /// How many columns of groups the popup lays out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 enum Columns {
     One,
     Two,

@@ -110,7 +110,7 @@ pub(super) struct Binding {
 }
 
 /// What a key can stand for: a command, or the interrupt. A resize is never a key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 enum KeyAction {
     Command(Command),
     Interrupt,
@@ -182,6 +182,7 @@ impl Iterator for ShortcutBindings {
     }
 }
 
+/// A heading in the keymap popup and the shortcuts listed under it.
 pub(super) struct ShortcutGroup {
     pub(super) heading: &'static str,
     pub(super) shortcuts: &'static [Shortcut],
@@ -202,6 +203,7 @@ const fn preference(key: Key, change: PreferenceChange) -> Binding {
     binds(key, Command::Preference(change))
 }
 
+/// The shortcuts the keymap popup lists, under their headings, in its order.
 pub(super) const GROUPS: [ShortcutGroup; 4] = [
     ShortcutGroup {
         heading: "Scroll",
