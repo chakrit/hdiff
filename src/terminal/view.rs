@@ -7,11 +7,13 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::{TooSmall, WrapWidth},
-    extent::{RowLine, ShownLines},
     geometry::{SplitDirection, SplitPanes},
-    navigation::{Navigation, interaction::KeymapPopup},
+    navigation::{
+        Navigation,
+        extent::{RowLine, ShownLines},
+        interaction::KeymapPopup,
+    },
     page_rows::SideBySideRow,
-    prepared::PreparedDocument,
     screen::{Cells, ScreenLines},
     styling::StyledRow,
     theme::Theme,
@@ -27,14 +29,9 @@ use super::{
     rows::PaneRow,
 };
 
-/// Draws `document` as `navigation` shows its interaction: the page of its scroll extent
-/// through its effective view, beside the file list.
-pub(super) fn render_prepared_frame(
-    frame: &mut Frame,
-    document: &PreparedDocument,
-    navigation: &Navigation,
-    theme: &Theme,
-) {
+/// Draws the document as `navigation` shows its interaction: the page of its scroll
+/// extent through its effective view, beside the file list.
+pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, theme: &Theme) {
     let interaction = navigation.interaction();
     let view = navigation.view();
     let geometry = view.geometry();
@@ -44,10 +41,9 @@ pub(super) fn render_prepared_frame(
         return;
     }
 
+    let document = navigation.document();
     let extent = navigation.extent();
     let scroll = interaction.scroll().position();
-    let granularity = interaction.preferences().granularity;
-    let pane_lines = view.pane_content().height;
     let pane_drawing = PaneDrawing {
         window: LineWindow {
             first: scroll.vertical,
@@ -57,7 +53,7 @@ pub(super) fn render_prepared_frame(
         horizontal_offset: scroll.horizontal,
         theme,
     };
-    match extent.shown(document, granularity, scroll.vertical, pane_lines) {
+    match navigation.shown() {
         ShownLines::Single(lines) => {
             let lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());

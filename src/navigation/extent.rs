@@ -80,7 +80,11 @@ pub struct PageLines<'a, R> {
 
 impl ScrollExtent {
     /// The rows of `page` of `document` that `settings` show.
-    pub fn of(document: &PreparedDocument, page: PageIndex, settings: ExtentSettings) -> Self {
+    pub(super) fn of(
+        document: &PreparedDocument,
+        page: PageIndex,
+        settings: ExtentSettings,
+    ) -> Self {
         let rows = document.page(page).rows();
         let ExtentSettings {
             shape,
@@ -138,7 +142,7 @@ impl ScrollExtent {
 
     /// Up to `limit` screen lines from line `offset`, with their rows from this extent's
     /// page of `document` in `granularity`'s styles.
-    pub fn shown<'a>(
+    pub(super) fn shown<'a>(
         &'a self,
         document: &'a PreparedDocument,
         granularity: DiffGranularity,
@@ -165,7 +169,7 @@ impl ScrollExtent {
     }
 
     /// Shows `page` with these settings, rebuilding the rows unless it already is shown.
-    pub fn turn_to(&mut self, document: &PreparedDocument, page: PageIndex) {
+    pub(super) fn turn_to(&mut self, document: &PreparedDocument, page: PageIndex) {
         if page != self.page {
             *self = Self::of(document, page, self.settings());
         }
@@ -173,7 +177,7 @@ impl ScrollExtent {
 
     /// Shows this page with `settings`, rebuilding the rows unless they already are
     /// those.
-    pub fn reshow(&mut self, document: &PreparedDocument, settings: ExtentSettings) {
+    pub(super) fn reshow(&mut self, document: &PreparedDocument, settings: ExtentSettings) {
         if settings != self.settings() {
             *self = Self::of(document, self.page, settings);
         }
@@ -181,7 +185,7 @@ impl ScrollExtent {
 
     /// Shows this page with `settings`, and returns the screen line that now shows the
     /// row on screen line `offset`; none when the lines end above `offset`.
-    pub fn reanchor(
+    pub(super) fn reanchor(
         &mut self,
         document: &PreparedDocument,
         settings: ExtentSettings,

@@ -253,11 +253,8 @@ mod tests {
 
     use super::{Clip, RowPlacement, write_row};
     use crate::{
-        effective_view::WrapWidth,
-        extent::{ExtentSettings, ScrollExtent, ShownLines},
-        geometry::PaneShape,
         parser::parse_patch,
-        preferences::{ContextRecords, DiffGranularity},
+        preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
         side::Side,
@@ -445,22 +442,14 @@ mod tests {
         (buffer, clip)
     }
 
+    /// Every row of the first page, written in line detail.
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
-        let settings = ExtentSettings {
-            shape: PaneShape::Single,
-            context: ContextRecords::new(3),
-            wrap: WrapWidth::Unbounded,
-        };
-        let extent = ScrollExtent::of(prepared, PageIndex::FIRST, settings);
-        let all = ScreenLines::new(usize::MAX);
-        let ShownLines::Single(lines) =
-            extent.shown(prepared, DiffGranularity::Line, ScreenLines::ZERO, all)
-        else {
-            panic!("a single pane shows lines");
-        };
+        let page = prepared.page(PageIndex::FIRST);
 
-        lines
-            .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))
+        page.rows()
+            .line_indices()
+            .map(|line| page.row(line, DiffGranularity::Line))
+            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
             .collect()
     }
 
