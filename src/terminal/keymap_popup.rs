@@ -79,11 +79,11 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
         .chunks(columns.groups_per_column())
         .map(|groups| column_lines(groups, &styles))
         .collect::<Vec<_>>();
+    // The tallest column sets the content height; without columns it would be zero.
     let tallest = group_columns
         .iter()
         .map(|lines| ScreenLines::new(lines.len()))
-        .max()
-        .expect("the keymap has groups");
+        .fold(ScreenLines::ZERO, ScreenLines::max);
 
     let content_size = Size::new(columns.content_width(), tallest.frame_rows());
     let popup = FloatingBox::centered_in(area, content_size);
@@ -154,10 +154,7 @@ fn column_lines(groups: &[ShortcutGroup], styles: &PopupStyles) -> Vec<Line<'sta
 /// The popup lines of one shortcut row.
 fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static>> {
     match shortcut {
-        Shortcut::Keys {
-            keys: bindings,
-            action,
-        } => {
+        Shortcut::Keys { bindings, action } => {
             let keys = bindings.iter().map(|binding| binding.key);
             vec![styles.shortcut_line(key_labels(keys), action)]
         }
@@ -202,6 +199,7 @@ mod tests {
     use ratatui::{
         Terminal, backend::TestBackend, buffer::Buffer, layout::Position, style::Modifier,
     };
+    use unicode_segmentation::UnicodeSegmentation;
 
     use super::render_keymap_popup;
     use crate::theme::{ColorDepth, Theme};
@@ -216,12 +214,11 @@ mod tests {
         terminal.backend().buffer().clone()
     }
 
-    fn popup_text(width: u16) -> String {
-        let buffer = render_popup(width);
-
-        (0..buffer.area.height)
+    /// The buffer's rows as text, one line per row.
+    fn text_of(buffer: &Buffer) -> String {
+        (buffer.area.top()..buffer.area.bottom())
             .map(|y| {
-                (0..width)
+                (buffer.area.left()..buffer.area.right())
                     .map(|x| buffer[(x, y)].symbol())
                     .collect::<String>()
             })
@@ -229,17 +226,22 @@ mod tests {
             .join("\n")
     }
 
-    /// The first position where `symbols` are drawn in consecutive cells of one row.
-    fn position(buffer: &Buffer, symbols: &[&str]) -> Option<Position> {
+    /// The first position where `text` is drawn, one grapheme per cell, along one row.
+    fn position(buffer: &Buffer, text: &str) -> Option<Position> {
+        let graphemes = text.graphemes(true).collect::<Vec<_>>();
+
         buffer.area.positions().find(|start| {
             let row = (start.x..buffer.area.right()).map(|x| buffer[(x, start.y)].symbol());
-            symbols.len() <= row.len() && row.zip(symbols).all(|(drawn, symbol)| drawn == *symbol)
+            graphemes.len() <= row.len()
+                && row
+                    .zip(&graphemes)
+                    .all(|(drawn, grapheme)| drawn == *grapheme)
         })
     }
 
     /// `h`, `j`, `k`, and `l` drawn as a diamond: `h · l` with `k` above and `j` below.
     fn assert_diamond(buffer: &Buffer) {
-        let middle = position(buffer, &["h", " ", "·", " ", "l"]).expect("h · l is drawn");
+        let middle = position(buffer, "h · l").expect("h · l is drawn");
         let center = middle.x + 2;
 
         assert_eq!(buffer[(center, middle.y - 1)].symbol(), "k", "k above");
@@ -252,8 +254,10 @@ mod tests {
     /// and `l` as a diamond.
     #[test]
     fn groups_every_shortcut_under_headings_in_columns_that_fit() {
-        let wide = popup_text(120);
-        let narrow = popup_text(60);
+        let wide_popup = render_popup(120);
+        let narrow_popup = render_popup(60);
+        let wide = text_of(&wide_popup);
+        let narrow = text_of(&narrow_popup);
 
         for text in [
             "Scroll",
@@ -283,8 +287,8 @@ mod tests {
             );
         }
         assert!(wide.contains('┌') && wide.contains('┘'), "popup border");
-        assert_diamond(&render_popup(120));
-        assert_diamond(&render_popup(60));
+        assert_diamond(&wide_popup);
+        assert_diamond(&narrow_popup);
         assert!(
             wide.lines()
                 .any(|row| row.contains("Scroll") && row.contains("View")),
@@ -303,11 +307,7 @@ mod tests {
     #[test]
     fn colors_headings_keys_and_actions_from_the_existing_palettes() {
         let buffer = render_popup(60);
-        let at = |text: &str| {
-            let owned = text.chars().map(String::from).collect::<Vec<_>>();
-            let symbols = owned.iter().map(String::as_str).collect::<Vec<_>>();
-            position(&buffer, &symbols).unwrap_or_else(|| panic!("{text} is drawn"))
-        };
+        let at = |text: &str| position(&buffer, text).unwrap_or_else(|| panic!("{text} is drawn"));
 
         let heading = &buffer[at("Scroll")];
         let key = &buffer[at("^D ^U")];
