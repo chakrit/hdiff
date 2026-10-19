@@ -50,7 +50,7 @@ impl SourceLine {
     pub fn split_plain_first(&self) -> Option<(char, SourceLine)> {
         let mut characters = visible(&self.bytes);
         let DecodedChar { source, character } = characters.next()?;
-        if !matches!(characters.scan.state, State::Ground) {
+        if !characters.scan.state.is_plain_text() {
             return None;
         }
 
@@ -98,8 +98,9 @@ impl ReadLine {
 
     /// The line after reading one more character.
     fn after(mut self, read: Read) -> Self {
-        if let Step::Shown(_) = read.step {
-            self.sanitized.push(read.decoded.character);
+        match read.step {
+            Step::Shown(_) => self.sanitized.push(read.decoded.character),
+            Step::Hidden(_) => {}
         }
         self.ending = self.ending.after(&read);
         self
@@ -365,6 +366,19 @@ impl Class {
 }
 
 impl State {
+    /// Whether the scanner reads plain text rather than holding an open escape, control
+    /// sequence or string.
+    fn is_plain_text(self) -> bool {
+        match self {
+            Self::Ground => true,
+            Self::Escape
+            | Self::EscapeIntermediate
+            | Self::ControlSequence
+            | Self::OscString
+            | Self::CommandString => false,
+        }
+    }
+
     /// What reading a character of `class` in this state does, as the DEC parser reads
     /// it. `ESC`, C1 introducers, CAN, SUB, ST and every other C1 control act the same in
     /// every state. Outside a string a C0 control executes in place: a tab shows, other

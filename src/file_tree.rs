@@ -223,9 +223,12 @@ impl<'a> TreeRows<'a> {
     /// new group.
     fn push(&mut self, file: &Placed<'a>) -> ListedFile<'a> {
         if file.group != self.group {
-            if let Group::Directory(directory) = file.group {
-                let heading = format!("{directory}/");
-                self.rows.push(TreeRow::Directory(heading.into()));
+            match file.group {
+                Group::Directory(directory) => {
+                    let heading = format!("{directory}/");
+                    self.rows.push(TreeRow::Directory(heading.into()));
+                }
+                Group::TopLevel => {}
             }
             self.group = file.group;
         }
