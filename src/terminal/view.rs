@@ -49,7 +49,7 @@ pub(super) fn render_prepared_frame(
     let scroll = interaction.scroll().position();
     let granularity = interaction.preferences().granularity;
     let pane_lines = view.pane_content().height;
-    let panes = PaneRows {
+    let pane_drawing = PaneDrawing {
         window: LineWindow {
             first: scroll.vertical,
             total: extent.line_count(),
@@ -63,7 +63,7 @@ pub(super) fn render_prepared_frame(
             let lines =
                 lines.map(|line| line.map(|line| PaneRow::Text(page.row(line, granularity))));
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
-            panes.render(frame, pane, lines);
+            pane_drawing.render(frame, pane, lines);
         }
         ShownLines::Split { direction, lines } => {
             let lines = lines
@@ -75,7 +75,7 @@ pub(super) fn render_prepared_frame(
                     })
                 })
                 .collect();
-            render_split_rows(frame, lines, geometry.split_panes(direction), &panes);
+            render_split_rows(frame, lines, geometry.split_panes(direction), &pane_drawing);
         }
     }
 
@@ -101,14 +101,14 @@ const fn too_small_message(too_small: TooSmall) -> &'static str {
 
 /// Draws one pane's lines inside its continuity-marker frame, at one wrap width and
 /// horizontal offset.
-struct PaneRows<'a> {
+struct PaneDrawing<'a> {
     window: LineWindow,
     wrap: WrapWidth,
     horizontal_offset: Cells,
     theme: &'a Theme,
 }
 
-impl PaneRows<'_> {
+impl PaneDrawing<'_> {
     fn render<'a>(
         &self,
         frame: &mut Frame,
@@ -151,7 +151,7 @@ fn render_split_rows(
     frame: &mut Frame,
     lines: Vec<ScreenLine<SideBySideRow<StyledRow>>>,
     split: SplitPanes,
-    pane_rows: &PaneRows,
+    pane_drawing: &PaneDrawing,
 ) {
     let direction = split.direction();
     let separator = split.separator();
@@ -165,7 +165,7 @@ fn render_split_rows(
         })
         .unzip();
 
-    let palette = &pane_rows.theme.chrome;
+    let palette = &pane_drawing.theme.chrome;
     match direction {
         // The separator runs beside the shown lines only.
         SplitDirection::Vertical => {
@@ -178,8 +178,8 @@ fn render_split_rows(
             draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
     }
-    pane_rows.render(frame, panes.old, old_lines);
-    pane_rows.render(frame, panes.new, new_lines);
+    pane_drawing.render(frame, panes.old, old_lines);
+    pane_drawing.render(frame, panes.new, new_lines);
 }
 
 /// Frame rows `lines` take; lines are collected up to a pane's height, so they fit.
