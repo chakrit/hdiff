@@ -62,7 +62,7 @@ pub(super) fn write_row(
         return Clip::default();
     };
 
-    let payload = ExpandedPayload::new(text_row);
+    let payload = ExpandedPayload::of(text_row);
     let payload_clusters = payload.clusters().map(|cluster| StyledText {
         text: cluster.text,
         style: segment_style(cluster.style, theme),
@@ -159,7 +159,7 @@ struct ExpandedPayload {
 
 impl ExpandedPayload {
     /// `row`'s styled text with its tabs expanded and its segment ends moved to match.
-    fn new(row: StyledRow<'_>) -> Self {
+    fn of(row: StyledRow<'_>) -> Self {
         let mut tab_stops = TabStops::default();
         let mut text = String::new();
         let mut boundaries = Vec::new();
@@ -533,16 +533,22 @@ mod tests {
             right: true,
         };
 
-        let fits = pane_width(Cells::of_text("abc界"));
+        let narrow = Cells::of_text("abc");
+        let wide = Cells::of_text("界");
+        let scroll = Cells::ONE;
+        let fits = pane_width(narrow + wide);
+        let short_of_wide = pane_width(narrow);
+        let scrolled_short_of_wide = pane_width(narrow.saturating_sub(scroll));
+        let scrolled_fits = pane_width((narrow + wide).saturating_sub(scroll));
 
         assert_eq!(clip(fits, Cells::ZERO), inside, "the row fits");
         assert_eq!(
-            clip(fits - 1, Cells::ZERO),
+            clip(short_of_wide, Cells::ZERO),
             past_right,
             "a wide cluster that does not fit"
         );
-        assert_eq!(clip(fits - 3, Cells::ONE), past_both);
-        assert_eq!(clip(fits - 1, Cells::ONE), past_left);
+        assert_eq!(clip(scrolled_short_of_wide, scroll), past_both);
+        assert_eq!(clip(scrolled_fits, scroll), past_left);
         assert_eq!(
             write_placed(row, pane_width(Cells::ONE), wrapped).clip,
             inside,
