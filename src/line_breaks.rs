@@ -34,7 +34,7 @@ impl LineBreaks {
         }
 
         if self.column > Cells::ZERO && self.column + cells > self.width.get() {
-            self.line = self.line + ScreenLines::ONE;
+            self.line += ScreenLines::ONE;
             self.column = Cells::ZERO;
         }
         self.column += cells;
@@ -70,16 +70,12 @@ pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> 
 mod tests {
     use super::{LineBreaks, wrapped_line_count};
     use crate::{
-        screen::{Cells, NonZeroCells, ScreenLines},
+        screen::{NonZeroCells, ScreenLines},
         tab_stops::MeasuredTextRef,
     };
 
-    fn width(cells: usize) -> NonZeroCells {
-        NonZeroCells::new(Cells::new(cells)).expect("a nonzero test width")
-    }
-
     fn line_count(text: &str, cells: usize) -> usize {
-        wrapped_line_count(MeasuredTextRef::new(text), width(cells)).get()
+        wrapped_line_count(MeasuredTextRef::new(text), NonZeroCells::of(cells)).get()
     }
 
     fn placed(line: usize) -> Option<ScreenLines> {
@@ -88,7 +84,7 @@ mod tests {
 
     #[test]
     fn breaks_before_a_cluster_that_does_not_fit_the_rest_of_its_line() {
-        let mut breaks = LineBreaks::new(width(4));
+        let mut breaks = LineBreaks::new(NonZeroCells::of(4));
 
         let lines = ["a", "a", "a", "界", "界", "界"].map(|cluster| breaks.place(cluster));
 
@@ -98,7 +94,7 @@ mod tests {
 
     #[test]
     fn keeps_a_cluster_wider_than_the_line_on_a_line_of_its_own() {
-        let mut breaks = LineBreaks::new(width(1));
+        let mut breaks = LineBreaks::new(NonZeroCells::of(1));
 
         assert_eq!(breaks.place("a"), placed(0));
         assert_eq!(breaks.place("界"), placed(1));
@@ -107,7 +103,7 @@ mod tests {
 
     #[test]
     fn gives_clusters_without_cells_no_place() {
-        let mut breaks = LineBreaks::new(width(1));
+        let mut breaks = LineBreaks::new(NonZeroCells::of(1));
 
         assert_eq!(breaks.place("a"), placed(0));
         assert_eq!(breaks.place("\u{7}"), None);
@@ -128,7 +124,7 @@ mod tests {
     #[test]
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
-        let mut breaks = LineBreaks::new(width(3));
+        let mut breaks = LineBreaks::new(NonZeroCells::of(3));
         for _ in 0..MeasuredTextRef::new(text).cells().get() {
             breaks.place("a");
         }

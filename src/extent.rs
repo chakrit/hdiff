@@ -421,7 +421,7 @@ impl<R: Copy + Ord> Iterator for RowLines<'_, R> {
             wrapped_line: self.wrapped_line,
         };
         self.remaining = self.remaining.saturating_sub(ScreenLines::ONE);
-        self.wrapped_line = self.wrapped_line + ScreenLines::ONE;
+        self.wrapped_line += ScreenLines::ONE;
 
         if self.wrapped_line == self.measured.row_lines(self.position) {
             self.position += 1;
@@ -565,7 +565,7 @@ mod tests {
     }
 
     fn wrap_at(cells: usize) -> WrapWidth {
-        WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
+        WrapWidth::At(NonZeroCells::of(cells))
     }
 
     fn screen_lines(count: usize) -> ScreenLines {

@@ -363,7 +363,7 @@ mod tests {
                 6,
                 RowPlacement::Wrapped {
                     line: ScreenLines::new(line),
-                    width: cells(4),
+                    width: NonZeroCells::of(4),
                 },
             )
             .0
@@ -409,7 +409,7 @@ mod tests {
                 3,
                 RowPlacement::Wrapped {
                     line: ScreenLines::new(1),
-                    width: cells(1)
+                    width: NonZeroCells::of(1)
                 }
             )
             .1,
@@ -424,10 +424,6 @@ mod tests {
 
         assert!((0..4).all(|x| buffer[(x, 0)].symbol() == " "));
         assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));
-    }
-
-    fn cells(width: usize) -> NonZeroCells {
-        NonZeroCells::new(Cells::new(width)).expect("a nonzero test width")
     }
 
     fn prepare(diff: &[u8]) -> PreparedDocument {
