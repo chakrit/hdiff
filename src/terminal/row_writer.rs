@@ -485,7 +485,8 @@ mod tests {
     fn fills_an_alignment_peer_with_its_change_style_only() {
         let buffer = write(PaneRow::AlignmentPeer(Side::Old), 4, 0);
 
-        assert!((0..4).all(|x| buffer[(x, 0)].symbol() == " "));
-        assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));
+        assert_eq!(row_text(&buffer), "", "an alignment peer writes no text");
+        let modifier = buffer[(3, 0)].modifier;
+        assert!(modifier.contains(Modifier::DIM), "{modifier:?}");
     }
 }

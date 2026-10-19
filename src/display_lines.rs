@@ -209,32 +209,35 @@ mod tests {
         let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };
-        let first_records = body
+        let addresses = body
             .addressed_hunks()
-            .map(|hunk| hunk.records().next().expect("hunk with records").0)
+            .map(|hunk| {
+                hunk.records()
+                    .map(|(address, _)| address)
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
+        let record = |hunk: usize, position: usize, kind| LineKind::Record {
+            address: addresses[hunk][position],
+            kind,
+        };
 
         let kinds = of_file(file).map(|line| line.kind).collect::<Vec<_>>();
 
-        assert_eq!(kinds[0], LineKind::Metadata);
-        assert_eq!(kinds[1], LineKind::Metadata);
-        assert_eq!(kinds[2], LineKind::FileHeader);
-        assert_eq!(kinds[3], LineKind::FileHeader);
-        assert_eq!(kinds[4], LineKind::HunkHeader);
-        assert_eq!(kinds[7], LineKind::HunkHeader);
         assert_eq!(
-            kinds[5],
-            LineKind::Record {
-                address: first_records[0],
-                kind: RecordKind::Deletion,
-            }
-        );
-        assert_eq!(
-            kinds[8],
-            LineKind::Record {
-                address: first_records[1],
-                kind: RecordKind::Deletion,
-            }
+            kinds,
+            [
+                LineKind::Metadata,
+                LineKind::Metadata,
+                LineKind::FileHeader,
+                LineKind::FileHeader,
+                LineKind::HunkHeader,
+                record(0, 0, RecordKind::Deletion),
+                record(0, 1, RecordKind::Addition),
+                LineKind::HunkHeader,
+                record(1, 0, RecordKind::Deletion),
+                record(1, 1, RecordKind::Addition),
+            ]
         );
     }
 }
