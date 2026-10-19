@@ -6,8 +6,8 @@ use std::iter;
 
 use crate::{
     document::{
-        AddressedRecord, BinaryPatch, DiffDocument, DiffFile, FileBody, FileView, MetadataBody,
-        RecordAddress, RecordKind, UnifiedBody,
+        AddressedRecord, DiffDocument, DiffFile, FileBody, FileView, MetadataBody, RecordAddress,
+        RecordKind, UnifiedBody,
     },
     headers::GitHeader,
     one_of::OneOf,
@@ -178,16 +178,14 @@ fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
 /// The lines of a metadata body: its Git header and metadata, then its binary patch when
 /// it has one. A Git section's lines all display as metadata.
 fn metadata_lines(body: &MetadataBody) -> impl Iterator<Item = DisplayLine<'_>> {
-    let binary_patch = body
-        .binary_patch()
-        .into_iter()
-        .flat_map(BinaryPatch::lines)
+    let binary_patch = body.binary_patch.iter().flat_map(|patch| patch.lines());
+
+    body.git_lines()
+        .chain(binary_patch)
         .map(|source| DisplayLine {
             kind: LineKind::Metadata,
             source,
-        });
-
-    git_header_lines(body.git()).chain(binary_patch)
+        })
 }
 
 /// The lines of a unified body: its Git header and metadata when it has one, its file

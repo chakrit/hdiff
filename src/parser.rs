@@ -187,25 +187,30 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 /// otherwise its metadata with the binary patch after it when it has one.
 fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
     let metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
-    let git = GitHeader {
-        line: header,
-        metadata: metadata.into_boxed_slice(),
-    };
     if let Some(old) = lines.next_file_header(Side::Old) {
+        let git = GitHeader {
+            line: header,
+            metadata: metadata.into_boxed_slice(),
+        };
         return parse_unified(Some(git), old, lines);
     }
 
-    let Some(body) = MetadataBody::of(git) else {
+    let Some(extended_headers) = NonEmpty::of(metadata) else {
         return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
-    let body = match lines.next_if(is_binary_patch_header) {
-        Some(binary_header) => body.with_binary_patch(parse_binary_patch(binary_header, lines)?),
-        None => body,
+    let binary_patch = match lines.next_if(is_binary_patch_header) {
+        Some(binary_header) => Some(Box::new(parse_binary_patch(binary_header, lines)?)),
+        None => None,
     };
 
+    let identity = FileIdentity::of_metadata(&header, &extended_headers);
     Ok(DiffFile {
-        identity: FileIdentity::of_metadata(body.git()),
-        body: FileBody::Metadata(body),
+        identity,
+        body: FileBody::Metadata(MetadataBody {
+            git_line: header,
+            extended_headers,
+            binary_patch,
+        }),
     })
 }
 
@@ -701,7 +706,7 @@ mod tests {
             );
         };
 
-        assert_eq!(body.git().metadata.len(), 2);
+        assert_eq!(body.extended_headers.len().get(), 2);
         assert_eq!(message.sanitized(), "message");
         assert_eq!(footer.sanitized(), "footer");
         assert_eq!(finite_output::of_document(&document), input);

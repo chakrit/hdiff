@@ -164,13 +164,13 @@ mod tests {
         };
 
         let metadata = body
-            .git()
-            .metadata
+            .extended_headers
             .iter()
             .map(|line| line.sanitized())
             .collect::<Vec<_>>();
         let payloads = body
-            .binary_patch()
+            .binary_patch
+            .as_deref()
             .expect("the diff holds a binary patch")
             .blocks
             .iter()
