@@ -377,6 +377,13 @@ side-by-side panes. When wrapping is enabled:
 Showing or hiding the file list changes the diff pane width and keeps the row on the diff
 pane's middle line on that line.
 
+Resizing keeps the record on the diff pane's top line at the top, on the same line within
+that record where it still exists. Context visibility is session-local: hdiff initially
+retains three context records on either side of each changed block within a hunk, `+`
+increases that bound, and `-` decreases it to zero. Context changes recompute the visible
+layout without mutating the document or selected file; the row on the diff pane's middle
+line stays on that line.
+
 ### Continuity markers
 
 Each diff pane is framed by one reserved row above and below its content and one reserved
@@ -397,13 +404,6 @@ content area and never holds diff content:
 The file list has the same reserved row above and below its rows, with no side columns:
 `▴` shows while tree rows exist above the first listed row and `▾` while tree rows exist
 below the last.
-
-Resizing keeps the record on the diff pane's top line at the top, on the same line within
-that record where it still exists. Context visibility is session-local: hdiff initially
-retains three context records on either side of each changed block within a hunk, `+`
-increases that bound, and `-` decreases it to zero. Context changes recompute the visible
-layout without mutating the document or selected file; the row on the diff pane's middle
-line stays on that line.
 
 The `low` palette is the only palette and the locked preferred display: additions are
 strongest; deletion text and syntax spans are muted by a row-wide dim modifier over a dim

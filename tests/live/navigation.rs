@@ -329,7 +329,7 @@ fn context_changes_keep_the_middle_row() {
     for _ in 0..14 {
         live.press('j');
     }
-    // docs/spec/architecture.md#continuity-markers: context changes keep the middle row
+    // docs/spec/architecture.md#view-model: context changes keep the middle row
     // on the middle line.
     let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
@@ -341,7 +341,7 @@ fn context_changes_keep_the_middle_row() {
 }
 
 /// A session starts in unified line mode. docs/spec/architecture.md#interaction-model:
-/// the file list starts shown; docs/spec/architecture.md#continuity-markers: three context
+/// the file list starts shown; docs/spec/architecture.md#view-model: three context
 /// records show on either side of a change.
 #[test]
 fn preferences_start_in_unified_line_mode() {

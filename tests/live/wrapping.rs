@@ -83,7 +83,7 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
 
     live.resize(100, 20);
 
-    // docs/spec/architecture.md#continuity-markers: resizing keeps the top record on the
+    // docs/spec/architecture.md#view-model: resizing keeps the top record on the
     // same line within it.
     let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "still the second line: {top:?}");
