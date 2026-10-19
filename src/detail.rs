@@ -88,9 +88,7 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
             Some(side) => {
                 let opposite = changes.next_if(|(next, _)| next.is_some_and(|next| next != side));
                 match opposite {
-                    Some((_, opposite)) => TokenRun::Replaced(BySide::of(|run_side| {
-                        if run_side == side { run } else { opposite }
-                    })),
+                    Some((_, opposite)) => TokenRun::Replaced(BySide::of_side(side, run, opposite)),
                     None => TokenRun::Changed { side, run },
                 }
             }
@@ -245,8 +243,8 @@ impl TokenRun<'_, '_> {
                     }
                 }
                 None => {
-                    for side in Side::BOTH {
-                        cursor.mark(side, tokens_len(runs.get(side)));
+                    for (side, run) in Side::BOTH.into_iter().zip(*runs) {
+                        cursor.mark(side, tokens_len(run));
                     }
                 }
             },

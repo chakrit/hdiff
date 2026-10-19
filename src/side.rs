@@ -30,6 +30,20 @@ impl<T> BySide<T> {
         }
     }
 
+    /// `value` on `side`, and `other` on the other side.
+    pub fn of_side(side: Side, value: T, other: T) -> Self {
+        match side {
+            Side::Old => BySide {
+                old: value,
+                new: other,
+            },
+            Side::New => BySide {
+                old: other,
+                new: value,
+            },
+        }
+    }
+
     pub fn get(&self, side: Side) -> &T {
         match side {
             Side::Old => &self.old,
