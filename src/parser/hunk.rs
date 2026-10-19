@@ -85,7 +85,7 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
 fn check_side_open(ended: BySide<bool>, kind: RecordKind) -> Result<(), Malformed> {
     let past_end = ended
         .zip(kind.sides())
-        .map(|(ended, on_side)| ended && on_side);
+        .map(|(side_ended, on_side)| side_ended && on_side);
 
     match past_end.into_iter().any(|past| past) {
         true => Err(Malformed::RecordAfterNoNewlineMarker),

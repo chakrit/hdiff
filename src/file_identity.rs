@@ -171,8 +171,8 @@ where
     (&git.extended_headers)
         .into_iter()
         .map(|line| line.sanitized())
-        .try_fold(GitChange::Unmarked, |change, line| {
-            match GitMetadata::of(line) {
+        .try_fold(GitChange::Unmarked, |change, text| {
+            match GitMetadata::of(text) {
                 Some(GitMetadata::Added) => Some(GitChange::Added),
                 Some(GitMetadata::Deleted) => Some(GitChange::Deleted),
                 Some(GitMetadata::RenameTo(field)) => {
