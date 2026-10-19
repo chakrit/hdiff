@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 /// A timed part of preparation, whose duration the profile accumulates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stage {
     Labels,
     Layout,
@@ -28,6 +28,7 @@ impl Stage {
             })
     }
 
+    /// The stage's name in profile reports.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Labels => "labels",
@@ -57,7 +58,7 @@ pub struct Family {
 }
 
 /// A measurement partitioned by disjoint child stages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Parent {
     /// The whole preparation, timed outside the profile.
     Preparation,
@@ -66,6 +67,7 @@ pub enum Parent {
 }
 
 impl Parent {
+    /// The parent's name in profile reports.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Preparation => "preparation",
@@ -93,7 +95,9 @@ pub enum Work {
 
 /// What preparation reports its stages and work to.
 pub trait Observer: Sized {
+    /// Runs `operation` as `stage`, timing it when the observer records stages.
     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T;
+    /// Records one unit of `work`.
     fn count(&mut self, work: Work);
 }
 
@@ -118,6 +122,7 @@ pub struct Profile {
 }
 
 impl Profile {
+    /// The time spent in `stage`, summed over every time it ran.
     pub fn duration(&self, stage: Stage) -> Duration {
         *self.durations.get(stage)
     }

@@ -17,13 +17,17 @@ use tempfile::TempDir;
 
 /// The only `PATH` any test process sees.
 pub const TEST_PATH: &str = "/usr/bin:/bin";
+/// The only `TERM` any test process sees.
 const TEST_TERM: &str = "dumb";
 
+/// One test's sandbox: a temporary directory that is every process's home, removed when
+/// the test ends.
 pub struct TestEnv {
     directory: TempDir,
 }
 
 impl TestEnv {
+    /// A fresh, empty sandbox.
     pub fn new() -> Self {
         Self {
             directory: tempfile::tempdir().expect("temporary directory"),
@@ -38,6 +42,7 @@ impl TestEnv {
             .expect("canonical temporary directory")
     }
 
+    /// `name` under the sandbox root.
     pub fn path(&self, name: &str) -> PathBuf {
         self.root().join(name)
     }
@@ -122,6 +127,7 @@ impl TestEnv {
         command
     }
 
+    /// Clears `command`'s environment down to the sandbox's home, path, and terminal.
     fn isolate(&self, command: &mut Command) {
         command
             .env_clear()

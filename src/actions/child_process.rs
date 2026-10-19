@@ -35,6 +35,7 @@ pub struct ProcessFailure {
 }
 
 impl ProcessFailure {
+    /// The failure `output` shows for the command `name` names.
     fn of_output(name: &'static str, output: &Output) -> Self {
         Self {
             name,

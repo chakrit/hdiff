@@ -14,7 +14,7 @@ use crate::{
 
 /// A parsed document: file diffs with their surrounding text, or, when the input holds no
 /// file, its surrounding text alone.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum DiffDocument {
     Files(DiffFiles),
     Text(Box<[SourceLine]>),
@@ -35,6 +35,7 @@ pub(crate) struct FileSection {
     pub(crate) file: DiffFile,
 }
 
+/// A file occurrence as a page shows it: the file with the text before and after it.
 #[derive(Clone, Copy)]
 pub struct FileView<'a> {
     pub file: &'a DiffFile,
@@ -138,6 +139,7 @@ impl DiffFile {
     }
 }
 
+/// What a file section holds after its identity.
 #[derive(Debug, PartialEq, Eq)]
 pub enum FileBody {
     /// A Git section without unified headers, such as a rename, mode change, or binary
@@ -165,6 +167,7 @@ impl UnifiedBody {
     }
 }
 
+/// An `@@` header line and the records it declares.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Hunk {
     pub header: SourceLine,
@@ -206,7 +209,6 @@ impl<'a> AddressedHunk<'a> {
 }
 
 /// A record with its address in its file, as [`AddressedHunk::records`] yields them.
-#[derive(Clone, Copy)]
 pub struct AddressedRecord<'a> {
     pub address: RecordAddress,
     pub record: &'a Record,
@@ -245,7 +247,7 @@ impl<'a, 'h> HunkRecords<'a, 'h> {
 
 /// A record's position among the records of the hunk whose [`HunkRecords`] carries the
 /// brand `'h`; positions from another hunk carry another brand and do not type-check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct RecordPosition<'h> {
     index: usize,
     brand: Brand<'h>,
@@ -260,20 +262,23 @@ pub struct RecordEntry<'h, E> {
 
 /// An invariant lifetime marker: `'h` can neither grow nor shrink, so two brands unify
 /// only when they are the same brand.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 struct Brand<'h>(PhantomData<fn(&'h ()) -> &'h ()>);
 
+/// One hunk line: its kind, and the line after its marker.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Record {
     pub kind: RecordKind,
     pub payload: SourceLine,
 }
 
+/// Which side or sides of a hunk a record belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordKind {
     Context,
     Addition,
     Deletion,
+    /// An unmarked line inside a hunk, kept as it was read.
     Raw,
 }
 
@@ -352,7 +357,6 @@ impl RecordAddress {
 
 /// One value for each record of a file, looked up by [`RecordAddress`]. Only
 /// [`DiffFile::record_map`] builds a map with records, so a map always matches its file.
-#[derive(Debug, PartialEq, Eq)]
 pub struct RecordMap<T> {
     hunks: Box<[Box<[T]>]>,
 }

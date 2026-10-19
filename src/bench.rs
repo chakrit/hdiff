@@ -37,6 +37,7 @@ impl Driver {
     /// Every driver, in the order usage messages list them.
     pub const ALL: [Self; 3] = [Self::Prepare, Self::Stages, Self::Movement];
 
+    /// The name `--bench` takes for the driver.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Prepare => "prepare",
@@ -45,6 +46,7 @@ impl Driver {
         }
     }
 
+    /// The driver `name` names, if any.
     pub fn from_name(name: &OsStr) -> Option<Self> {
         Self::ALL
             .into_iter()
@@ -110,6 +112,7 @@ pub struct PreparationClock {
 }
 
 impl InputClock {
+    /// A clock started now, before input is read.
     pub fn start() -> Self {
         Self {
             started: Instant::now(),
@@ -137,6 +140,7 @@ impl ParseClock {
 }
 
 impl PreparationClock {
+    /// Prepares `document` under `observer`, timing each startup phase.
     fn prepare(self, document: &DiffDocument, observer: &mut impl Observer) -> Ready {
         let prepared = PreparedDocument::prepare_observed(document, observer);
         let ready = Instant::now();
@@ -177,13 +181,13 @@ struct Startup {
 
 /// The first report line's record name: plain preparation, or preparation under a
 /// profile.
-#[derive(Clone, Copy)]
 enum PreparationRecord {
     Preparation,
     Diagnostic,
 }
 
 impl PreparationRecord {
+    /// The record name the report line opens with.
     fn label(self) -> &'static str {
         match self {
             Self::Preparation => Parent::Preparation.label(),
@@ -223,6 +227,8 @@ fn preparation_report(
     report
 }
 
+/// The profile record, each parent's stage records with its unattributed remainder, and
+/// the work counts.
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     push_line(report, format_args!("profile version=1"));
 
@@ -256,6 +262,7 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
     );
 }
 
+/// One stage record under `parent`.
 fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Duration) {
     push_line(
         report,
@@ -274,13 +281,16 @@ fn push_line(report: &mut String, line: fmt::Arguments<'_>) {
 
 // Movement
 
+/// The screen the movement driver draws to.
 const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
+/// The movements the driver times in each mode, in order.
 const MOVEMENTS: [Movement; 4] = [
     Movement::Right,
     Movement::Left,
     Movement::Down,
     Movement::Up,
 ];
+/// How many times each mode repeats its movements.
 const MOVEMENT_ROUNDS: usize = 4;
 
 /// Every preference change the movement driver cycles through, outermost first.
@@ -290,6 +300,8 @@ const MODE_CYCLES: [PreferenceChange; 3] = [
     PreferenceChange::ToggleGranularity,
 ];
 
+/// The movement report: each movement key's step time in every mode, drawn to a
+/// discarded terminal.
 fn movement(prepared: PreparedDocument) -> io::Result<String> {
     let backend = CrosstermBackend::new(io::sink());
     let options = TerminalOptions {
@@ -361,6 +373,7 @@ fn measure_movement<B: Backend>(
     Ok(())
 }
 
+/// How long one step takes to answer `key` and draw.
 fn timed_step<B: Backend>(
     tui: &mut Tui,
     terminal: &mut Terminal<B>,
@@ -376,6 +389,7 @@ fn bound_character(command: Command) -> char {
     terminal::character_for(command).expect("every driven command has a character binding")
 }
 
+/// The terminal event of pressing `key` alone.
 fn key_event(key: char) -> Event {
     Event::Key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE))
 }

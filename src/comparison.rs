@@ -18,7 +18,8 @@ impl Comparison {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One side of a comparison: standard input or a path.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Operand {
     Stdin,
     Path(PathBuf),
@@ -34,7 +35,8 @@ impl Operand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whether a comparison of directories descends into their subdirectories.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Depth {
     TopLevel,
     Recursive,

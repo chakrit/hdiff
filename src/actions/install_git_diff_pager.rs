@@ -12,10 +12,13 @@ use super::{
 };
 use crate::{shell_words, utf8_path::Utf8Path};
 
+/// Registers `executable` as the global Git diff pager, backing up the global config
+/// first when it exists.
 pub struct InstallGitDiffPager {
     pub executable: PathBuf,
 }
 
+/// The shell commands `--install` applied, as it prints them.
 pub struct InstallGitDiffPagerReport {
     pub completed_commands: Vec<String>,
 }
@@ -49,7 +52,8 @@ impl InstallGitDiffPager {
 }
 
 /// Which path `--install` could not spell as a shell command.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Which path `--install` could not spell as UTF-8.
+#[derive(Clone, Copy, Debug)]
 pub enum PathRole {
     Executable,
     Config,
@@ -57,6 +61,7 @@ pub enum PathRole {
 }
 
 impl PathRole {
+    /// The path's name in error messages.
     pub fn label(self) -> &'static str {
         match self {
             Self::Executable => "hdiff executable path",
@@ -74,6 +79,7 @@ struct InstallPlan {
 }
 
 impl InstallPlan {
+    /// The plan for `environment` and `executable`; any path that is not UTF-8 fails it.
     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config_path = global_config_path(environment)?;
         let executable = utf8(executable, PathRole::Executable)?;
@@ -129,6 +135,7 @@ fn global_config_path(environment: &GitConfigEnvironment) -> Result<PathBuf, Err
     Ok(home_config)
 }
 
+/// The config file `GIT_CONFIG_GLOBAL` names; `/dev/null` disables the global config.
 fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
     let path = PathBuf::from(path);
     if path == Path::new("/dev/null") {
@@ -138,6 +145,7 @@ fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
     Ok(path)
 }
 
+/// Whether `path` exists; failing to tell is an error, not an absence.
 fn exists(path: &Path) -> Result<bool, Error> {
     fs::exists(path).map_err(|source| Error::InspectConfig {
         path: path.to_owned(),
@@ -153,6 +161,7 @@ fn backup_path(config_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// `path` as UTF-8, or an error naming its `role`.
 fn utf8(path: &Path, role: PathRole) -> Result<Utf8Path, Error> {
     Utf8Path::of(path).ok_or(Error::NonUtf8Path(role))
 }

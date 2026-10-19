@@ -6,10 +6,12 @@ use crate::{
     exit_status::DiffStatus,
 };
 
+/// Runs `diff -u` on a comparison's operands and returns its output.
 pub struct CompareFiles<'a> {
     pub comparison: &'a Comparison,
 }
 
+/// The context `CompareFiles` runs in; `diff` needs nothing beyond the process.
 pub struct CompareFilesContext;
 
 impl CompareFiles<'_> {

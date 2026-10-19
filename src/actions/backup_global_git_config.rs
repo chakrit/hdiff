@@ -17,6 +17,7 @@ impl BackupGlobalGitConfig {
         shell_words::command_line(&["cp", self.config.as_str(), self.copy.as_str()])
     }
 
+    /// Makes the copy; a failure carries this backup so its message names both paths.
     pub fn run(self, _context: &mut GlobalGitConfigContext) -> Result<(), Error> {
         match fs::copy(self.config.as_path(), self.copy.as_path()) {
             Ok(_) => Ok(()),

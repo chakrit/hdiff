@@ -10,6 +10,7 @@ pub enum Side {
 }
 
 impl Side {
+    /// Both sides, old first.
     pub const BOTH: [Self; 2] = [Self::Old, Self::New];
 }
 
