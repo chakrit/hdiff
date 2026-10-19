@@ -65,10 +65,11 @@ fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
 /// docs/spec/architecture.md#continuity-markers: markers take the dimmed separator tone.
 #[test]
 fn draws_continuity_markers_in_the_dimmed_separator_tone() {
-    let rows = (0..20)
+    let row_count = 20;
+    let rows = (0..row_count)
         .map(|row| format!("+row_{row}\n"))
         .collect::<String>();
-    let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
+    let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,{row_count} @@\n{rows}");
     let live = Live::sized(&patch, Mode::line(DiffLayout::Unified), EIGHT_ROWS);
 
     let rendered = live.buffer();

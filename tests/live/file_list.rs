@@ -3,7 +3,9 @@
 use hdiff::preferences::DiffLayout;
 
 use crate::{
-    fixtures::{TREE_PATCH, files_in_directories, many_files, paired_patch},
+    fixtures::{
+        TREE_PATCH, directory_name, file_name, files_in_directories, many_files, paired_patch,
+    },
     harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
 };
 
@@ -54,14 +56,19 @@ fn opens_the_keymap_popup_over_the_diff_not_the_file_list() {
 
 #[test]
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
-    let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
+    let file_count = 40;
+    let selected = 36;
+    let mut live = Live::load(&many_files(file_count), Mode::line(DiffLayout::Unified));
 
-    for _ in 0..36 {
+    for _ in 0..selected {
         live.next_file();
     }
-    assert!(live.shows("~ file_36.rs"), "the selected file stays listed");
     assert!(
-        !live.shows("file_00.rs"),
+        live.shows(&format!("~ {}", file_name(selected))),
+        "the selected file stays listed"
+    );
+    assert!(
+        !live.shows(&file_name(0)),
         "the list scrolls past the first file"
     );
 }
@@ -141,8 +148,11 @@ fn tab_moves_between_files_and_skips_headings() {
 #[test]
 fn colors_markers_by_state() {
     let mut live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
+    // Back past the first file to `run.sh`, the one listed file the checks below leave
+    // out, so none of the rows they read is highlighted.
     live.previous_file();
     live.previous_file();
+    assert!(live.shows("rename to bin/run.sh"), "run.sh is selected");
 
     let readme = live.file_row_colors("- README.md");
     let lib = live.file_row_colors("~ lib.rs");
@@ -165,7 +175,9 @@ fn colors_markers_by_state() {
 /// docs/spec/architecture.md#continuity-markers: the file list marks rows past each edge.
 #[test]
 fn marks_files_beyond_the_file_list() {
-    let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
+    let file_count = 40;
+    let selected = 36;
+    let mut live = Live::load(&many_files(file_count), Mode::line(DiffLayout::Unified));
     let markers = |live: &Live| {
         let list = live.file_column().join("");
         EdgeMarkers {
@@ -174,13 +186,16 @@ fn marks_files_beyond_the_file_list() {
         }
     };
 
-    assert_eq!(live.file_column()[FIRST_CONTENT_LINE], "~ file_00.rs");
+    assert_eq!(
+        live.file_column()[FIRST_CONTENT_LINE],
+        format!("~ {}", file_name(0))
+    );
     assert_eq!(
         markers(&live),
         EdgeMarkers { above: 0, below: 1 },
         "files below the list"
     );
-    for _ in 0..36 {
+    for _ in 0..selected {
         live.next_file();
     }
     assert_eq!(
@@ -188,11 +203,11 @@ fn marks_files_beyond_the_file_list() {
         EdgeMarkers { above: 1, below: 1 },
         "files above and below"
     );
-    // Back past the first file, wrapping to the last.
-    for _ in 0..37 {
+    // Back to the first file, then once more, wrapping to the last.
+    for _ in 0..=selected {
         live.previous_file();
     }
-    assert!(live.shows("~ file_39.rs"));
+    assert!(live.shows(&format!("~ {}", file_name(file_count - 1))));
     assert_eq!(
         markers(&live),
         EdgeMarkers { above: 1, below: 0 },
@@ -202,19 +217,27 @@ fn marks_files_beyond_the_file_list() {
 
 #[test]
 fn keeps_a_selection_below_its_headings_visible() {
-    let mut live = Live::load(&files_in_directories(30), Mode::line(DiffLayout::Unified));
+    let file_count = 30;
+    let selected = 20;
+    let mut live = Live::load(
+        &files_in_directories(file_count),
+        Mode::line(DiffLayout::Unified),
+    );
 
-    for _ in 0..20 {
+    for _ in 0..selected {
         live.next_file();
     }
     let list = live.file_column();
-    let selected = list
+    let selected_row = list
         .iter()
-        .position(|row| row == "~ file_20.rs")
+        .position(|row| *row == format!("~ {}", file_name(selected)))
         .expect("the selected file stays listed below its heading rows");
-    assert_eq!(list[selected - 1], "dir_20/");
+    assert_eq!(
+        list[selected_row - 1],
+        format!("{}/", directory_name(selected))
+    );
     assert!(
-        !live.shows("dir_00/"),
+        !live.shows(&format!("{}/", directory_name(0))),
         "the list scrolls past earlier headings"
     );
 }
