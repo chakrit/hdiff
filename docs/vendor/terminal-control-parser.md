@@ -11,12 +11,16 @@ follows ECMA-48. Read 2026-10-19.
 hdiff's own rules for what it shows are in `docs/spec/architecture.md` under "Lossless
 and safe rendering". This note keeps the reference.
 
-## States
+## States and actions
 
-ground, escape, escape_intermediate, csi_entry, csi_param, csi_intermediate, csi_ignore,
-dcs_entry, dcs_param, dcs_intermediate, dcs_passthrough, dcs_ignore, osc_string and
-sos_pm_apc_string. Its actions (collect, param, dispatch, put, osc_put) act on the
-sequence's content; none of them prints.
+States: ground, escape, escape_intermediate, csi_entry, csi_param, csi_intermediate,
+csi_ignore, dcs_entry, dcs_param, dcs_intermediate, dcs_passthrough, dcs_ignore,
+osc_string and sos_pm_apc_string.
+
+Actions: ignore, print, execute, clear, collect, param, esc_dispatch, csi_dispatch, hook,
+put, unhook, osc_start, osc_put and osc_end. Print displays a character, in ground only;
+execute runs a C0 or C1 control function. The others act on a sequence's content or its
+handler.
 
 ## Transitions
 
@@ -25,15 +29,16 @@ CSI (0x9B) goes to csi_entry; DCS (0x90) to dcs_entry; SOS (0x98), PM (0x9E) and
 (0x9F) to sos_pm_apc_string; OSC (0x9D) to osc_string; ST (0x9C) and every other C1
 control go to ground.
 
-- **Ground:** C0 controls execute; 0x20–0x7E print; DEL is ignored.
-- **Escape and escape intermediate:** C0 controls execute in place. 0x20–0x2F go to (or
-  stay in) escape intermediate. From escape, `[` opens csi_entry, `]` osc_string, `P`
-  dcs_entry, and `X`, `^`, `_` sos_pm_apc_string; any other 0x30–0x7E is a final byte
-  that returns to ground.
-- **CSI states:** C0 controls execute in place, 0x20–0x3F stay in the sequence, and
-  0x40–0x7E is the final byte that returns to ground.
+- **Ground:** C0 controls execute; 0x20–0x7E print. DEL is ignored when a 94-character
+  set is mapped into GL, and may print with a 96-character set.
+- **Escape and escape intermediate:** C0 controls execute in place, and DEL is ignored.
+  0x20–0x2F go to (or stay in) escape intermediate. From escape, `[` opens csi_entry,
+  `]` osc_string, `P` dcs_entry, and `X`, `^`, `_` sos_pm_apc_string; any other
+  0x30–0x7E is a final byte that returns to ground.
+- **CSI states:** C0 controls execute in place, DEL is ignored, 0x20–0x3F stay in the
+  sequence, and 0x40–0x7E is the final byte that returns to ground.
 - **DCS and SOS/PM/APC strings:** everything stays inside the string until an anywhere
-  transition.
+  transition; DEL is ignored.
 - **OSC string:** as the strings above; the reference ignores C0 controls other than CAN,
   SUB and ESC inside it, BEL included.
 
