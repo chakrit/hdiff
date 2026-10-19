@@ -24,6 +24,8 @@ use crate::{
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
 const HELP_HINT: &str = "? help";
+/// Columns before the file column's hint.
+const HELP_HINT_INDENT: u16 = 1;
 /// A border and a padding column on each side of the hint.
 const HELP_BOX_FRAME_WIDTH: u16 = 4;
 const HELP_BOX_HEIGHT: u16 = 3;
@@ -255,10 +257,10 @@ fn render_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
 
     buffer.set_style(area, style);
     buffer.set_stringn(
-        area.x + 1,
+        area.x + HELP_HINT_INDENT,
         area.y,
         HELP_HINT,
-        usize::from(area.width) - 1,
+        usize::from(area.width.saturating_sub(HELP_HINT_INDENT)),
         style,
     );
 }
