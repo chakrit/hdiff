@@ -541,7 +541,9 @@ mod tests {
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{DiffFile, FileBody, HunkRecords, RecordEntry, RecordKind, UnifiedBody},
+        document::{
+            AddressedHunk, DiffFile, FileBody, HunkRecords, RecordEntry, RecordKind, UnifiedBody,
+        },
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
@@ -573,9 +575,8 @@ mod tests {
             let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
 
             body.addressed_hunks()
-                .next()
-                .expect("first hunk")
-                .records()
+                .take(1)
+                .flat_map(AddressedHunk::records)
                 .map(|record| highlights.get(record.address).clone())
                 .collect()
         })

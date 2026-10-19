@@ -366,10 +366,13 @@ mod tests {
     #[test]
     fn chooses_specific_captures_and_later_ties_without_losing_outer_styles() {
         let text = "αcall!";
+        let whole = 0..text.len();
+        let call = text.find("call").expect("the text holds call");
+        let call = call..call + "call".len();
         let spans = [
-            syntax(text, 0..7, 7, SyntaxClass::String),
-            syntax(text, 2..6, 4, SyntaxClass::Property),
-            syntax(text, 2..6, 4, SyntaxClass::Function),
+            syntax(text, whole.clone(), whole.len(), SyntaxClass::String),
+            syntax(text, call.clone(), call.len(), SyntaxClass::Property),
+            syntax(text, call.clone(), call.len(), SyntaxClass::Function),
         ];
         let partition = syntax_partition(text, &spans);
 
