@@ -337,7 +337,7 @@ fn values_on_lines<T>(
     values: BySide<Option<T>>,
 ) -> impl Iterator<Item = LineValue<Option<T>>> {
     let on_line = |line, value| Some(LineValue { line, value });
-    let lines = match row {
+    let placed_values = match row {
         SideBySideRow::Shared(line) => [on_line(line, None), None],
         SideBySideRow::Paired(lines) => [
             on_line(lines.old, values.old),
@@ -347,7 +347,7 @@ fn values_on_lines<T>(
         SideBySideRow::NewOnly(line) => [on_line(line, values.new), None],
     };
 
-    lines.into_iter().flatten()
+    placed_values.into_iter().flatten()
 }
 
 /// A page's side-by-side rows and the pair holding each of its lines.
@@ -371,9 +371,9 @@ impl SideBySideLayout {
         let blocks = sides
             .chunk_by(|earlier, later| earlier.side.is_some() == later.side.is_some())
             .scan(PairIndex::at(0), |first_pair, block| {
-                let rows = BlockRows::of(block, *first_pair);
-                *first_pair = first_pair.offset(rows.rows.len());
-                Some(rows)
+                let block_rows = BlockRows::of(block, *first_pair);
+                *first_pair = first_pair.offset(block_rows.pairs.len());
+                Some(block_rows)
             })
             .collect::<Vec<_>>();
 
@@ -381,7 +381,7 @@ impl SideBySideLayout {
             .iter()
             .flat_map(|block| block.pair_of_line.iter().copied())
             .collect();
-        let pairs = blocks.into_iter().flat_map(|block| block.rows).collect();
+        let pairs = blocks.into_iter().flat_map(|block| block.pairs).collect();
 
         Self {
             pairs,
@@ -400,7 +400,7 @@ struct LineSide<S> {
 /// The rows of one block of lines that are all changed or all unchanged, and the pair
 /// holding each of its lines, in line order.
 struct BlockRows {
-    rows: Vec<SideBySideRow<LineIndex>>,
+    pairs: Vec<SideBySideRow<LineIndex>>,
     pair_of_line: Vec<PairIndex>,
 }
 
@@ -420,7 +420,7 @@ impl BlockRows {
 
         match changed {
             None => Self {
-                rows: block
+                pairs: block
                     .iter()
                     .map(|line_side| SideBySideRow::Shared(line_side.line))
                     .collect(),
@@ -439,7 +439,7 @@ impl BlockRows {
                 .map(|line_side| Some(line_side.line))
                 .chain(iter::repeat(None))
         };
-        let rows = side_lines(Side::Old)
+        let pairs = side_lines(Side::Old)
             .zip(side_lines(Side::New))
             .map_while(|lines| match lines {
                 (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
@@ -462,7 +462,10 @@ impl BlockRows {
             })
             .collect();
 
-        Self { rows, pair_of_line }
+        Self {
+            pairs,
+            pair_of_line,
+        }
     }
 }
 
@@ -570,10 +573,19 @@ mod tests {
         .expect("valid multi-file diff");
         let rows = PageRows::of_file_view(document.file_views().nth(1).expect("second file"));
 
-        assert_eq!(rows.line(rows.line_index(2)).kind(), LineKind::HunkHeader);
-        assert_eq!(rows.line(rows.line_index(5)).kind(), LineKind::HunkHeader);
+        let shown = shown_lines(&rows);
+        let hunk_headers = rows
+            .lines()
+            .map(|(_, line)| line.kind() == LineKind::HunkHeader)
+            .collect::<Vec<_>>();
+        let hunk_header_texts = shown
+            .iter()
+            .map(|text| text.starts_with("@@"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(hunk_headers, hunk_header_texts, "lines: {shown:?}");
         assert_eq!(
-            shown_lines(&rows),
+            shown,
             [
                 "--- a/second",
                 "+++ b/second",
