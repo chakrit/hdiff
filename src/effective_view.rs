@@ -14,7 +14,7 @@ use crate::{
 /// The renderable combination of the view preferences and the screen size: the pane
 /// shape, the screen's areas, the content each diff pane shows, the width rows wrap at,
 /// and whether the screen is too small to show panes, each derived once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct EffectiveView {
     shape: PaneShape,
     geometry: ScreenGeometry,
@@ -26,6 +26,7 @@ pub struct EffectiveView {
 /// Why a screen shows only a message instead of its panes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TooSmall {
+    /// The screen is narrower than the minimum layout.
     Narrow,
     /// A diff pane would have no content line.
     Short,

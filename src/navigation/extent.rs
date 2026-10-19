@@ -33,7 +33,7 @@ pub struct RowLine<R> {
 }
 
 impl<R> RowLine<R> {
-    /// The same screen line of the row `row` becomes.
+    /// The same screen line of the row `convert` makes of this one.
     pub fn map<T>(self, convert: impl FnOnce(R) -> T) -> RowLine<T> {
         RowLine {
             row: convert(self.row),
@@ -527,7 +527,7 @@ mod tests {
         let rows = first_rows(document);
 
         lines
-            .map(|line| rows.line(line))
+            .map(|index| rows.line(index))
             .map(|line| format!("{}{}\n", line.kind().marker(), line.payload()))
             .collect()
     }
@@ -554,7 +554,7 @@ mod tests {
 
     /// The screen line that shows wrapped line `wrapped_line` of the row starting with
     /// line `line`.
-    fn offset_of(
+    fn anchor_offset(
         document: &PreparedDocument,
         extent: &ScrollExtent,
         line: usize,
@@ -615,7 +615,7 @@ mod tests {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
         let extent = extent_of(&document, PaneShape::Single, 1, WrapWidth::Unbounded);
-        let offset = |line| offset_of(&document, &extent, line, 0);
+        let offset = |line| anchor_offset(&document, &extent, line, 0);
 
         // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
         assert_eq!(offset(5), ScreenLines::new(3));
@@ -653,13 +653,19 @@ mod tests {
             single_lines(&unified, 4, 3),
             [line(3, 1), line(3, 2), line(4, 0)]
         );
-        assert_eq!(offset_of(&document, &unified, 3, 1), ScreenLines::new(4));
         assert_eq!(
-            offset_of(&document, &unified, 3, 9),
+            anchor_offset(&document, &unified, 3, 1),
+            ScreenLines::new(4)
+        );
+        assert_eq!(
+            anchor_offset(&document, &unified, 3, 9),
             ScreenLines::new(5),
             "clamped to the row's last line"
         );
-        assert_eq!(offset_of(&document, &unified, 4, 0), ScreenLines::new(6));
+        assert_eq!(
+            anchor_offset(&document, &unified, 4, 0),
+            ScreenLines::new(6)
+        );
         assert_eq!(
             unified.width(),
             Cells::new(22),
@@ -689,9 +695,10 @@ mod tests {
         // Narrow pairs: ---, +++, @@, -old|+new. Wide adds c0, c1, and c2 before the
         // change.
         let widened = extent.reanchor(&document, wide, ScreenLines::new(3));
-        assert_eq!(extent.settings(), wide, "the extent shows the new settings");
+        let widened_settings = extent.settings();
         let narrowed = extent.reanchor(&document, narrow, ScreenLines::new(6));
 
+        assert_eq!(widened_settings, wide, "the extent shows the new settings");
         assert_eq!(widened, Some(ScreenLines::new(6)));
         assert_eq!(narrowed, Some(ScreenLines::new(3)));
     }
