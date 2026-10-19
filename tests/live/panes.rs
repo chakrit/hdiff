@@ -10,8 +10,9 @@ use crate::{
 };
 
 /// Two files, each with one changed line.
-const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
-                         --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
+fn two_files() -> String {
+    one_change_file("first") + "--- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n"
+}
 
 /// An 80-column screen ten rows tall.
 const TEN_ROWS: Size = Size::new(80, 10);
@@ -25,7 +26,7 @@ fn row_text(live: &Live, y: usize) -> String {
 /// separator, and the diff pane, with the help hint below the list.
 #[test]
 fn renders_compact_file_and_diff_panes_with_one_separator() {
-    let mut live = Live::sized(TWO_FILES, Mode::line(DiffLayout::Unified), TEN_ROWS);
+    let mut live = Live::sized(&two_files(), Mode::line(DiffLayout::Unified), TEN_ROWS);
     live.next_file();
 
     let rendered = live.buffer();
@@ -110,10 +111,10 @@ fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
 /// screen.
 #[test]
 fn floats_a_help_box_while_the_file_list_is_hidden() {
-    let mut hidden = Live::sized(TWO_FILES, Mode::line(DiffLayout::Unified), TEN_ROWS);
+    let mut hidden = Live::sized(&two_files(), Mode::line(DiffLayout::Unified), TEN_ROWS);
     hidden.press('e');
     let narrow = Live::sized(
-        TWO_FILES,
+        &two_files(),
         Mode::line(DiffLayout::Unified),
         Size::new(23, 10),
     );

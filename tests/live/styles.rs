@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::{
-    fixtures::{EXTRA_DELETION, ONE_LETTER_CHANGE},
+    fixtures::{EXTRA_DELETION, ONE_LETTER_CHANGE, one_change_file},
     harness::{Live, Mode, THEME, columns, positions},
 };
 
@@ -21,10 +21,10 @@ const NINE_ROWS: Size = Size::new(80, 9);
 /// In `layout`, a one-sided source payload takes syntax colors in line mode, its change
 /// color undimmed in character mode, and line mode again restores the frame.
 fn assert_unmatched_payload_toggle(layout: DiffLayout) {
-    let patch = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
-                 --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
-                 @@ -2,0 +2 @@\n+fn added() {}\n";
-    let mut live = Live::sized(patch, Mode::line(layout), Size::new(160, 30));
+    let patch = one_change_file("first")
+        + "--- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
+           @@ -2,0 +2 @@\n+fn added() {}\n";
+    let mut live = Live::sized(&patch, Mode::line(layout), Size::new(160, 30));
     live.next_file();
     let line_rendered = live.buffer();
     let payloads = [
