@@ -282,7 +282,7 @@ mod tests {
         }
     }
 
-    fn command(command: Command) -> Event {
+    fn command_event(command: Command) -> Event {
         Event::Command(command)
     }
 
@@ -294,7 +294,7 @@ mod tests {
     }
 
     fn preference_effect(interaction: &Interaction, change: PreferenceChange) -> Effect {
-        effect(interaction, command(Command::Preference(change)))
+        effect(interaction, command_event(Command::Preference(change)))
     }
 
     /// The preferences `change` redisplays the page with.
@@ -320,7 +320,7 @@ mod tests {
     fn exits_for_quit_and_interrupt() {
         let start = interaction(PageIndex::FIRST, DiffLayout::Unified);
 
-        for event in [command(Command::Quit), Event::Interrupt] {
+        for event in [command_event(Command::Quit), Event::Interrupt] {
             assert_eq!(start.respond(event, TWO_PAGES), Outcome::Exit, "{event:?}");
         }
     }
@@ -395,11 +395,11 @@ mod tests {
         let second = interaction(second_page(), DiffLayout::Unified);
 
         assert_eq!(
-            effect(&second, command(Command::Page(PageStep::Next))),
+            effect(&second, command_event(Command::Page(PageStep::Next))),
             Effect::TurnPage(PageIndex::FIRST)
         );
         assert_eq!(
-            effect(&first, command(Command::Page(PageStep::Previous))),
+            effect(&first, command_event(Command::Page(PageStep::Previous))),
             Effect::TurnPage(second_page())
         );
     }
@@ -416,7 +416,7 @@ mod tests {
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(
-                respond(open, command(closing)),
+                respond(open, command_event(closing)),
                 Outcome::Effect(Effect::Keymap(KeymapPopup::Closed)),
                 "{closing:?}"
             );
@@ -428,7 +428,7 @@ mod tests {
             Command::Preference(PreferenceChange::ToggleFileList),
         ] {
             assert_eq!(
-                respond(open, command(ignored)),
+                respond(open, command_event(ignored)),
                 Outcome::Redraw,
                 "{ignored:?}"
             );
@@ -444,14 +444,17 @@ mod tests {
         let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
         let close = Command::Keymap(KeymapCommand::Close);
 
-        assert_eq!(closed.respond(command(close), TWO_PAGES), Outcome::Redraw);
+        assert_eq!(
+            closed.respond(command_event(close), TWO_PAGES),
+            Outcome::Redraw
+        );
     }
 
     #[test]
     fn toggles_and_closes_the_keymap() {
         let start = interaction(second_page(), DiffLayout::Unified);
         let after = |interaction: &Interaction, keymap| {
-            let Effect::Keymap(popup) = effect(interaction, command(Command::Keymap(keymap)))
+            let Effect::Keymap(popup) = effect(interaction, command_event(Command::Keymap(keymap)))
             else {
                 panic!("a keymap command changes the popup");
             };
