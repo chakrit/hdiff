@@ -156,7 +156,7 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     if is_combined_diff_header(text) || text.starts_with("@@@") {
         return Err(Malformed::CombinedDiff);
     }
-    if text.starts_with("@@") || file_header_field(text, Side::New).is_some() {
+    if starts_hunk_header(text) || file_header_field(text, Side::New).is_some() {
         return Err(Malformed::UnexpectedDiffHeader);
     }
 
@@ -381,9 +381,11 @@ fn is_excess_record(line: &SourceLine) -> bool {
     marked && file_header_field(line.sanitized(), Side::Old).is_none()
 }
 
-/// Whether `text` starts a hunk header, well-formed or not.
+/// Whether `text` starts a unified hunk header, well-formed or not: an `@@` line that is
+/// not a combined diff's `@@@`. Both a section's hunk reader and the check for headers
+/// outside a section ask this, so a malformed header gets one reading wherever it sits.
 fn starts_hunk_header(text: &str) -> bool {
-    text.starts_with("@@ ")
+    text.starts_with("@@") && !text.starts_with("@@@")
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares. The
@@ -711,6 +713,7 @@ mod tests {
     fn rejects_hunk_headers_spaced_other_than_producers_write() {
         let files = "--- a/x\n+++ b/x\n";
         for header in [
+            "@@-1 +1 @@",
             "@@  -1  +1  @@",
             "@@ -1\t+1 @@",
             "@@ -1 +1  @@",
