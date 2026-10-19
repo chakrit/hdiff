@@ -150,12 +150,12 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
             source: hunk.header(),
         };
         let records = hunk.records().map(|AddressedRecord { address, record }| {
-            let kind = LineKind::Record {
+            let line_kind = LineKind::Record {
                 address,
                 kind: record.kind,
             };
             DisplayLine {
-                kind,
+                kind: line_kind,
                 source: &record.payload,
             }
         });

@@ -259,6 +259,8 @@ enum GraphemeChange {
 }
 
 impl GraphemeChange {
+    /// The run `tag` names: an equal run is kept, a deletion changes the old side, and an
+    /// insertion changes the new side.
     fn of(tag: ChangeTag, bytes: usize) -> Self {
         match tag {
             ChangeTag::Equal => Self::Kept(bytes),
