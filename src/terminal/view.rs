@@ -163,7 +163,10 @@ fn render_split_rows<'a>(
         // The separator runs beside the shown lines only, across the rows both panes'
         // content spans.
         SplitDirection::Vertical => {
-            let content = BySide::of(|side| panes.get(side).content()).merge(Rect::union);
+            let content = panes
+                .as_ref()
+                .map(ContinuityFrame::content)
+                .merge(Rect::union);
             let height = shown_rows(content.height, shown);
             let shown_separator = Rect::new(separator.x, content.y, separator.width, height);
             draw_inner_separator(frame.buffer_mut(), shown_separator, direction, palette);
