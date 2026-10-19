@@ -77,6 +77,15 @@ impl Interaction {
         Self { scroll, ..self }
     }
 
+    /// `page` with these preferences on this screen, scrolled to its start.
+    pub(super) fn turned_to(self, page: PageIndex) -> Self {
+        Self {
+            page,
+            scroll: BoundedScroll::START,
+            ..self
+        }
+    }
+
     /// `page` with `preferences` on a `screen`-sized terminal, scrolled to `scroll`.
     pub(super) fn shown(
         self,

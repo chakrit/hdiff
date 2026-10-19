@@ -9,7 +9,7 @@ use ratatui::layout::Size;
 
 use self::{
     interaction::{AnchorLine, Effect, Interaction, Placement},
-    scroll::{BoundedScroll, DisplayBounds, ScrollPosition},
+    scroll::{DisplayBounds, ScrollPosition},
 };
 use crate::{
     effective_view::EffectiveView,
@@ -66,16 +66,10 @@ impl Navigation {
             }
             Effect::Keymap(keymap) => self.interaction = interaction.with_keymap(keymap),
             Effect::TurnPage(page) => {
-                let preferences = interaction.preferences();
                 // A page turn keeps the preferences and screen the view derives from.
-                let settings = settings_of(preferences, &self.view);
+                let settings = settings_of(interaction.preferences(), &self.view);
                 self.extent.turn_to(document, page, settings);
-                self.interaction = interaction.shown(
-                    page,
-                    preferences,
-                    interaction.screen(),
-                    BoundedScroll::START,
-                );
+                self.interaction = interaction.turned_to(page);
             }
             Effect::Redisplay {
                 preferences,
