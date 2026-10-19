@@ -39,6 +39,19 @@ fn file_list_toggle(mode: Mode) {
     assert_eq!(live.buffer(), start, "e shows the file list again");
 }
 
+/// docs/spec/architecture.md#interaction-model: `?` opens a centered popup over the diff,
+/// so the file list beside the diff stays as it was drawn.
+#[test]
+fn opens_the_keymap_popup_over_the_diff_not_the_file_list() {
+    let mut live = Live::load(&paired_patch(), Mode::line(DiffLayout::Vertical));
+    let file_column = live.file_column();
+
+    live.press('?');
+
+    assert!(live.shows("cycle layout"), "? opens the popup");
+    assert_eq!(live.file_column(), file_column);
+}
+
 #[test]
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
