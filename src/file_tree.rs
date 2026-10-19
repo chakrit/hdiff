@@ -139,7 +139,7 @@ impl FileTree {
 // Rows
 
 /// The group a file's row is listed in.
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum Group<'a> {
     #[default]
     TopLevel,
@@ -160,24 +160,26 @@ impl<'a> Placed<'a> {
     /// Where `view`'s file is listed: by its path's directory, or at the top level
     /// under its header when the path is unknown.
     fn of(view: FileView<'a>) -> Self {
-        let (group, name, marker) = match &view.file.identity {
+        match &view.file.identity {
             FileIdentity::Path { state, path } => {
                 let Grouped { group, name } = Grouped::of(path.as_str());
-                (group, name, StateMarker::State(*state))
+                Self {
+                    view,
+                    group,
+                    name,
+                    marker: StateMarker::State(*state),
+                }
             }
-            FileIdentity::Unknown { header } => {
-                (Group::TopLevel, header.as_str(), StateMarker::Unknown)
-            }
-        };
-
-        Self {
-            view,
-            group,
-            name,
-            marker,
+            FileIdentity::Unknown { header } => Self {
+                view,
+                group: Group::TopLevel,
+                name: header.as_str(),
+                marker: StateMarker::Unknown,
+            },
         }
     }
 
+    /// Whether the file is listed at the top level, before every directory heading.
     fn is_top_level(&self) -> bool {
         self.group == Group::TopLevel
     }
@@ -192,13 +194,20 @@ struct Grouped<'a> {
 impl<'a> Grouped<'a> {
     /// `path` split at its last `/` into its directory's group and its file name.
     fn of(path: &'a str) -> Self {
-        let (group, name) = match path.rsplit_once('/') {
-            Some(("", name)) => (Group::TopLevel, name),
-            Some((directory, name)) => (Group::Directory(directory), name),
-            None => (Group::TopLevel, path),
-        };
-
-        Self { group, name }
+        match path.rsplit_once('/') {
+            Some(("", name)) => Self {
+                group: Group::TopLevel,
+                name,
+            },
+            Some((directory, name)) => Self {
+                group: Group::Directory(directory),
+                name,
+            },
+            None => Self {
+                group: Group::TopLevel,
+                name: path,
+            },
+        }
     }
 }
 

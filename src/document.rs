@@ -247,7 +247,7 @@ impl<'a, 'h> HunkRecords<'a, 'h> {
 
 /// A record's position among the records of the hunk whose [`HunkRecords`] carries the
 /// brand `'h`; positions from another hunk carry another brand and do not type-check.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RecordPosition<'h> {
     index: usize,
     brand: Brand<'h>,
@@ -262,7 +262,7 @@ pub struct RecordEntry<'h, E> {
 
 /// An invariant lifetime marker: `'h` can neither grow nor shrink, so two brands unify
 /// only when they are the same brand.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Brand<'h>(PhantomData<fn(&'h ()) -> &'h ()>);
 
 /// One hunk line: its kind, and the line after its marker.
