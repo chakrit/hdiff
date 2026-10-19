@@ -89,20 +89,45 @@ pub enum Work {
 
 /// What preparation reports its stages and work to.
 pub trait Observer: Sized {
-    /// Runs `operation` as `stage`, timing it when the observer records stages.
-    fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T;
+    /// What a stage's start leaves for its finish: the start time when the observer
+    /// records stages, nothing when it does not.
+    type Started;
+
+    /// Marks a stage starting.
+    fn start(&self) -> Self::Started;
+    /// Marks `stage` finishing, from the mark its start left.
+    fn finish(&mut self, stage: Stage, started: Self::Started);
     /// Records one unit of `work`.
     fn count(&mut self, work: Work);
+
+    /// Runs `operation` as `stage`, giving it the observer to count the work inside it.
+    fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
+        let started = self.start();
+        let result = operation(self);
+        self.finish(stage, started);
+        result
+    }
+
+    /// Runs `operation` as `stage`, which counts no work, only time.
+    fn time<T>(&mut self, stage: Stage, operation: impl FnOnce() -> T) -> T {
+        let started = self.start();
+        let result = operation();
+        self.finish(stage, started);
+        result
+    }
 }
 
 /// An observer that records nothing, for preparation outside a profile.
 pub struct Unobserved;
 
 impl Observer for Unobserved {
+    type Started = ();
+
     #[inline]
-    fn measure<T>(&mut self, _: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
-        operation(self)
-    }
+    fn start(&self) {}
+
+    #[inline]
+    fn finish(&mut self, _: Stage, (): ()) {}
 
     #[inline]
     fn count(&mut self, _: Work) {}
@@ -127,11 +152,14 @@ impl Profile {
 }
 
 impl Observer for Profile {
-    fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
-        let started = Instant::now();
-        let result = operation(self);
+    type Started = Instant;
+
+    fn start(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn finish(&mut self, stage: Stage, started: Instant) {
         *self.durations.get_mut(stage) += started.elapsed();
-        result
     }
 
     fn count(&mut self, work: Work) {

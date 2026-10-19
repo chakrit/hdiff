@@ -119,7 +119,7 @@ impl PreparedDocument {
         let ListedTree {
             tree: file_tree,
             files: listed,
-        } = observer.measure(Stage::Labels, |_| ListedTree::build(files));
+        } = observer.time(Stage::Labels, || ListedTree::build(files));
 
         let mut syntax = SyntaxHighlighter::default();
         Self::Files {

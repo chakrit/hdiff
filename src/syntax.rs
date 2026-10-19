@@ -142,7 +142,7 @@ impl SyntaxHighlighter {
             return Highlighted::unparsed();
         }
 
-        let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
+        let highlighter = observer.time(Stage::Language, || self.highlighter_for(language));
 
         let tree = observer.measure(Stage::Parse, |observer| {
             let edited_base = base.map(
