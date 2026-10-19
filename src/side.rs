@@ -117,16 +117,7 @@ impl<T: Clone> BySide<T> {
 impl<T> BySide<Option<T>> {
     /// `value` on `side`, and nothing on the other side.
     pub fn only(side: Side, value: T) -> Self {
-        match side {
-            Side::Old => BySide {
-                old: Some(value),
-                new: None,
-            },
-            Side::New => BySide {
-                old: None,
-                new: Some(value),
-            },
-        }
+        Self::of_side(side, Some(value), None)
     }
 
     /// Both sides' values when both sides hold one.
