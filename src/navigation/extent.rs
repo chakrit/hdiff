@@ -95,7 +95,13 @@ impl ScrollExtent {
             PaneShape::Single => VisibleRows::Single(
                 rows.line_indices()
                     .filter(|index| rows.shows_line(*index, context))
-                    .map(|index| measured_row(rows, index, index, None, wrap))
+                    .map(|index| {
+                        let lines = SplitLines {
+                            first: index,
+                            second: None,
+                        };
+                        measured_row(rows, index, lines, wrap)
+                    })
                     .collect(),
             ),
             PaneShape::Split(direction) => VisibleRows::Split {
@@ -103,10 +109,7 @@ impl ScrollExtent {
                 pairs: rows
                     .pair_indices()
                     .filter(|index| rows.shows_pair(*index, context))
-                    .map(|index| {
-                        let SplitLines { first, second } = rows.pair(index).split_first();
-                        measured_row(rows, index, first, second, wrap)
-                    })
+                    .map(|index| measured_row(rows, index, rows.pair(index).split_first(), wrap))
                     .collect(),
             },
         };
@@ -398,6 +401,7 @@ impl<R> FromIterator<MeasuredRow<R>> for MeasuredRows<R> {
 struct LineEnd(Count);
 
 impl LineEnd {
+    /// The end at `lines`; panics past `u32`, as `Count::of` does.
     fn of(lines: ScreenLines) -> Self {
         Self(Count::of(lines.get()))
     }
@@ -447,21 +451,19 @@ struct MeasuredRow<R> {
     height: ScreenLines,
 }
 
-/// A row made of line `first`, and of line `second` when it pairs two: as wide as its
-/// widest line and as tall as its tallest.
+/// A row made of `lines`: as wide as its widest line and as tall as its tallest.
 fn measured_row<R>(
     rows: &PageRows,
     row: R,
-    first: LineIndex,
-    second: Option<LineIndex>,
+    lines: SplitLines<LineIndex>,
     wrap: WrapWidth,
 ) -> MeasuredRow<R> {
     let measure = |line| LineSize {
         payload_width: rows.payload_width(line),
         height: line_height(rows, line, wrap),
     };
-    let first_size = measure(first);
-    let size = match second {
+    let first_size = measure(lines.first);
+    let size = match lines.second {
         None => first_size,
         Some(line) => first_size.max(measure(line)),
     };
