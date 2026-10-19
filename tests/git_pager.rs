@@ -38,8 +38,8 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
     assert_eq!(pager_version.stdout, hdiff_version(&env));
 }
 
-/// docs/spec/architecture.md#input-contract: `--install` prints the `cp` and `git config` commands
-/// it applied, so running them reproduces its writes.
+/// docs/spec/architecture.md#initial-cli-surface: `--install` prints the `cp` and
+/// `git config` commands it applied, so running them reproduces its writes.
 #[test]
 fn install_prints_the_commands_it_applied() {
     let env = TestEnv::new();
