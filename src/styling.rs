@@ -36,9 +36,8 @@ impl StyledRows {
         let syntax = observer.measure(Stage::Syntax, |observer| {
             highlighter.highlight_file(view.file, observer)
         });
-        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
 
-        Self::styled(rows, &syntax, &details)
+        Self::styled(rows, &syntax, observer)
     }
 
     /// The rows of surrounding text, which has no syntax spans; its shared rows carry no
@@ -48,19 +47,19 @@ impl StyledRows {
         observer: &mut impl Observer,
     ) -> Self {
         let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(lines));
-        let details = character_details(&rows);
 
-        Self::styled(rows, &RecordMap::empty(), &details)
+        Self::styled(rows, &RecordMap::empty(), observer)
     }
 
     /// The styles of each line of `rows`: the syntax spans of its record, looked up by
-    /// address, and its character detail when `details` gives it some. Both maps
-    /// must be built from these `rows`, which the constructors above guarantee.
+    /// address, and the character detail derived here from these same rows.
     fn styled(
         rows: PageRows,
         syntax: &RecordMap<Vec<SyntaxSpan>>,
-        details: &LineMap<Option<ChangedDetail>>,
+        observer: &mut impl Observer,
     ) -> Self {
+        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
+
         let styles = rows.map_lines(|index, line| {
             let text = line.payload();
             let spans: &[SyntaxSpan] = match line.kind() {
