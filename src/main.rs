@@ -18,7 +18,7 @@ use hdiff::{
     input::{self, StdinState},
     parser,
     prepared::PreparedDocument,
-    terminal,
+    terminal::{self, OutputMode},
 };
 
 /// Runs hdiff; a failure is reported on standard error and exits with the trouble
@@ -101,9 +101,9 @@ fn view(source: input::Source) -> Result<(), RunError> {
 /// line it draws. Whatever keeps `/dev/tty` from opening, the output falls back to
 /// finite text. Rules: docs/spec/architecture.md#input-and-terminal-boundary.
 fn render_document(document: DiffDocument) -> Result<(), RunError> {
-    let controlling_terminal = match terminal::OutputMode::of_stdout() {
-        terminal::OutputMode::Finite => None,
-        terminal::OutputMode::Interactive => terminal::open_controlling_terminal().ok(),
+    let controlling_terminal = match OutputMode::of_stdout() {
+        OutputMode::Finite => None,
+        OutputMode::Interactive => terminal::open_controlling_terminal().ok(),
     };
 
     match controlling_terminal {
