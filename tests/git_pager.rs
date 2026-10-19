@@ -7,7 +7,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_error, run_fixture, success_output};
+use common::{TestEnv, assert_error, assert_fixture_succeeded, run_fixture, success_output};
 
 const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
 
@@ -60,21 +60,18 @@ fn setup_commit_history() -> TestEnv {
 }
 
 fn pipe_git_to_hdiff(env: &TestEnv, arguments: &[&str]) -> Output {
-    let mut producer = env
-        .git(arguments)
+    let mut git = env.git(arguments);
+    let mut producer = git
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("start Git producer");
     let input = producer.stdout.take().expect("Git output pipe");
-    let output = env
-        .hdiff()
-        .stdin(Stdio::from(input))
-        .output()
-        .expect("read Git output with hdiff");
+    let no_arguments: [&str; 0] = [];
+    let output = env.run_with_stdin(no_arguments, input);
     let produced = producer.wait_with_output().expect("wait for Git producer");
 
-    assert!(produced.status.success(), "{arguments:?}: {produced:?}");
+    assert_fixture_succeeded(&git, &produced);
     output
 }
 
