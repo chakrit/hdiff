@@ -3,7 +3,7 @@ mod common;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    process::{Output, Stdio},
+    process::Output,
 };
 
 use common::{TestEnv, assert_error, success_output};
@@ -256,12 +256,8 @@ fn unsupported_language_has_no_syntax_parser_work() {
 fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
     let env = TestEnv::new();
     let patch = env.write_file("input.patch", PATCH);
-    let piped = env
-        .hdiff()
-        .args(["--bench", "prepare"])
-        .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
-        .output()
-        .expect("stdin benchmark");
+    let input = fs::File::open(patch).expect("patch input");
+    let piped = env.run_with_stdin(["--bench", "prepare"], input);
     let piped_text = success_output(&piped);
     let piped_records = records(&piped_text);
     let [_, piped_startup] = &piped_records[..] else {

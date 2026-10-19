@@ -131,12 +131,7 @@ fn directory_comparison_descends_only_with_recursion() {
 fn dash_operand_compares_standard_input() {
     let env = comparison_tree();
     let before = fs::File::open(env.path("before/top.txt")).expect("stdin");
-    let output = env
-        .hdiff()
-        .args(["-", "after/top.txt"])
-        .stdin(before)
-        .output()
-        .expect("run stdin comparison");
+    let output = env.run_with_stdin(["-", "after/top.txt"], before);
 
     let text = success_output(&output);
     assert!(text.contains("-old top\n+new top\n"), "{text}");
@@ -154,12 +149,7 @@ fn dash_leading_paths_remain_comparison_operands() {
 #[test]
 fn piped_stdin_with_file_operands_is_a_usage_error() {
     let env = comparison_tree();
-    let output = env
-        .hdiff()
-        .args(["before/top.txt", "after/top.txt"])
-        .stdin(Stdio::piped())
-        .output()
-        .expect("run comparison with piped stdin");
+    let output = env.run_with_stdin(["before/top.txt", "after/top.txt"], Stdio::piped());
 
     assert_error(
         &output,

@@ -8,7 +8,7 @@ use std::{
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     str,
 };
 
@@ -61,8 +61,19 @@ impl TestEnv {
     /// [`TestEnv::hdiff`], with no standard input.
     #[allow(dead_code)]
     pub fn run(&self, arguments: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Output {
+        self.run_with_stdin(arguments, Stdio::null())
+    }
+
+    /// The output of hdiff run in the root with `arguments`, isolated like
+    /// [`TestEnv::hdiff`], reading `stdin` as its standard input.
+    #[allow(dead_code)]
+    pub fn run_with_stdin(
+        &self,
+        arguments: impl IntoIterator<Item = impl AsRef<OsStr>>,
+        stdin: impl Into<Stdio>,
+    ) -> Output {
         let mut command = self.hdiff();
-        command.args(arguments);
+        command.args(arguments).stdin(stdin);
 
         command
             .output()
@@ -139,10 +150,17 @@ pub fn run_fixture(command: &mut Command) -> String {
     let output = command
         .output()
         .unwrap_or_else(|error| panic!("{error}: {command:?}"));
-    assert!(output.status.success(), "{command:?}: {output:?}");
+    assert_fixture_succeeded(command, &output);
 
     String::from_utf8(output.stdout.clone())
         .unwrap_or_else(|error| panic!("{error}: {command:?}: {output:?}"))
+}
+
+/// Asserts that a finished fixture command succeeded; a failure shows the command and its
+/// whole output.
+#[allow(dead_code)]
+pub fn assert_fixture_succeeded(command: &Command, output: &Output) {
+    assert!(output.status.success(), "{command:?}: {output:?}");
 }
 
 /// The standard error of an hdiff run that failed: it exited with the trouble status
