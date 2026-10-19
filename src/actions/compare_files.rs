@@ -1,11 +1,10 @@
 use std::{
     ffi::OsStr,
-    fmt, io,
     path::PathBuf,
     process::{Command, Stdio},
 };
 
-use super::process_failure::ProcessFailure;
+use super::child_process::{self, ProcessError};
 use crate::exit_status::DiffStatus;
 
 /// Two operands for `diff -u`. Contract: docs/spec/architecture.md#input-contract.
@@ -43,27 +42,8 @@ pub struct CompareFiles<'a> {
 
 pub struct CompareFilesContext;
 
-#[derive(Debug)]
-pub enum Error {
-    /// `diff` could not be started.
-    Spawn(io::Error),
-    /// `diff` exited with trouble.
-    Trouble(ProcessFailure),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Spawn(error) => write!(formatter, "diff: {error}"),
-            Self::Trouble(failure) => write!(formatter, "{failure}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 impl CompareFiles<'_> {
-    pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, Error> {
+    pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, ProcessError> {
         let [before, after] = &self.comparison.operands;
         let recursion: &[&str] = match self.comparison.depth {
             Depth::TopLevel => &[],
@@ -72,19 +52,21 @@ impl CompareFiles<'_> {
 
         // `-N` renders added and removed files as diffs; `--` keeps dash-leading paths
         // operands; `diff` reads the inherited stdin for `-`.
-        let output = Command::new("diff")
-            .args(["-u", "-N"])
+        let mut diff = Command::new("diff");
+        diff.args(["-u", "-N"])
             .args(recursion)
             .arg("--")
             .arg(before.argument())
             .arg(after.argument())
-            .stdin(Stdio::inherit())
-            .output()
-            .map_err(Error::Spawn)?;
+            .stdin(Stdio::inherit());
 
-        match DiffStatus::of_exit(output.status) {
-            DiffStatus::Same | DiffStatus::Different => Ok(output.stdout),
-            DiffStatus::Trouble => Err(Error::Trouble(ProcessFailure::of_output("diff", &output))),
-        }
+        let output = child_process::run("diff", &mut diff, |status| {
+            match DiffStatus::of_exit(status) {
+                DiffStatus::Same | DiffStatus::Different => true,
+                DiffStatus::Trouble => false,
+            }
+        })?;
+
+        Ok(output.stdout)
     }
 }

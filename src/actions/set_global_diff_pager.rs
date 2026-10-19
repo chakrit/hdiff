@@ -1,6 +1,9 @@
-use std::{ffi::OsStr, fmt, io, process::Command};
+use std::{ffi::OsStr, process::Command};
 
-use super::{global_git_config::GlobalGitConfigContext, process_failure::ProcessFailure};
+use super::{
+    child_process::{self, ProcessError},
+    global_git_config::GlobalGitConfigContext,
+};
 use crate::shell_words;
 
 /// Sets `pager.diff` in the global Git config to `command`.
@@ -10,12 +13,6 @@ pub struct SetGlobalDiffPager<'a> {
 
 const GIT: &str = "git";
 
-#[derive(Debug)]
-pub enum Error {
-    Spawn(io::Error),
-    Failed(ProcessFailure),
-}
-
 impl SetGlobalDiffPager<'_> {
     /// The `git config` command that performs exactly this write.
     pub fn shell_command(&self) -> String {
@@ -24,39 +21,22 @@ impl SetGlobalDiffPager<'_> {
         shell_words::command_line(&[GIT, config, global, key, value])
     }
 
-    pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
+    pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), ProcessError> {
         let mut git = Command::new(GIT);
         git.args(self.arguments());
         for (name, value) in context.environment.variables() {
             set_or_remove(&mut git, name, value);
         }
 
-        let output = git.output().map_err(Error::Spawn)?;
+        child_process::run("git config", &mut git, |status| status.success())?;
 
-        match output.status.success() {
-            true => Ok(()),
-            false => Err(Error::Failed(ProcessFailure::of_output(
-                "git config",
-                &output,
-            ))),
-        }
+        Ok(())
     }
 
     fn arguments(&self) -> [&str; 4] {
         ["config", "--global", "pager.diff", self.command]
     }
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Spawn(error) => write!(formatter, "cannot run git: {error}"),
-            Self::Failed(failure) => write!(formatter, "{failure}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// Gives Git exactly the environment the config path was resolved from.
 fn set_or_remove(git: &mut Command, key: &str, value: Option<&OsStr>) {
