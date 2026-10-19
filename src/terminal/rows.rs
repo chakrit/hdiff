@@ -34,14 +34,8 @@ impl<'a> SideBySideRow<StyledRow<'a>> {
                 new: PaneRow::Text(row),
             },
             Self::Paired(rows) => rows.map(PaneRow::Text),
-            Self::OldOnly(old) => BySide {
-                old: PaneRow::Text(old),
-                new: PaneRow::AlignmentPeer(Side::New),
-            },
-            Self::NewOnly(new) => BySide {
-                old: PaneRow::AlignmentPeer(Side::Old),
-                new: PaneRow::Text(new),
-            },
+            Self::Unmatched { side, line } => BySide::only(side, line)
+                .map_sides(|pane, row| row.map_or(PaneRow::AlignmentPeer(pane), PaneRow::Text)),
         }
     }
 }

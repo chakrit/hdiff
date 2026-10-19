@@ -43,18 +43,10 @@ fn changed_payload_details(
     let payload = |line: LineIndex| rows.line(line).payload();
     let whole = |side, line| ChangedDetail::of(side, Box::new([PayloadSpan::whole(payload(line))]));
 
-    match (lines.old, lines.new) {
-        (Some(old), Some(new)) => changed_pair_spans(BySide { old, new }.map(payload))
+    match lines.transpose() {
+        Some(pair) => changed_pair_spans(pair.map(payload))
             .map_sides(|side, spans| ChangedDetail::of(side, spans.into_boxed_slice())),
-        (Some(old), None) => BySide {
-            old: whole(Side::Old, old),
-            new: None,
-        },
-        (None, Some(new)) => BySide {
-            old: None,
-            new: whole(Side::New, new),
-        },
-        (None, None) => BySide::default(),
+        None => lines.map_sides(|side, line| line.and_then(|line| whole(side, line))),
     }
 }
 
