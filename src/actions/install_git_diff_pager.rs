@@ -121,25 +121,21 @@ impl GlobalConfig {
     /// Resolves the file `git config --global` writes, in the order of git-config(1)
     /// FILES, probing each candidate's existence once.
     fn of(environment: &GitConfigEnvironment) -> Result<Self, Error> {
-        if let Some(path) = &environment.git_config_global {
+        if let Some(path) = environment.global_config_override() {
             return Self::probed(configured_global_path(path)?);
         }
 
-        let home = environment
-            .home
-            .as_ref()
-            .map(PathBuf::from)
+        let home_config = environment
+            .under_home(".gitconfig")
             .ok_or(Error::MissingHome)?;
-        let home_config = home.join(".gitconfig");
         if exists(&home_config)? {
             return Ok(Self::Existing(home_config));
         }
 
-        let xdg_config_home = match &environment.xdg_config_home {
-            Some(path) => PathBuf::from(path),
-            None => home.join(".config"),
-        };
-        Self::probed(xdg_config_home.join("git/config"))
+        let xdg_config = environment
+            .under_xdg_config_home("git/config")
+            .ok_or(Error::MissingHome)?;
+        Self::probed(xdg_config)
     }
 
     /// `path` as existing or absent.
@@ -190,11 +186,7 @@ mod tests {
     use crate::actions::global_git_config::GitConfigEnvironment;
 
     fn environment_for(config_path: &Path) -> GitConfigEnvironment {
-        GitConfigEnvironment {
-            git_config_global: Some(config_path.as_os_str().to_owned()),
-            home: None,
-            xdg_config_home: None,
-        }
+        GitConfigEnvironment::of(Some(config_path.as_os_str().to_owned()), None, None)
     }
 
     #[test]
@@ -245,6 +237,27 @@ mod tests {
             present.backup.is_some(),
             "a backup of an existing config: {present:?}"
         );
+    }
+
+    /// Git reads an empty `XDG_CONFIG_HOME` as unset and writes
+    /// `$HOME/.config/git/config`, so that is the file to back up.
+    #[test]
+    fn backs_up_the_home_xdg_config_when_xdg_config_home_is_empty() {
+        let home = tempfile::tempdir().expect("temporary home");
+        let xdg_config = home.path().join(".config/git/config");
+        fs::create_dir_all(xdg_config.parent().expect("config directory"))
+            .expect("create config directory");
+        fs::write(&xdg_config, "").expect("write xdg config");
+        let environment = GitConfigEnvironment::of(
+            None,
+            Some(home.path().as_os_str().to_owned()),
+            Some("".into()),
+        );
+
+        let plan = InstallPlan::new(&environment, Path::new("/bin/hdiff")).expect("plan");
+
+        let backed_up = plan.backup.as_ref().map(|backup| backup.config.as_str());
+        assert_eq!(backed_up, xdg_config.to_str(), "{plan:?}");
     }
 
     #[test]
