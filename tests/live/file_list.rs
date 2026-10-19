@@ -62,7 +62,7 @@ fn lists_top_level_files_first_then_directories_in_input_order() {
     ];
 
     let rows = FIRST_CONTENT_LINE..FIRST_CONTENT_LINE + listed.len();
-    assert_eq!(live.file_list()[rows], listed);
+    assert_eq!(live.left_of_first_separator()[rows], listed);
 }
 
 #[test]
@@ -147,11 +147,14 @@ fn colors_markers_by_state() {
 fn marks_files_beyond_the_file_list() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
     let markers = |live: &Live| {
-        let list = live.file_list().join("");
+        let list = live.left_of_first_separator().join("");
         (list.matches('▴').count(), list.matches('▾').count())
     };
 
-    assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
+    assert_eq!(
+        live.left_of_first_separator()[FIRST_CONTENT_LINE],
+        "~ file_00.rs"
+    );
     assert_eq!(markers(&live), (0, 1), "files below the list");
     for _ in 0..36 {
         live.next_file();
@@ -172,7 +175,7 @@ fn keeps_a_selection_below_its_headings_visible() {
     for _ in 0..20 {
         live.next_file();
     }
-    let list = live.file_list();
+    let list = live.left_of_first_separator();
     let selected = list
         .iter()
         .position(|row| row == "~ file_20.rs")

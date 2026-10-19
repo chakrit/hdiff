@@ -1,7 +1,9 @@
 //! Patches the scenarios share.
 
+/// Rust, JavaScript, Python, Go, and C files in several directories, one page each.
 pub const MIXED_LANGUAGES: &str = include_str!("../fixtures/mixed-language-layout.patch");
 
+/// One deletion and three additions, flush and indented by spaces and by a tab.
 pub const INDENTED: &str = "--- a/indent.rs\n+++ b/indent.rs\n@@ -1 +1,3 @@\n-removed\n\
                         +added_flush\n+    added_spaces\n+\tadded_tab\n";
 
@@ -58,6 +60,7 @@ pub fn hidden_context_patch() -> String {
     format!("--- a/hidden.rs\n+++ b/hidden.rs\n{hunks}")
 }
 
+/// Git changes in nested directories and at the top level, for the file tree.
 pub const TREE_PATCH: &str = "\
 diff --git a/src/terminal/view.rs b/src/terminal/view.rs
 index 1111111..2222222 100644
