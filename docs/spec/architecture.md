@@ -124,10 +124,11 @@ but valid diff lines without data loss.
   Repeated paths remain separate file occurrences. Each file occurrence is one navigation
   page; a document that holds no file is one page of its surrounding text, with an empty
   file list.
-- `DiffFile`: file identity and a body: Git metadata alone, or file headers and ordered
-  hunks after an optional Git header. Identity (state and path) and decoded header paths
-  are derived when the file is parsed; the file tree and syntax highlighting read them
-  rather than raw header text.
+- `DiffFile`: file identity and a body: Git metadata with an optional binary patch after
+  it, or file headers and ordered hunks after an optional Git header. Identity (state and
+  path) and decoded header paths are derived when the file is parsed, from extended
+  headers and file headers and never from binary patch lines; the file tree and syntax
+  highlighting read them rather than raw header text.
 - File-list paths follow the [file tree](#file-tree) path naming, while rendered diff
   headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.

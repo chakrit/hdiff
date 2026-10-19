@@ -3,41 +3,59 @@
 //! docs/spec/architecture.md#input-contract.
 
 use super::{Error, LineStart, Malformed, SourceLines, decimal_count, line_start};
-use crate::source_text::SourceLine;
+use crate::{
+    document::{BinaryBlock, BinaryPatch},
+    non_empty::NonEmpty,
+    source_text::SourceLine,
+};
 
 /// Whether `text` is the `GIT binary patch` line that opens a binary patch's blocks.
 pub(super) fn is_binary_patch_header(text: &str) -> bool {
     text == "GIT binary patch"
 }
 
-/// The `literal` and `delta` blocks after `GIT binary patch`, each with its payload and
-/// blank separator.
-pub(super) fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Error> {
-    let mut patch = Vec::new();
-
-    while let Some(header) = lines.next_if(starts_binary_block) {
-        lines.at_last_line(check_binary_block_size(header.sanitized()))?;
-        patch.push(header);
-
-        let payload_start = patch.len();
-        while let Some(line) = lines.next_if(|text| !text.is_empty()) {
-            lines.at_last_line(check_payload_line(line.sanitized()))?;
-            patch.push(line);
-        }
-        if patch.len() == payload_start {
-            return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
-        }
-
-        let Some(blank) = lines.next_if(str::is_empty) else {
-            return Err(lines.next_line_error(Malformed::TruncatedBinaryPatch));
-        };
-        patch.push(blank);
+/// The binary patch the `GIT binary patch` line `header` opens: its `literal` and `delta`
+/// blocks, each with its payload and the blank line that ends it.
+pub(super) fn parse_binary_patch(
+    header: SourceLine,
+    lines: &mut SourceLines<'_>,
+) -> Result<BinaryPatch, Error> {
+    let mut blocks = Vec::new();
+    while let Some(block_header) = lines.next_if(starts_binary_block) {
+        blocks.push(parse_binary_block(block_header, lines)?);
     }
 
-    match patch.is_empty() {
-        true => Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock)),
-        false => Ok(patch),
+    let Some(blocks) = NonEmpty::of(blocks) else {
+        return Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock));
+    };
+    Ok(BinaryPatch { header, blocks })
+}
+
+/// The block a `literal` or `delta` line `header` opens: its payload lines, then the
+/// blank line that ends it.
+fn parse_binary_block(
+    header: SourceLine,
+    lines: &mut SourceLines<'_>,
+) -> Result<BinaryBlock, Error> {
+    lines.at_last_line(check_binary_block_size(header.sanitized()))?;
+
+    let mut payload = Vec::new();
+    while let Some(line) = lines.next_if(|text| !text.is_empty()) {
+        lines.at_last_line(check_payload_line(line.sanitized()))?;
+        payload.push(line);
     }
+    let Some(payload) = NonEmpty::of(payload) else {
+        return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
+    };
+    let Some(end) = lines.next_if(str::is_empty) else {
+        return Err(lines.next_line_error(Malformed::TruncatedBinaryPatch));
+    };
+
+    Ok(BinaryBlock {
+        header,
+        payload,
+        end,
+    })
 }
 
 /// Whether `text` starts a `literal` or `delta` block, well-formed or not.
@@ -145,15 +163,26 @@ mod tests {
             panic!("binary diff is metadata");
         };
 
-        let metadata = &body.git().metadata;
+        let metadata = body
+            .git()
+            .metadata
+            .iter()
+            .map(|line| line.sanitized())
+            .collect::<Vec<_>>();
+        let payloads = body
+            .binary_patch()
+            .expect("the diff holds a binary patch")
+            .blocks
+            .iter()
+            .map(|block| block.payload.first().sanitized())
+            .collect::<Vec<_>>();
+        let [footer] = view.trailing else {
+            panic!("one line follows the file: {:?}", view.trailing);
+        };
 
-        assert_eq!(view.trailing[0].sanitized(), "footer");
-        assert!(
-            metadata
-                .iter()
-                .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B"),
-            "the binary payload line is kept in {metadata:?}"
-        );
+        assert_eq!(metadata, ["index 1..2 100644"]);
+        assert_eq!(payloads, ["KcmZQzWC8#H2LJ>B", "HcmV?d00001"]);
+        assert_eq!(footer.sanitized(), "footer");
         assert_eq!(finite_output::of_document(&document), input);
     }
 

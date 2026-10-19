@@ -182,14 +182,10 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     Ok(())
 }
 
-/// A `diff --git` section: unified when `---` / `+++` headers follow its metadata.
+/// A `diff --git` section: unified when `---` / `+++` headers follow its metadata, and
+/// otherwise its metadata with the binary patch after it when it has one.
 fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
-    let mut metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
-    if let Some(binary_patch) = lines.next_if(is_binary_patch_header) {
-        metadata.push(binary_patch);
-        metadata.extend(parse_binary_patch(lines)?);
-    }
-
+    let metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     let git = GitHeader {
         line: header,
         metadata: metadata.into_boxed_slice(),
@@ -201,6 +197,11 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
     let Some(body) = MetadataBody::of(git) else {
         return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
+    let body = match lines.next_if(is_binary_patch_header) {
+        Some(binary_header) => body.with_binary_patch(parse_binary_patch(binary_header, lines)?),
+        None => body,
+    };
+
     Ok(DiffFile {
         identity: FileIdentity::of_metadata(body.git()),
         body: FileBody::Metadata(body),
@@ -617,10 +618,11 @@ mod tests {
             );
         }
 
-        let binary = "diff --git a/image b/image\nGIT binary patch\nliteral +12\npayload\n\n";
+        let binary =
+            "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral +12\npayload\n\n";
         assert_eq!(
             parse_patch(binary.as_bytes()),
-            malformed(3, Malformed::InvalidBinaryPatchHeader)
+            malformed(4, Malformed::InvalidBinaryPatchHeader)
         );
     }
 
