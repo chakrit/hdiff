@@ -2,12 +2,14 @@
 //! wrap width: their screen lines, the widest row, and how a row keeps its place when
 //! they are rebuilt. Rules: docs/spec/architecture.md#viewport-coordinates.
 
+use std::iter;
+
 use crate::{
     compact::Count,
     effective_view::WrapWidth,
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
-    page_rows::{LineIndex, PageRows, PairIndex, SideBySideRow, SplitLines},
+    page_rows::{LineIndex, PageRows, PairIndex, SideBySideRow},
     preferences::{ContextRecords, DiffGranularity},
     prepared::{PageIndex, PreparedDocument, PreparedPage},
     screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
@@ -95,13 +97,7 @@ impl ScrollExtent {
             PaneShape::Single => VisibleRows::Single(
                 rows.line_indices()
                     .filter(|index| rows.shows_line(*index, context))
-                    .map(|index| {
-                        let lines = SplitLines {
-                            first: index,
-                            second: None,
-                        };
-                        measured_row(rows, index, lines, wrap)
-                    })
+                    .map(|index| measured_row(rows, index, iter::once(index), wrap))
                     .collect(),
             ),
             PaneShape::Split(direction) => VisibleRows::Split {
@@ -109,7 +105,7 @@ impl ScrollExtent {
                 pairs: rows
                     .pair_indices()
                     .filter(|index| rows.shows_pair(*index, context))
-                    .map(|index| measured_row(rows, index, rows.pair(index).split_first(), wrap))
+                    .map(|index| measured_row(rows, index, rows.pair(index).lines(), wrap))
                     .collect(),
             },
         };
@@ -256,7 +252,8 @@ impl<'a> Iterator for PageLines<'a, LineIndex> {
     type Item = RowLine<StyledRow<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (page, granularity) = (self.page, self.granularity);
+        let page = self.page;
+        let granularity = self.granularity;
 
         self.lines
             .next()
@@ -268,7 +265,8 @@ impl<'a> Iterator for PageLines<'a, PairIndex> {
     type Item = RowLine<SideBySideRow<StyledRow<'a>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (page, granularity) = (self.page, self.granularity);
+        let page = self.page;
+        let granularity = self.granularity;
 
         self.lines.next().map(|line| {
             line.map(|pair| page.rows().pair(pair).map(|row| page.row(row, granularity)))
@@ -455,18 +453,15 @@ struct MeasuredRow<R> {
 fn measured_row<R>(
     rows: &PageRows,
     row: R,
-    lines: SplitLines<LineIndex>,
+    lines: impl Iterator<Item = LineIndex>,
     wrap: WrapWidth,
 ) -> MeasuredRow<R> {
     let measure = |line| LineSize {
         payload_width: rows.payload_width(line),
         height: line_height(rows, line, wrap),
     };
-    let first_size = measure(lines.first);
-    let size = match lines.second {
-        None => first_size,
-        Some(line) => first_size.max(measure(line)),
-    };
+
+    let size = lines.map(measure).fold(LineSize::NONE, LineSize::max);
 
     MeasuredRow {
         row,
@@ -482,6 +477,12 @@ struct LineSize {
 }
 
 impl LineSize {
+    /// The size of no line, which any line's size outgrows.
+    const NONE: Self = Self {
+        payload_width: Cells::ZERO,
+        height: ScreenLines::ZERO,
+    };
+
     /// As wide as the wider line and as tall as the taller.
     fn max(self, other: Self) -> Self {
         Self {
