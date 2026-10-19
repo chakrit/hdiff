@@ -511,10 +511,10 @@ ties. Capture length is measured before row clipping.
 The first test boundary is terminal-independent: parser fixtures, state-transition tests,
 layout snapshots, and renderer output tests. Live interaction tests run the `Tui`
 in-process in a `live` test target under plain `cargo test`: each test loads a fixture
-document into a `Tui`, drives it with `tui.step` one key at a time against a 120-by-36
-`Terminal<TestBackend>`, and asserts on the backend buffer after each step. A
-`macro_rules!` matrix runs scenarios across layouts and detail modes. Tests never assert
-timing and never start the `hdiff` executable.
+document into a `Tui`, drives it with `tui.step` one key at a time against a
+`Terminal<TestBackend>` 120 by 36 unless the test names a size, and asserts on the
+backend buffer after each step. A `macro_rules!` matrix runs scenarios across layouts
+and detail modes. Tests never assert timing and never start the `hdiff` executable.
 
 ## Input and terminal boundary
 
