@@ -12,10 +12,11 @@ use hdiff::{
     cli::{self, Invocation, UsageError},
     document::DiffDocument,
     exit_status::DiffStatus,
+    finite_output,
     input::{self, StdinState},
     parser::ParseError,
     prepared::PreparedDocument,
-    render, terminal,
+    terminal,
 };
 
 fn main() -> ExitCode {
@@ -94,7 +95,7 @@ fn render_document(document: DiffDocument) -> Result<(), RunError> {
     };
 
     match controlling_terminal {
-        None => write_stdout(&render::render_unified(&document)),
+        None => write_stdout(&finite_output::of_document(&document)),
         Some(controlling_terminal) => {
             let prepared = PreparedDocument::prepare(&document);
             drop(document);
