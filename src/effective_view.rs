@@ -85,14 +85,16 @@ pub enum WrapWidth {
 impl WrapWidth {
     /// The wrap width `wrapping` selects for panes whose narrowest content is
     /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
-    /// width. A pane with no room for payload wraps one cell per line.
+    /// width.
     fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
-        match wrapping {
-            Wrapping::Disabled => Self::Unbounded,
-            Wrapping::Enabled => {
-                let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
-                Self::At(NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN))
-            }
+        let payload_width = NonZeroCells::new(content_width.saturating_sub(MARKER_GUTTER_WIDTH));
+
+        match (wrapping, payload_width) {
+            (Wrapping::Disabled, _) => Self::Unbounded,
+            (Wrapping::Enabled, Some(width)) => Self::At(width),
+            // A pane without a payload column has nothing to wrap, so each row stays one
+            // line.
+            (Wrapping::Enabled, None) => Self::Unbounded,
         }
     }
 
@@ -190,6 +192,22 @@ mod tests {
         // whose frames leave 37 content columns, two of them the marker gutter.
         assert_eq!((panes.old.width, panes.new.width), (39, 40));
         assert_eq!(view.wrap(), WrapWidth::at(35));
+    }
+
+    /// A pane without a payload column has nothing to wrap, so its rows stay one line
+    /// each rather than one line per payload cell.
+    #[test]
+    fn leaves_rows_unwrapped_in_a_pane_without_payload_room() {
+        let preferences = ViewPreferences {
+            wrapping: Wrapping::Enabled,
+            ..ViewPreferences::INITIAL
+        };
+
+        // The file column leaves the diff one column, all of it frame.
+        let view = EffectiveView::of(preferences, Size::new(28, 3));
+
+        assert_eq!(view.too_small(), None, "the panes still show");
+        assert_eq!(view.wrap(), WrapWidth::Unbounded);
     }
 
     #[test]
