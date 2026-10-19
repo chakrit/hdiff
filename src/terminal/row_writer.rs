@@ -58,11 +58,22 @@ pub(super) fn write_row(
     theme: &Theme,
 ) -> Clip {
     buffer.set_style(area, whole_row(row.tone(), &theme.rows));
-    let text_row = match row {
-        PaneRow::Text(text_row) => text_row,
-        PaneRow::AlignmentPeer(_) => return Clip::default(),
-    };
 
+    match row {
+        PaneRow::Text(text_row) => write_text_row(buffer, area, text_row, placement, theme),
+        PaneRow::AlignmentPeer(_) => Clip::default(),
+    }
+}
+
+/// Writes the part of a text row's marker gutter and payload that `placement` selects
+/// into `area`, which already carries the row's style.
+fn write_text_row(
+    buffer: &mut Buffer,
+    area: Rect,
+    text_row: StyledRow<'_>,
+    placement: RowPlacement,
+    theme: &Theme,
+) -> Clip {
     let payload = ExpandedPayload::of(text_row);
     let payload_clusters = payload.clusters().map(|cluster| StyledText {
         text: cluster.text,

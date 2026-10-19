@@ -232,11 +232,15 @@ impl Language {
     /// The language a header path's extension selects; a path without a known
     /// extension, or a header without a path, selects none.
     fn of_header(path: &HeaderPath) -> Option<Self> {
-        let text = match path {
-            HeaderPath::Path(text) => text,
-            HeaderPath::DevNull | HeaderPath::Undecodable => return None,
-        };
+        match path {
+            HeaderPath::Path(text) => Self::of_path(text),
+            HeaderPath::DevNull | HeaderPath::Undecodable => None,
+        }
+    }
 
+    /// The language a path's extension selects; a path without a known extension
+    /// selects none.
+    fn of_path(text: &str) -> Option<Self> {
         let (_, extension) = text.rsplit_once('.')?;
         match extension {
             "rs" => Some(Self::Rust),
