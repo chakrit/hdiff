@@ -200,9 +200,9 @@ const fn binds(key: Key, command: Command) -> Binding {
     }
 }
 
-/// `key` bound to scrolling in `direction`.
-const fn movement(key: Key, direction: Movement) -> Binding {
-    binds(key, Command::Movement(direction))
+/// `key` bound to the scroll `motion`.
+const fn movement(key: Key, motion: Movement) -> Binding {
+    binds(key, Command::Movement(motion))
 }
 
 /// `key` bound to the preference `change`.
