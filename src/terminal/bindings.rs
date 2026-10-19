@@ -128,7 +128,7 @@ impl KeyAction {
 /// One row of the popup: its keys and the action they take.
 pub(super) enum Shortcut {
     Keys {
-        keys: &'static [Binding],
+        bindings: &'static [Binding],
         action: &'static str,
     },
     /// Four keys spread over three lines, the action beside the middle one.
@@ -139,10 +139,10 @@ pub(super) enum Shortcut {
         down: Binding,
         action: &'static str,
     },
-    /// The keys that close the open keymap popup: `bound`, and the keys bound elsewhere
-    /// that close it while it is open.
+    /// The keys that close the open keymap popup: `bindings`, and the keys bound
+    /// elsewhere that close it while it is open.
     ClosesKeymap {
-        bound: &'static [Binding],
+        bindings: &'static [Binding],
         action: &'static str,
     },
 }
@@ -151,8 +151,8 @@ impl Shortcut {
     /// The bindings this row makes.
     fn bindings(&self) -> ShortcutBindings {
         match self {
-            Self::Keys { keys, .. } | Self::ClosesKeymap { bound: keys, .. } => {
-                ShortcutBindings::Keys(keys.iter())
+            Self::Keys { bindings, .. } | Self::ClosesKeymap { bindings, .. } => {
+                ShortcutBindings::Keys(bindings.iter())
             }
             Self::Diamond {
                 up,
@@ -176,8 +176,8 @@ impl Iterator for ShortcutBindings {
 
     fn next(&mut self) -> Option<Binding> {
         match self {
-            Self::Keys(keys) => keys.next().copied(),
-            Self::Diamond(keys) => keys.next(),
+            Self::Keys(bindings) => bindings.next().copied(),
+            Self::Diamond(bindings) => bindings.next(),
         }
     }
 }
@@ -216,35 +216,35 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
                 action: "scroll",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     movement(Key::Down, Movement::Down),
                     movement(Key::Up, Movement::Up),
                 ],
                 action: "down / up",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     movement(Key::Control('d'), Movement::HalfPageDown),
                     movement(Key::Control('u'), Movement::HalfPageUp),
                 ],
                 action: "half page down / up",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     movement(Key::Char('g'), Movement::Top),
                     movement(Key::Char('G'), Movement::Bottom),
                 ],
                 action: "top / bottom",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     movement(Key::Char('0'), Movement::FarLeft),
                     movement(Key::Char('^'), Movement::FarLeft),
                 ],
                 action: "far left",
             },
             Shortcut::Keys {
-                keys: &[movement(Key::Char('$'), Movement::FarRight)],
+                bindings: &[movement(Key::Char('$'), Movement::FarRight)],
                 action: "far right",
             },
         ],
@@ -253,14 +253,14 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
         heading: "Files",
         shortcuts: &[
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     binds(Key::Tab, Command::Page(PageStep::Next)),
                     binds(Key::ShiftTab, Command::Page(PageStep::Previous)),
                 ],
                 action: "next / previous file",
             },
             Shortcut::Keys {
-                keys: &[preference(Key::Char('e'), PreferenceChange::ToggleFileList)],
+                bindings: &[preference(Key::Char('e'), PreferenceChange::ToggleFileList)],
                 action: "show / hide file list",
             },
         ],
@@ -269,22 +269,22 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
         heading: "View",
         shortcuts: &[
             Shortcut::Keys {
-                keys: &[preference(Key::Char('v'), PreferenceChange::NextLayout)],
+                bindings: &[preference(Key::Char('v'), PreferenceChange::NextLayout)],
                 action: "cycle layout",
             },
             Shortcut::Keys {
-                keys: &[preference(
+                bindings: &[preference(
                     Key::Char('c'),
                     PreferenceChange::ToggleGranularity,
                 )],
                 action: "character detail",
             },
             Shortcut::Keys {
-                keys: &[preference(Key::Char('w'), PreferenceChange::ToggleWrapping)],
+                bindings: &[preference(Key::Char('w'), PreferenceChange::ToggleWrapping)],
                 action: "wrap",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     preference(Key::Char('+'), PreferenceChange::IncreaseContext),
                     preference(Key::Char('-'), PreferenceChange::DecreaseContext),
                 ],
@@ -296,18 +296,18 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
         heading: "Keymap and exit",
         shortcuts: &[
             Shortcut::Keys {
-                keys: &[binds(
+                bindings: &[binds(
                     Key::Char('?'),
                     Command::Keymap(KeymapCommand::Toggle),
                 )],
                 action: "open keymap",
             },
             Shortcut::ClosesKeymap {
-                bound: &[binds(Key::Esc, Command::Keymap(KeymapCommand::Close))],
+                bindings: &[binds(Key::Esc, Command::Keymap(KeymapCommand::Close))],
                 action: "close keymap",
             },
             Shortcut::Keys {
-                keys: &[
+                bindings: &[
                     binds(Key::Char('q'), Command::Quit),
                     Binding {
                         key: Key::Control('c'),
@@ -413,10 +413,6 @@ mod tests {
     /// Shift-`G` is bound, and `{`, `}`, `Ctrl-Q`, `Ctrl-J` and `Alt-q` are not.
     #[test]
     fn binds_only_the_keys_the_table_names() {
-        let alt = KeyModifiers::ALT;
-        let control = KeyModifiers::CONTROL;
-        let control_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
-
         assert_eq!(
             key(KeyCode::Char('G'), KeyModifiers::SHIFT),
             command(Command::Movement(Movement::Bottom))
@@ -424,16 +420,19 @@ mod tests {
         for (code, modifiers) in [
             (KeyCode::Char('{'), KeyModifiers::NONE),
             (KeyCode::Char('}'), KeyModifiers::NONE),
-            (KeyCode::Char('q'), control),
-            (KeyCode::Char('j'), control),
-            (KeyCode::Char('q'), alt),
-            (KeyCode::Char('c'), control_alt),
+            (KeyCode::Char('q'), KeyModifiers::CONTROL),
+            (KeyCode::Char('j'), KeyModifiers::CONTROL),
+            (KeyCode::Char('q'), KeyModifiers::ALT),
+            (
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT,
+            ),
             (KeyCode::Char('j'), KeyModifiers::SUPER),
             (KeyCode::Tab, KeyModifiers::CONTROL),
-            (KeyCode::BackTab, KeyModifiers::SHIFT | alt),
-            (KeyCode::Esc, alt),
+            (KeyCode::BackTab, KeyModifiers::SHIFT | KeyModifiers::ALT),
+            (KeyCode::Esc, KeyModifiers::ALT),
             (KeyCode::Down, KeyModifiers::CONTROL),
-            (KeyCode::Up, alt),
+            (KeyCode::Up, KeyModifiers::ALT),
         ] {
             assert_eq!(key(code, modifiers), None, "{code:?} with {modifiers:?}");
         }
