@@ -21,7 +21,7 @@ impl CompareFiles<'_> {
         };
 
         // `-N` renders added and removed files as diffs; `--` keeps dash-leading paths
-        // operands; `diff` reads the inherited stdin for `-`.
+        // as operands; `diff` reads the inherited stdin for `-`.
         let mut diff = Command::new("diff");
         diff.args(["-u", "-N"])
             .args(recursion)
