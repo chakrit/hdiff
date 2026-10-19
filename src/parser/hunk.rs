@@ -55,10 +55,12 @@ pub(super) fn parse_hunk(
 /// The counts `remaining` after one record of `kind`; a record on a side whose declared
 /// count is already used up is the first excess record.
 fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usize>, Malformed> {
-    let counted = remaining.map_sides(|side, count| match kind.on_side(side) {
-        true => count.checked_sub(1),
-        false => Some(count),
-    });
+    let counted = remaining
+        .zip(kind.sides())
+        .map(|(count, on_side)| match on_side {
+            true => count.checked_sub(1),
+            false => Some(count),
+        });
 
     counted.transpose().ok_or(Malformed::ExcessRecords)
 }
@@ -66,7 +68,9 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
 /// Checks that a record of `kind` lies on no side of the file a no-newline marker already
 /// `ended`.
 fn check_side_open(ended: BySide<bool>, kind: RecordKind) -> Result<(), Malformed> {
-    let past_end = ended.map_sides(|side, done| done && kind.on_side(side));
+    let past_end = ended
+        .zip(kind.sides())
+        .map(|(ended, on_side)| ended && on_side);
 
     match past_end.into_iter().any(|past| past) {
         true => Err(Malformed::RecordAfterNoNewlineMarker),
@@ -287,10 +291,10 @@ mod tests {
         let [first, second] = views.as_slice() else {
             panic!("the patch holds two files: {} views", views.len());
         };
-        let FileBody::Unified(first) = &first.file.body else {
+        let FileBody::Unified(first_body) = &first.file.body else {
             panic!("first file is unified");
         };
-        let marker = first
+        let marker = first_body
             .hunks
             .first()
             .records
