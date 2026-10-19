@@ -6,7 +6,7 @@
 use std::{ops::ControlFlow, slice};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
-use unicode_segmentation::UnicodeSegmentation;
+use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 
 use super::{
     row_style::{gutter, segment_style, whole_row},
@@ -187,43 +187,40 @@ impl ExpandedPayload {
         Self { text, boundaries }
     }
 
-    /// Each cluster with the style of the segment containing its first byte. Clusters and
-    /// segment ends both ascend, so one forward walk pairs them; the segments end where
-    /// the text ends, so the walk ends with the last cluster.
-    fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
-        let segments = SegmentWalk {
+    /// Each cluster with the style of the segment containing its first byte.
+    fn clusters(&self) -> StyledClusters<'_> {
+        StyledClusters {
+            clusters: self.text.grapheme_indices(true),
             rest: self.boundaries.iter(),
             current: None,
-        };
-
-        self.text
-            .grapheme_indices(true)
-            .scan(segments, |segments, (start, cluster)| {
-                segments.containing(start).map(|boundary| StyledText {
-                    text: cluster,
-                    style: boundary.style,
-                })
-            })
+        }
     }
 }
 
-/// A forward walk over a payload's segment ends, holding the segment the last asked byte
-/// fell in.
-struct SegmentWalk<'b> {
-    rest: slice::Iter<'b, Boundary>,
-    current: Option<&'b Boundary>,
+/// A payload's clusters walked together with its segment ends. Both ascend, and the walk
+/// alone asks for segments, so it only ever moves forward through them; the segments end
+/// where the text ends, so it ends with the last cluster.
+struct StyledClusters<'p> {
+    clusters: GraphemeIndices<'p>,
+    rest: slice::Iter<'p, Boundary>,
+    current: Option<&'p Boundary>,
 }
 
-impl<'b> SegmentWalk<'b> {
-    /// The segment containing byte `start`, which must not precede an earlier ask.
-    fn containing(&mut self, start: usize) -> Option<&'b Boundary> {
+impl<'p> Iterator for StyledClusters<'p> {
+    type Item = StyledText<'p, TextStyle>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (start, cluster) = self.clusters.next()?;
         let ends_after = |boundary: &&Boundary| boundary.end > start;
         let current_contains = self.current.is_some_and(|boundary| ends_after(&boundary));
 
         if !current_contains {
             self.current = self.rest.find(ends_after);
         }
-        self.current
+        self.current.map(|boundary| StyledText {
+            text: cluster,
+            style: boundary.style,
+        })
     }
 }
 
