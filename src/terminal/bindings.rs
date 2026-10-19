@@ -348,11 +348,13 @@ mod tests {
         preferences::PreferenceChange,
     };
 
+    /// The event a press of `code` with `modifiers` is bound to, if any.
     fn key_event(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
         event_for(TerminalEvent::Key(KeyEvent::new(code, modifiers)))
     }
 
-    fn command_event(command: Command) -> Option<Event> {
+    /// The lookup result of a key bound to `command`.
+    fn bound_to(command: Command) -> Option<Event> {
         Some(Event::Command(command))
     }
 
@@ -360,7 +362,7 @@ mod tests {
     fn maps_pager_keys_and_resize_events() {
         let plain = |character| key_event(KeyCode::Char(character), KeyModifiers::NONE);
 
-        assert_eq!(plain('j'), command_event(Command::Movement(Movement::Down)));
+        assert_eq!(plain('j'), bound_to(Command::Movement(Movement::Down)));
         for (character, expected) in [
             ('h', Movement::Left),
             ('l', Movement::Right),
@@ -370,33 +372,33 @@ mod tests {
         ] {
             assert_eq!(
                 plain(character),
-                command_event(Command::Movement(expected)),
+                bound_to(Command::Movement(expected)),
                 "{character} horizontal movement"
             );
         }
         assert_eq!(
             key_event(KeyCode::Tab, KeyModifiers::NONE),
-            command_event(Command::Page(PageStep::Next))
+            bound_to(Command::Page(PageStep::Next))
         );
         assert_eq!(
             plain('v'),
-            command_event(Command::Preference(PreferenceChange::NextLayout))
+            bound_to(Command::Preference(PreferenceChange::NextLayout))
         );
         assert_eq!(
             plain('+'),
-            command_event(Command::Preference(PreferenceChange::IncreaseContext))
+            bound_to(Command::Preference(PreferenceChange::IncreaseContext))
         );
         assert_eq!(
             plain('-'),
-            command_event(Command::Preference(PreferenceChange::DecreaseContext))
+            bound_to(Command::Preference(PreferenceChange::DecreaseContext))
         );
         assert_eq!(
             key_event(KeyCode::BackTab, KeyModifiers::SHIFT),
-            command_event(Command::Page(PageStep::Previous))
+            bound_to(Command::Page(PageStep::Previous))
         );
         assert_eq!(
             key_event(KeyCode::Tab, KeyModifiers::SHIFT),
-            command_event(Command::Page(PageStep::Previous))
+            bound_to(Command::Page(PageStep::Previous))
         );
         for (code, expected) in [
             (
@@ -408,7 +410,7 @@ mod tests {
         ] {
             assert_eq!(
                 key_event(code, KeyModifiers::NONE),
-                command_event(expected),
+                bound_to(expected),
                 "{code:?}"
             );
         }
@@ -434,7 +436,7 @@ mod tests {
     fn binds_only_the_keys_the_table_names() {
         assert_eq!(
             key_event(KeyCode::Char('G'), KeyModifiers::SHIFT),
-            command_event(Command::Movement(Movement::Bottom))
+            bound_to(Command::Movement(Movement::Bottom))
         );
         for (code, modifiers) in [
             (KeyCode::Char('{'), KeyModifiers::NONE),

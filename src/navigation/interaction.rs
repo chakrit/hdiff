@@ -57,29 +57,35 @@ impl Interaction {
     /// What `event` asks of the session among `pages` pages, once the keymap popup has
     /// filtered its command.
     pub fn respond(&self, event: Event, pages: PageCount) -> Outcome {
-        let requested = match event {
-            Event::Interrupt => return Outcome::Exit,
+        match event {
+            Event::Interrupt => Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
             // before it responds and every frame adopts as it draws.
-            Event::Resize => return Outcome::Redraw,
-            Event::Command(requested) => requested,
-        };
+            Event::Resize => Outcome::Redraw,
+            Event::Command(requested) => self.respond_to(requested, pages),
+        }
+    }
+
+    /// What `requested` asks of the session among `pages` pages, once the keymap popup
+    /// has filtered it.
+    fn respond_to(&self, requested: Command, pages: PageCount) -> Outcome {
         // A command the popup filters out changes nothing, so the step only draws again.
         let Some(admitted) = self.keymap.admit(requested) else {
             return Outcome::Redraw;
         };
 
-        let effect = match admitted {
-            Command::Quit => return Outcome::Exit,
-            Command::Movement(movement) => Effect::Scroll(movement),
-            Command::Page(step) => Effect::TurnPage(step.applied(self.page, pages)),
-            Command::Keymap(command) => Effect::Keymap(self.keymap.after(command)),
-            Command::Preference(change) => Effect::Redisplay {
+        match admitted {
+            Command::Quit => Outcome::Exit,
+            Command::Movement(movement) => Outcome::Effect(Effect::Scroll(movement)),
+            Command::Page(step) => {
+                Outcome::Effect(Effect::TurnPage(step.applied(self.page, pages)))
+            }
+            Command::Keymap(command) => Outcome::Effect(Effect::Keymap(self.keymap.after(command))),
+            Command::Preference(change) => Outcome::Effect(Effect::Redisplay {
                 preferences: self.preferences.after(change),
                 placement: placement_after(change),
-            },
-        };
-        Outcome::Effect(effect)
+            }),
+        }
     }
 
     /// This interaction scrolled to `scroll`.
@@ -198,6 +204,8 @@ pub enum PageStep {
 }
 
 impl PageStep {
+    /// The page this step reaches from `page` among `pages` pages, wrapping around the
+    /// ends.
     fn applied(self, page: PageIndex, pages: PageCount) -> PageIndex {
         match self {
             Self::Next => page.next(pages),
@@ -283,10 +291,6 @@ mod tests {
         }
     }
 
-    fn command_event(command: Command) -> Event {
-        Event::Command(command)
-    }
-
     fn effect(interaction: &Interaction, event: Event) -> Effect {
         let Outcome::Effect(effect) = interaction.respond(event, TWO_PAGES) else {
             panic!("{event:?} changes the interaction");
@@ -295,7 +299,7 @@ mod tests {
     }
 
     fn preference_effect(interaction: &Interaction, change: PreferenceChange) -> Effect {
-        effect(interaction, command_event(Command::Preference(change)))
+        effect(interaction, Event::Command(Command::Preference(change)))
     }
 
     /// The preferences `change` redisplays the page with.
@@ -321,7 +325,7 @@ mod tests {
     fn exits_for_quit_and_interrupt() {
         let start = interaction(PageIndex::FIRST, DiffLayout::Unified);
 
-        for event in [command_event(Command::Quit), Event::Interrupt] {
+        for event in [Event::Command(Command::Quit), Event::Interrupt] {
             assert_eq!(start.respond(event, TWO_PAGES), Outcome::Exit, "{event:?}");
         }
     }
@@ -396,11 +400,11 @@ mod tests {
         let second = interaction(second_page(), DiffLayout::Unified);
 
         assert_eq!(
-            effect(&second, command_event(Command::Page(PageStep::Next))),
+            effect(&second, Event::Command(Command::Page(PageStep::Next))),
             Effect::TurnPage(PageIndex::FIRST)
         );
         assert_eq!(
-            effect(&first, command_event(Command::Page(PageStep::Previous))),
+            effect(&first, Event::Command(Command::Page(PageStep::Previous))),
             Effect::TurnPage(second_page())
         );
     }
@@ -417,7 +421,7 @@ mod tests {
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(
-                respond(open, command_event(closing)),
+                respond(open, Event::Command(closing)),
                 Outcome::Effect(Effect::Keymap(KeymapPopup::Closed)),
                 "{closing:?}"
             );
@@ -429,7 +433,7 @@ mod tests {
             Command::Preference(PreferenceChange::ToggleFileList),
         ] {
             assert_eq!(
-                respond(open, command_event(ignored)),
+                respond(open, Event::Command(ignored)),
                 Outcome::Redraw,
                 "{ignored:?}"
             );
@@ -446,7 +450,7 @@ mod tests {
         let close = Command::Keymap(KeymapCommand::Close);
 
         assert_eq!(
-            closed.respond(command_event(close), TWO_PAGES),
+            closed.respond(Event::Command(close), TWO_PAGES),
             Outcome::Redraw
         );
     }
@@ -455,7 +459,8 @@ mod tests {
     fn toggles_and_closes_the_keymap() {
         let start = interaction(second_page(), DiffLayout::Unified);
         let after = |interaction: &Interaction, keymap| {
-            let Effect::Keymap(popup) = effect(interaction, command_event(Command::Keymap(keymap)))
+            let Effect::Keymap(popup) =
+                effect(interaction, Event::Command(Command::Keymap(keymap)))
             else {
                 panic!("a keymap command changes the popup");
             };
