@@ -8,6 +8,7 @@ use crate::{
 /// side.
 #[derive(Clone, Copy)]
 pub(super) enum PaneRow<'a> {
+    /// A prepared row, drawn in its own style.
     Text(StyledRow<'a>),
     /// Takes the tone of a change to this side.
     AlignmentPeer(Side),

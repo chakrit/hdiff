@@ -23,6 +23,8 @@ use crate::{
     theme::ColorDepth,
 };
 
+/// The terminal the session draws on and restores, so drawing reaches the user even when
+/// standard output is piped.
 const CONTROLLING_TERMINAL: &str = "/dev/tty";
 
 /// Opens the controlling terminal for drawing.
