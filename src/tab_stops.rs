@@ -88,7 +88,7 @@ impl MeasuredText {
 
         Self {
             text: text.into(),
-            cells: Count::of(cells.get()),
+            cells: cells.retained(),
         }
     }
 
@@ -99,7 +99,7 @@ impl MeasuredText {
     pub fn borrowed(&self) -> MeasuredTextRef<'_> {
         MeasuredTextRef {
             text: &self.text,
-            cells: Cells::new(self.cells.get()),
+            cells: Cells::from(self.cells),
         }
     }
 }

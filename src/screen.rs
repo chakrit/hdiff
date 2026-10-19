@@ -5,12 +5,15 @@
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use std::{
+    iter::Sum,
     num::NonZeroUsize,
     ops::{Add, AddAssign},
 };
 
 use ratatui::buffer::CellWidth;
 use unicode_segmentation::UnicodeSegmentation;
+
+use crate::compact::Count;
 
 /// Cells of the marker gutter that precedes every row's payload.
 pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(2);
@@ -43,6 +46,11 @@ impl Cells {
 
     pub const fn get(self) -> usize {
         self.0
+    }
+
+    /// These cells in the compact form a retained record keeps.
+    pub fn retained(self) -> Count {
+        Count::of(self.0)
     }
 
     pub const fn saturating_add(self, other: Self) -> Self {
@@ -103,9 +111,16 @@ impl AddAssign for Cells {
     }
 }
 
-impl std::iter::Sum for Cells {
+impl Sum for Cells {
     fn sum<I: Iterator<Item = Self>>(cells: I) -> Self {
         cells.fold(Self::ZERO, Add::add)
+    }
+}
+
+impl From<Count> for Cells {
+    /// Cells a retained record kept in compact form.
+    fn from(retained: Count) -> Self {
+        Self(retained.get())
     }
 }
 
