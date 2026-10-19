@@ -121,7 +121,7 @@ impl PreparedDocument {
 
     /// One page of all the text.
     fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
-        Self::Text(PreparedPage::text(text, observer))
+        Self::Text(PreparedPage::of_text(text, observer))
     }
 }
 
@@ -176,7 +176,7 @@ impl FilePage {
 
 impl PreparedPage {
     /// Surrounding text has no syntax or character detail.
-    fn text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
+    fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
             rows: StyledRows::of_text(text, observer),
         }
