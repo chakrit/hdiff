@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     document::DiffDocument,
     input,
-    measurement::{Observer, Parent, Profile, Stage, Unobserved},
+    measurement::{Observer, Parent, Profile, Unobserved},
     navigation::{interaction::Command, scroll::Movement},
     preferences::PreferenceChange,
     prepared::PreparedDocument,
