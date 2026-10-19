@@ -124,6 +124,7 @@ impl PopupStyles {
         let indent = blank(Cells::from(KEYS_INDENT));
         let padding = blank(Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys)));
         let gap = blank(Cells::from(KEYS_ACTION_GAP));
+
         Span::styled(format!("{indent}{keys}{padding}{gap}"), self.keys)
     }
 
