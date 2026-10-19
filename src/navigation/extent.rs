@@ -301,12 +301,17 @@ struct PlacedRow<R> {
     line_end: LineEnd,
 }
 
+/// Screen lines `rows` take, placed one below the other: the line end of the last one,
+/// or none for no rows.
+fn lines_taken<R>(rows: &[PlacedRow<R>]) -> ScreenLines {
+    rows.last()
+        .map_or(ScreenLines::ZERO, |placed| placed.line_end.get())
+}
+
 impl<R: Copy + Ord> MeasuredRows<R> {
     /// Screen lines the rows take.
     fn line_count(&self) -> ScreenLines {
-        self.rows
-            .last()
-            .map_or(ScreenLines::ZERO, |placed| placed.line_end.get())
+        lines_taken(&self.rows)
     }
 
     /// Up to `limit` screen lines from line `offset`.
@@ -358,10 +363,7 @@ impl<R: Copy + Ord> MeasuredRows<R> {
 
     /// The first screen line of the row at `position`.
     fn line_start(&self, position: usize) -> ScreenLines {
-        match position {
-            0 => ScreenLines::ZERO,
-            _ => self.rows[position - 1].line_end.get(),
-        }
+        lines_taken(&self.rows[..position])
     }
 
     /// Screen lines the row at `position` takes.
@@ -379,9 +381,7 @@ impl<R> FromIterator<MeasuredRow<R>> for MeasuredRows<R> {
         let (rows, width) = measured.into_iter().fold(
             (Vec::new(), Cells::ZERO),
             |(mut rows, width): (Vec<PlacedRow<R>>, Cells), row| {
-                let line_start = rows
-                    .last()
-                    .map_or(ScreenLines::ZERO, |placed| placed.line_end.get());
+                let line_start = lines_taken(&rows);
                 rows.push(PlacedRow {
                     row: row.row,
                     line_end: LineEnd::of(line_start + row.height),
@@ -415,10 +415,13 @@ impl LineEnd {
 
 /// Screen lines of an extent's rows, in display order.
 struct RowLines<'a, R> {
+    /// The rows the lines come from.
     measured: &'a MeasuredRows<R>,
     /// Position of the row the next line belongs to.
     position: usize,
+    /// The next line's wrapped line within its row.
     wrapped_line: ScreenLines,
+    /// Lines still to yield.
     remaining: ScreenLines,
 }
 
