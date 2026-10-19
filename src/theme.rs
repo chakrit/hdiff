@@ -239,8 +239,8 @@ static BASIC: Theme = Theme {
     syntax: SyntaxPalette {
         keyword: Color::Blue,
         string: Color::Yellow,
-        comment: Color::Green,
-        number: Color::Green,
+        comment: Color::DarkGray,
+        number: Color::LightMagenta,
         function: Color::Cyan,
         type_name: Color::Cyan,
         operator: Color::White,
@@ -312,13 +312,8 @@ mod tests {
         depths
     }
 
-    /// Every color of `theme`; destructured so a new color cannot be left out.
-    fn colors(theme: &Theme) -> Vec<Color> {
-        let Theme {
-            syntax,
-            rows,
-            chrome,
-        } = theme;
+    /// Every color of `syntax`; destructured so a new class color cannot be left out.
+    fn syntax_colors(syntax: &SyntaxPalette) -> [Color; 9] {
         let SyntaxPalette {
             keyword,
             string,
@@ -330,6 +325,20 @@ mod tests {
             property,
             variable,
         } = syntax;
+
+        [
+            *keyword, *string, *comment, *number, *function, *type_name, *operator, *property,
+            *variable,
+        ]
+    }
+
+    /// Every color of `theme`; destructured so a new color cannot be left out.
+    fn colors(theme: &Theme) -> Vec<Color> {
+        let Theme {
+            syntax,
+            rows,
+            chrome,
+        } = theme;
         let RowPalette {
             change,
             context_body,
@@ -359,10 +368,7 @@ mod tests {
             hint,
         } = chrome;
 
-        let syntax_colors = [
-            *keyword, *string, *comment, *number, *function, *type_name, *operator, *property,
-            *variable,
-        ];
+        let syntax_colors = syntax_colors(syntax);
         let row_colors = [*context_body, *hunk_header];
         let chrome_colors = [
             *directory_heading,
@@ -450,6 +456,24 @@ mod tests {
                     assert_ne!(
                         color, background,
                         "{depth:?} {side:?}: {role} is drawn in its background color"
+                    );
+                }
+            }
+        }
+    }
+
+    /// docs/spec/architecture.md#palette-and-character-detail: rows without detail spans
+    /// keep syntax styling, drawn over the change background, so each syntax color must
+    /// differ from both change backgrounds.
+    #[test]
+    fn draws_every_syntax_color_apart_from_each_change_background() {
+        for depth in every_depth() {
+            let theme = Theme::of_depth(depth);
+            for (side, colors) in theme.rows.change.as_ref().into_sides() {
+                for color in syntax_colors(&theme.syntax) {
+                    assert_ne!(
+                        color, colors.background,
+                        "{depth:?} {side:?}: a syntax color is drawn in its background color"
                     );
                 }
             }
