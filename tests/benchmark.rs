@@ -13,7 +13,7 @@ const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
-fn run(driver: &str, patch: &str) -> Output {
+fn run_bench(driver: &str, patch: &str) -> Output {
     let env = TestEnv::new();
     env.write_file("input.patch", patch);
 
@@ -87,7 +87,7 @@ impl<'a> Record<'a> {
 
 #[test]
 fn benchmark_accounts_for_input_and_parsing_before_preparation() {
-    let text = success_output(&run("prepare", PATCH));
+    let text = success_output(&run_bench("prepare", PATCH));
     let records = records(&text);
 
     let [preparation, startup] = &records[..] else {
@@ -115,16 +115,18 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
 
 #[test]
 fn stages_partitions_parent_costs_and_counts_real_work() {
-    let text = success_output(&run("stages", PATCH));
+    let text = success_output(&run_bench("stages", PATCH));
     let records = records(&text);
 
     let [diagnostic, startup, profile, stage_records @ .., work] = &records[..] else {
         panic!("diagnostic, startup, profile, stage and work records: {text}");
     };
+    for record in stage_records {
+        assert_eq!(record.kind, "stage", "{text}");
+    }
     let stages = stage_records
         .iter()
         .map(|record| {
-            assert_eq!(record.kind, "stage", "{text}");
             let key = (record.text("parent"), record.text("name"));
             (key, record.integer("duration_ns"))
         })
@@ -163,7 +165,7 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
 #[test]
 fn malformed_input_never_emits_success_measurements() {
     for driver in DRIVERS {
-        let output = run(driver, "not a patch\n");
+        let output = run_bench(driver, "not a patch\n");
 
         assert_error(&output, "input contains no diff");
     }
@@ -171,7 +173,7 @@ fn malformed_input_never_emits_success_measurements() {
 
 #[test]
 fn empty_input_prepares_zero_files_and_records() {
-    let text = success_output(&run("prepare", ""));
+    let text = success_output(&run_bench("prepare", ""));
     let records = records(&text);
 
     let [preparation, startup] = &records[..] else {
@@ -185,7 +187,7 @@ fn empty_input_prepares_zero_files_and_records() {
 
 #[test]
 fn empty_input_profiles_zero_files_records_and_work() {
-    let text = success_output(&run("stages", ""));
+    let text = success_output(&run_bench("stages", ""));
     let records = records(&text);
 
     let [diagnostic, startup, profile, .., work] = &records[..] else {
@@ -204,25 +206,28 @@ fn empty_input_profiles_zero_files_records_and_work() {
 
 #[test]
 fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
-    let text = success_output(&run("movement", PATCH));
+    let text = success_output(&run_bench("movement", PATCH));
+    let records = records(&text);
 
-    let modes = records(&text)
+    for record in &records {
+        assert_eq!(record.kind, "movement", "{}", record.line);
+        assert_eq!(
+            record.keys(),
+            BTreeSet::from(["version", "layout", "detail", "wrap", "key", "step_ns"]),
+            "{}",
+            record.line
+        );
+        assert_eq!(record.integer("version"), 2, "{}", record.line);
+        assert!(
+            matches!(record.text("key"), "l" | "h" | "j" | "k"),
+            "{}",
+            record.line
+        );
+        assert!(record.is_integer("step_ns"), "{}", record.line);
+    }
+    let modes = records
         .iter()
         .map(|record| {
-            assert_eq!(record.kind, "movement", "{}", record.line);
-            assert_eq!(
-                record.keys(),
-                BTreeSet::from(["version", "layout", "detail", "wrap", "key", "step_ns"]),
-                "{}",
-                record.line
-            );
-            assert_eq!(record.integer("version"), 2, "{}", record.line);
-            assert!(
-                matches!(record.text("key"), "l" | "h" | "j" | "k"),
-                "{}",
-                record.line
-            );
-            assert!(record.is_integer("step_ns"), "{}", record.line);
             (
                 record.text("layout"),
                 record.text("detail"),
@@ -241,7 +246,7 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
 
 #[test]
 fn unsupported_language_has_no_syntax_parser_work() {
-    let text = success_output(&run("stages", &PATCH.replace("a.rs", "a.txt")));
+    let text = success_output(&run_bench("stages", &PATCH.replace("a.rs", "a.txt")));
     let records = records(&text);
     let [.., work] = &records[..] else {
         panic!("work counters: {text}");

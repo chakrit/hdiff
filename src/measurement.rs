@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+/// A timed part of preparation, whose duration the profile accumulates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Labels,
@@ -82,6 +83,7 @@ impl Parent {
     }
 }
 
+/// One unit of counted work done during preparation.
 pub enum Work {
     Hunk,
     ParseCall,
@@ -89,11 +91,13 @@ pub enum Work {
     ProjectedBytes(usize),
 }
 
+/// What preparation reports its stages and work to.
 pub trait Observer: Sized {
     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T;
     fn count(&mut self, work: Work);
 }
 
+/// An observer that records nothing, for preparation outside a profile.
 pub struct Unobserved;
 
 impl Observer for Unobserved {
@@ -141,6 +145,7 @@ impl Observer for Profile {
     }
 }
 
+/// How much of each kind of [`Work`] one observed preparation did.
 #[derive(Default)]
 pub struct WorkCounts {
     pub hunks: usize,
