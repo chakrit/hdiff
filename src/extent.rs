@@ -47,7 +47,7 @@ pub struct DisplayExtent {
     page: PageIndex,
     context_lines: usize,
     wrap: WrapWidth,
-    rows: PaneRows,
+    rows: VisibleRows,
     /// For each visible row, the line just past its last screen line.
     line_ends: Box<[Count]>,
     /// Cells of the widest visible row, including the marker gutter.
@@ -57,7 +57,7 @@ pub struct DisplayExtent {
 /// The visible rows in display order: a single pane shows lines, and split panes show
 /// pairs.
 #[derive(Debug, PartialEq, Eq)]
-enum PaneRows {
+enum VisibleRows {
     Single(Box<[LineIndex]>),
     Split {
         direction: SplitDirection,
@@ -67,10 +67,10 @@ enum PaneRows {
 
 /// Screen lines from an offset, with their rows as the pane shape names them.
 pub enum ShownLines<'a> {
-    Single(Lines<'a, LineIndex>),
+    Single(RowLines<'a, LineIndex>),
     Split {
         direction: SplitDirection,
-        lines: Lines<'a, PairIndex>,
+        lines: RowLines<'a, PairIndex>,
     },
 }
 
@@ -84,37 +84,38 @@ impl DisplayExtent {
             wrap,
         } = settings;
 
-        let (pane_rows, ends) = match shape {
-            PaneShape::Single => {
-                let (lines, ends) = rows
-                    .line_indices()
-                    .filter(|index| rows.shows_line(*index, context_lines))
-                    .map(|index| visible_row(rows, index, index, None, wrap))
-                    .fold(ExtentRows::default(), ExtentRows::with)
-                    .finish();
-                (PaneRows::Single(lines), ends)
-            }
-            PaneShape::Split(direction) => {
-                let (pairs, ends) = rows
-                    .pair_indices()
-                    .filter(|index| rows.shows_pair(*index, context_lines))
-                    .map(|index| {
-                        let (first, second) = rows.pair(index).split_first();
-                        visible_row(rows, index, first, second, wrap)
-                    })
-                    .fold(ExtentRows::default(), ExtentRows::with)
-                    .finish();
-                (PaneRows::Split { direction, pairs }, ends)
-            }
+        let measured = match shape {
+            PaneShape::Single => rows
+                .line_indices()
+                .filter(|index| rows.shows_line(*index, context_lines))
+                .map(|index| measured_row(rows, index, index, None, wrap))
+                .fold(ExtentRows::default(), ExtentRows::with)
+                .finish()
+                .map_rows(VisibleRows::Single),
+            PaneShape::Split(direction) => rows
+                .pair_indices()
+                .filter(|index| rows.shows_pair(*index, context_lines))
+                .map(|index| {
+                    let (first, second) = rows.pair(index).split_first();
+                    measured_row(rows, index, first, second, wrap)
+                })
+                .fold(ExtentRows::default(), ExtentRows::with)
+                .finish()
+                .map_rows(|pairs| VisibleRows::Split { direction, pairs }),
         };
+        let MeasuredRows {
+            rows: visible_rows,
+            line_ends,
+            width,
+        } = measured;
 
         Self {
             page,
             context_lines,
             wrap,
-            rows: pane_rows,
-            line_ends: ends.line_ends,
-            width: ends.width,
+            rows: visible_rows,
+            line_ends,
+            width,
         }
     }
 
@@ -142,8 +143,8 @@ impl DisplayExtent {
     /// Up to `limit` screen lines from line `offset`.
     pub fn lines(&self, offset: ScreenLines, limit: ScreenLines) -> ShownLines<'_> {
         match &self.rows {
-            PaneRows::Single(lines) => ShownLines::Single(self.lines_of(lines, offset, limit)),
-            PaneRows::Split { direction, pairs } => ShownLines::Split {
+            VisibleRows::Single(lines) => ShownLines::Single(self.lines_of(lines, offset, limit)),
+            VisibleRows::Split { direction, pairs } => ShownLines::Split {
                 direction: *direction,
                 lines: self.lines_of(pairs, offset, limit),
             },
@@ -184,8 +185,8 @@ impl DisplayExtent {
     /// What these rows are shown with.
     fn settings(&self) -> ExtentSettings {
         let shape = match &self.rows {
-            PaneRows::Single(_) => PaneShape::Single,
-            PaneRows::Split { direction, .. } => PaneShape::Split(*direction),
+            VisibleRows::Single(_) => PaneShape::Single,
+            VisibleRows::Split { direction, .. } => PaneShape::Split(*direction),
         };
 
         ExtentSettings {
@@ -195,44 +196,49 @@ impl DisplayExtent {
         }
     }
 
-    /// The row on screen line `offset`, if the lines reach that far.
-    fn anchor_at(&self, document: &PreparedDocument, offset: ScreenLines) -> Option<RowAnchor> {
+    /// The screen line `offset`, as a wrapped line of the row that starts with that line, if
+    /// the lines reach that far.
+    fn anchor_at(
+        &self,
+        document: &PreparedDocument,
+        offset: ScreenLines,
+    ) -> Option<RowLine<LineIndex>> {
         let position = self.position_at(offset);
         let line = match &self.rows {
-            PaneRows::Single(lines) => *lines.get(position)?,
-            PaneRows::Split { pairs, .. } => {
+            VisibleRows::Single(lines) => *lines.get(position)?,
+            VisibleRows::Split { pairs, .. } => {
                 let pair = *pairs.get(position)?;
                 document.page(self.page).rows().pair(pair).first()
             }
         };
 
-        Some(RowAnchor {
-            line,
+        Some(RowLine {
+            row: line,
             wrapped_line: offset.saturating_sub(self.line_start(position)),
         })
     }
 
     /// The screen line that shows `anchor`'s wrapped line, clamped to its row's lines; a
     /// hidden row maps to the first line of the first visible row after it.
-    fn offset_of(&self, document: &PreparedDocument, anchor: RowAnchor) -> ScreenLines {
-        let (position, shown) = match &self.rows {
-            PaneRows::Single(lines) => position_of(lines, anchor.line),
-            PaneRows::Split { pairs, .. } => {
-                let pair = document.page(self.page).rows().pair_of(anchor.line);
-                position_of(pairs, pair)
+    fn offset_of(&self, document: &PreparedDocument, anchor: RowLine<LineIndex>) -> ScreenLines {
+        let found = match &self.rows {
+            VisibleRows::Single(lines) => lines.binary_search(&anchor.row),
+            VisibleRows::Split { pairs, .. } => {
+                let pair = document.page(self.page).rows().pair_of(anchor.row);
+                pairs.binary_search(&pair)
             }
         };
-        let start = self.line_start(position);
 
-        match shown {
-            true => {
+        match found {
+            Ok(position) => {
+                let start = self.line_start(position);
                 let last_line = self
                     .line_end(position)
                     .saturating_sub(start)
                     .saturating_sub(ScreenLines::ONE);
                 start + anchor.wrapped_line.min(last_line)
             }
-            false => start,
+            Err(next_position) => self.line_start(next_position),
         }
     }
 
@@ -241,10 +247,10 @@ impl DisplayExtent {
         rows: &'a [R],
         offset: ScreenLines,
         limit: ScreenLines,
-    ) -> Lines<'a, R> {
+    ) -> RowLines<'a, R> {
         let position = self.position_at(offset);
 
-        Lines {
+        RowLines {
             rows,
             extent: self,
             position,
@@ -271,16 +277,8 @@ impl DisplayExtent {
     }
 }
 
-/// A row of the extent's page, named by the line it starts with, and one of its wrapped
-/// lines.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct RowAnchor {
-    line: LineIndex,
-    wrapped_line: ScreenLines,
-}
-
 /// Screen lines of an extent's rows, in display order.
-pub struct Lines<'a, R> {
+pub struct RowLines<'a, R> {
     rows: &'a [R],
     extent: &'a DisplayExtent,
     /// Position of the row the next line belongs to.
@@ -289,7 +287,7 @@ pub struct Lines<'a, R> {
     remaining: ScreenLines,
 }
 
-impl<R: Copy> Iterator for Lines<'_, R> {
+impl<R: Copy> Iterator for RowLines<'_, R> {
     type Item = RowLine<R>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -317,15 +315,8 @@ impl<R: Copy> Iterator for Lines<'_, R> {
     }
 }
 
-/// Where `index` sits among the sorted `rows`, and whether it is there; a missing row sits
-/// where it would be.
-fn position_of<R: Ord>(rows: &[R], index: R) -> (usize, bool) {
-    let position = rows.partition_point(|row| *row < index);
-
-    (position, rows.get(position) == Some(&index))
-}
-
-struct VisibleRow<R> {
+/// One visible row, and the cells and screen lines it takes.
+struct MeasuredRow<R> {
     index: R,
     width: Cells,
     height: ScreenLines,
@@ -333,13 +324,13 @@ struct VisibleRow<R> {
 
 /// A row made of line `first`, and of line `second` when it pairs two: as wide as its
 /// widest line and as tall as its tallest.
-fn visible_row<R>(
+fn measured_row<R>(
     rows: &PageRows,
     index: R,
     first: LineIndex,
     second: Option<LineIndex>,
     wrap: WrapWidth,
-) -> VisibleRow<R> {
+) -> MeasuredRow<R> {
     let measure = |line| (rows.payload_width(line), line_height(rows, line, wrap));
     let (payload_width, height) = second.map(measure).into_iter().fold(
         measure(first),
@@ -348,7 +339,7 @@ fn visible_row<R>(
         },
     );
 
-    VisibleRow {
+    MeasuredRow {
         index,
         width: wrap.visible_width(payload_width) + MARKER_GUTTER_WIDTH,
         height,
@@ -388,7 +379,7 @@ impl<R> Default for ExtentRows<R> {
 }
 
 impl<R> ExtentRows<R> {
-    fn with(mut self, row: VisibleRow<R>) -> Self {
+    fn with(mut self, row: MeasuredRow<R>) -> Self {
         self.line_end = self.line_end + row.height;
         self.rows.push(row.index);
         self.line_ends.push(Count::of(self.line_end.get()));
@@ -396,25 +387,36 @@ impl<R> ExtentRows<R> {
         self
     }
 
-    fn finish(self) -> (Box<[R]>, LineEnds) {
-        let ends = LineEnds {
+    fn finish(self) -> MeasuredRows<Box<[R]>> {
+        MeasuredRows {
+            rows: self.rows.into_boxed_slice(),
             line_ends: self.line_ends.into_boxed_slice(),
             width: self.width,
-        };
-
-        (self.rows.into_boxed_slice(), ends)
+        }
     }
 }
 
-/// The finished line ends of an extent's rows, and its widest row.
-struct LineEnds {
+/// An extent's finished rows, the line just past each row's last screen line, and the
+/// cells of the widest row.
+struct MeasuredRows<T> {
+    rows: T,
     line_ends: Box<[Count]>,
     width: Cells,
 }
 
+impl<T> MeasuredRows<T> {
+    fn map_rows<U>(self, rows: impl FnOnce(T) -> U) -> MeasuredRows<U> {
+        MeasuredRows {
+            rows: rows(self.rows),
+            line_ends: self.line_ends,
+            width: self.width,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DisplayExtent, ExtentSettings, RowAnchor, RowLine, ShownLines};
+    use super::{DisplayExtent, ExtentSettings, RowLine, ShownLines};
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
@@ -465,7 +467,8 @@ mod tests {
         offset: usize,
         limit: usize,
     ) -> Vec<RowLine<LineIndex>> {
-        let ShownLines::Single(lines) = extent.lines(lines(offset), lines(limit)) else {
+        let ShownLines::Single(lines) = extent.lines(screen_lines(offset), screen_lines(limit))
+        else {
             panic!("a single pane shows lines");
         };
         lines.collect()
@@ -473,7 +476,9 @@ mod tests {
 
     /// Up to `limit` screen lines of a split-pane extent from line `offset`.
     fn pair_lines(extent: &DisplayExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
-        let ShownLines::Split { lines, .. } = extent.lines(lines(offset), lines(limit)) else {
+        let ShownLines::Split { lines, .. } =
+            extent.lines(screen_lines(offset), screen_lines(limit))
+        else {
             panic!("split panes show pairs");
         };
         lines.collect()
@@ -487,9 +492,9 @@ mod tests {
         line: usize,
         wrapped_line: usize,
     ) -> ScreenLines {
-        let anchor = RowAnchor {
-            line: first_rows(document).line_index(line),
-            wrapped_line: lines(wrapped_line),
+        let anchor = RowLine {
+            row: first_rows(document).line_index(line),
+            wrapped_line: screen_lines(wrapped_line),
         };
 
         extent.offset_of(document, anchor)
@@ -499,7 +504,7 @@ mod tests {
         WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
     }
 
-    fn lines(count: usize) -> ScreenLines {
+    fn screen_lines(count: usize) -> ScreenLines {
         ScreenLines::new(count)
     }
 
@@ -559,10 +564,10 @@ mod tests {
         let offset = |line| offset_of(&document, &extent, line, 0);
 
         // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
-        assert_eq!(offset(5), lines(3));
+        assert_eq!(offset(5), screen_lines(3));
         assert_eq!(
             offset(3),
-            lines(3),
+            screen_lines(3),
             "hidden c0 maps to the next visible row"
         );
     }
@@ -578,29 +583,29 @@ mod tests {
         let rows = first_rows(&document);
         let line = |row, wrapped_line| RowLine {
             row: rows.line_index(row),
-            wrapped_line: lines(wrapped_line),
+            wrapped_line: screen_lines(wrapped_line),
         };
         let pair = |row, wrapped_line| RowLine {
             row: rows.pair_index(row),
-            wrapped_line: lines(wrapped_line),
+            wrapped_line: screen_lines(wrapped_line),
         };
 
         assert_eq!(
             unified.line_count(),
-            lines(8),
+            screen_lines(8),
             "the 45-cell deletion takes three lines"
         );
         assert_eq!(
             single_lines(&unified, 4, 3),
             [line(3, 1), line(3, 2), line(4, 0)]
         );
-        assert_eq!(offset_of(&document, &unified, 3, 1), lines(4));
+        assert_eq!(offset_of(&document, &unified, 3, 1), screen_lines(4));
         assert_eq!(
             offset_of(&document, &unified, 3, 9),
-            lines(5),
+            screen_lines(5),
             "clamped to the row's last line"
         );
-        assert_eq!(offset_of(&document, &unified, 4, 0), lines(6));
+        assert_eq!(offset_of(&document, &unified, 4, 0), screen_lines(6));
         assert_eq!(
             unified.width(),
             Cells::new(22),
@@ -608,7 +613,7 @@ mod tests {
         );
         assert_eq!(
             vertical.line_count(),
-            lines(7),
+            screen_lines(7),
             "the paired row takes its taller side's three lines"
         );
         assert_eq!(pair_lines(&vertical, 5, 2), [pair(3, 2), pair(4, 0)]);
@@ -628,11 +633,11 @@ mod tests {
         };
 
         // Narrow pairs: ---, +++, @@, -old|+new. Wide adds c0, c1, and c2 before the change.
-        let widened = extent.reanchor(&document, wide, lines(3));
+        let widened = extent.reanchor(&document, wide, screen_lines(3));
         assert_eq!(extent.settings(), wide, "the extent shows the new settings");
-        let narrowed = extent.reanchor(&document, narrow, lines(6));
+        let narrowed = extent.reanchor(&document, narrow, screen_lines(6));
 
-        assert_eq!(widened, Some(lines(6)));
-        assert_eq!(narrowed, Some(lines(3)));
+        assert_eq!(widened, Some(screen_lines(6)));
+        assert_eq!(narrowed, Some(screen_lines(3)));
     }
 }
