@@ -587,10 +587,14 @@ mod tests {
 
     /// A screen line naming wrapped line `wrapped_line` of the first page's row at
     /// position `row`.
-    fn line_at(document: &PreparedDocument, row: usize, wrapped_line: usize) -> RowLine<LineIndex> {
+    fn line_at(
+        document: &PreparedDocument,
+        row: usize,
+        wrapped_line: ScreenLines,
+    ) -> RowLine<LineIndex> {
         RowLine {
             row: first_rows(document).line_index(row),
-            wrapped_line: ScreenLines::new(wrapped_line),
+            wrapped_line,
         }
     }
 
@@ -599,8 +603,8 @@ mod tests {
         let document = prepared(
             b"--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n far0\n far1\n",
         );
-        let shown = |context| {
-            let context = ContextRecords::new(context);
+        let shown = |count| {
+            let context = ContextRecords::new(count);
             let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
             let all = ScreenLines::new(usize::MAX);
             let lines = single_lines(&extent, ScreenLines::ZERO, all)
@@ -630,14 +634,8 @@ mod tests {
                 .as_bytes(),
         );
 
-        let width = |shape, context| {
-            extent_of(
-                &document,
-                shape,
-                ContextRecords::new(context),
-                WrapWidth::Off,
-            )
-            .width()
+        let width = |shape, count| {
+            extent_of(&document, shape, ContextRecords::new(count), WrapWidth::Off).width()
         };
 
         assert_eq!(width(PaneShape::Single, 1), Cells::new(24));
@@ -649,9 +647,9 @@ mod tests {
     fn maps_a_row_to_its_visible_offset_or_the_next_visible_row() {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
-        let one = ContextRecords::new(1);
-        let extent = extent_of(&document, PaneShape::Single, one, WrapWidth::Off);
-        let offset = |row| extent.offset_of(&document, line_at(&document, row, 0));
+        let context = ContextRecords::new(1);
+        let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
+        let offset = |row| extent.offset_of(&document, line_at(&document, row, ScreenLines::ZERO));
 
         // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
         assert_eq!(offset(5), ScreenLines::new(3));
@@ -668,17 +666,18 @@ mod tests {
             b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n",
         );
         let wrap = WrapWidth::at(20);
-        let three = ContextRecords::new(3);
-        let unified = extent_of(&document, PaneShape::Single, three, wrap);
-        let vertical = extent_of(&document, VERTICAL, three, wrap);
+        let context = ContextRecords::new(3);
+        let unified = extent_of(&document, PaneShape::Single, context, wrap);
+        let vertical = extent_of(&document, VERTICAL, context, wrap);
         let rows = first_rows(&document);
         let line = |row, wrapped_line| line_at(&document, row, wrapped_line);
         let anchor_offset =
             |row, wrapped_line| unified.offset_of(&document, line(row, wrapped_line));
         let pair = |row, wrapped_line| RowLine {
             row: rows.pair_index(row),
-            wrapped_line: ScreenLines::new(wrapped_line),
+            wrapped_line,
         };
+        let [first, second, third] = [0, 1, 2].map(ScreenLines::new);
 
         assert_eq!(
             unified.line_count(),
@@ -687,15 +686,15 @@ mod tests {
         );
         assert_eq!(
             single_lines(&unified, ScreenLines::new(4), ScreenLines::new(3)),
-            [line(3, 1), line(3, 2), line(4, 0)]
+            [line(3, second), line(3, third), line(4, first)]
         );
-        assert_eq!(anchor_offset(3, 1), ScreenLines::new(4));
+        assert_eq!(anchor_offset(3, second), ScreenLines::new(4));
         assert_eq!(
-            anchor_offset(3, 9),
+            anchor_offset(3, ScreenLines::new(9)),
             ScreenLines::new(5),
             "clamped to the row's last line"
         );
-        assert_eq!(anchor_offset(4, 0), ScreenLines::new(6));
+        assert_eq!(anchor_offset(4, first), ScreenLines::new(6));
         assert_eq!(
             vertical.line_count(),
             ScreenLines::new(7),
@@ -703,7 +702,7 @@ mod tests {
         );
         assert_eq!(
             pair_lines(&vertical, ScreenLines::new(5), ScreenLines::new(2)),
-            [pair(3, 2), pair(4, 0)]
+            [pair(3, third), pair(4, first)]
         );
     }
 
@@ -713,8 +712,8 @@ mod tests {
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
-        let none = ContextRecords::new(0);
-        let mut extent = extent_of(&document, VERTICAL, none, WrapWidth::Off);
+        let context = ContextRecords::new(0);
+        let mut extent = extent_of(&document, VERTICAL, context, WrapWidth::Off);
         let narrow = extent.settings();
         let wide = ExtentSettings {
             context: ContextRecords::new(3),

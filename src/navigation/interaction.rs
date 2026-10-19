@@ -464,9 +464,9 @@ mod tests {
     #[test]
     fn toggles_and_closes_the_keymap() {
         let start = interaction(second_page(), DiffLayout::Unified);
-        let after = |interaction: &Interaction, keymap| {
+        let after = |interaction: &Interaction, keymap_command| {
             let Effect::Keymap(popup) =
-                effect(interaction, Event::Command(Command::Keymap(keymap)))
+                effect(interaction, Event::Command(Command::Keymap(keymap_command)))
             else {
                 panic!("a keymap command changes the popup");
             };
