@@ -292,6 +292,8 @@ fn render_file_list(
     list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
 }
 
+/// The file-list item for `row`: a bold directory heading, or a file's colored marker and
+/// its name.
 fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
     let line = match row {
         TreeRow::Directory(heading) => Line::styled(
@@ -322,6 +324,7 @@ fn draw_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
     buffer.set_stringn(area.x, area.y, HELP_HINT, usize::from(area.width), style);
 }
 
+/// Draws `symbol` in `style` on every cell of `area`.
 fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
     for position in area.positions() {
         buffer[position].set_symbol(symbol).set_style(style);
@@ -332,7 +335,7 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
-    use super::render_file_column;
+    use super::{HELP_HINT_INDENT, render_file_column};
     use crate::{
         parser::parse_patch,
         prepared::{PageIndex, PreparedDocument},
@@ -365,12 +368,18 @@ mod tests {
         let rows = (buffer.area.top()..buffer.area.bottom())
             .map(row)
             .collect::<Vec<_>>();
+        let (last, above) = rows.split_last().expect("a drawn screen");
+        let last_row = buffer.area.bottom() - 1;
 
-        assert_eq!(rows[17], " ? help");
+        assert_eq!(last, " ? help");
         assert!(
-            rows[..17].iter().all(|row| !row.contains("help")),
+            above.iter().all(|row| !row.contains("help")),
             "one hint row"
         );
-        assert_eq!(buffer[(1, 17)].fg, palette.hint, "hint tone");
+        assert_eq!(
+            buffer[(HELP_HINT_INDENT, last_row)].fg,
+            palette.hint,
+            "hint tone"
+        );
     }
 }
