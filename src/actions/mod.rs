@@ -34,8 +34,14 @@ pub enum Error {
     NonUtf8Path(PathRole),
     /// `--install` could not tell whether a config file exists.
     InspectConfig { path: PathBuf, source: io::Error },
-    /// `--install` could not resolve the executable to its canonical path.
+    /// `--install` could not resolve the executable to an absolute path, or inspect it.
     ResolveExecutable { path: PathBuf, source: io::Error },
+    /// Removing the `.` and `..` steps from the executable's path names another file,
+    /// because a `..` leaves a linked directory.
+    ExecutableNotReached {
+        executable: PathBuf,
+        registered: PathBuf,
+    },
     /// The global Git config could not be copied to its backup.
     Backup {
         backup: BackupGlobalGitConfig,
@@ -56,9 +62,27 @@ impl fmt::Display for Error {
                 formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
             }
             Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
-            Self::InspectConfig { path, source } | Self::ResolveExecutable { path, source } => {
-                write!(formatter, "{}: {source}", path.display())
+            Self::InspectConfig { path, source } => {
+                write!(
+                    formatter,
+                    "checking Git config {}: {source}",
+                    path.display()
+                )
             }
+            Self::ResolveExecutable { path, source } => write!(
+                formatter,
+                "resolving the hdiff executable {}: {source}",
+                path.display()
+            ),
+            Self::ExecutableNotReached {
+                executable,
+                registered,
+            } => write!(
+                formatter,
+                "the hdiff executable {} is not {} once its . and .. steps are removed",
+                executable.display(),
+                registered.display()
+            ),
             Self::Backup { backup, source } => write!(
                 formatter,
                 "backing up {} to {}: {source}",
