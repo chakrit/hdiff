@@ -588,15 +588,24 @@ mod tests {
         pairs.lines_from(offset, limit).collect()
     }
 
-    /// A screen line naming wrapped line `wrapped_line` of the first page's row at
-    /// position `row`.
+    /// The first page's line that reads as `text`: its record marker, then its payload.
+    fn line_reading(document: &PreparedDocument, text: &str) -> LineIndex {
+        first_rows(document)
+            .lines()
+            .find(|(_, line)| format!("{}{}", line.kind().marker(), line.payload()) == text)
+            .map(|(index, _)| index)
+            .unwrap_or_else(|| panic!("a line reads {text:?}"))
+    }
+
+    /// A screen line naming wrapped line `wrapped_line` of the first page's line that
+    /// reads as `text`.
     fn line_at(
         document: &PreparedDocument,
-        row: usize,
+        text: &str,
         wrapped_line: ScreenLines,
     ) -> RowLine<LineIndex> {
         RowLine {
-            row: first_rows(document).line_index(row),
+            row: line_reading(document, text),
             wrapped_line,
         }
     }
@@ -652,32 +661,39 @@ mod tests {
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
         let context = ContextRecords::new(1);
         let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
-        let offset = |row| extent.offset_of(&document, line_at(&document, row, ScreenLines::ZERO));
+        let offset =
+            |text| extent.offset_of(&document, line_at(&document, text, ScreenLines::ZERO));
 
-        // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
-        assert_eq!(offset(5), ScreenLines::new(3));
         assert_eq!(
-            offset(3),
+            offset(" c2"),
+            ScreenLines::new(3),
+            "c2 shows below the three header rows"
+        );
+        assert_eq!(
+            offset(" c0"),
             ScreenLines::new(3),
             "hidden c0 maps to the next visible row"
         );
     }
 
+    /// A deletion that wraps to three lines at 20 cells, the addition it pairs with, and
+    /// a context record.
+    const WRAPPED_DELETION_PATCH: &[u8] = b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n";
+
+    /// The deletion in [`WRAPPED_DELETION_PATCH`], as its line reads.
+    const WRAPPED_DELETION: &str = "-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi";
+
     #[test]
-    fn counts_the_wrapped_lines_of_each_visible_row() {
-        let document = prepared(
-            b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n",
-        );
+    fn counts_and_shows_the_wrapped_lines_of_each_visible_row() {
+        let document = prepared(WRAPPED_DELETION_PATCH);
         let wrap = WrapWidth::at(20);
         let context = ContextRecords::new(3);
         let unified = extent_of(&document, PaneShape::Single, context, wrap);
         let vertical = extent_of(&document, VERTICAL, context, wrap);
         let rows = first_rows(&document);
-        let line = |row, wrapped_line| line_at(&document, row, wrapped_line);
-        let anchor_offset =
-            |row, wrapped_line| unified.offset_of(&document, line(row, wrapped_line));
-        let pair = |row, wrapped_line| RowLine {
-            row: rows.pair_index(row),
+        let line = |text, wrapped_line| line_at(&document, text, wrapped_line);
+        let pair = |text, wrapped_line| RowLine {
+            row: rows.pair_of(line_reading(&document, text)),
             wrapped_line,
         };
         let [first, second, third] = [0, 1, 2].map(ScreenLines::new);
@@ -689,15 +705,12 @@ mod tests {
         );
         assert_eq!(
             single_lines(&unified, ScreenLines::new(4), ScreenLines::new(3)),
-            [line(3, second), line(3, third), line(4, first)]
+            [
+                line(WRAPPED_DELETION, second),
+                line(WRAPPED_DELETION, third),
+                line("+abc", first),
+            ]
         );
-        assert_eq!(anchor_offset(3, second), ScreenLines::new(4));
-        assert_eq!(
-            anchor_offset(3, ScreenLines::new(9)),
-            ScreenLines::new(5),
-            "clamped to the row's last line"
-        );
-        assert_eq!(anchor_offset(4, first), ScreenLines::new(6));
         assert_eq!(
             vertical.line_count(),
             ScreenLines::new(7),
@@ -705,7 +718,31 @@ mod tests {
         );
         assert_eq!(
             pair_lines(&vertical, ScreenLines::new(5), ScreenLines::new(2)),
-            [pair(3, third), pair(4, first)]
+            [pair(WRAPPED_DELETION, third), pair(" context", first)]
+        );
+    }
+
+    #[test]
+    fn maps_an_anchor_to_its_wrapped_line_clamped_to_its_rows_lines() {
+        let document = prepared(WRAPPED_DELETION_PATCH);
+        let context = ContextRecords::new(3);
+        let unified = extent_of(&document, PaneShape::Single, context, WrapWidth::at(20));
+        let anchor_offset = |text, wrapped_line| {
+            unified.offset_of(&document, line_at(&document, text, wrapped_line))
+        };
+
+        assert_eq!(
+            anchor_offset(WRAPPED_DELETION, ScreenLines::new(1)),
+            ScreenLines::new(4)
+        );
+        assert_eq!(
+            anchor_offset(WRAPPED_DELETION, ScreenLines::new(9)),
+            ScreenLines::new(5),
+            "clamped to the row's last line"
+        );
+        assert_eq!(
+            anchor_offset("+abc", ScreenLines::ZERO),
+            ScreenLines::new(6)
         );
     }
 
