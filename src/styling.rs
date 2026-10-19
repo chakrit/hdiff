@@ -33,7 +33,7 @@ impl StyledRows {
         highlighter: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
-        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file_view(view));
+        let rows = observer.time(Stage::Layout, || PageRows::of_file_view(view));
         let syntax = observer.measure(Stage::Syntax, |observer| {
             highlighter.highlight_file(view.file, observer)
         });
@@ -47,7 +47,7 @@ impl StyledRows {
         lines: impl IntoIterator<Item = &'a SourceLine>,
         observer: &mut impl Observer,
     ) -> Self {
-        let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(lines));
+        let rows = observer.time(Stage::Layout, || PageRows::of_text(lines));
 
         Self::styled(rows, &RecordMap::empty(), observer)
     }
@@ -59,7 +59,7 @@ impl StyledRows {
         syntax_spans: &RecordMap<Vec<SyntaxSpan>>,
         observer: &mut impl Observer,
     ) -> Self {
-        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
+        let details = observer.time(Stage::Detail, || character_details(&rows));
 
         let styles = rows.map_lines(|index, line| {
             let text = line.payload();
