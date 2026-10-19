@@ -214,15 +214,18 @@ mod tests {
         let addresses = body
             .addressed_hunks()
             .map(|hunk| {
-                hunk.records()
+                let records = hunk
+                    .records()
                     .map(|record| record.address)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                <[_; 2]>::try_from(records).expect("each hunk holds two records")
             })
             .collect::<Vec<_>>();
-        let record = |hunk: usize, position: usize, kind| LineKind::Record {
-            address: addresses[hunk][position],
-            kind,
-        };
+        let [
+            [first_deletion, first_addition],
+            [second_deletion, second_addition],
+        ] = <[_; 2]>::try_from(addresses).expect("the fixture holds two hunks");
+        let record = |address, kind| LineKind::Record { address, kind };
 
         let kinds = of_file(file).map(|line| line.kind).collect::<Vec<_>>();
 
@@ -234,11 +237,11 @@ mod tests {
                 LineKind::FileHeader,
                 LineKind::FileHeader,
                 LineKind::HunkHeader,
-                record(0, 0, RecordKind::Deletion),
-                record(0, 1, RecordKind::Addition),
+                record(first_deletion, RecordKind::Deletion),
+                record(first_addition, RecordKind::Addition),
                 LineKind::HunkHeader,
-                record(1, 0, RecordKind::Deletion),
-                record(1, 1, RecordKind::Addition),
+                record(second_deletion, RecordKind::Deletion),
+                record(second_addition, RecordKind::Addition),
             ]
         );
     }
