@@ -2,7 +2,7 @@
 
 use std::{
     ffi::OsStr,
-    fmt::Write,
+    fmt::{self, Write},
     io,
     time::{Duration, Instant},
 };
@@ -65,26 +65,18 @@ impl Driver {
             Self::Prepare => {
                 let (startup, prepared) = clock.prepare(document, &mut Unobserved);
 
-                let mut report = String::new();
-                write_preparation(
-                    &mut report,
+                Ok(preparation_report(
                     PreparationRecord::Preparation,
                     &startup,
                     &prepared,
-                );
-                Ok(report)
+                ))
             }
             Self::Stages => {
                 let mut profile = Profile::default();
                 let (startup, prepared) = clock.prepare(document, &mut profile);
 
-                let mut report = String::new();
-                write_preparation(
-                    &mut report,
-                    PreparationRecord::Diagnostic,
-                    &startup,
-                    &prepared,
-                );
+                let mut report =
+                    preparation_report(PreparationRecord::Diagnostic, &startup, &prepared);
                 write_profile(&mut report, &profile, startup.preparation);
                 Ok(report)
             }
@@ -197,40 +189,44 @@ impl PreparationRecord {
     }
 }
 
-fn write_preparation(
-    report: &mut String,
+/// The preparation record and the startup record.
+fn preparation_report(
     record: PreparationRecord,
     startup: &Startup,
     prepared: &PreparedDocument,
-) {
-    writeln!(
-        report,
-        "{} duration_ns={} files={} records={}",
-        record.label(),
-        startup.preparation.as_nanos(),
-        prepared.file_count(),
-        prepared.record_count()
-    )
-    .expect("writing to a String cannot fail");
-    writeln!(
-        report,
-        "startup version=1 input_ns={} parse_ns={} preparation_ns={} ready_ns={} bytes={}",
-        startup.input.as_nanos(),
-        startup.parse.as_nanos(),
-        startup.preparation.as_nanos(),
-        startup.ready.as_nanos(),
-        startup.bytes
-    )
-    .expect("writing to a String cannot fail");
+) -> String {
+    let mut report = String::new();
+    push_line(
+        &mut report,
+        format_args!(
+            "{} duration_ns={} files={} records={}",
+            record.label(),
+            startup.preparation.as_nanos(),
+            prepared.file_count(),
+            prepared.record_count()
+        ),
+    );
+    push_line(
+        &mut report,
+        format_args!(
+            "startup version=1 input_ns={} parse_ns={} preparation_ns={} ready_ns={} bytes={}",
+            startup.input.as_nanos(),
+            startup.parse.as_nanos(),
+            startup.preparation.as_nanos(),
+            startup.ready.as_nanos(),
+            startup.bytes
+        ),
+    );
+    report
 }
 
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     report.push_str("profile version=1\n");
 
     for (parent, children) in Stage::families() {
-        let total = match parent {
-            Parent::Preparation => preparation,
-            Parent::Stage(stage) => profile.duration(stage),
+        let total = match parent.measured_by() {
+            None => preparation,
+            Some(stage) => profile.duration(stage),
         };
 
         let attributed = children
@@ -248,22 +244,29 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
     }
 
     let work = profile.work();
-    writeln!(
+    push_line(
         report,
-        "work hunks={} parse_calls={} captures={} projected_bytes={}",
-        work.hunks, work.parse_calls, work.captures, work.projected_bytes
-    )
-    .expect("writing to a String cannot fail");
+        format_args!(
+            "work hunks={} parse_calls={} captures={} projected_bytes={}",
+            work.hunks, work.parse_calls, work.captures, work.projected_bytes
+        ),
+    );
 }
 
 fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Duration) {
-    writeln!(
+    push_line(
         report,
-        "stage name={name} parent={} duration_ns={}",
-        parent.label(),
-        duration.as_nanos()
-    )
-    .expect("writing to a String cannot fail");
+        format_args!(
+            "stage name={name} parent={} duration_ns={}",
+            parent.label(),
+            duration.as_nanos()
+        ),
+    );
+}
+
+/// Appends `line` and a newline to `report`.
+fn push_line(report: &mut String, line: fmt::Arguments<'_>) {
+    writeln!(report, "{line}").expect("writing to a String cannot fail");
 }
 
 // Movement
@@ -341,15 +344,16 @@ fn measure_movement<B: Backend>(
 
     for key in keys.iter().cycle().take(keys.len() * MOVEMENT_ROUNDS) {
         let step = timed_step(tui, terminal, *key)?;
-        writeln!(
+        push_line(
             report,
-            "movement version=2 layout={} detail={} wrap={} key={key} step_ns={}",
-            preferences.layout.label(),
-            preferences.granularity.label(),
-            preferences.wrapping.label(),
-            step.as_nanos()
-        )
-        .expect("writing to a String cannot fail");
+            format_args!(
+                "movement version=2 layout={} detail={} wrap={} key={key} step_ns={}",
+                preferences.layout.label(),
+                preferences.granularity.label(),
+                preferences.wrapping.label(),
+                step.as_nanos()
+            ),
+        );
     }
     Ok(())
 }
