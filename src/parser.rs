@@ -480,6 +480,34 @@ mod tests {
         Err(ParseError::Malformed { line, reason })
     }
 
+    /// Every file's unified body, in input order; each fixture file must be unified.
+    fn unified_bodies(document: &DiffDocument) -> Vec<&UnifiedBody> {
+        document
+            .files()
+            .map(|file| match &file.body {
+                FileBody::Unified(body) => body.as_ref(),
+                FileBody::Metadata(_) => panic!("fixture section should be unified"),
+            })
+            .collect()
+    }
+
+    /// The first hunk of a document holding one unified file.
+    fn first_hunk(document: &DiffDocument) -> &Hunk {
+        let [body] = unified_bodies(document)[..] else {
+            panic!("fixture should hold one file");
+        };
+
+        &body.hunks[0]
+    }
+
+    /// Each body's first-hunk record count.
+    fn first_hunk_record_counts(bodies: &[&UnifiedBody]) -> Vec<usize> {
+        bodies
+            .iter()
+            .map(|body| body.hunks[0].records.len())
+            .collect()
+    }
+
     #[test]
     fn preserves_surrounding_text_in_source_order() {
         let input = b"commit message\r\n\r\n--- a/one\n+++ b/one\n@@ -1 +1 @@\n-old\n+new\n\nbetween files\n--- a/two\n+++ b/two\n@@ -1 +1 @@\n-before\n+after\ntrailing text";
@@ -624,34 +652,6 @@ mod tests {
             parse_patch(patch("diff --stat").as_bytes()).is_ok(),
             "a line that starts no section is not a new section inside a payload either"
         );
-    }
-
-    /// Every file's unified body, in input order; each fixture file must be unified.
-    fn unified_bodies(document: &DiffDocument) -> Vec<&UnifiedBody> {
-        document
-            .files()
-            .map(|file| match &file.body {
-                FileBody::Unified(body) => body.as_ref(),
-                FileBody::Metadata(_) => panic!("fixture section should be unified"),
-            })
-            .collect()
-    }
-
-    /// The first hunk of a document holding one unified file.
-    fn first_hunk(document: &DiffDocument) -> &Hunk {
-        let [body] = unified_bodies(document)[..] else {
-            panic!("fixture should hold one file");
-        };
-
-        &body.hunks[0]
-    }
-
-    /// Each body's first-hunk record count.
-    fn first_hunk_record_counts(bodies: &[&UnifiedBody]) -> Vec<usize> {
-        bodies
-            .iter()
-            .map(|body| body.hunks[0].records.len())
-            .collect()
     }
 
     #[test]
