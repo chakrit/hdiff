@@ -116,7 +116,9 @@ pub enum RowTone {
 impl RowTone {
     fn of(kind: LineKind) -> Self {
         match kind {
-            LineKind::Record { kind: record, .. } => record
+            LineKind::Record {
+                kind: record_kind, ..
+            } => record_kind
                 .changed_side()
                 .map_or(Self::UnchangedRecord, Self::Changed),
             LineKind::HunkHeader => Self::HunkHeader,
@@ -125,6 +127,8 @@ impl RowTone {
     }
 }
 
+/// One row ready to draw: its tone, its sanitized text, and the styled segments of that
+/// text.
 #[derive(Clone, Copy)]
 pub struct StyledRow<'a> {
     tone: RowTone,

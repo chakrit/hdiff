@@ -146,6 +146,8 @@ impl<T> LineMap<T> {
     }
 }
 
+/// A page's retained rows: its rendered lines, their side-by-side pairs, the pair
+/// holding each line, and each line's visibility.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PageRows {
     lines: Box<[RenderedLine]>,
