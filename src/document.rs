@@ -232,6 +232,14 @@ impl Hunk {
     pub fn with_records<T>(&self, visit: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
         visit(HunkRecords::of(self))
     }
+
+    /// The sides of the file the no-newline markers among the hunk's records end.
+    pub fn ended_sides(&self) -> BySide<bool> {
+        self.records
+            .iter()
+            .map(Record::ended_sides)
+            .fold(BySide::default(), BySide::or)
+    }
 }
 
 /// A hunk with its place among its file's hunks.
@@ -326,6 +334,16 @@ pub struct Record {
     pub payload: SourceLine,
     /// The `\ ` line after the record, whatever language its producer wrote it in.
     pub no_newline: Option<SourceLine>,
+}
+
+impl Record {
+    /// The sides of the file the record's no-newline marker ends: the record's own sides
+    /// when it has a marker, and none otherwise.
+    pub fn ended_sides(&self) -> BySide<bool> {
+        let marked = self.no_newline.is_some();
+
+        BySide::default().map_sides(|side, _: bool| marked && self.kind.on_side(side))
+    }
 }
 
 /// Which side or sides of a hunk a record belongs to.

@@ -10,18 +10,18 @@ use crate::{
     source_text::SourceLine,
 };
 
-/// The records after a hunk `header` that declares `expected` counts, each with the
-/// no-newline marker that follows it, which may follow the last of them. `ended` holds
-/// the sides of the file an earlier marker ended, and gains the sides this hunk's marker
-/// ends.
+/// The records after a hunk `header` that declares `expected` counts. Any record, the
+/// last included, may be followed by one no-newline marker, which ends its side of the
+/// file. `earlier` holds the sides earlier hunks' markers ended.
 pub(super) fn parse_hunk(
     header: SourceLine,
     expected: BySide<usize>,
-    ended: &mut BySide<bool>,
+    earlier: BySide<bool>,
     lines: &mut SourceLines<'_>,
 ) -> Result<Hunk, Error> {
     let exhausted = BySide::<usize>::default();
     let mut remaining = expected;
+    let mut ended = earlier;
     let mut records: Vec<Record> = Vec::new();
     while let Some(line) =
         lines.next_if(|text| remaining != exhausted || is_no_newline_marker(text))
@@ -29,11 +29,11 @@ pub(super) fn parse_hunk(
         match is_no_newline_marker(line.sanitized()) {
             true => {
                 let marked = lines.at_last_line(mark_no_newline(&mut records, line))?;
-                *ended = ended.map_sides(|side, done| done || marked.on_side(side));
+                ended = ended.or(marked);
             }
             false => {
                 let record = lines.at_last_line(parse_record(line))?;
-                lines.at_last_line(check_side_open(*ended, record.kind))?;
+                lines.at_last_line(check_side_open(ended, record.kind))?;
                 remaining = lines.at_last_line(count_record(remaining, record.kind))?;
                 records.push(record);
             }
@@ -74,10 +74,10 @@ fn check_side_open(ended: BySide<bool>, kind: RecordKind) -> Result<(), Malforme
     }
 }
 
-/// Gives the last of `records` the no-newline `marker` after it, returning the kind of
-/// the record it marks; a marker that follows no record, or a record that already has
-/// one, is misplaced.
-fn mark_no_newline(records: &mut [Record], marker: SourceLine) -> Result<RecordKind, Malformed> {
+/// Gives the last of `records` the no-newline `marker` after it, returning the sides of
+/// the file it ends; a marker that follows no record, or a record that already has one,
+/// is misplaced.
+fn mark_no_newline(records: &mut [Record], marker: SourceLine) -> Result<BySide<bool>, Malformed> {
     let unmarked = records
         .last_mut()
         .filter(|record| record.no_newline.is_none());
@@ -86,7 +86,7 @@ fn mark_no_newline(records: &mut [Record], marker: SourceLine) -> Result<RecordK
     };
 
     record.no_newline = Some(marker);
-    Ok(record.kind)
+    Ok(record.ended_sides())
 }
 
 /// The record a hunk line holds: a record marked by its first visible character, or blank

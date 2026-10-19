@@ -82,6 +82,13 @@ impl<T> BySide<Option<T>> {
     }
 }
 
+impl BySide<bool> {
+    /// Each side that holds in `self`, in `other`, or in both.
+    pub fn or(self, other: Self) -> Self {
+        self.zip(other).map(|(this, that)| this || that)
+    }
+}
+
 /// Each side's value, old then new.
 impl<T> IntoIterator for BySide<T> {
     type Item = T;
