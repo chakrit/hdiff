@@ -117,7 +117,7 @@ impl HeaderPath {
 
     /// Reads a header's field after `--- ` or `+++ `, without its timestamp. A field that
     /// names no path cannot be decoded into one.
-    pub fn of_field(field: &str) -> Self {
+    fn of_field(field: &str) -> Self {
         // Git escapes tabs inside quotes, so the first tab ends a quoted path too.
         let without_timestamp = field.split_once('\t').map_or(field, |(path, _)| path);
 

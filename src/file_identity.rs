@@ -70,12 +70,12 @@ pub struct DisplayText(Box<str>);
 
 impl DisplayText {
     /// The visible text of a decoded path or header.
-    pub fn of_decoded(text: &str) -> Self {
+    fn of_decoded(text: &str) -> Self {
         Self(sanitize(text.as_bytes()).into())
     }
 
     /// The visible text of a source line, which its sanitized text already is.
-    pub fn of_line(line: &SourceLine) -> Self {
+    fn of_line(line: &SourceLine) -> Self {
         Self(line.sanitized().into())
     }
 
