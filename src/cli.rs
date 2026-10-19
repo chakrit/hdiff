@@ -163,12 +163,12 @@ mod tests {
     };
     use std::{ffi::OsString, path::PathBuf};
 
-    fn invocation_unpiped(arguments: &[OsString]) -> Result<Invocation, UsageError> {
-        select_invocation(arguments, StdinState::Unpiped)
+    fn invocation_unpiped(words: &[&str]) -> Result<Invocation, UsageError> {
+        select_invocation(&arguments(words), StdinState::Unpiped)
     }
 
-    fn select_unpiped(arguments: &[OsString]) -> Result<Source, UsageError> {
-        select_input(arguments, StdinState::Unpiped)
+    fn select_unpiped(words: &[&str]) -> Result<Source, UsageError> {
+        select_input(&arguments(words), StdinState::Unpiped)
     }
 
     fn arguments(words: &[&str]) -> Vec<OsString> {
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn piped_stdin_rejects_bench_operands_that_ignore_it() {
-        let arguments = ["--bench", "prepare", "change.patch"].map(OsString::from);
+        let arguments = arguments(&["--bench", "prepare", "change.patch"]);
 
         assert_eq!(
             select_invocation(&arguments, StdinState::Piped),
@@ -210,35 +210,31 @@ mod tests {
     #[test]
     fn selects_install_without_input_operands() {
         assert_eq!(
-            invocation_unpiped(&[OsString::from("--install")]).expect("install invocation"),
+            invocation_unpiped(&["--install"]).expect("install invocation"),
             Invocation::Install
         );
     }
 
     #[test]
     fn rejects_install_with_input_operands() {
-        let arguments = [OsString::from("--install"), OsString::from("change.patch")];
-
         assert_eq!(
-            invocation_unpiped(&arguments),
+            invocation_unpiped(&["--install", "change.patch"]),
             Err(UsageError::InstallWithOperands)
         );
     }
 
     #[test]
     fn selects_bench_driver_before_input_operands() {
-        let arguments = [OsString::from("--bench"), OsString::from("stages")];
         assert_eq!(
-            invocation_unpiped(&arguments).expect("bench invocation"),
+            invocation_unpiped(&["--bench", "stages"]).expect("bench invocation"),
             Invocation::Bench {
                 driver: Driver::Stages,
                 source: Source::Stdin,
             }
         );
 
-        let arguments = ["--bench", "movement", "change.patch"].map(OsString::from);
         assert_eq!(
-            invocation_unpiped(&arguments).expect("bench invocation"),
+            invocation_unpiped(&["--bench", "movement", "change.patch"]).expect("bench invocation"),
             Invocation::Bench {
                 driver: Driver::Movement,
                 source: Source::PatchFile(PathBuf::from("change.patch")),
@@ -249,11 +245,11 @@ mod tests {
     #[test]
     fn rejects_bench_without_a_known_driver() {
         assert_eq!(
-            invocation_unpiped(&[OsString::from("--bench")]),
+            invocation_unpiped(&["--bench"]),
             Err(UsageError::MissingBenchDriver)
         );
         assert_eq!(
-            invocation_unpiped(&["--bench", "a.patch"].map(OsString::from)),
+            invocation_unpiped(&["--bench", "a.patch"]),
             Err(UsageError::UnknownBenchDriver(OsString::from("a.patch")))
         );
     }
@@ -261,7 +257,7 @@ mod tests {
     #[test]
     fn treats_unknown_dash_arguments_as_paths() {
         assert_eq!(
-            invocation_unpiped(&[OsString::from("--unknown")]).expect("view invocation"),
+            invocation_unpiped(&["--unknown"]).expect("view invocation"),
             Invocation::View {
                 source: Source::PatchFile(PathBuf::from("--unknown")),
             }
@@ -276,23 +272,20 @@ mod tests {
     #[test]
     fn rejects_more_than_two_operands() {
         assert_eq!(
-            select_unpiped(&["a", "b", "c"].map(OsString::from)),
+            select_unpiped(&["a", "b", "c"]),
             Err(UsageError::TooManyOperands)
         );
     }
 
     #[test]
     fn reads_a_lone_dash_operand_from_stdin() {
-        assert_eq!(
-            select_unpiped(&[OsString::from("-")]).expect("stdin"),
-            Source::Stdin
-        );
+        assert_eq!(select_unpiped(&["-"]).expect("stdin"), Source::Stdin);
     }
 
     #[test]
     fn compares_a_dash_operand_as_stdin() {
         assert_eq!(
-            select_unpiped(&["-", "after"].map(OsString::from)).expect("comparison"),
+            select_unpiped(&["-", "after"]).expect("comparison"),
             Source::Comparison(Comparison {
                 operands: [Operand::Stdin, Operand::Path(PathBuf::from("after"))],
                 depth: Depth::TopLevel,
@@ -311,21 +304,18 @@ mod tests {
         });
 
         for arguments in [["-r", "a", "b"], ["a", "-r", "b"], ["a", "b", "-r"]] {
-            assert_eq!(
-                select_unpiped(&arguments.map(OsString::from)).expect("comparison"),
-                recursive
-            );
+            assert_eq!(select_unpiped(&arguments).expect("comparison"), recursive);
         }
     }
 
     #[test]
     fn rejects_recursion_without_two_operands() {
         assert_eq!(
-            select_unpiped(&[OsString::from("-r")]),
+            select_unpiped(&["-r"]),
             Err(UsageError::RecursionWithoutComparison)
         );
         assert_eq!(
-            select_unpiped(&["-r", "change.patch"].map(OsString::from)),
+            select_unpiped(&["-r", "change.patch"]),
             Err(UsageError::RecursionWithoutComparison)
         );
     }
