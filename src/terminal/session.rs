@@ -52,6 +52,7 @@ pub fn run_interactive(
     }
 }
 
+/// Runs the interactive loop on `terminal` at its size and color depth.
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<File>>,
     document: PreparedDocument,
@@ -160,6 +161,7 @@ enum RestoreStep {
 }
 
 impl RestoreStep {
+    /// The step's name in a restore failure message.
     fn label(self) -> &'static str {
         match self {
             Self::Cursor => "cursor",
@@ -208,24 +210,15 @@ impl TerminalSession {
     /// Sets up the terminal at its size, enters raw mode, then the alternate screen,
     /// leaving raw mode again when the alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, SessionError> {
-        let start_failed = |error| SessionError::Failed {
-            stage: SessionStage::Start,
-            error,
-            restored: Ok(()),
-        };
-        let mut terminal =
-            Terminal::new(CrosstermBackend::new(controlling_terminal)).map_err(start_failed)?;
-        terminal::enable_raw_mode().map_err(start_failed)?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))
+            .map_err(|error| start_failed(error, Ok(())))?;
+        terminal::enable_raw_mode().map_err(|error| start_failed(error, Ok(())))?;
         let panic_hook = RestoringPanicHook::install();
 
         if let Err(error) = execute!(terminal.backend_mut(), EnterAlternateScreen) {
             let restored = restore(terminal.backend_mut(), Entered::RawMode);
             panic_hook.uninstall();
-            return Err(SessionError::Failed {
-                stage: SessionStage::Start,
-                error,
-                restored,
-            });
+            return Err(start_failed(error, restored));
         }
 
         Ok(Self {
@@ -246,6 +239,17 @@ impl TerminalSession {
     }
 }
 
+/// A session that failed to start on `error`, with whatever restoring the steps already
+/// taken left behind.
+fn start_failed(error: io::Error, restored: Result<(), RestoreFailures>) -> SessionError {
+    SessionError::Failed {
+        stage: SessionStage::Start,
+        error,
+        restored,
+    }
+}
+
+/// A panic hook as the standard library holds one.
 type PanicHook = dyn Fn(&PanicHookInfo<'_>) + Sync + Send;
 
 /// A panic hook that restores the terminal before the panic message prints, so it stays
@@ -255,6 +259,7 @@ struct RestoringPanicHook {
 }
 
 impl RestoringPanicHook {
+    /// Replaces the current panic hook with one that restores the terminal first.
     fn install() -> Self {
         let previous: Arc<PanicHook> = Arc::from(panic::take_hook());
         let chained = Arc::clone(&previous);
