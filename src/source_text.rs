@@ -32,11 +32,16 @@ impl SourceLine {
         &self.sanitized
     }
 
-    /// The first visible character and the rest of the line after it. The rest's
-    /// sanitized text is this line's after that character, so the rest is read in the
-    /// scanner state the character left, which may be inside a sequence.
+    /// The first visible character and the rest of the line after it, when that character
+    /// returns the scanner to plain text, as every record marker does. The rest is then
+    /// read from plain text, so it is the line its own bytes decode to. A first character
+    /// shown inside a sequence, such as a tab after `ESC`, does not split the line.
     pub fn split_first(&self) -> Option<(char, SourceLine)> {
-        let DecodedChar { source, character } = visible(&self.bytes).next()?;
+        let mut characters = visible(&self.bytes);
+        let DecodedChar { source, character } = characters.next()?;
+        if !matches!(characters.state, State::Ground) {
+            return None;
+        }
 
         let rest = Self {
             bytes: self.bytes[source.end..].into(),
@@ -123,23 +128,28 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
     })
 }
 
-/// Where the scanner is within terminal control sequences: the states of the DEC
-/// terminal parser that differ in what they show, as
-/// docs/vendor/terminal-control-parser.md maps them.
+/// Where the scanner is within terminal control sequences. The DEC terminal parser
+/// (docs/vendor/terminal-control-parser.md) has fourteen states; its actions (collect,
+/// param, dispatch, put) never change what shows, so its states that differ only in
+/// actions fold into one state here, as each variant names.
 #[derive(Clone, Copy)]
 enum State {
-    /// Plain text.
+    /// Plain text: the reference's ground.
     Ground,
-    /// After `ESC`, before its next byte.
+    /// After `ESC`, before its next byte: the reference's escape.
     Escape,
-    /// After an escape's intermediate bytes, before its final byte.
+    /// After an escape's intermediate bytes, before its final byte: the reference's
+    /// escape_intermediate.
     EscapeIntermediate,
-    /// Inside a control sequence (CSI), before its final byte.
+    /// Inside a control sequence (CSI), before its final byte: the reference's
+    /// csi_entry, csi_param, csi_intermediate and csi_ignore.
     ControlSequence,
-    /// Inside an operating system command (OSC), before its terminator.
+    /// Inside an operating system command (OSC), before its terminator: the reference's
+    /// osc_string.
     OscString,
     /// Inside a device control string, or an SOS, PM or APC string, before its
-    /// terminator.
+    /// terminator: the reference's dcs_entry, dcs_param, dcs_intermediate,
+    /// dcs_passthrough, dcs_ignore and sos_pm_apc_string.
     CommandString,
 }
 
@@ -237,8 +247,14 @@ impl State {
         };
 
         match (self, class) {
-            (Ground, Class::Tab | Class::Intermediate | Class::Parameter) => Step::Shown(Ground),
-            (Ground, Class::Final(_) | Class::Printable) => Step::Shown(Ground),
+            (
+                Ground,
+                Class::Tab
+                | Class::Intermediate
+                | Class::Parameter
+                | Class::Final(_)
+                | Class::Printable,
+            ) => Step::Shown(Ground),
             (
                 Ground,
                 Class::Cancel
@@ -286,13 +302,12 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceLine, Visible, decoded, sanitize, visible};
+    use super::{SourceLine, sanitize};
 
-    /// The rest after the first visible character is the rest of the line read in the
-    /// scanner state that character left, so a tab shown inside a sequence leaves the
-    /// rest inside it.
+    /// The rest after a first character that returns the scanner to plain text is the
+    /// line its own bytes decode to.
     #[test]
-    fn splitting_matches_decoding_the_rest_in_the_state_the_first_character_left() {
+    fn splitting_leaves_the_rest_its_own_bytes_decode_to() {
         for line in [
             b"-old\n".as_slice(),
             b"\xc2\x85+new\r\n",
@@ -300,23 +315,21 @@ mod tests {
             b"\x1b]x\x1b\x07a\x1b\\ context\n",
             b"\xff\xfe-after invalid",
             b"\x1b\xc3\xa9-after a broken escape",
-            b"\x1b\t-old",
-            b"\x1b[3\t1mred",
         ] {
-            let mut first = visible(line);
-            first.next().expect("visible text");
             let (_, rest) = SourceLine::decode(line)
                 .split_first()
                 .expect("visible text");
-            let suffix = &line[line.len() - rest.bytes().len()..];
 
-            let read_on = Visible {
-                decoded: decoded(suffix),
-                state: first.state,
-            };
-            let rest_text: String = read_on.map(|decoded| decoded.character).collect();
+            assert_eq!(rest, SourceLine::decode(rest.bytes()), "{line:?}");
+        }
+    }
 
-            assert_eq!(rest.sanitized(), rest_text, "{line:?}");
+    /// A first character shown inside a sequence leaves the scanner inside it, so the
+    /// rest is not a line of its own and the line does not split.
+    #[test]
+    fn does_not_split_after_a_character_shown_inside_a_sequence() {
+        for line in [b"\x1b\t-old".as_slice(), b"\x1b[3\t1mred"] {
+            assert_eq!(SourceLine::decode(line).split_first(), None, "{line:?}");
         }
     }
 
