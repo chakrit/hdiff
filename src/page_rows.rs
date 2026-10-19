@@ -559,15 +559,20 @@ mod tests {
             .map(|index| rows.pair(index).map(text))
             .collect::<Vec<_>>();
 
-        assert_eq!(pairs.len(), 6);
         assert_eq!(rows.lines().count(), 7);
         assert_eq!(
-            pairs[3],
-            SideBySideRow::Paired(BySide {
-                old: "-old first".to_owned(),
-                new: "+new first".to_owned(),
-            })
+            pairs,
+            [
+                SideBySideRow::Shared("--- a/file".to_owned()),
+                SideBySideRow::Shared("+++ b/file".to_owned()),
+                SideBySideRow::Shared("@@ -1,3 +1,2 @@".to_owned()),
+                SideBySideRow::Paired(BySide {
+                    old: "-old first".to_owned(),
+                    new: "+new first".to_owned(),
+                }),
+                SideBySideRow::OldOnly("-old second".to_owned()),
+                SideBySideRow::Shared(" context".to_owned()),
+            ]
         );
-        assert_eq!(pairs[4], SideBySideRow::OldOnly("-old second".to_owned()));
     }
 }
