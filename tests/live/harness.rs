@@ -229,7 +229,7 @@ pub fn positions<'a>(buffer: &'a Buffer, text: &'a str) -> impl Iterator<Item = 
 
 /// Screen columns `text` covers.
 pub fn cells(text: &str) -> u16 {
-    u16::try_from(Cells::of_text(text).get()).expect("a screen width fits u16")
+    Cells::of_text(text).frame_columns()
 }
 
 #[derive(Debug, Clone, Copy)]

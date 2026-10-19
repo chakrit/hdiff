@@ -172,5 +172,5 @@ fn render_split_rows<'a>(
 
 /// Rows of a `height`-row area that `lines` fill: all of it when they reach past it.
 fn shown_rows(height: u16, lines: ScreenLines) -> u16 {
-    u16::try_from(lines.get()).map_or(height, |lines| height.min(lines))
+    ScreenLines::from(height).min(lines).frame_rows()
 }
