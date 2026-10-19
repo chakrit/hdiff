@@ -5,7 +5,10 @@
 use std::iter;
 
 use crate::{
-    document::{DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind},
+    document::{
+        DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind,
+        UnifiedBody,
+    },
     headers::GitHeader,
     side::Side,
     source_text::SourceLine,
@@ -129,52 +132,69 @@ pub fn of_text<'a>(
 /// The lines of `file`: its Git header and metadata, its file headers, then each hunk's
 /// header and records.
 pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
-    let (header, unified) = match &file.body {
-        FileBody::Metadata(header) => (Some(header), None),
-        FileBody::Unified(body) => (body.git.as_ref(), Some(body)),
-    };
-    let file_headers = unified
-        .into_iter()
-        .flat_map(|body| body.headers.iter())
-        .map(|header| DisplayLine {
-            kind: LineKind::FileHeader,
-            source: &header.line,
-        });
-    let hunks = unified
-        .into_iter()
-        .flat_map(|body| body.addressed_hunks())
-        .flat_map(|hunk| {
-            let header = DisplayLine {
-                kind: LineKind::HunkHeader,
-                source: &hunk.hunk.header,
-            };
-            let records = hunk.records().map(|(address, record)| {
-                let kind = LineKind::Record {
-                    address,
-                    kind: record.kind,
-                };
-                DisplayLine {
-                    kind,
-                    source: &record.payload,
-                }
-            });
-            iter::once(header).chain(records)
-        });
-
-    header
-        .into_iter()
-        .flat_map(git_header_lines)
-        .chain(file_headers)
-        .chain(hunks)
+    match &file.body {
+        FileBody::Metadata(git) => FileLines::Metadata(git_header_lines(git)),
+        FileBody::Unified(body) => FileLines::Unified(unified_lines(body)),
+    }
 }
 
-fn git_header_lines(header: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
-    iter::once(&header.line)
-        .chain(&header.metadata)
+/// The lines of a unified body: its Git header and metadata when it has one, its file
+/// headers, then each hunk's header and records.
+fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
+    let git = body.git.iter().flat_map(git_header_lines);
+    let file_headers = body.headers.iter().map(|file_header| DisplayLine {
+        kind: LineKind::FileHeader,
+        source: &file_header.line,
+    });
+    let hunks = body.addressed_hunks().flat_map(|hunk| {
+        let hunk_header = DisplayLine {
+            kind: LineKind::HunkHeader,
+            source: &hunk.hunk.header,
+        };
+        let records = hunk.records().map(|(address, record)| {
+            let kind = LineKind::Record {
+                address,
+                kind: record.kind,
+            };
+            DisplayLine {
+                kind,
+                source: &record.payload,
+            }
+        });
+        iter::once(hunk_header).chain(records)
+    });
+
+    git.chain(file_headers).chain(hunks)
+}
+
+fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
+    iter::once(&git.line)
+        .chain(&git.metadata)
         .map(|source| DisplayLine {
             kind: LineKind::Metadata,
             source,
         })
+}
+
+/// The lines of a file, whichever body it has.
+enum FileLines<M, U> {
+    Metadata(M),
+    Unified(U),
+}
+
+impl<'a, M, U> Iterator for FileLines<M, U>
+where
+    M: Iterator<Item = DisplayLine<'a>>,
+    U: Iterator<Item = DisplayLine<'a>>,
+{
+    type Item = DisplayLine<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Metadata(lines) => lines.next(),
+            Self::Unified(lines) => lines.next(),
+        }
+    }
 }
 
 #[cfg(test)]
