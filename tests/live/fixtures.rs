@@ -23,7 +23,7 @@ pub fn files_in_directories(count: usize) -> String {
 }
 
 /// The patch of a file at `path` whose one line changes from `old` to `new`.
-fn one_change_file(path: &str) -> String {
+pub fn one_change_file(path: &str) -> String {
     format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
 }
 
