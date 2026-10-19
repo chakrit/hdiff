@@ -25,8 +25,14 @@ pub enum Error {
     MissingHome,
     GlobalConfigDisabled,
     NonUtf8Path(PathRole),
-    InspectConfig { path: PathBuf, source: io::Error },
-    Backup { backup: Backup, source: io::Error },
+    InspectConfig {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Backup {
+        backup: BackupGlobalGitConfig,
+        source: io::Error,
+    },
     SetPager(ProcessError),
 }
 
@@ -50,15 +56,11 @@ impl InstallGitDiffPager {
         let mut completed_commands = Vec::new();
 
         if let Some(backup) = backup {
-            let copy = BackupGlobalGitConfig {
-                source: &backup.config,
-                destination: &backup.copy,
-            };
-            let copy_command = copy.shell_command();
-            if let Err(source) = copy.run(context) {
-                return Err(Error::Backup { backup, source });
-            }
-            completed_commands.push(copy_command);
+            let backup_command = backup.shell_command();
+            backup
+                .run(context)
+                .map_err(|source| Error::Backup { backup, source })?;
+            completed_commands.push(backup_command);
         }
 
         let set_pager = SetGlobalDiffPager {
@@ -109,17 +111,9 @@ impl PathRole {
 
 /// Every path and value `--install` needs, validated as UTF-8 before anything is written.
 struct InstallPlan {
-    backup: Option<Backup>,
+    backup: Option<BackupGlobalGitConfig>,
     /// The `pager.diff` value: the executable as one shell word.
     pager_command: String,
-}
-
-/// The config file to copy and the path of its copy, both UTF-8 so the copy has a shell
-/// spelling.
-#[derive(Debug)]
-pub struct Backup {
-    config: String,
-    copy: String,
 }
 
 impl InstallPlan {
@@ -129,7 +123,7 @@ impl InstallPlan {
             shell_words::quote(utf8(executable, PathRole::Executable)?).into_owned();
 
         let backup = match exists(&config_path)? {
-            true => Some(Backup::of(config_path)?),
+            true => Some(backup_of(&config_path)?),
             false => None,
         };
 
@@ -140,15 +134,14 @@ impl InstallPlan {
     }
 }
 
-impl Backup {
-    fn of(config: PathBuf) -> Result<Self, Error> {
-        let copy = backup_path(&config);
+/// The copy of `config` to its backup path, both spelled as UTF-8.
+fn backup_of(config: &Path) -> Result<BackupGlobalGitConfig, Error> {
+    let copy = backup_path(config);
 
-        Ok(Self {
-            config: utf8(&config, PathRole::Config)?.to_owned(),
-            copy: utf8(&copy, PathRole::Backup)?.to_owned(),
-        })
-    }
+    Ok(BackupGlobalGitConfig {
+        config: utf8(config, PathRole::Config)?.to_owned(),
+        copy: utf8(&copy, PathRole::Backup)?.to_owned(),
+    })
 }
 
 /// Resolves the file `git config --global` writes, in the order of git-config(1) FILES.
