@@ -127,6 +127,7 @@ mod tests {
         geometry::SplitDirection,
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
         screen::Cells,
+        side::BySide,
     };
 
     /// What a screen shows: a message, or its panes with or without the file list.
@@ -143,39 +144,43 @@ mod tests {
     fn derives_compact_pane_visibility_from_terminal_size() {
         let cases = [
             (
-                (19, 3),
+                Size::new(19, 3),
                 DiffLayout::Unified,
                 Shown::Message(TooSmall::Narrow),
             ),
             (
-                (20, 2),
+                Size::new(20, 2),
                 DiffLayout::Unified,
                 Shown::Message(TooSmall::Short),
             ),
-            ((27, 3), DiffLayout::Unified, Shown::DiffOnly),
-            ((28, 3), DiffLayout::Unified, Shown::WithFileList),
-            ((28, 3), DiffLayout::Vertical, Shown::WithFileList),
+            (Size::new(27, 3), DiffLayout::Unified, Shown::DiffOnly),
+            (Size::new(28, 3), DiffLayout::Unified, Shown::WithFileList),
+            (Size::new(28, 3), DiffLayout::Vertical, Shown::WithFileList),
             (
-                (28, 6),
+                Size::new(28, 6),
                 DiffLayout::Stacked,
                 Shown::Message(TooSmall::Short),
             ),
-            ((28, 7), DiffLayout::Stacked, Shown::WithFileList),
+            (Size::new(28, 7), DiffLayout::Stacked, Shown::WithFileList),
         ];
 
-        for ((width, height), layout, expected) in cases {
+        for (screen, layout, expected) in cases {
             let preferences = ViewPreferences {
                 layout,
                 ..ViewPreferences::INITIAL
             };
-            let view = EffectiveView::of(preferences, Size::new(width, height));
+            let view = EffectiveView::of(preferences, screen);
             let shown = match (view.too_small(), view.geometry().file_column()) {
                 (Some(too_small), _) => Shown::Message(too_small),
                 (None, None) => Shown::DiffOnly,
                 (None, Some(_)) => Shown::WithFileList,
             };
 
-            assert_eq!(shown, expected, "{width}×{height} {layout:?}");
+            assert_eq!(
+                shown, expected,
+                "{}×{} {layout:?}",
+                screen.width, screen.height
+            );
         }
     }
 
@@ -195,7 +200,7 @@ mod tests {
 
         // 79 columns beside the separator split into a 39-column and a 40-column pane,
         // whose frames leave 37 content columns, two of them the marker gutter.
-        assert_eq!((panes.old.width, panes.new.width), (39, 40));
+        assert_eq!(panes.map(|pane| pane.width), BySide { old: 39, new: 40 });
         assert_eq!(view.wrap(), WrapWidth::at(35));
     }
 
@@ -212,11 +217,21 @@ mod tests {
 
     #[test]
     fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
-        let wrap = |wrapping, width| WrapWidth::of_panes(wrapping, Cells::new(width));
-
-        assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
-        assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
-        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Off);
-        assert_eq!(wrap(Wrapping::Enabled, 78), WrapWidth::at(76));
+        assert_eq!(
+            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(24)),
+            WrapWidth::at(22)
+        );
+        assert_eq!(
+            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(51)),
+            WrapWidth::at(49)
+        );
+        assert_eq!(
+            WrapWidth::of_panes(Wrapping::Disabled, Cells::new(51)),
+            WrapWidth::Off
+        );
+        assert_eq!(
+            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(78)),
+            WrapWidth::at(76)
+        );
     }
 }
