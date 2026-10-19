@@ -20,12 +20,13 @@ use hdiff::{
     terminal,
 };
 
+/// Runs hdiff; a failure is reported on standard error and exits with the trouble
+/// status. Rules: docs/spec/architecture.md#error-output.
 fn main() -> ExitCode {
     let Err(error) = run() else {
         return ExitCode::SUCCESS;
     };
 
-    // Rules: docs/spec/architecture.md#error-output.
     let trouble = ExitCode::from(DiffStatus::Trouble.code());
     match report(&error) {
         Ok(()) => trouble,
@@ -87,10 +88,9 @@ fn view(source: input::Source) -> Result<(), RunError> {
 }
 
 /// Draws `document`, releasing it once prepared: the prepared document keeps every
-/// line it draws.
+/// line it draws. Whatever keeps `/dev/tty` from opening, the output falls back to
+/// finite text. Rules: docs/spec/architecture.md#input-and-terminal-boundary.
 fn render_document(document: DiffDocument) -> Result<(), RunError> {
-    // docs/spec/architecture.md#input-and-terminal-boundary: whatever keeps `/dev/tty`
-    // from opening, the output falls back to finite text.
     let controlling_terminal = match terminal::OutputMode::of_stdout() {
         terminal::OutputMode::Finite => None,
         terminal::OutputMode::Interactive => terminal::open_controlling_terminal().ok(),
