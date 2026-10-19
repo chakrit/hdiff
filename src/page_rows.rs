@@ -652,16 +652,15 @@ mod tests {
 
     #[test]
     fn aligns_asymmetric_changed_blocks_with_blank_vertical_peers() {
-        let rows = rows_of(
-            b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
-        );
+        let patch = "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n";
+        let rows = rows_of(patch.as_bytes());
         let text = |line| shown(rows.line(line));
         let pairs = rows
             .pair_indices()
             .map(|index| rows.pair(index).map(text))
             .collect::<Vec<_>>();
 
-        assert_eq!(rows.lines().count(), 7);
+        assert_eq!(rows.lines().count(), patch.lines().count());
         assert_eq!(
             pairs,
             [
