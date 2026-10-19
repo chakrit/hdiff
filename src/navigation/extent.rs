@@ -19,10 +19,10 @@ use crate::{
 /// What a page's rows are shown with: the pane shape, the context count, and the wrap
 /// width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExtentSettings {
-    pub shape: PaneShape,
-    pub context: ContextRecords,
-    pub wrap: WrapWidth,
+pub(super) struct ExtentSettings {
+    pub(super) shape: PaneShape,
+    pub(super) context: ContextRecords,
+    pub(super) wrap: WrapWidth,
 }
 
 /// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row
