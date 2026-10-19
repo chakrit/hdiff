@@ -7,7 +7,7 @@ use crate::{
     effective_view::WrapWidth,
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
-    page_rows::{LineIndex, PageRows, PairIndex, SideBySideRow},
+    page_rows::{LineIndex, PageRows, PairIndex, SideBySideRow, SplitLines},
     preferences::{ContextRecords, DiffGranularity},
     prepared::{PageIndex, PreparedDocument, PreparedPage},
     screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
@@ -105,7 +105,7 @@ impl ScrollExtent {
                     .pair_indices()
                     .filter(|index| rows.shows_pair(*index, context))
                     .map(|index| {
-                        let (first, second) = rows.pair(index).split_first();
+                        let SplitLines { first, second } = rows.pair(index).split_first();
                         measured_row(rows, index, first, second, wrap)
                     })
                     .collect(),

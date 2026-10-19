@@ -70,23 +70,36 @@ impl<T> SideBySideRow<T> {
 
     /// The row's lines in display order: one, or the old line then the new line.
     pub(crate) fn lines(self) -> Chain<Once<T>, option::IntoIter<T>> {
-        let (first, second) = self.split_first();
+        let SplitLines { first, second } = self.split_first();
 
         iter::once(first).chain(second)
     }
 
     /// The line the row starts with, and the new line when it pairs two.
-    pub(crate) fn split_first(self) -> (T, Option<T>) {
+    pub(crate) fn split_first(self) -> SplitLines<T> {
         match self {
-            Self::Paired(lines) => (lines.old, Some(lines.new)),
-            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => (line, None),
+            Self::Paired(lines) => SplitLines {
+                first: lines.old,
+                second: Some(lines.new),
+            },
+            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => SplitLines {
+                first: line,
+                second: None,
+            },
         }
     }
 
     /// The line the row starts with, which names the row across layouts.
     pub(crate) fn first(self) -> T {
-        self.split_first().0
+        self.split_first().first
     }
+}
+
+/// A side-by-side row's lines: the one it starts with, and the new line when it pairs
+/// two.
+pub(crate) struct SplitLines<T> {
+    pub first: T,
+    pub second: Option<T>,
 }
 
 /// A displayed line as page rows retain it: its kind and its measured payload.
@@ -221,9 +234,9 @@ impl PageRows {
             .collect::<Vec<_>>();
         // A changed block lists its old lines before its new lines, so pair order is not
         // line order.
-        placed.sort_by_key(|(line, _)| *line);
+        placed.sort_by_key(|placed| placed.line);
 
-        let values = placed.into_iter().map(|(_, line_value)| line_value);
+        let values = placed.into_iter().map(|placed| placed.value);
 
         LineMap(values.collect())
     }
@@ -295,22 +308,29 @@ impl PageRows {
     }
 }
 
+/// A value placed on the line it belongs to.
+struct LineValue<T> {
+    line: LineIndex,
+    value: T,
+}
+
 /// Each line `row` holds, with the value of the side it shows; a shared line shows no
 /// side.
 fn placed_values<T>(
     row: SideBySideRow<LineIndex>,
     values: BySide<Option<T>>,
-) -> impl Iterator<Item = (LineIndex, Option<T>)> {
-    let placed = match row {
-        SideBySideRow::Shared(line) => [Some((line, None)), None],
+) -> impl Iterator<Item = LineValue<Option<T>>> {
+    let placed = |line, value| Some(LineValue { line, value });
+    let lines = match row {
+        SideBySideRow::Shared(line) => [placed(line, None), None],
         SideBySideRow::Paired(lines) => {
-            [Some((lines.old, values.old)), Some((lines.new, values.new))]
+            [placed(lines.old, values.old), placed(lines.new, values.new)]
         }
-        SideBySideRow::OldOnly(line) => [Some((line, values.old)), None],
-        SideBySideRow::NewOnly(line) => [Some((line, values.new)), None],
+        SideBySideRow::OldOnly(line) => [placed(line, values.old), None],
+        SideBySideRow::NewOnly(line) => [placed(line, values.new), None],
     };
 
-    placed.into_iter().flatten()
+    lines.into_iter().flatten()
 }
 
 /// A page's side-by-side rows and the pair holding each of its lines.
@@ -326,10 +346,13 @@ impl SideBySideLayout {
         let sides = rendered_lines
             .iter()
             .enumerate()
-            .map(|(position, line)| (LineIndex::at(position), line.kind().changed_side()))
+            .map(|(position, line)| LineSide {
+                line: LineIndex::at(position),
+                side: line.kind().changed_side(),
+            })
             .collect::<Vec<_>>();
         let blocks = sides
-            .chunk_by(|(_, earlier), (_, later)| earlier.is_some() == later.is_some())
+            .chunk_by(|earlier, later| earlier.side.is_some() == later.side.is_some())
             .map(BlockRows::of)
             .collect::<Vec<_>>();
 
@@ -356,6 +379,13 @@ impl SideBySideLayout {
     }
 }
 
+/// A line with the side it changes: `Option<Side>` before a block is known to be changed,
+/// `Side` within a changed block.
+struct LineSide<S> {
+    line: LineIndex,
+    side: S,
+}
+
 /// The rows of one block of lines that are all changed or all unchanged, and the row of
 /// the block holding each of its lines, in line order.
 struct BlockRows {
@@ -364,18 +394,23 @@ struct BlockRows {
 }
 
 impl BlockRows {
-    fn of(block: &[(LineIndex, Option<Side>)]) -> Self {
+    fn of(block: &[LineSide<Option<Side>>]) -> Self {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
-            .map(|(line, changed_side)| changed_side.map(|side| (*line, side)))
+            .map(|line| {
+                line.side.map(|side| LineSide {
+                    line: line.line,
+                    side,
+                })
+            })
             .collect::<Option<Vec<_>>>();
 
         match changed {
             None => Self {
                 rows: block
                     .iter()
-                    .map(|(line, _)| SideBySideRow::Shared(*line))
+                    .map(|line| SideBySideRow::Shared(line.line))
                     .collect(),
                 row_of_line: (0..block.len()).collect(),
             },
@@ -384,12 +419,12 @@ impl BlockRows {
     }
 
     /// A changed block pairs its *i*th old line with its *i*th new line in row *i*.
-    fn changed(block: &[(LineIndex, Side)]) -> Self {
+    fn changed(block: &[LineSide<Side>]) -> Self {
         let side_lines = |side| {
             block
                 .iter()
-                .filter(move |(_, changed)| *changed == side)
-                .map(|(line, _)| Some(*line))
+                .filter(move |line| line.side == side)
+                .map(|line| Some(line.line))
                 .chain(iter::repeat(None))
         };
         let rows = side_lines(Side::Old)
@@ -404,9 +439,9 @@ impl BlockRows {
 
         let row_of_line = block
             .iter()
-            .scan(BySide::<usize>::default(), |seen, (_, side)| {
-                let row = *seen.get(*side);
-                *seen.get_mut(*side) += 1;
+            .scan(BySide::<usize>::default(), |seen, line| {
+                let row = *seen.get(line.side);
+                *seen.get_mut(line.side) += 1;
                 Some(row)
             })
             .collect();
