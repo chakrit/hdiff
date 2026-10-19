@@ -7,6 +7,13 @@ use crate::{
     harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
 };
 
+/// How many continuity markers the file list shows above and below its rows.
+#[derive(Debug, PartialEq, Eq)]
+struct EdgeMarkers {
+    above: usize,
+    below: usize,
+}
+
 matrix!(file_list_toggle);
 
 /// docs/spec/architecture.md#interaction-model and docs/spec/architecture.md#view-model:
@@ -148,24 +155,39 @@ fn marks_files_beyond_the_file_list() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
     let markers = |live: &Live| {
         let list = live.left_of_first_separator().join("");
-        (list.matches('▴').count(), list.matches('▾').count())
+        EdgeMarkers {
+            above: list.matches('▴').count(),
+            below: list.matches('▾').count(),
+        }
     };
 
     assert_eq!(
         live.left_of_first_separator()[FIRST_CONTENT_LINE],
         "~ file_00.rs"
     );
-    assert_eq!(markers(&live), (0, 1), "files below the list");
+    assert_eq!(
+        markers(&live),
+        EdgeMarkers { above: 0, below: 1 },
+        "files below the list"
+    );
     for _ in 0..36 {
         live.next_file();
     }
-    assert_eq!(markers(&live), (1, 1), "files above and below");
+    assert_eq!(
+        markers(&live),
+        EdgeMarkers { above: 1, below: 1 },
+        "files above and below"
+    );
     // Back past the first file, wrapping to the last.
     for _ in 0..37 {
         live.previous_file();
     }
     assert!(live.shows("~ file_39.rs"));
-    assert_eq!(markers(&live), (1, 0), "the last file ends the list");
+    assert_eq!(
+        markers(&live),
+        EdgeMarkers { above: 1, below: 0 },
+        "the last file ends the list"
+    );
 }
 
 #[test]
