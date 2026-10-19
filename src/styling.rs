@@ -56,7 +56,7 @@ impl StyledRows {
     /// address, and the character detail derived here from these same rows.
     fn styled(
         rows: PageRows,
-        syntax: &RecordMap<Vec<SyntaxSpan>>,
+        syntax_spans: &RecordMap<Vec<SyntaxSpan>>,
         observer: &mut impl Observer,
     ) -> Self {
         let details = observer.measure(Stage::Detail, |_| character_details(&rows));
@@ -64,17 +64,17 @@ impl StyledRows {
         let styles = rows.map_lines(|index, line| {
             let text = line.payload();
             let spans: &[SyntaxSpan] = match line.kind() {
-                LineKind::Record { address, .. } => syntax.get(address),
+                LineKind::Record { address, .. } => syntax_spans.get(address),
                 LineKind::Text
                 | LineKind::Metadata
                 | LineKind::FileHeader
                 | LineKind::HunkHeader => &[],
             };
-            let character = details.get(index).as_ref();
+            let detail = details.get(index).as_ref();
 
             RowStyles {
                 syntax: syntax_partition(text, spans),
-                character: character.map(|detail| character_partition(text, detail)),
+                character: detail.map(|changed| character_partition(text, changed)),
             }
         });
 
@@ -205,7 +205,7 @@ fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
         })
         .collect::<Vec<_>>();
 
-    Partition::new(text, &annotations, TextStyle::Plain)
+    Partition::of(text, &annotations, TextStyle::Plain)
 }
 
 /// `text` split by its character `detail`: changed spans, and the unchanged text between
@@ -222,7 +222,7 @@ fn character_partition(text: &str, detail: &ChangedDetail) -> Partition {
         })
         .collect::<Vec<_>>();
 
-    Partition::new(
+    Partition::of(
         text,
         &annotations,
         TextStyle::Detail(side, DetailStyle::Unchanged),
@@ -257,7 +257,7 @@ impl Partition {
     /// covers takes `uncovered`. Where annotations overlap, the shortest capture wins and
     /// later encounters break ties.
     /// Rules: docs/spec/architecture.md#technology-direction.
-    fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
+    fn of(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self::Uniform(Boundary {
                 end: text.len(),
@@ -280,9 +280,7 @@ impl Partition {
         let mut active = BinaryHeap::new();
         let mut boundaries: Vec<Boundary> = Vec::new();
 
-        for interval in offsets.windows(2) {
-            let [start, end] = [interval[0], interval[1]];
-
+        for (&start, &end) in offsets.iter().zip(&offsets[1..]) {
             while let Some(index) =
                 starts.next_if(|index| annotations[*index].span.start() <= start)
             {
@@ -382,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
+    fn marks_changed_graphemes_and_the_unchanged_gaps_between_them() {
         let document = parse_patch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-αcall!\n+αcell!\n".as_bytes())
             .expect("valid diff");
         let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
