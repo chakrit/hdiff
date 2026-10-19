@@ -44,10 +44,10 @@ pub struct FileView<'a> {
 }
 
 impl DiffDocument {
-    /// The document `sections` and the `trailing` text after them form: their files, or
-    /// the text alone when there are none.
-    pub(crate) fn new(sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
-        match NonEmpty::of(sections) {
+    /// The document `found_sections` and the `trailing` text after them form: their
+    /// files, or the text alone when there are none.
+    pub(crate) fn new(found_sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
+        match NonEmpty::of(found_sections) {
             Some(sections) => Self::Files(DiffFiles { sections, trailing }),
             None => Self::Text(trailing),
         }

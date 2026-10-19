@@ -33,12 +33,12 @@ impl InstallGitDiffPager {
         context: &mut GlobalGitConfigContext,
     ) -> Result<InstallGitDiffPagerReport, Error> {
         let InstallPlan {
-            backup,
+            backup: planned_backup,
             pager_command,
         } = InstallPlan::of(&context.environment, &self.executable)?;
         let mut completed_commands = Vec::new();
 
-        if let Some(backup) = backup {
+        if let Some(backup) = planned_backup {
             let backup_command = backup.shell_command();
             backup.run(context)?;
             completed_commands.push(backup_command);
@@ -223,8 +223,11 @@ fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
 
 /// How a failure to resolve the executable at `path` is reported.
 fn resolving(path: &Path) -> impl FnOnce(io::Error) -> Error {
-    let path = path.to_owned();
-    |source| Error::ResolveExecutable { path, source }
+    let owned = path.to_owned();
+    |source| Error::ResolveExecutable {
+        path: owned,
+        source,
+    }
 }
 
 /// Whether `path` exists; failing to tell is an error, not an absence.

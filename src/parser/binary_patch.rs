@@ -20,12 +20,12 @@ pub(super) fn parse_binary_patch(
     header: SourceLine,
     lines: &mut SourceLines<'_>,
 ) -> Result<BinaryPatch, Error> {
-    let mut blocks = Vec::new();
+    let mut read_blocks = Vec::new();
     while let Some(block_header) = lines.next_if(starts_binary_block) {
-        blocks.push(parse_binary_block(block_header, lines)?);
+        read_blocks.push(parse_binary_block(block_header, lines)?);
     }
 
-    let Some(blocks) = NonEmpty::of(blocks) else {
+    let Some(blocks) = NonEmpty::of(read_blocks) else {
         return Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock));
     };
     Ok(BinaryPatch { header, blocks })
@@ -39,12 +39,12 @@ fn parse_binary_block(
 ) -> Result<BinaryBlock, Error> {
     lines.at_last_line(check_binary_block_size(header.sanitized()))?;
 
-    let mut payload = Vec::new();
+    let mut payload_lines = Vec::new();
     while let Some(line) = lines.next_if(|text| !text.is_empty()) {
         lines.at_last_line(check_payload_line(line.sanitized()))?;
-        payload.push(line);
+        payload_lines.push(line);
     }
-    let Some(payload) = NonEmpty::of(payload) else {
+    let Some(payload) = NonEmpty::of(payload_lines) else {
         return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
     };
     let Some(end) = lines.next_if(str::is_empty) else {

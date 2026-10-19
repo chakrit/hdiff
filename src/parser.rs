@@ -186,16 +186,16 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata, and
 /// otherwise its metadata with the binary patch after it when it has one.
 fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
-    let extended_headers = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
+    let header_lines = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(old) = lines.next_file_header(Side::Old) {
         let git = GitHeader {
             line: header,
-            extended_headers: extended_headers.into_boxed_slice(),
+            extended_headers: header_lines.into_boxed_slice(),
         };
         return parse_unified(Some(git), old, lines);
     }
 
-    let Some(extended_headers) = NonEmpty::of(extended_headers) else {
+    let Some(extended_headers) = NonEmpty::of(header_lines) else {
         return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
     let binary_patch = lines
@@ -233,15 +233,15 @@ fn parse_unified(
         return Err(error);
     };
 
-    let mut hunks = Vec::new();
+    let mut parsed_hunks = Vec::new();
     let mut ended = BySide::default();
     while let Some(header) = lines.next_if(starts_hunk_header) {
         let expected = lines.at_last_line(hunk_counts(header.sanitized()))?;
         let hunk = parse_hunk(header, expected, ended, lines)?;
         ended = ended.or(hunk.ended_sides());
-        hunks.push(hunk);
+        parsed_hunks.push(hunk);
     }
-    let Some(hunks) = NonEmpty::of(hunks) else {
+    let Some(hunks) = NonEmpty::of(parsed_hunks) else {
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
     };
 
