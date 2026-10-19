@@ -183,7 +183,7 @@ enum Entered {
 /// mode, attempting each step whatever failed before it.
 fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFailures> {
     let cursor = execute!(terminal, cursor::Show);
-    let screen = match entered {
+    let left_screen = match entered {
         Entered::AlternateScreen => Some(execute!(terminal, LeaveAlternateScreen)),
         Entered::RawMode => None,
     };
@@ -191,7 +191,7 @@ fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFai
 
     let failures = [
         RestoreFailure::of(RestoreStep::Cursor, cursor),
-        screen.and_then(|screen| RestoreFailure::of(RestoreStep::AlternateScreen, screen)),
+        left_screen.and_then(|result| RestoreFailure::of(RestoreStep::AlternateScreen, result)),
         RestoreFailure::of(RestoreStep::RawMode, raw_mode),
     ];
     match NonEmpty::of(failures.into_iter().flatten()) {
@@ -211,14 +211,14 @@ impl TerminalSession {
     /// Sets up the terminal at its size, enters raw mode, then the alternate screen,
     /// leaving raw mode again when the alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, SessionError> {
-        let started = |error| SessionError::Failed {
+        let start_failed = |error| SessionError::Failed {
             stage: SessionStage::Start,
             error,
             restored: Ok(()),
         };
         let mut terminal =
-            Terminal::new(CrosstermBackend::new(controlling_terminal)).map_err(started)?;
-        terminal::enable_raw_mode().map_err(started)?;
+            Terminal::new(CrosstermBackend::new(controlling_terminal)).map_err(start_failed)?;
+        terminal::enable_raw_mode().map_err(start_failed)?;
         let panic_hook = RestoringPanicHook::install();
 
         if let Err(error) = execute!(terminal.backend_mut(), EnterAlternateScreen) {
