@@ -60,12 +60,13 @@ impl Interaction {
         let command = match event {
             Event::Interrupt => return Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
-            // before it applies an effect and every frame adopts as it draws.
+            // before it responds and every frame adopts as it draws.
             Event::Resize => return Outcome::Redraw,
             Event::Command(command) => command,
         };
+        // A command the popup filters out changes nothing, so the step only draws again.
         let Some(command) = self.keymap.admit(command) else {
-            return Outcome::Ignored;
+            return Outcome::Redraw;
         };
 
         let effect = match command {
@@ -204,13 +205,12 @@ impl PageStep {
 }
 
 /// What an event asks of the session: to end it, to draw it again at the terminal's size,
-/// to change the interaction, or nothing, for a command the keymap popup filters out.
+/// or to change the interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Exit,
     Redraw,
     Effect(Effect),
-    Ignored,
 }
 
 /// What an event does to the interaction, before navigation places the scroll position.
@@ -417,14 +417,14 @@ mod tests {
         ] {
             assert_eq!(
                 respond(open, command(ignored)),
-                Outcome::Ignored,
+                Outcome::Redraw,
                 "{ignored:?}"
             );
         }
         assert_eq!(respond(open, Event::Interrupt), Outcome::Exit);
         assert_eq!(respond(open, Event::Resize), Outcome::Redraw);
         assert_eq!(respond(closed, command(Command::Quit)), Outcome::Exit);
-        assert_eq!(respond(closed, command(close)), Outcome::Ignored);
+        assert_eq!(respond(closed, command(close)), Outcome::Redraw);
     }
 
     #[test]
