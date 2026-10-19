@@ -23,26 +23,26 @@ pub const MARKER_GUTTER_CLUSTERS: usize = 2;
 /// Cells of the marker gutter: one per gutter cluster.
 pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(MARKER_GUTTER_CLUSTERS);
 
-/// A count or offset in the terminal unit space `Unit`. The unit keeps a cell count from
-/// mixing with a line count while both share their arithmetic.
+/// A count or offset in the terminal space `Space`. The space keeps a cell count from
+/// mixing with a screen-line count while both share their arithmetic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Measure<Unit>(usize, PhantomData<Unit>);
+pub struct Measure<Space>(usize, PhantomData<Space>);
 
-/// The unit space of cell columns across a row.
+/// The space of cell columns across a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CellUnit {}
+pub enum CellSpace {}
 
-/// The unit space of screen lines down a pane.
+/// The space of screen lines down a pane.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum LineUnit {}
+pub enum ScreenLineSpace {}
 
 /// A count or offset of terminal cells across a row.
-pub type Cells = Measure<CellUnit>;
+pub type Cells = Measure<CellSpace>;
 
 /// A count or offset of screen lines down a pane.
-pub type ScreenLines = Measure<LineUnit>;
+pub type ScreenLines = Measure<ScreenLineSpace>;
 
-impl<Unit> Measure<Unit> {
+impl<Space> Measure<Space> {
     pub const ZERO: Self = Self::new(0);
     pub const ONE: Self = Self::new(1);
 
@@ -63,7 +63,7 @@ impl<Unit> Measure<Unit> {
     }
 }
 
-impl<Unit> Add for Measure<Unit> {
+impl<Space> Add for Measure<Space> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
@@ -71,13 +71,13 @@ impl<Unit> Add for Measure<Unit> {
     }
 }
 
-impl<Unit> AddAssign for Measure<Unit> {
+impl<Space> AddAssign for Measure<Space> {
     fn add_assign(&mut self, other: Self) {
         self.0 += other.0;
     }
 }
 
-impl<Unit> From<u16> for Measure<Unit> {
+impl<Space> From<u16> for Measure<Space> {
     fn from(count: u16) -> Self {
         Self::new(usize::from(count))
     }
