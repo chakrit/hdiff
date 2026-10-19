@@ -2,7 +2,8 @@
 
 Sources: [Git pager configuration](https://git-scm.com/docs/git-config#Documentation/git-config.txt-pagerltcmdgt),
 [show](https://git-scm.com/docs/git-show), [log](https://git-scm.com/docs/git-log),
-[reflog](https://git-scm.com/docs/git-reflog), [stash](https://git-scm.com/docs/git-stash),
+[reflog](https://git-scm.com/docs/git-reflog),
+[stash](https://git-scm.com/docs/git-stash),
 [range-diff](https://git-scm.com/docs/git-range-diff),
 [format-patch](https://git-scm.com/docs/git-format-patch),
 [diff](https://git-scm.com/docs/git-diff), [blame](https://git-scm.com/docs/git-blame),
