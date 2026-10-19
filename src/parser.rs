@@ -530,7 +530,7 @@ mod tests {
         &body.hunks[0]
     }
 
-    /// A binary patch whose one `literal` block holds `payload` and its closing blank line.
+    /// A binary patch whose one `literal` block holds `payload` and its blank line.
     fn binary_patch(payload: &str) -> String {
         format!(
             "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\n{payload}\n\n"
