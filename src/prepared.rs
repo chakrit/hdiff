@@ -240,19 +240,33 @@ mod tests {
                 .lines()
                 .map(|(_, line)| format!("{}{}\n", line.kind().marker(), line.payload()))
                 .collect();
-            assert_eq!(rendered, expected);
-            assert!(
-                page.row(page.rows().line_index(0), DiffGranularity::Line)
-                    .segments()
-                    .all(|segment| segment.style == TextStyle::Plain),
-                "message is not source code"
-            );
-            let mut records = page.rows().line_indices().skip(MESSAGE_AND_HEADERS);
-            assert!(records.any(|row| {
+            let line_styles = |row| {
                 page.row(row, DiffGranularity::Line)
                     .segments()
-                    .any(|segment| matches!(segment.style, TextStyle::Syntax(_)))
-            }));
+                    .map(|segment| segment.style)
+                    .collect::<Vec<_>>()
+            };
+            let message_styles = line_styles(page.rows().line_index(0));
+            let record_styles: Vec<_> = page
+                .rows()
+                .line_indices()
+                .skip(MESSAGE_AND_HEADERS)
+                .flat_map(line_styles)
+                .collect();
+
+            assert_eq!(rendered, expected);
+            assert!(
+                message_styles
+                    .iter()
+                    .all(|style| *style == TextStyle::Plain),
+                "message is not source code: {message_styles:?}"
+            );
+            assert!(
+                record_styles
+                    .iter()
+                    .any(|style| matches!(style, TextStyle::Syntax(_))),
+                "records are highlighted as source code: {record_styles:?}"
+            );
         }
     }
 
@@ -296,10 +310,22 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
 
         let page = prepared.page(PageIndex::FIRST);
-        assert!(page.rows().line_indices().any(|row| {
-            page.row(row, DiffGranularity::Character)
-                .segments()
-                .any(|segment| matches!(segment.style, TextStyle::Detail(_, DetailStyle::Changed)))
-        }));
+        let styles: Vec<_> = page
+            .rows()
+            .line_indices()
+            .flat_map(|row| {
+                page.row(row, DiffGranularity::Character)
+                    .segments()
+                    .map(|segment| segment.style)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        assert!(
+            styles
+                .iter()
+                .any(|style| matches!(style, TextStyle::Detail(_, DetailStyle::Changed))),
+            "a changed character is marked in character detail: {styles:?}"
+        );
     }
 }
