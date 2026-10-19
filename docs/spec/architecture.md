@@ -116,7 +116,8 @@ must not parse diff text, and input handling must not mutate parsed records in p
 The document is the source of truth and retains enough original content to render unknown
 but valid diff lines without data loss.
 
-- `DiffDocument`: ordered text sections and file-diff sections.
+- `DiffDocument`: file diffs in input order, each with the surrounding text before it,
+  then the text after the last file.
 - `FileView`: a borrowed navigation projection of a file and its surrounding text. Leading
   text appears above the following file; final trailing text appears after the last file.
   Repeated paths remain separate file occurrences. Each file occurrence is one navigation
