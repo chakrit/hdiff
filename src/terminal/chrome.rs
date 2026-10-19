@@ -14,9 +14,8 @@ use ratatui::{
 
 use super::row_writer::Clip;
 use crate::{
-    file_tree::{FileTree, TreeRow, TreeRowIndex},
+    file_tree::{FileSelection, TreeRow},
     geometry::{FrameEdges, FramedArea, SplitDirection},
-    prepared::PageKind,
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
 };
@@ -35,18 +34,13 @@ const FLOATING_BOX_BORDER: u16 = 1;
 const FLOATING_BOX_PADDING: u16 = 1;
 
 /// Draws the file list above the help hint in the file-list column, selecting the row of
-/// the page's file; a text page selects none.
+/// the page's file; a document without files lists nothing.
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
-    tree: &FileTree,
-    page_kind: PageKind,
+    list: Option<FileSelection<'_>>,
     palette: &ChromePalette,
 ) {
-    let selected_row = match page_kind {
-        PageKind::File { row } => Some(row),
-        PageKind::Text => None,
-    };
     let list_height = FrameEdges::FILE_LIST
         .around(Size::new(0, MINIMUM_FILE_LIST_HEIGHT))
         .height;
@@ -60,7 +54,9 @@ pub(super) fn render_file_column(
     ])
     .areas(area);
 
-    render_file_list(frame, list_area, tree, selected_row, palette);
+    if let Some(list) = list {
+        render_file_list(frame, list_area, list, palette);
+    }
     draw_help_hint(frame.buffer_mut(), hint_area, palette);
 }
 
@@ -227,8 +223,7 @@ pub(super) struct LineWindow {
 fn render_file_list(
     frame: &mut Frame,
     area: Rect,
-    tree: &FileTree,
-    selected_row: Option<TreeRowIndex>,
+    FileSelection { tree, selected }: FileSelection<'_>,
     palette: &ChromePalette,
 ) {
     let list_frame = ContinuityFrame::of(FramedArea::file_list(area));
@@ -237,16 +232,14 @@ fn render_file_list(
         return;
     };
 
-    let selection = selected_row.map(|row| row.window(height));
-    // Without a selected row, the list shows from its top.
-    let first = selection.map_or(TreeRowIndex::FIRST, |window| window.first);
+    let selection = selected.window(height);
     let window = LineWindow {
-        first: first.screen_line(),
+        first: selection.first.screen_line(),
         total: tree.line_count(),
     };
 
     let items = tree
-        .rows_from(first)
+        .rows_from(selection.first)
         .iter()
         .take(height.get())
         .map(|row| tree_item(row, palette));
@@ -255,8 +248,7 @@ fn render_file_list(
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let mut state =
-        ListState::default().with_selected(selection.map(|window| window.selected_offset));
+    let mut state = ListState::default().with_selected(Some(selection.selected_offset));
 
     frame.render_stateful_widget(file_list, content, &mut state);
     list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
@@ -321,20 +313,12 @@ mod tests {
         let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
-        let page_kind = prepared.page(PageIndex::FIRST).kind();
+        let list = prepared.file_selection(PageIndex::FIRST);
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
         let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
-            .draw(|frame| {
-                render_file_column(
-                    frame,
-                    frame.area(),
-                    prepared.file_tree(),
-                    page_kind,
-                    palette,
-                )
-            })
+            .draw(|frame| render_file_column(frame, frame.area(), list, palette))
             .expect("render file column");
 
         let buffer = terminal.backend().buffer();

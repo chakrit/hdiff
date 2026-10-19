@@ -1,8 +1,8 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, slice};
 
 use crate::{
     document::{DiffDocument, DiffFiles},
-    file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
+    file_tree::{FileSelection, FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     non_empty::NonEmpty,
     page_rows::{LineIndex, PageRows},
@@ -12,10 +12,21 @@ use crate::{
     syntax::SyntaxHighlighter,
 };
 
-/// A document ready to draw: at least one page, and the file list.
-pub struct PreparedDocument {
-    pages: NonEmpty<PreparedPage>,
-    file_tree: FileTree,
+/// A document ready to draw: one page per listed file with the file list, or one page of
+/// the text of a document that lists no file. Rules:
+/// docs/spec/architecture.md#core-model.
+pub enum PreparedDocument {
+    Files {
+        pages: NonEmpty<FilePage>,
+        file_tree: FileTree,
+    },
+    Text(PreparedPage),
+}
+
+/// A file occurrence's page, with the file-list row that selects it.
+pub struct FilePage {
+    page: PreparedPage,
+    row: TreeRowIndex,
 }
 
 /// What one selection shows: a file occurrence with its surrounding text, or all the
@@ -23,14 +34,6 @@ pub struct PreparedDocument {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
     rows: StyledRows,
-    kind: PageKind,
-}
-
-/// What a page shows: a listed file, or the text of a document that lists no file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PageKind {
-    File { row: TreeRowIndex },
-    Text,
 }
 
 impl PreparedDocument {
@@ -49,29 +52,45 @@ impl PreparedDocument {
     ///
     /// Panics when `index` is not below [`page_count`](Self::page_count).
     pub fn page(&self, index: PageIndex) -> &PreparedPage {
-        &self.pages[index.0]
+        match self {
+            Self::Files { pages, .. } => &pages[index.0].page,
+            Self::Text(page) => &slice::from_ref(page)[index.0],
+        }
     }
 
     pub fn page_count(&self) -> PageCount {
-        PageCount(self.pages.len())
+        match self {
+            Self::Files { pages, .. } => PageCount(pages.len()),
+            Self::Text(_) => PageCount(NonZeroUsize::MIN),
+        }
     }
 
     pub fn file_count(&self) -> usize {
-        self.pages()
-            .filter(|page| matches!(page.kind, PageKind::File { .. }))
-            .count()
+        match self {
+            Self::Files { pages, .. } => pages.len().get(),
+            Self::Text(_) => 0,
+        }
     }
 
     pub fn record_count(&self) -> usize {
         self.pages().map(PreparedPage::record_count).sum()
     }
 
-    pub fn file_tree(&self) -> &FileTree {
-        &self.file_tree
+    /// The file list with the row of the file `page` shows; a document without files
+    /// lists none.
+    pub fn file_selection(&self, page: PageIndex) -> Option<FileSelection<'_>> {
+        match self {
+            Self::Files { pages, file_tree } => Some(FileSelection {
+                tree: file_tree,
+                selected: pages[page.0].row,
+            }),
+            Self::Text(_) => None,
+        }
     }
 
+    /// Every page, in page order.
     fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
-        self.pages.iter()
+        (0..self.page_count().0.get()).map(|index| self.page(PageIndex(index)))
     }
 
     // Preparation
@@ -84,18 +103,15 @@ impl PreparedDocument {
         } = observer.measure(Stage::Labels, |_| ListedTree::build(files));
 
         let mut syntax = SyntaxHighlighter::default();
-        Self {
-            pages: listed.map(|file| PreparedPage::file(*file, &mut syntax, observer)),
+        Self::Files {
+            pages: listed.map(|file| FilePage::of(*file, &mut syntax, observer)),
             file_tree,
         }
     }
 
-    /// One page of all the text, with an empty file list.
+    /// One page of all the text.
     fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
-        Self {
-            pages: NonEmpty::new(PreparedPage::text(text, observer), []),
-            file_tree: FileTree::default(),
-        }
+        Self::Text(PreparedPage::text(text, observer))
     }
 }
 
@@ -133,28 +149,27 @@ impl PageCount {
     }
 }
 
-impl PreparedPage {
-    fn file(
+impl FilePage {
+    fn of(
         listed: ListedFile<'_>,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
         Self {
-            rows: StyledRows::of_file_view(listed.view, syntax, observer),
-            kind: PageKind::File { row: listed.row },
+            page: PreparedPage {
+                rows: StyledRows::of_file_view(listed.view, syntax, observer),
+            },
+            row: listed.row,
         }
     }
+}
 
+impl PreparedPage {
     /// Surrounding text has no syntax or character detail.
     fn text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
             rows: StyledRows::of_text(text, observer),
-            kind: PageKind::Text,
         }
-    }
-
-    pub fn kind(&self) -> PageKind {
-        self.kind
     }
 
     pub fn rows(&self) -> &PageRows {
@@ -226,7 +241,10 @@ mod tests {
         let mut profile = crate::measurement::Profile::default();
         let observed = PreparedDocument::prepare_observed(&document, &mut profile);
 
-        assert_eq!(ordinary.file_tree(), observed.file_tree());
+        assert_eq!(
+            ordinary.file_selection(PageIndex::FIRST),
+            observed.file_selection(PageIndex::FIRST)
+        );
         assert_eq!(ordinary.record_count(), observed.record_count());
         for (ordinary, observed) in ordinary.pages().zip(observed.pages()) {
             assert_eq!(ordinary, observed);
