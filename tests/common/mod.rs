@@ -106,14 +106,25 @@ impl TestEnv {
     }
 }
 
-/// Asserts that hdiff exited with the trouble status its errors use.
+/// The standard error of an hdiff run that failed: it exited with the trouble status
+/// and wrote nothing to standard output. Rules: docs/spec/architecture.md#error-output.
 #[allow(dead_code)]
-pub fn assert_trouble(output: &Output) {
+pub fn error_output(output: &Output) -> String {
     assert_eq!(
         output.status.code(),
         Some(i32::from(DiffStatus::Trouble.code())),
         "{output:?}"
     );
+    assert!(output.stdout.is_empty(), "{output:?}");
+
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// Asserts that hdiff failed with the one-line error `message`, after its `hdiff: `
+/// prefix.
+#[allow(dead_code)]
+pub fn assert_error(output: &Output, message: &str) {
+    assert_eq!(error_output(output), format!("hdiff: {message}\n"));
 }
 
 /// A file under `tests/fixtures/`, as an absolute path usable from any sandbox.
