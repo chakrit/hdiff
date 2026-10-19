@@ -99,7 +99,7 @@ impl MeasuredText {
     pub fn borrowed(&self) -> MeasuredTextRef<'_> {
         MeasuredTextRef {
             text: &self.text,
-            cells: Cells::from(self.cells),
+            cells: Cells::of_retained(self.cells),
         }
     }
 }

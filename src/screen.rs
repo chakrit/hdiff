@@ -57,6 +57,11 @@ impl Cells {
         Count::of(self.0)
     }
 
+    /// Cells a retained record kept in compact form.
+    pub fn of_retained(retained: Count) -> Self {
+        Self(retained.get())
+    }
+
     pub const fn saturating_add(self, other: Self) -> Self {
         Self(self.0.saturating_add(other.0))
     }
@@ -118,13 +123,6 @@ impl AddAssign for Cells {
 impl Sum for Cells {
     fn sum<I: Iterator<Item = Self>>(cells: I) -> Self {
         cells.fold(Self::ZERO, Add::add)
-    }
-}
-
-impl From<Count> for Cells {
-    /// Cells a retained record kept in compact form.
-    fn from(retained: Count) -> Self {
-        Self(retained.get())
     }
 }
 
