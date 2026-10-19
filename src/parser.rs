@@ -180,17 +180,12 @@ fn is_git_metadata(text: &str) -> bool {
 fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Error> {
     let mut patch = Vec::new();
 
-    while let Some(Taken {
-        line: header,
-        value: size_check,
-    }) = lines.next_if_map(|text| {
-        binary_block_size(text).map(|size| {
-            is_decimal_count(size)
-                .then_some(())
-                .ok_or(Malformed::InvalidBinaryPatchHeader)
-        })
-    }) {
-        lines.at_last_line(size_check)?;
+    loop {
+        let header = match lines.next_header(binary_block_header) {
+            HeaderRead::Other => break,
+            HeaderRead::Read(Taken { line, value: () }) => line,
+            HeaderRead::Malformed(error) => return Err(error),
+        };
         patch.push(header);
 
         let payload_start = patch.len();
@@ -212,11 +207,18 @@ fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Er
     }
 }
 
-fn binary_block_size(text: &str) -> Option<&str> {
+/// What `text` reads as where a `literal` or `delta` block header may start.
+fn binary_block_header(text: &str) -> HeaderRead<(), Malformed> {
     let literal = text.strip_prefix("literal ");
     let delta = text.strip_prefix("delta ");
+    let Some(size) = literal.or(delta) else {
+        return HeaderRead::Other;
+    };
 
-    literal.or(delta)
+    match is_decimal_count(size) {
+        true => HeaderRead::Read(()),
+        false => HeaderRead::Malformed(Malformed::InvalidBinaryPatchHeader),
+    }
 }
 
 /// A section with `---` / `+++` headers, after its Git header when it has one.
@@ -234,14 +236,15 @@ fn parse_unified(
     };
 
     let mut hunks = Vec::new();
-    while let Some(Taken {
-        line: header,
-        value: declared,
-    }) = lines.next_if_map(|text| {
-        text.starts_with("@@ ")
-            .then(|| hunk_counts(text).ok_or(Malformed::InvalidHunkHeader))
-    }) {
-        let expected = lines.at_last_line(declared)?;
+    loop {
+        let Taken {
+            line: header,
+            value: expected,
+        } = match lines.next_header(hunk_header) {
+            HeaderRead::Other => break,
+            HeaderRead::Read(taken) => taken,
+            HeaderRead::Malformed(error) => return Err(error),
+        };
         hunks.push(parse_hunk(header, expected, lines)?);
     }
     let Some(hunks) = NonEmpty::of(hunks) else {
@@ -334,14 +337,30 @@ fn is_excess_record(line: &SourceLine) -> bool {
     marked && file_header_field(line.sanitized(), Side::Old).is_none()
 }
 
+/// What `text` reads as where a hunk header may start: an `@@ ` line is a hunk header,
+/// and states its counts or is malformed.
+fn hunk_header(text: &str) -> HeaderRead<BySide<usize>, Malformed> {
+    if !text.starts_with("@@ ") {
+        return HeaderRead::Other;
+    }
+
+    match hunk_counts(text) {
+        Some(counts) => HeaderRead::Read(counts),
+        None => HeaderRead::Malformed(Malformed::InvalidHunkHeader),
+    }
+}
+
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
 fn hunk_counts(header: &str) -> Option<BySide<usize>> {
     let mut parts = header.split_whitespace();
-    (parts.next()? == "@@").then_some(())?;
-    let old = range_count(parts.next()?, '-')?;
-    let new = range_count(parts.next()?, '+')?;
-    (parts.next()? == "@@").then_some(())?;
+    let [Some("@@"), Some(old), Some(new), Some("@@")] =
+        [parts.next(), parts.next(), parts.next(), parts.next()]
+    else {
+        return None;
+    };
 
+    let old = range_count(old, '-')?;
+    let new = range_count(new, '+')?;
     Some(BySide { old, new })
 }
 
@@ -351,7 +370,9 @@ fn range_count(range: &str, prefix: char) -> Option<usize> {
         Some((start, count)) => (start, count),
         None => (range, "1"),
     };
-    is_decimal_count(start).then_some(())?;
+    if !is_decimal_count(start) {
+        return None;
+    }
 
     count.parse().ok()
 }
@@ -370,10 +391,20 @@ struct SourceLines<'a> {
     taken: usize,
 }
 
-/// A line [`SourceLines::next_if_map`] took, with the value it read from the line.
+/// A line [`SourceLines`] took, with the value it read from the line.
 struct Taken<T> {
     line: SourceLine,
     value: T,
+}
+
+/// What a line reads as where a header of one kind may start.
+enum HeaderRead<T, E> {
+    /// Not a header of this kind.
+    Other,
+    /// A header of this kind, with the value it states.
+    Read(T),
+    /// A header of this kind that states its value wrongly.
+    Malformed(E),
 }
 
 impl<'a> SourceLines<'a> {
@@ -410,8 +441,12 @@ impl<'a> SourceLines<'a> {
 
     /// Takes the next line when its sanitized text satisfies `accepts`.
     fn next_if(&mut self, accepts: impl FnOnce(&str) -> bool) -> Option<SourceLine> {
-        self.next_if_map(|text| accepts(text).then_some(()))
-            .map(|taken| taken.line)
+        let accepted = self.peek().is_some_and(|line| accepts(line.sanitized()));
+
+        match accepted {
+            true => self.next(),
+            false => None,
+        }
     }
 
     /// Takes the next line when `extract` reads a value from its sanitized text, with
@@ -420,6 +455,27 @@ impl<'a> SourceLines<'a> {
         let value = self.peek().and_then(|line| extract(line.sanitized()))?;
 
         self.next().map(|line| Taken { line, value })
+    }
+
+    /// Takes the next line when `read` finds it a header, well-formed or malformed; a
+    /// malformed header's error is located at that line.
+    fn next_header<T>(
+        &mut self,
+        read: impl FnOnce(&str) -> HeaderRead<T, Malformed>,
+    ) -> HeaderRead<Taken<T>, Error> {
+        let read = self
+            .peek()
+            .map_or(HeaderRead::Other, |line| read(line.sanitized()));
+        let is_header = !matches!(read, HeaderRead::Other);
+        let Some(line) = self.next_if(|_| is_header) else {
+            return HeaderRead::Other;
+        };
+
+        match read {
+            HeaderRead::Other => HeaderRead::Other,
+            HeaderRead::Read(value) => HeaderRead::Read(Taken { line, value }),
+            HeaderRead::Malformed(reason) => HeaderRead::Malformed(self.last_line_error(reason)),
+        }
     }
 
     /// Takes the next line when it is `side`'s file header.
