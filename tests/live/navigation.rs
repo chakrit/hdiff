@@ -170,68 +170,6 @@ fn resize(mode: Mode) {
     );
 }
 
-/// architecture.md (Viewport coordinates): each frame adopts the size it is drawn at, so a
-/// key that arrives between a size change and its resize event draws a full frame.
-fn key_before_resize_event(mode: Mode) {
-    let mut resized = Live::load(MIXED_LANGUAGES, mode);
-    resized.resize(80, 20);
-    resized.press('j');
-    let expected = resized.buffer();
-
-    let mut live = Live::load(MIXED_LANGUAGES, mode);
-    live.resize_backend_only(80, 20);
-    live.press('j');
-    assert_eq!(
-        live.buffer(),
-        expected,
-        "the key draws the frame at the new size"
-    );
-
-    live.resize(80, 20);
-    assert_eq!(
-        live.buffer(),
-        expected,
-        "the resize event that follows changes nothing"
-    );
-}
-
-/// architecture.md (Viewport coordinates): the terminal is the one source of the screen
-/// size, so a resize event naming a size the terminal no longer has moves nothing.
-fn stale_resize_event(mode: Mode) {
-    let mut resized = Live::load(&long_patch(), mode);
-    resized.resize(80, 20);
-    resized.press('G');
-    let expected = resized.buffer();
-
-    let mut live = Live::load(&long_patch(), mode);
-    live.resize(80, 20);
-    live.press('G');
-    live.event(Event::Resize(WIDTH, HEIGHT));
-    assert_eq!(
-        live.buffer(),
-        expected,
-        "a stale resize event keeps the view at the bottom"
-    );
-}
-
-/// architecture.md (Viewport coordinates): the vertical offset indexes the screen lines, so
-/// `G` on a screen too short for panes still names the last line when the screen regrows.
-fn bottom_on_too_short_screen(mode: Mode) {
-    let mut full = Live::load(&long_patch(), mode);
-    full.press('G');
-    let expected = full.buffer();
-
-    let mut live = Live::load(&long_patch(), mode);
-    live.resize(WIDTH, 2);
-    live.press('G');
-    live.resize(WIDTH, HEIGHT);
-    assert_eq!(
-        live.buffer(),
-        expected,
-        "regrowing after G keeps the view at the bottom"
-    );
-}
-
 fn quit(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     assert_eq!(live.press('x'), Step::Continue, "unmapped keys are ignored");
@@ -250,39 +188,6 @@ fn bottom_past_hidden_context(mode: Mode) {
         live.shows("new_39"),
         "G shows the last row when hidden context precedes it"
     );
-}
-
-#[test]
-fn context_changes_keep_the_middle_row() {
-    let mut live = Live::load(&hidden_context_patch(), Mode::line(DiffLayout::Unified));
-    for _ in 0..14 {
-        live.press('j');
-    }
-    // architecture.md: context changes keep the middle row on the middle line.
-    let middle_line = live.pane_middle_line();
-    let middle = live.rows()[middle_line].clone();
-
-    live.press('+');
-    assert_eq!(live.rows()[middle_line], middle, "+ keeps the middle row");
-    live.press('-');
-    assert_eq!(live.rows()[middle_line], middle, "- keeps the middle row");
-}
-
-/// A session starts in unified line mode. architecture.md (Interaction model): the file list
-/// starts shown; (View model) three context records show on either side of a change.
-#[test]
-fn preferences_start_in_unified_line_mode() {
-    let tui = Tui::new(
-        PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
-        Size::new(WIDTH, HEIGHT),
-        ColorDepth::TrueColor,
-    );
-    let start = tui.preferences();
-
-    assert_eq!(start.layout, DiffLayout::Unified);
-    assert_eq!(start.granularity, DiffGranularity::Line);
-    assert_eq!(start.file_list, FileList::Shown);
-    assert_eq!(start.context_lines, 3);
 }
 
 /// architecture.md (Interaction model): `?` opens the keymap popup; while it is open,
@@ -345,6 +250,68 @@ fn half_page_movement(mode: Mode) {
     assert_eq!(live.buffer(), start, "Ctrl-U moves back");
 }
 
+/// architecture.md (Viewport coordinates): each frame adopts the size it is drawn at, so a
+/// key that arrives between a size change and its resize event draws a full frame.
+fn key_before_resize_event(mode: Mode) {
+    let mut resized = Live::load(MIXED_LANGUAGES, mode);
+    resized.resize(80, 20);
+    resized.press('j');
+    let expected = resized.buffer();
+
+    let mut live = Live::load(MIXED_LANGUAGES, mode);
+    live.resize_backend_only(80, 20);
+    live.press('j');
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "the key draws the frame at the new size"
+    );
+
+    live.resize(80, 20);
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "the resize event that follows changes nothing"
+    );
+}
+
+/// architecture.md (Viewport coordinates): the terminal is the one source of the screen
+/// size, so a resize event naming a size the terminal no longer has moves nothing.
+fn stale_resize_event(mode: Mode) {
+    let mut resized = Live::load(&long_patch(), mode);
+    resized.resize(80, 20);
+    resized.press('G');
+    let expected = resized.buffer();
+
+    let mut live = Live::load(&long_patch(), mode);
+    live.resize(80, 20);
+    live.press('G');
+    live.event(Event::Resize(WIDTH, HEIGHT));
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "a stale resize event keeps the view at the bottom"
+    );
+}
+
+/// architecture.md (Viewport coordinates): the vertical offset indexes the screen lines, so
+/// `G` on a screen too short for panes still names the last line when the screen regrows.
+fn bottom_on_too_short_screen(mode: Mode) {
+    let mut full = Live::load(&long_patch(), mode);
+    full.press('G');
+    let expected = full.buffer();
+
+    let mut live = Live::load(&long_patch(), mode);
+    live.resize(WIDTH, 2);
+    live.press('G');
+    live.resize(WIDTH, HEIGHT);
+    assert_eq!(
+        live.buffer(),
+        expected,
+        "regrowing after G keeps the view at the bottom"
+    );
+}
+
 /// The number of the `old_N` label on a screen row.
 fn label_number(row: &str) -> usize {
     let label = change_label(row).expect("a labeled row");
@@ -352,6 +319,39 @@ fn label_number(row: &str) -> usize {
         .trim_start_matches("old_")
         .parse()
         .expect("an old_N label")
+}
+
+#[test]
+fn context_changes_keep_the_middle_row() {
+    let mut live = Live::load(&hidden_context_patch(), Mode::line(DiffLayout::Unified));
+    for _ in 0..14 {
+        live.press('j');
+    }
+    // architecture.md: context changes keep the middle row on the middle line.
+    let middle_line = live.pane_middle_line();
+    let middle = live.rows()[middle_line].clone();
+
+    live.press('+');
+    assert_eq!(live.rows()[middle_line], middle, "+ keeps the middle row");
+    live.press('-');
+    assert_eq!(live.rows()[middle_line], middle, "- keeps the middle row");
+}
+
+/// A session starts in unified line mode. architecture.md (Interaction model): the file list
+/// starts shown; (View model) three context records show on either side of a change.
+#[test]
+fn preferences_start_in_unified_line_mode() {
+    let tui = Tui::new(
+        PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
+        Size::new(WIDTH, HEIGHT),
+        ColorDepth::TrueColor,
+    );
+    let start = tui.preferences();
+
+    assert_eq!(start.layout, DiffLayout::Unified);
+    assert_eq!(start.granularity, DiffGranularity::Line);
+    assert_eq!(start.file_list, FileList::Shown);
+    assert_eq!(start.context_lines, 3);
 }
 
 /// architecture.md (Lossless and safe rendering): the document is never truncated, so `$`
