@@ -91,23 +91,29 @@ pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut text = Vec::new();
 
     while let Some(line) = lines.next() {
-        let file = match lines.at_last_line(line_start(line.sanitized()))? {
-            LineStart::Text => {
-                text.push(line);
-                continue;
+        match lines.at_last_line(line_start(line.sanitized()))? {
+            LineStart::Text => text.push(line),
+            LineStart::GitHeader => {
+                let file = parse_git_section(line, &mut lines)?;
+                sections.push(section_after(&mut text, file));
             }
-            LineStart::GitHeader => parse_git_section(line, &mut lines)?,
             LineStart::OldFileHeader(path) => {
-                parse_unified(None, FileHeader { line, path }, &mut lines)?
+                let file = parse_unified(None, FileHeader { line, path }, &mut lines)?;
+                sections.push(section_after(&mut text, file));
             }
-        };
-        sections.push(FileSection {
-            leading: mem::take(&mut text).into_boxed_slice(),
-            file,
-        });
+        }
     }
 
     Ok(DiffDocument::new(sections, text.into_boxed_slice()))
+}
+
+/// `file` with the surrounding text gathered before it, which leaves `text` empty for the
+/// next file.
+fn section_after(text: &mut Vec<SourceLine>, file: DiffFile) -> FileSection {
+    FileSection {
+        leading: mem::take(text).into_boxed_slice(),
+        file,
+    }
 }
 
 // Sections
@@ -177,13 +183,14 @@ fn is_git_metadata(text: &str) -> bool {
 fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, ParseError> {
     let mut patch = Vec::new();
 
-    while let Some((header, size)) = lines.next_if_map(|text| {
+    while let Some((header, size_check)) = lines.next_if_map(|text| {
         binary_block_size(text).map(|size| {
-            size.parse::<usize>()
-                .map_err(|_| Malformed::InvalidBinaryPatchHeader)
+            is_decimal_count(size)
+                .then_some(())
+                .ok_or(Malformed::InvalidBinaryPatchHeader)
         })
     }) {
-        lines.at_last_line(size)?;
+        lines.at_last_line(size_check)?;
         patch.push(header);
 
         let payload_start = patch.len();
@@ -291,10 +298,7 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
         false => Some(count),
     });
 
-    match (counted.old, counted.new) {
-        (Some(old), Some(new)) => Ok(BySide { old, new }),
-        _ => Err(Malformed::ExcessRecords),
-    }
+    counted.transpose().ok_or(Malformed::ExcessRecords)
 }
 
 fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
@@ -344,9 +348,14 @@ fn range_count(range: &str, prefix: char) -> Option<usize> {
         Some((start, count)) => (start, count),
         None => (range, "1"),
     };
-    start.parse::<usize>().ok()?;
+    is_decimal_count(start).then_some(())?;
 
     count.parse().ok()
+}
+
+/// Whether `text` is a line number or count a header may state.
+fn is_decimal_count(text: &str) -> bool {
+    text.parse::<usize>().is_ok()
 }
 
 // Reading lines

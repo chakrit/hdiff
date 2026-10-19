@@ -1,5 +1,7 @@
 //! The two files a diff compares, and values held once for each.
 
+use std::array;
+
 /// One of the two files a diff compares.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
@@ -56,7 +58,7 @@ impl<T> BySide<T> {
     }
 
     /// Each side's value, old then new.
-    pub fn iter(&self) -> std::array::IntoIter<&T, 2> {
+    pub fn iter(&self) -> array::IntoIter<&T, 2> {
         self.as_ref().into_iter()
     }
 
@@ -69,10 +71,20 @@ impl<T> BySide<T> {
     }
 }
 
+impl<T> BySide<Option<T>> {
+    /// Both sides' values when both sides hold one.
+    pub fn transpose(self) -> Option<BySide<T>> {
+        Some(BySide {
+            old: self.old?,
+            new: self.new?,
+        })
+    }
+}
+
 /// Each side's value, old then new.
 impl<T> IntoIterator for BySide<T> {
     type Item = T;
-    type IntoIter = std::array::IntoIter<T, 2>;
+    type IntoIter = array::IntoIter<T, 2>;
 
     fn into_iter(self) -> Self::IntoIter {
         [self.old, self.new].into_iter()
