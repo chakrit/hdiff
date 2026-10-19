@@ -200,8 +200,8 @@ An immediate record-looking continuation after a hunk's declared counts is an er
 Surrounding text does not provide recovery from malformed recognized diff sections.
 
 A hunk header is `@@ -<range> +<range> @@` with single spaces between its fields,
-optionally followed by a space and a section heading; each range is a start, then a comma
-and a count, in ASCII digits.
+optionally followed by a space and a section heading; each range is a start, optionally
+followed by a comma and a count, in ASCII digits, and a range without a count is one line.
 
 Inside a hunk's declared counts, every line is a record marked ` `, `+`, or `-`, or an
 empty line, which is a blank context line as GNU `diff --suppress-blank-empty` writes it.
