@@ -47,7 +47,7 @@ pub enum SplitDirection {
     Stacked,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct ScreenGeometry {
     screen: Rect,
     file_column: Option<FileColumn>,
@@ -259,7 +259,7 @@ impl FrameEdges {
 }
 
 /// An area with a continuity-marker frame, and the content inside the frame.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct FramedArea {
     area: Rect,
     content: Rect,
@@ -290,6 +290,11 @@ impl FramedArea {
     pub fn content(&self) -> Rect {
         self.content
     }
+}
+
+/// The cell halfway along `length` cells from `start`, rounding toward `start`.
+pub const fn halfway(start: u16, length: u16) -> u16 {
+    start + length / 2
 }
 
 /// The file list is shown, and its column, padded separator, and at least one diff column

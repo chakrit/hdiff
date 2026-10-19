@@ -9,19 +9,21 @@ use ratatui::{
     layout::{Constraint, Layout, Position, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Clear, List, ListItem, ListState},
 };
 
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileSelection, TreeRow},
-    geometry::{FrameEdges, FramedArea, SplitDirection},
+    geometry::{FrameEdges, FramedArea, SplitDirection, halfway},
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
 };
 
+/// Rows the file list keeps inside its frame before the hint takes any.
 const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 
+/// The hint that names the key opening the keymap popup.
 const HELP_HINT: &str = "? help";
 /// Columns before the file column's hint.
 const HELP_HINT_INDENT: u16 = 1;
@@ -46,11 +48,14 @@ pub(super) fn render_file_column(
         .height
         .saturating_sub(list_height)
         .min(HELP_HINT_HEIGHT);
-    let [list_area, hint_area] = Layout::vertical([
+    let [list_area, hint_row] = Layout::vertical([
         Constraint::Min(list_height),
         Constraint::Length(hint_height),
     ])
     .areas(area);
+    let [_, hint_area] =
+        Layout::horizontal([Constraint::Length(HELP_HINT_INDENT), Constraint::Fill(1)])
+            .areas(hint_row);
 
     if let Some(list) = list {
         render_file_list(frame, list_area, list, palette);
@@ -65,8 +70,7 @@ pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePal
     let help_box = FloatingBox::bottom_left_of(area, Size::new(hint_width, HELP_HINT_HEIGHT));
 
     let content = help_box.render(frame, palette);
-    let text = Line::styled(HELP_HINT, Style::default().fg(palette.hint));
-    frame.render_widget(Paragraph::new(text), content);
+    draw_help_hint(frame.buffer_mut(), content, palette);
 }
 
 /// A bordered box with a padding column inside each side, drawn over the chrome and panes
@@ -93,8 +97,8 @@ impl FloatingBox {
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
         Self::placed(area, content, |size| {
             Position::new(
-                area.x + area.width.saturating_sub(size.width) / 2,
-                area.y + area.height.saturating_sub(size.height) / 2,
+                halfway(area.x, area.width.saturating_sub(size.width)),
+                halfway(area.y, area.height.saturating_sub(size.height)),
             )
         })
     }
@@ -146,7 +150,6 @@ pub(super) fn draw_inner_separator(
 
 /// The continuity markers drawn on a framed area's frame. Rules:
 /// docs/spec/architecture.md#continuity-markers.
-#[derive(Clone, Copy)]
 pub(super) struct ContinuityFrame(FramedArea);
 
 impl ContinuityFrame {
@@ -179,7 +182,7 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let y = content.y + content.height / 2;
+        let y = halfway(content.y, content.height);
 
         if clip.left {
             buffer[(area.left(), y)].set_symbol("◂").set_style(style);
@@ -206,7 +209,7 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let center = area.x + area.width / 2;
+        let center = halfway(area.x, area.width);
         let shown = ScreenLines::from(content.height);
 
         if window.first > ScreenLines::ZERO {
@@ -308,20 +311,15 @@ fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
     ListItem::new(line)
 }
 
+/// The `? help` hint at the start of `area`'s first row, cut to its width; the file
+/// column and the floating help box both draw it here.
 fn draw_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
     if area.is_empty() {
         return;
     }
     let style = Style::default().fg(palette.hint);
 
-    buffer.set_style(area, style);
-    buffer.set_stringn(
-        area.x + HELP_HINT_INDENT,
-        area.y,
-        HELP_HINT,
-        usize::from(area.width.saturating_sub(HELP_HINT_INDENT)),
-        style,
-    );
+    buffer.set_stringn(area.x, area.y, HELP_HINT, usize::from(area.width), style);
 }
 
 fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
