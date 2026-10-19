@@ -74,7 +74,7 @@ pub fn context_patch() -> String {
 }
 
 /// How many hunks [`hidden_context_patch`] holds.
-const HIDDEN_CONTEXT_HUNKS: usize = 40;
+pub const HIDDEN_CONTEXT_HUNKS: usize = 40;
 
 /// How many leading context records each hunk of [`hidden_context_patch`] holds.
 const HIDDEN_CONTEXT_RECORDS: usize = 8;

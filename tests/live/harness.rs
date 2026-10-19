@@ -211,7 +211,8 @@ impl Live {
             .collect::<Vec<_>>();
 
         assert!(
-            name.windows(2).all(|pair| pair[0] == pair[1]),
+            name.windows(2)
+                .all(|pair| matches!(pair, [left, right] if left == right)),
             "{row:?} draws its name in one color: {name:?}"
         );
         let [name_color, ..] = name[..] else {

@@ -95,6 +95,9 @@ fn no_markers_when_content_fits(mode: Mode) {
 fn frame_cells_never_hold_diff_content() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     let rows = live.rows();
+    let [top_frame, ..] = &rows[..] else {
+        panic!("the screen has a top frame row");
+    };
     let first_content = usize::from(live.find("--- a/long.rs").y);
     let wide = live.find("wide_");
 
@@ -103,12 +106,11 @@ fn frame_cells_never_hold_diff_content() {
         "the top frame row precedes the content"
     );
     assert!(
-        rows[0].contains('│')
-            && right_of_first_separator(&rows[0])
+        top_frame.contains('│')
+            && right_of_first_separator(top_frame)
                 .chars()
                 .all(|symbol| symbol == ' '),
-        "the top frame row holds no content: {:?}",
-        rows[0]
+        "the top frame row holds no content: {top_frame:?}"
     );
     assert_eq!(
         right_of_first_separator(&rows[usize::from(wide.y)])

@@ -8,6 +8,10 @@ use crate::{
     harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, right_of_first_separator},
 };
 
+/// Lines the wrapping toggle scrolls first, so the wide row, whose line count wrapping
+/// changes, sits above the middle row.
+const LINES_PAST_THE_WIDE_ROW: usize = 20;
+
 matrix!(wrapping);
 
 fn wrapping(mode: Mode) {
@@ -105,7 +109,7 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
 #[test]
 fn toggling_wrapping_keeps_the_middle_row() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
-    for _ in 0..20 {
+    for _ in 0..LINES_PAST_THE_WIDE_ROW {
         live.press('j');
     }
     let middle_line = live.pane_middle_line();
