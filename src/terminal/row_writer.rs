@@ -206,15 +206,16 @@ impl RowCursor<'_> {
         }
 
         match start.checked_sub(self.horizontal_offset) {
-            None => self.fill_blank(Cells::ZERO, visible_end, style),
+            None => self.fill_blank(visible_end, style),
             Some(visible_start) => self.put(visible_start, width, cluster, style),
         }
         ControlFlow::Continue(())
     }
 
-    /// Blanks the pane cells from `start` up to, but not including, `end`.
-    fn fill_blank(&mut self, start: Cells, end: Cells, style: Style) {
-        for cell in start.columns_until(end) {
+    /// Blanks the pane cells before `end`: the visible part of a cluster cut by the left
+    /// edge.
+    fn fill_blank(&mut self, end: Cells, style: Style) {
+        for cell in Cells::ZERO.columns_until(end) {
             let x = self.x(cell);
             self.buffer[(x, self.area.y)]
                 .set_symbol(" ")
