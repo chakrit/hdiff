@@ -253,30 +253,34 @@ fn unsupported_language_has_no_syntax_parser_work() {
 }
 
 #[test]
-fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
+fn piped_patches_report_their_size() {
     let env = TestEnv::new();
     let patch = env.write_file("input.patch", PATCH);
     let input = fs::File::open(patch).expect("patch input");
-    let piped = env.run_with_stdin(["--bench", "prepare"], input);
-    let piped_text = success_output(&piped);
-    let piped_records = records(&piped_text);
-    let [_, piped_startup] = &piped_records[..] else {
-        panic!("preparation and startup records: {piped_text}");
-    };
-    assert_eq!(
-        piped_startup.integer("bytes"),
-        patch_bytes(),
-        "{piped_text}"
-    );
 
+    let output = env.run_with_stdin(["--bench", "prepare"], input);
+
+    let text = success_output(&output);
+    let records = records(&text);
+    let [_, startup] = &records[..] else {
+        panic!("preparation and startup records: {text}");
+    };
+    assert_eq!(startup.integer("bytes"), patch_bytes(), "{text}");
+}
+
+#[test]
+fn operand_comparisons_report_their_records_and_the_size_of_diffs_output() {
+    let env = TestEnv::new();
     env.write_file("old.rs", "fn old() {}\n");
     env.write_file("new.rs", "fn new() {}\n");
-    let compared = env.run(["--bench", "stages", "old.rs", "new.rs"]);
-    let compared_text = success_output(&compared);
-    let compared_records = records(&compared_text);
-    let [diagnostic, compared_startup, ..] = &compared_records[..] else {
-        panic!("diagnostic and startup records: {compared_text}");
+
+    let output = env.run(["--bench", "stages", "old.rs", "new.rs"]);
+
+    let text = success_output(&output);
+    let records = records(&text);
+    let [diagnostic, startup, ..] = &records[..] else {
+        panic!("diagnostic and startup records: {text}");
     };
-    assert_eq!(diagnostic.integer("records"), 2, "{compared_text}");
-    assert!(compared_startup.integer("bytes") > 0, "{compared_text}");
+    assert_eq!(diagnostic.integer("records"), 2, "{text}");
+    assert!(startup.integer("bytes") > 0, "{text}");
 }
