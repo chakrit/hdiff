@@ -28,7 +28,7 @@ pub enum SyntaxClass {
 impl SyntaxClass {
     /// The class a highlight capture named `name` marks, by its first dotted part; a
     /// capture of any other kind marks none.
-    fn from_capture_name(name: &str) -> Option<Self> {
+    fn of_capture_name(name: &str) -> Option<Self> {
         match name.split('.').next()? {
             "keyword" => Some(Self::Keyword),
             "string" => Some(Self::String),
@@ -86,7 +86,7 @@ impl SyntaxHighlighter {
         observer.count(Work::Hunk);
         let languages = headers
             .as_ref()
-            .map(|header| Language::for_header(&header.path));
+            .map(|header| Language::of_header(&header.path));
         let shared_language = languages
             .old
             .filter(|language| Some(*language) == languages.new);
@@ -99,7 +99,7 @@ impl SyntaxHighlighter {
         };
         let projections = observer.measure(Stage::Projection, |observer| {
             let projections =
-                styled_records.map_sides(|side, styled| Projection::from_hunk(hunk, side, styled));
+                styled_records.map_sides(|side, styled| Projection::of_hunk(hunk, side, styled));
             for projection in projections.iter() {
                 observer.count(Work::ProjectedBytes(projection.source.len()));
             }
@@ -233,7 +233,7 @@ enum Language {
 impl Language {
     /// The language a header path's extension selects; a path without a known
     /// extension, or a header without a path, selects none.
-    fn for_header(path: &HeaderPath) -> Option<Self> {
+    fn of_header(path: &HeaderPath) -> Option<Self> {
         let HeaderPath::Path(text) = path else {
             return None;
         };
@@ -341,7 +341,7 @@ impl LanguageHighlighter {
             observer.count(Work::Capture);
             let capture = query_match.captures()[*index];
             let name_index = usize::try_from(capture.index).expect("capture indexes fit in usize");
-            let Some(class) = SyntaxClass::from_capture_name(capture_names[name_index]) else {
+            let Some(class) = SyntaxClass::of_capture_name(capture_names[name_index]) else {
                 continue;
             };
             let node = capture.node;
@@ -410,7 +410,7 @@ struct ProjectedRecord<'h> {
 
 impl<'h> Projection<'h> {
     /// `side`'s records of `hunk`; a side without records projects no source.
-    fn from_hunk(hunk: HunkRecords<'_, 'h>, side: Side, styled_records: StyledRecords) -> Self {
+    fn of_hunk(hunk: HunkRecords<'_, 'h>, side: Side, styled_records: StyledRecords) -> Self {
         let mut source = String::new();
         let mut records = Vec::new();
         let side_records = hunk
@@ -603,7 +603,7 @@ mod tests {
         let patch = format!("--- a/x\n+++ b/x\n@@ -0,0 +1,{} @@\n{added}", lines.len());
 
         with_first_hunk(patch.as_bytes(), |hunk| {
-            test(&Projection::from_hunk(
+            test(&Projection::of_hunk(
                 hunk,
                 Side::New,
                 StyledRecords::Changes,
@@ -680,7 +680,7 @@ mod tests {
                 .expect("the added record")
                 .position;
             let new_projection =
-                Projection::from_hunk(hunk, Side::New, StyledRecords::ChangesAndContext);
+                Projection::of_hunk(hunk, Side::New, StyledRecords::ChangesAndContext);
             let full_highlighted = SyntaxHighlighter::default().highlight_projection(
                 Language::Rust,
                 &new_projection,

@@ -56,7 +56,7 @@ impl Tui {
     pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
         Self {
             navigation: Navigation::start(document, ViewPreferences::INITIAL, screen),
-            theme: Theme::for_depth(color_depth),
+            theme: Theme::of_depth(color_depth),
         }
     }
 

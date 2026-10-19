@@ -18,7 +18,7 @@ pub enum ColorDepth {
 impl ColorDepth {
     /// The depth for Crossterm's available color count, which reports truecolor as
     /// `u16::MAX`.
-    pub fn from_color_count(color_count: u16) -> Self {
+    pub fn of_color_count(color_count: u16) -> Self {
         match color_count {
             u16::MAX => Self::TrueColor,
             256.. => Self::Indexed,
@@ -36,7 +36,7 @@ pub struct Theme {
 
 impl Theme {
     /// The built-in theme for `depth`.
-    pub const fn for_depth(depth: ColorDepth) -> &'static Self {
+    pub const fn of_depth(depth: ColorDepth) -> &'static Self {
         match depth {
             ColorDepth::TrueColor => &TRUECOLOR,
             ColorDepth::Indexed => &INDEXED,
@@ -302,11 +302,11 @@ mod tests {
         }
     }
 
-    /// Every depth a session can draw with: `from_color_count` is the only constructor a
+    /// Every depth a session can draw with: `of_color_count` is the only constructor a
     /// session uses, so its image over every color count is every reachable depth.
     fn every_depth() -> Vec<ColorDepth> {
         let mut depths = (0..=u16::MAX)
-            .map(ColorDepth::from_color_count)
+            .map(ColorDepth::of_color_count)
             .collect::<Vec<_>>();
         depths.dedup();
 
@@ -389,14 +389,11 @@ mod tests {
 
     #[test]
     fn reads_crossterm_color_counts_as_depths() {
-        assert_eq!(
-            ColorDepth::from_color_count(u16::MAX),
-            ColorDepth::TrueColor
-        );
-        assert_eq!(ColorDepth::from_color_count(256), ColorDepth::Indexed);
-        assert_eq!(ColorDepth::from_color_count(255), ColorDepth::Basic);
-        assert_eq!(ColorDepth::from_color_count(8), ColorDepth::Basic);
-        assert_eq!(ColorDepth::from_color_count(0), ColorDepth::Basic);
+        assert_eq!(ColorDepth::of_color_count(u16::MAX), ColorDepth::TrueColor);
+        assert_eq!(ColorDepth::of_color_count(256), ColorDepth::Indexed);
+        assert_eq!(ColorDepth::of_color_count(255), ColorDepth::Basic);
+        assert_eq!(ColorDepth::of_color_count(8), ColorDepth::Basic);
+        assert_eq!(ColorDepth::of_color_count(0), ColorDepth::Basic);
     }
 
     /// docs/spec/architecture.md#failure-and-safety-posture: the palette falls back by
@@ -412,7 +409,7 @@ mod tests {
         };
 
         for depth in every_depth() {
-            for color in colors(Theme::for_depth(depth)) {
+            for color in colors(Theme::of_depth(depth)) {
                 assert!(shows(depth, color), "{depth:?} draws {color:?}");
             }
         }
@@ -423,7 +420,7 @@ mod tests {
     #[test]
     fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
         for depth in every_depth() {
-            let change = &Theme::for_depth(depth).rows.change;
+            let change = &Theme::of_depth(depth).rows.change;
             for side in Side::BOTH {
                 let colors = change.get(side);
                 assert!(

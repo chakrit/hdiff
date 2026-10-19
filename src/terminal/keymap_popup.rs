@@ -209,7 +209,7 @@ mod tests {
     use super::render_keymap_popup;
     use crate::theme::{ColorDepth, Theme};
 
-    const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
+    const THEME: &Theme = Theme::of_depth(ColorDepth::TrueColor);
 
     /// The popup drawn over a `width`-column screen.
     fn render_popup(width: u16) -> Buffer {

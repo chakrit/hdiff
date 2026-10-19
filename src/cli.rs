@@ -113,7 +113,7 @@ fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation,
     let Some((name, operands)) = arguments.split_first() else {
         return Err(Error::MissingBenchDriver);
     };
-    let Some(driver) = Driver::from_name(name) else {
+    let Some(driver) = Driver::of_name(name) else {
         return Err(Error::UnknownBenchDriver(name.clone()));
     };
 

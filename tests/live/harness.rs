@@ -30,7 +30,7 @@ pub const SCREEN: Size = Size::new(WIDTH, HEIGHT);
 /// The screen row of a diff pane's first content line, below its top frame row.
 pub const FIRST_CONTENT_LINE: usize = 1;
 /// The palette every live test draws with: true color.
-pub const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
+pub const THEME: &Theme = Theme::of_depth(ColorDepth::TrueColor);
 
 /// A TUI session drawn into an in-memory terminal, driven by key and resize events.
 pub struct Live {

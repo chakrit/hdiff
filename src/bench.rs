@@ -47,7 +47,7 @@ impl Driver {
     }
 
     /// The driver `name` names, if any.
-    pub fn from_name(name: &OsStr) -> Option<Self> {
+    pub fn of_name(name: &OsStr) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|driver| OsStr::new(driver.label()) == name)

@@ -60,7 +60,7 @@ fn run_loop(
     document: PreparedDocument,
 ) -> io::Result<()> {
     let screen = terminal.size()?;
-    let color_depth = ColorDepth::from_color_count(crossterm::style::available_color_count());
+    let color_depth = ColorDepth::of_color_count(crossterm::style::available_color_count());
 
     Tui::new(document, screen, color_depth).run(terminal, TtyEvents::default())
 }

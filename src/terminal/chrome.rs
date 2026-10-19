@@ -351,7 +351,7 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
         let selection = prepared.file_selection(PageIndex::FIRST);
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
-        let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
+        let palette = &Theme::of_depth(ColorDepth::TrueColor).chrome;
 
         terminal
             .draw(|frame| render_file_column(frame, frame.area(), selection, palette))

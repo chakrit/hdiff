@@ -76,7 +76,7 @@ mod tests {
     /// one cell.
     #[test]
     fn draws_every_gutter_cluster_in_one_cell() {
-        let palette = &Theme::for_depth(ColorDepth::TrueColor).rows;
+        let palette = &Theme::of_depth(ColorDepth::TrueColor).rows;
         let tones = Side::BOTH.map(RowTone::Changed).into_iter().chain([
             RowTone::UnchangedRecord,
             RowTone::HunkHeader,

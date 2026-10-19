@@ -295,7 +295,7 @@ mod tests {
         theme::{ColorDepth, Theme},
     };
 
-    const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
+    const THEME: &Theme = Theme::of_depth(ColorDepth::TrueColor);
 
     /// A written row: the buffer it drew into and the sides where it left the pane.
     struct Written {

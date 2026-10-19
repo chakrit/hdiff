@@ -43,7 +43,7 @@ impl EffectiveView {
             (false, ScreenLines::ZERO) => Some(TooSmall::Short),
             (false, _) => None,
         };
-        let wrap = WrapWidth::for_panes(preferences.wrapping, pane_content.width);
+        let wrap = WrapWidth::of_panes(preferences.wrapping, pane_content.width);
 
         Self {
             shape,
@@ -92,7 +92,7 @@ impl WrapWidth {
     /// The wrap width `wrapping` selects for panes whose narrowest content is
     /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
     /// width.
-    fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
+    fn of_panes(wrapping: Wrapping, content_width: Cells) -> Self {
         let payload_width = NonZeroCells::new(content_width.saturating_sub(MARKER_GUTTER_WIDTH));
 
         match (wrapping, payload_width) {
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
-        let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
+        let wrap = |wrapping, width| WrapWidth::of_panes(wrapping, Cells::new(width));
 
         assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
         assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
