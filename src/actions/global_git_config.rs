@@ -1,6 +1,7 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
+    path::PathBuf,
 };
 
 /// The context every unit that reads or writes the global Git config runs in.
@@ -8,11 +9,13 @@ pub struct GlobalGitConfigContext {
     pub environment: GitConfigEnvironment,
 }
 
-/// The environment variables that decide which file `git config --global` writes.
+/// The environment variables that decide which file `git config --global` writes, kept
+/// as received so a child process sees them unchanged. Paths are read from them only
+/// through the methods below, which follow Git's own reading.
 pub struct GitConfigEnvironment {
-    pub git_config_global: Option<OsString>,
-    pub home: Option<OsString>,
-    pub xdg_config_home: Option<OsString>,
+    git_config_global: Option<OsString>,
+    home: Option<OsString>,
+    xdg_config_home: Option<OsString>,
 }
 
 const GIT_CONFIG_GLOBAL: &str = "GIT_CONFIG_GLOBAL";
@@ -22,10 +25,48 @@ const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
 impl GitConfigEnvironment {
     /// The variables as this process received them.
     pub fn of_process() -> Self {
+        Self::of(
+            env::var_os(GIT_CONFIG_GLOBAL),
+            env::var_os(HOME),
+            env::var_os(XDG_CONFIG_HOME),
+        )
+    }
+
+    /// The variables with these values; `None` is unset.
+    pub fn of(
+        git_config_global: Option<OsString>,
+        home: Option<OsString>,
+        xdg_config_home: Option<OsString>,
+    ) -> Self {
         Self {
-            git_config_global: env::var_os(GIT_CONFIG_GLOBAL),
-            home: env::var_os(HOME),
-            xdg_config_home: env::var_os(XDG_CONFIG_HOME),
+            git_config_global,
+            home,
+            xdg_config_home,
+        }
+    }
+
+    /// `GIT_CONFIG_GLOBAL`, which names the global config file outright when set.
+    pub fn global_config_override(&self) -> Option<&OsStr> {
+        self.git_config_global.as_deref()
+    }
+
+    /// `$HOME/<relative>`, joined as Git joins it, so an empty `HOME` names a path under
+    /// the root; none when `HOME` is unset.
+    pub fn under_home(&self, relative: &str) -> Option<PathBuf> {
+        self.home.as_deref().map(|home| joined(home, relative))
+    }
+
+    /// `relative` under the XDG config directory as Git resolves it: `XDG_CONFIG_HOME`
+    /// when it is set and not empty, otherwise `$HOME/.config`; none when neither is set.
+    pub fn under_xdg_config_home(&self, relative: &str) -> Option<PathBuf> {
+        let xdg_config_home = self
+            .xdg_config_home
+            .as_deref()
+            .filter(|directory| !directory.is_empty());
+
+        match xdg_config_home {
+            Some(directory) => Some(joined(directory, relative)),
+            None => self.under_home(&format!(".config/{relative}")),
         }
     }
 
@@ -52,4 +93,44 @@ impl GitConfigEnvironment {
 pub struct EnvironmentVariable<'a> {
     pub name: &'static str,
     pub value: Option<&'a OsStr>,
+}
+
+/// `<directory>/<relative>` by text, the way Git builds these paths.
+fn joined(directory: &OsStr, relative: &str) -> PathBuf {
+    let mut path = directory.to_owned();
+    path.push("/");
+    path.push(relative);
+
+    PathBuf::from(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::GitConfigEnvironment;
+
+    fn with_home(home: &str, xdg_config_home: Option<&str>) -> GitConfigEnvironment {
+        GitConfigEnvironment::of(None, Some(home.into()), xdg_config_home.map(Into::into))
+    }
+
+    #[test]
+    fn reads_an_empty_xdg_config_home_as_unset() {
+        let paths = [None, Some("")]
+            .map(|xdg| with_home("/home/user", xdg).under_xdg_config_home("git/config"));
+
+        for path in paths {
+            assert_eq!(
+                path.as_deref(),
+                Some(Path::new("/home/user/.config/git/config"))
+            );
+        }
+    }
+
+    #[test]
+    fn joins_an_empty_home_under_the_root_as_git_does() {
+        let path = with_home("", None).under_home(".gitconfig");
+
+        assert_eq!(path.as_deref(), Some(Path::new("/.gitconfig")));
+    }
 }
