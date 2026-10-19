@@ -46,13 +46,8 @@ impl DiffDocument {
     /// The document `sections` and the `trailing` text after them form: their files, or
     /// the text alone when there are none.
     pub(crate) fn new(sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
-        let mut sections = sections.into_iter();
-
-        match sections.next() {
-            Some(first) => Self::Files(DiffFiles {
-                sections: NonEmpty::new(first, sections),
-                trailing,
-            }),
+        match NonEmpty::of(sections) {
+            Some(sections) => Self::Files(DiffFiles { sections, trailing }),
             None => Self::Text(trailing),
         }
     }
@@ -105,7 +100,7 @@ pub struct DiffFile {
 
 impl DiffFile {
     /// The values `entries` gives each of the file's records, gathered hunk by hunk: a
-    /// record no entry names maps to no values, and a file without hunks maps no records.
+    /// record no entry names maps to no values, and a metadata-only file maps no records.
     ///
     /// Each call of `entries` receives one hunk's [`HunkRecords`] under a fresh brand, so
     /// the positions it returns can only name records of that hunk.
@@ -155,7 +150,7 @@ pub enum FileBody {
 pub struct UnifiedBody {
     pub git: Option<GitHeader>,
     pub headers: BySide<FileHeader>,
-    pub hunks: Box<[Hunk]>,
+    pub hunks: NonEmpty<Hunk>,
 }
 
 impl UnifiedBody {

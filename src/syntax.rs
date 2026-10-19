@@ -508,9 +508,7 @@ mod tests {
     /// `test` applied to the records of the first hunk of `patch`'s first file, which
     /// must be unified.
     fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
-        with_first_unified(patch, |_, body| {
-            body.hunks.first().expect("first hunk").with_records(test)
-        })
+        with_first_unified(patch, |_, body| body.hunks.first().with_records(test))
     }
 
     /// `test` applied to `patch`'s first file and its body, which must be unified.
