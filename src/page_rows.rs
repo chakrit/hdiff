@@ -47,6 +47,11 @@ impl<Of> PagePosition<Of> {
     fn get(self) -> usize {
         self.0.get()
     }
+
+    /// The position `count` items after this one.
+    fn offset(self, count: usize) -> Self {
+        Self::at(self.get() + count)
+    }
 }
 
 /// One side-by-side row: a line both panes show, a changed pair, or a change to one side.
@@ -59,6 +64,7 @@ pub enum SideBySideRow<T> {
 }
 
 impl<T> SideBySideRow<T> {
+    /// The row with `f` applied to each line it holds.
     pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> SideBySideRow<U> {
         match self {
             Self::Shared(line) => SideBySideRow::Shared(f(line)),
@@ -169,6 +175,7 @@ enum RowVisibility {
 }
 
 impl PageRows {
+    /// The rows of a file page: the file's lines with the text around it.
     pub fn of_file_view(view: FileView<'_>) -> Self {
         Self::new(display_lines::of_file_view(view))
     }
@@ -207,10 +214,12 @@ impl PageRows {
             .count()
     }
 
+    /// The line `index`.
     pub fn line(&self, index: LineIndex) -> &RenderedLine {
         &self.lines[index.get()]
     }
 
+    /// Every line's index, in line order.
     pub fn line_indices(&self) -> impl Iterator<Item = LineIndex> + use<> {
         (0..self.lines.len()).map(LineIndex::at)
     }
@@ -227,26 +236,28 @@ impl PageRows {
     /// shared line takes none.
     pub fn line_values_by_pair<T>(
         &self,
-        mut value: impl FnMut(SideBySideRow<LineIndex>) -> BySide<Option<T>>,
+        mut values_of_pair: impl FnMut(SideBySideRow<LineIndex>) -> BySide<Option<T>>,
     ) -> LineMap<Option<T>> {
-        let mut placed = self
+        let mut placed_values = self
             .pairs
             .iter()
-            .flat_map(|row| placed_values(*row, value(*row)))
+            .flat_map(|row| values_on_lines(*row, values_of_pair(*row)))
             .collect::<Vec<_>>();
         // A changed block lists its old lines before its new lines, so pair order is not
         // line order.
-        placed.sort_by_key(|placed| placed.line);
+        placed_values.sort_by_key(|line_value| line_value.line);
 
-        let values = placed.into_iter().map(|placed| placed.value);
+        let values = placed_values.into_iter().map(|line_value| line_value.value);
 
         LineMap(values.collect())
     }
 
+    /// The side-by-side row `index`.
     pub fn pair(&self, index: PairIndex) -> SideBySideRow<LineIndex> {
         self.pairs[index.get()]
     }
 
+    /// Every side-by-side row's index, in pair order.
     pub(crate) fn pair_indices(&self) -> impl Iterator<Item = PairIndex> + use<> {
         (0..self.pairs.len()).map(PairIndex::at)
     }
@@ -266,6 +277,7 @@ impl PageRows {
         }
     }
 
+    /// Whether any line of pair `index` shows within `context` records of a change.
     pub(crate) fn shows_pair(&self, index: PairIndex, context: ContextRecords) -> bool {
         self.pair(index)
             .lines()
@@ -318,18 +330,19 @@ struct LineValue<T> {
 
 /// Each line `row` holds, with the value of the side it shows; a shared line shows no
 /// side.
-fn placed_values<T>(
+fn values_on_lines<T>(
     row: SideBySideRow<LineIndex>,
     values: BySide<Option<T>>,
 ) -> impl Iterator<Item = LineValue<Option<T>>> {
-    let placed = |line, value| Some(LineValue { line, value });
+    let on_line = |line, value| Some(LineValue { line, value });
     let lines = match row {
-        SideBySideRow::Shared(line) => [placed(line, None), None],
-        SideBySideRow::Paired(lines) => {
-            [placed(lines.old, values.old), placed(lines.new, values.new)]
-        }
-        SideBySideRow::OldOnly(line) => [placed(line, values.old), None],
-        SideBySideRow::NewOnly(line) => [placed(line, values.new), None],
+        SideBySideRow::Shared(line) => [on_line(line, None), None],
+        SideBySideRow::Paired(lines) => [
+            on_line(lines.old, values.old),
+            on_line(lines.new, values.new),
+        ],
+        SideBySideRow::OldOnly(line) => [on_line(line, values.old), None],
+        SideBySideRow::NewOnly(line) => [on_line(line, values.new), None],
     };
 
     lines.into_iter().flatten()
@@ -355,22 +368,16 @@ impl SideBySideLayout {
             .collect::<Vec<_>>();
         let blocks = sides
             .chunk_by(|earlier, later| earlier.side.is_some() == later.side.is_some())
-            .map(BlockRows::of)
+            .scan(PairIndex::at(0), |first_pair, block| {
+                let rows = BlockRows::of(block, *first_pair);
+                *first_pair = first_pair.offset(rows.rows.len());
+                Some(rows)
+            })
             .collect::<Vec<_>>();
 
         let pair_of_line = blocks
             .iter()
-            .scan(0, |first_pair, block| {
-                let base = *first_pair;
-                *first_pair += block.rows.len();
-                Some(
-                    block
-                        .row_of_line
-                        .iter()
-                        .map(move |row| PairIndex::at(base + row)),
-                )
-            })
-            .flatten()
+            .flat_map(|block| block.pair_of_line.iter().copied())
             .collect();
         let pairs = blocks.into_iter().flat_map(|block| block.rows).collect();
 
@@ -388,15 +395,16 @@ struct LineSide<S> {
     side: S,
 }
 
-/// The rows of one block of lines that are all changed or all unchanged, and the row of
-/// the block holding each of its lines, in line order.
+/// The rows of one block of lines that are all changed or all unchanged, and the pair
+/// holding each of its lines, in line order.
 struct BlockRows {
     rows: Vec<SideBySideRow<LineIndex>>,
-    row_of_line: Vec<usize>,
+    pair_of_line: Vec<PairIndex>,
 }
 
 impl BlockRows {
-    fn of(block: &[LineSide<Option<Side>>]) -> Self {
+    /// The rows of `block`, the first of which is the page's pair `first_pair`.
+    fn of(block: &[LineSide<Option<Side>>], first_pair: PairIndex) -> Self {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
@@ -414,14 +422,14 @@ impl BlockRows {
                     .iter()
                     .map(|line| SideBySideRow::Shared(line.line))
                     .collect(),
-                row_of_line: (0..block.len()).collect(),
+                pair_of_line: (0..block.len()).map(|row| first_pair.offset(row)).collect(),
             },
-            Some(changed) => Self::changed(&changed),
+            Some(changed) => Self::changed(&changed, first_pair),
         }
     }
 
     /// A changed block pairs its *i*th old line with its *i*th new line in row *i*.
-    fn changed(block: &[LineSide<Side>]) -> Self {
+    fn changed(block: &[LineSide<Side>], first_pair: PairIndex) -> Self {
         let side_lines = |side| {
             block
                 .iter()
@@ -439,19 +447,25 @@ impl BlockRows {
             })
             .collect();
 
-        let row_of_line = block
+        let starts = BySide {
+            old: first_pair,
+            new: first_pair,
+        };
+        let pair_of_line = block
             .iter()
-            .scan(BySide::<usize>::default(), |seen, line| {
-                let row = *seen.get(line.side);
-                *seen.get_mut(line.side) += 1;
-                Some(row)
+            .scan(starts, |next_pair, line| {
+                let pair = *next_pair.get(line.side);
+                *next_pair.get_mut(line.side) = pair.offset(1);
+                Some(pair)
             })
             .collect();
 
-        Self { rows, row_of_line }
+        Self { rows, pair_of_line }
     }
 }
 
+/// When each of `rendered_lines` shows: a context line by its record distance to the
+/// nearest change in its hunk, every other line always.
 fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
     let distances_before = distances_from_previous_change(rendered_lines.iter());
     let mut distances_after = distances_from_previous_change(rendered_lines.iter().rev());
@@ -493,6 +507,7 @@ fn distances_from_previous_change<'a>(
         .collect()
 }
 
+/// Whether `line` shows an unchanged record of a hunk.
 fn is_context_line(line: &RenderedLine) -> bool {
     line.kind().record_kind() == Some(RecordKind::Context)
 }
@@ -502,6 +517,7 @@ mod tests {
     use super::{PageRows, RenderedLine, SideBySideRow};
     use crate::{display_lines::LineKind, parser::parse_patch, side::BySide};
 
+    /// The rows of `patch`'s first file.
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_patch(patch).expect("valid diff");
         PageRows::of_file_view(document.file_views().next().expect("first file"))
