@@ -22,6 +22,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub const WIDTH: u16 = 120;
 pub const HEIGHT: u16 = 36;
+/// The screen a test runs on unless it names a size.
+pub const SCREEN: Size = Size::new(WIDTH, HEIGHT);
 /// The screen row of a diff pane's first content line, below its top frame row.
 pub const FIRST_CONTENT_LINE: usize = 1;
 pub const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
@@ -33,7 +35,7 @@ pub struct Live {
 
 impl Live {
     pub fn load(patch: &str, mode: Mode) -> Self {
-        Self::sized(patch, mode, Size::new(WIDTH, HEIGHT))
+        Self::sized(patch, mode, SCREEN)
     }
 
     /// `patch` on a terminal of `size`.
@@ -45,11 +47,7 @@ impl Live {
     /// The output of comparing file operands.
     pub fn comparison(output: &str, mode: Mode) -> Self {
         let document = parse_comparison(output.as_bytes()).expect("valid comparison output");
-        Self::start(
-            PreparedDocument::prepare(&document),
-            mode,
-            Size::new(WIDTH, HEIGHT),
-        )
+        Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
     }
 
     fn start(prepared: PreparedDocument, mode: Mode, size: Size) -> Self {
@@ -107,14 +105,14 @@ impl Live {
         self.send(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
     }
 
-    pub fn resize(&mut self, width: u16, height: u16) -> Step {
-        self.resize_backend_only(width, height);
-        self.event(Event::Resize(width, height))
+    pub fn resize(&mut self, size: Size) -> Step {
+        self.resize_backend_only(size);
+        self.event(Event::Resize(size.width, size.height))
     }
 
     /// Changes the terminal's size without sending the resize event that follows it.
-    pub fn resize_backend_only(&mut self, width: u16, height: u16) {
-        self.terminal.backend_mut().resize(width, height);
+    pub fn resize_backend_only(&mut self, size: Size) {
+        self.terminal.backend_mut().resize(size.width, size.height);
     }
 
     pub fn event(&mut self, event: Event) -> Step {
@@ -165,8 +163,11 @@ impl Live {
             .sum()
     }
 
+    /// Whether `text` is drawn anywhere, matched cell by cell as `find` matches it.
     pub fn shows(&self, text: &str) -> bool {
-        self.rows().iter().any(|row| row.contains(text))
+        positions(self.terminal.backend().buffer(), text)
+            .next()
+            .is_some()
     }
 
     /// The marker and name foregrounds of the file row `row`, such as `"~ lib.rs"`; the

@@ -12,7 +12,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, WIDTH, change_label},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, SCREEN, WIDTH, change_label},
 };
 
 matrix!(
@@ -158,11 +158,11 @@ fn resize(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     let start = live.buffer();
 
-    assert_eq!(live.resize(80, 20), Step::Continue);
+    assert_eq!(live.resize(Size::new(80, 20)), Step::Continue);
     assert_eq!(live.buffer().area.as_size(), Size::new(80, 20));
     assert!(live.shows("pub fn greeting("));
 
-    live.resize(WIDTH, HEIGHT);
+    live.resize(SCREEN);
     assert_eq!(
         live.buffer(),
         start,
@@ -248,12 +248,12 @@ fn half_page_movement(mode: Mode) {
 /// frame.
 fn key_before_resize_event(mode: Mode) {
     let mut resized = Live::load(MIXED_LANGUAGES, mode);
-    resized.resize(80, 20);
+    resized.resize(Size::new(80, 20));
     resized.press('j');
     let expected = resized.buffer();
 
     let mut live = Live::load(MIXED_LANGUAGES, mode);
-    live.resize_backend_only(80, 20);
+    live.resize_backend_only(Size::new(80, 20));
     live.press('j');
     assert_eq!(
         live.buffer(),
@@ -261,7 +261,7 @@ fn key_before_resize_event(mode: Mode) {
         "the key draws the frame at the new size"
     );
 
-    live.resize(80, 20);
+    live.resize(Size::new(80, 20));
     assert_eq!(
         live.buffer(),
         expected,
@@ -273,12 +273,12 @@ fn key_before_resize_event(mode: Mode) {
 /// screen size, so a resize event naming a size the terminal no longer has moves nothing.
 fn stale_resize_event(mode: Mode) {
     let mut resized = Live::load(&long_patch(), mode);
-    resized.resize(80, 20);
+    resized.resize(Size::new(80, 20));
     resized.press('G');
     let expected = resized.buffer();
 
     let mut live = Live::load(&long_patch(), mode);
-    live.resize(80, 20);
+    live.resize(Size::new(80, 20));
     live.press('G');
     live.event(Event::Resize(WIDTH, HEIGHT));
     assert_eq!(
@@ -297,9 +297,9 @@ fn bottom_on_too_short_screen(mode: Mode) {
     let expected = full.buffer();
 
     let mut live = Live::load(&long_patch(), mode);
-    live.resize(WIDTH, 2);
+    live.resize(Size::new(WIDTH, 2));
     live.press('G');
-    live.resize(WIDTH, HEIGHT);
+    live.resize(SCREEN);
     assert_eq!(
         live.buffer(),
         expected,
@@ -340,7 +340,7 @@ fn context_changes_keep_the_middle_row() {
 fn preferences_start_in_unified_line_mode() {
     let tui = Tui::new(
         PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
-        Size::new(WIDTH, HEIGHT),
+        SCREEN,
         ColorDepth::TrueColor,
     );
     let start = tui.preferences();
