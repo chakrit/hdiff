@@ -7,6 +7,7 @@ use hdiff::{
         self,
         global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
         install_git_diff_pager::InstallGitDiffPager,
+        report_error::ReportError,
         write_output::{OutputContext, WriteOutput},
     },
     bench::{self, Driver},
@@ -116,14 +117,8 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
 
 /// Writes `error` to standard error with every line naming the program.
 fn report(error: &RunError) -> Result<(), actions::Error> {
-    let message = error
-        .to_string()
-        .lines()
-        .map(|line| format!("hdiff: {line}\n"))
-        .collect::<String>();
-
-    WriteOutput {
-        bytes: message.as_bytes(),
+    ReportError {
+        message: &error.to_string(),
     }
     .run(&mut OutputContext {
         writer: &mut io::stderr(),

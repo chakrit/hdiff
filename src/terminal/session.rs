@@ -16,7 +16,12 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use super::{TtyEvents, Tui};
-use crate::{non_empty::NonEmpty, prepared::PreparedDocument, theme::ColorDepth};
+use crate::{
+    actions::{report_error::ReportError, write_output::OutputContext},
+    non_empty::NonEmpty,
+    prepared::PreparedDocument,
+    theme::ColorDepth,
+};
 
 const CONTROLLING_TERMINAL: &str = "/dev/tty";
 
@@ -258,8 +263,8 @@ impl RestoringPanicHook {
         let chained = Arc::clone(&previous);
 
         panic::set_hook(Box::new(move |info| {
-            if let Err(error) = restore_after_panic() {
-                eprintln!("hdiff: {error}");
+            if let Err(failure) = restore_after_panic() {
+                report_after_panic(&failure);
             }
             chained(info);
         }));
@@ -281,6 +286,24 @@ fn restore_after_panic() -> Result<(), PanicRestoreFailure> {
 
     restore(&mut controlling_terminal, Entered::AlternateScreen)
         .map_err(PanicRestoreFailure::Restore)
+}
+
+/// Writes `failure` to standard error as every error is written, before the panic
+/// message. Rules: docs/spec/architecture.md#error-output.
+fn report_after_panic(failure: &PanicRestoreFailure) {
+    let reported = ReportError {
+        message: &failure.to_string(),
+    }
+    .run(&mut OutputContext {
+        writer: &mut io::stderr(),
+    });
+
+    match reported {
+        Ok(()) => {}
+        // Standard error was the last channel left; the panic message still follows on
+        // it, if it can.
+        Err(_unreported) => {}
+    }
 }
 
 /// Why a panic's restore left the terminal as the panic found it, in part or whole.
