@@ -52,6 +52,7 @@ impl Columns {
         }
     }
 
+    /// How many columns these are.
     fn count(self) -> u16 {
         match self {
             Self::One => 1,
@@ -59,6 +60,7 @@ impl Columns {
         }
     }
 
+    /// Groups each column holds, the last column taking what is left.
     fn groups_per_column(self) -> usize {
         GROUPS.len().div_ceil(usize::from(self.count()))
     }
@@ -109,6 +111,7 @@ struct PopupStyles {
 }
 
 impl PopupStyles {
+    /// The popup's styles taken from `theme`'s existing colors.
     fn of(theme: &Theme) -> Self {
         Self {
             heading: Style::default()
@@ -191,6 +194,7 @@ fn blank(cells: Cells) -> String {
     " ".repeat(cells.get())
 }
 
+/// Each key's label, separated by spaces.
 fn key_labels(keys: impl Iterator<Item = Key>) -> String {
     keys.map(Key::label).collect::<Vec<_>>().join(" ")
 }
@@ -207,6 +211,7 @@ mod tests {
 
     const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
+    /// The popup drawn over a `width`-column screen.
     fn render_popup(width: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, 30)).expect("test terminal");
         terminal
@@ -242,11 +247,14 @@ mod tests {
 
     /// `h`, `j`, `k`, and `l` drawn as a diamond: `h · l` with `k` above and `j` below.
     fn assert_diamond(buffer: &Buffer) {
-        let middle = position(buffer, "h · l").expect("h · l is drawn");
-        let center = middle.x + 2;
+        let dot = position(buffer, "·").expect("the diamond's dot is drawn");
 
-        assert_eq!(buffer[(center, middle.y - 1)].symbol(), "k", "k above");
-        assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
+        assert!(
+            position(buffer, "h · l").is_some_and(|middle| middle.y == dot.y),
+            "h · l across the dot"
+        );
+        assert_eq!(buffer[(dot.x, dot.y - 1)].symbol(), "k", "k above");
+        assert_eq!(buffer[(dot.x, dot.y + 1)].symbol(), "j", "j below");
     }
 
     /// docs/spec/architecture.md#interaction-model and
