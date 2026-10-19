@@ -220,18 +220,6 @@ mod tests {
         terminal.backend().buffer().clone()
     }
 
-    /// The buffer's rows as text, one line per row.
-    fn text_of(buffer: &Buffer) -> String {
-        (buffer.area.top()..buffer.area.bottom())
-            .map(|y| {
-                (buffer.area.left()..buffer.area.right())
-                    .map(|x| buffer[(x, y)].symbol())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
     /// The first position where `text` is drawn, one grapheme per cell, along one row.
     fn position(buffer: &Buffer, text: &str) -> Option<Position> {
         let graphemes = text.graphemes(true).collect::<Vec<_>>();
@@ -265,8 +253,12 @@ mod tests {
     fn groups_every_shortcut_under_headings_in_columns_that_fit() {
         let wide_popup = render_popup(120);
         let narrow_popup = render_popup(60);
-        let wide = text_of(&wide_popup);
-        let narrow = text_of(&narrow_popup);
+        let draws = |buffer, text| position(buffer, text).is_some();
+        let headings_share_a_row = |buffer| {
+            position(buffer, "Scroll")
+                .zip(position(buffer, "View"))
+                .is_some_and(|(scroll, view)| scroll.y == view.y)
+        };
 
         for text in [
             "Scroll",
@@ -291,22 +283,19 @@ mod tests {
             "exit",
         ] {
             assert!(
-                wide.contains(text) && narrow.contains(text),
+                draws(&wide_popup, text) && draws(&narrow_popup, text),
                 "popup lists {text}"
             );
         }
-        assert!(wide.contains('┌') && wide.contains('┘'), "popup border");
+        assert!(
+            draws(&wide_popup, "┌") && draws(&wide_popup, "┘"),
+            "popup border"
+        );
         assert_diamond(&wide_popup);
         assert_diamond(&narrow_popup);
+        assert!(headings_share_a_row(&wide_popup), "two columns when wide");
         assert!(
-            wide.lines()
-                .any(|row| row.contains("Scroll") && row.contains("View")),
-            "two columns when wide"
-        );
-        assert!(
-            !narrow
-                .lines()
-                .any(|row| row.contains("Scroll") && row.contains("View")),
+            !headings_share_a_row(&narrow_popup),
             "one column when narrow"
         );
     }
