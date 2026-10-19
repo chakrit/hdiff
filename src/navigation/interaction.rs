@@ -297,10 +297,10 @@ mod tests {
     /// The effect `event` has on `interaction` in a two-page document; panics when the
     /// event changes nothing.
     fn effect(interaction: &Interaction, event: Event) -> Effect {
-        let Outcome::Effect(effect) = interaction.respond(event, TWO_PAGES) else {
+        let Outcome::Effect(asked) = interaction.respond(event, TWO_PAGES) else {
             panic!("{event:?} changes the interaction");
         };
-        effect
+        asked
     }
 
     /// The effect `change` has on `interaction`; panics when it changes nothing.
@@ -321,10 +321,14 @@ mod tests {
 
     /// Where `change` places the redisplayed page.
     fn placement(interaction: &Interaction, change: PreferenceChange) -> Placement {
-        let Effect::Redisplay { placement, .. } = preference_effect(interaction, change) else {
+        let Effect::Redisplay {
+            placement: anchored,
+            ..
+        } = preference_effect(interaction, change)
+        else {
             panic!("{change:?} redisplays the page");
         };
-        placement
+        anchored
     }
 
     #[test]
@@ -423,8 +427,7 @@ mod tests {
         let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
         let open = closed.keymap_switched(KeymapPopup::Open);
         let close = Command::Keymap(KeymapCommand::Close);
-        let respond_in_two_pages =
-            |interaction: Interaction, event| interaction.respond(event, TWO_PAGES);
+        let respond_in_two_pages = |current: Interaction, event| current.respond(event, TWO_PAGES);
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(
@@ -465,13 +468,13 @@ mod tests {
     #[test]
     fn toggles_and_closes_the_keymap() {
         let start = interaction(second_page(), DiffLayout::Unified);
-        let after = |interaction: &Interaction, keymap_command| {
+        let after = |current: &Interaction, keymap_command| {
             let Effect::Keymap(popup) =
-                effect(interaction, Event::Command(Command::Keymap(keymap_command)))
+                effect(current, Event::Command(Command::Keymap(keymap_command)))
             else {
                 panic!("a keymap command changes the popup");
             };
-            interaction.keymap_switched(popup)
+            current.keymap_switched(popup)
         };
 
         let open = after(&start, KeymapCommand::Toggle);

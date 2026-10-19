@@ -40,7 +40,7 @@ impl BoundedScroll {
         };
         let half_page = bounds.pane_lines.half().max(ScreenLines::ONE);
 
-        let moved = match movement {
+        let asked = match movement {
             Movement::Left => at_column(scroll.horizontal.saturating_sub(Cells::ONE)),
             Movement::Right => at_column(scroll.horizontal.saturating_add(Cells::ONE)),
             Movement::FarLeft => at_column(Cells::ZERO),
@@ -53,7 +53,7 @@ impl BoundedScroll {
             Movement::Bottom => at_line(bounds.maximum_vertical_offset),
         };
 
-        bounds.clamp(moved)
+        bounds.clamp(asked)
     }
 }
 
@@ -128,21 +128,25 @@ mod tests {
         }
     }
 
-    /// `scroll` within `bounds`, moved by `movement`.
-    fn moved(movement: Movement, scroll: ScrollPosition, bounds: ScrollBounds) -> ScrollPosition {
-        bounds.clamp(scroll).moved(movement, bounds).position()
+    /// `start` within `bounds`, moved by `movement`.
+    fn after_moving(
+        movement: Movement,
+        start: ScrollPosition,
+        bounds: ScrollBounds,
+    ) -> ScrollPosition {
+        bounds.clamp(start).moved(movement, bounds).position()
     }
 
     #[test]
     fn moves_and_clamps_the_vertical_viewport() {
         let limits = bounds(ScreenLines::new(5), Cells::new(4));
 
-        let down = moved(
+        let down = after_moving(
             Movement::Down,
             scroll(ScreenLines::new(4), Cells::new(2)),
             limits,
         );
-        let clamped = moved(Movement::Down, down, limits);
+        let clamped = after_moving(Movement::Down, down, limits);
 
         assert_eq!(down, scroll(ScreenLines::new(5), Cells::new(2)));
         assert_eq!(clamped, scroll(ScreenLines::new(5), Cells::new(2)));
@@ -152,13 +156,13 @@ mod tests {
     fn moves_and_clamps_the_horizontal_viewport() {
         let limits = bounds(ScreenLines::new(7), Cells::new(3));
 
-        let right = moved(
+        let right = after_moving(
             Movement::Right,
             scroll(ScreenLines::new(4), Cells::new(2)),
             limits,
         );
-        let clamped = moved(Movement::Right, right, limits);
-        let left = moved(Movement::Left, clamped, limits);
+        let clamped = after_moving(Movement::Right, right, limits);
+        let left = after_moving(Movement::Left, clamped, limits);
 
         assert_eq!(right, scroll(ScreenLines::new(4), Cells::new(3)));
         assert_eq!(clamped, scroll(ScreenLines::new(4), Cells::new(3)));
@@ -171,11 +175,11 @@ mod tests {
         let start = scroll(ScreenLines::new(4), Cells::new(2));
 
         assert_eq!(
-            moved(Movement::FarLeft, start, limits),
+            after_moving(Movement::FarLeft, start, limits),
             scroll(ScreenLines::new(4), Cells::ZERO)
         );
         assert_eq!(
-            moved(Movement::FarRight, start, limits),
+            after_moving(Movement::FarRight, start, limits),
             scroll(ScreenLines::new(4), Cells::new(12))
         );
     }
@@ -190,8 +194,8 @@ mod tests {
         };
         let start = scroll(ScreenLines::new(4), Cells::ZERO);
 
-        let down = moved(Movement::HalfPageDown, start, limits);
-        let up = moved(Movement::HalfPageUp, down, limits);
+        let down = after_moving(Movement::HalfPageDown, start, limits);
+        let up = after_moving(Movement::HalfPageUp, down, limits);
 
         assert_eq!(down, scroll(ScreenLines::new(11), Cells::ZERO));
         assert_eq!(up, start);
