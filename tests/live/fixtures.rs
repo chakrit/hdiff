@@ -58,24 +58,45 @@ pub fn long_patch() -> String {
     format!("--- a/long.rs\n+++ b/long.rs\n@@ -0,0 +1,{LONG_PATCH_ROWS} @@\n{rows}")
 }
 
-/// One change followed by six context records.
+/// How many context records follow [`context_patch`]'s one change.
+const CONTEXT_PATCH_RECORDS: usize = 6;
+
+/// One change followed by [`CONTEXT_PATCH_RECORDS`] context records.
 pub fn context_patch() -> String {
-    let context = (1..=6)
+    let context = (1..=CONTEXT_PATCH_RECORDS)
         .map(|row| format!(" context_{row}\n"))
         .collect::<String>();
-    format!("--- a/ctx.rs\n+++ b/ctx.rs\n@@ -1,7 +1,7 @@\n-changed_old\n+changed_new\n{context}")
+    let side_lines = CONTEXT_PATCH_RECORDS + 1;
+    format!(
+        "--- a/ctx.rs\n+++ b/ctx.rs\n@@ -1,{side_lines} +1,{side_lines} @@\n\
+         -changed_old\n+changed_new\n{context}"
+    )
 }
 
-/// Forty hunks, each with eight leading context records, five of them hidden at the
-/// default context count.
+/// How many hunks [`hidden_context_patch`] holds.
+const HIDDEN_CONTEXT_HUNKS: usize = 40;
+
+/// How many leading context records each hunk of [`hidden_context_patch`] holds.
+const HIDDEN_CONTEXT_RECORDS: usize = 8;
+
+/// The lines from one hunk's start to the next in [`hidden_context_patch`], wider than a
+/// hunk so the hunks never overlap.
+const HIDDEN_CONTEXT_HUNK_STRIDE: usize = 20;
+
+/// [`HIDDEN_CONTEXT_HUNKS`] hunks, each with [`HIDDEN_CONTEXT_RECORDS`] leading context
+/// records before one change, so most of them are hidden at the default context count.
 pub fn hidden_context_patch() -> String {
-    let hunks = (0..40)
+    let side_lines = HIDDEN_CONTEXT_RECORDS + 1;
+    let hunks = (0..HIDDEN_CONTEXT_HUNKS)
         .map(|hunk| {
-            let start = hunk * 20 + 1;
-            let context = (1..=8)
+            let start = hunk * HIDDEN_CONTEXT_HUNK_STRIDE + 1;
+            let context = (1..=HIDDEN_CONTEXT_RECORDS)
                 .map(|row| format!(" context_{hunk}_{row}\n"))
                 .collect::<String>();
-            format!("@@ -{start},9 +{start},9 @@\n{context}-old_{hunk}\n+new_{hunk}\n")
+            format!(
+                "@@ -{start},{side_lines} +{start},{side_lines} @@\n\
+                 {context}-old_{hunk}\n+new_{hunk}\n"
+            )
         })
         .collect::<String>();
     format!("--- a/hidden.rs\n+++ b/hidden.rs\n{hunks}")
@@ -111,15 +132,22 @@ old mode 100644
 new mode 100755
 ";
 
-/// One block of paired changes, so every layout shows a labeled row on each pane line.
+/// How many deletions and how many additions [`paired_patch`]'s block holds.
+const PAIRED_ROWS: usize = 100;
+
+/// One block of [`PAIRED_ROWS`] paired changes, so every layout shows a labeled row on
+/// each pane line.
 pub fn paired_patch() -> String {
-    let removed = (0..100)
+    let removed = (0..PAIRED_ROWS)
         .map(|row| format!("-old_{row}\n"))
         .collect::<String>();
-    let added = (0..100)
+    let added = (0..PAIRED_ROWS)
         .map(|row| format!("+new_{row}\n"))
         .collect::<String>();
-    format!("--- a/pairs.rs\n+++ b/pairs.rs\n@@ -1,100 +1,100 @@\n{removed}{added}")
+    format!(
+        "--- a/pairs.rs\n+++ b/pairs.rs\n@@ -1,{PAIRED_ROWS} +1,{PAIRED_ROWS} @@\n\
+         {removed}{added}"
+    )
 }
 
 /// Two deletions beside one addition: the second deletion pairs with an alignment peer.
