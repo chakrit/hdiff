@@ -47,7 +47,7 @@ impl SyntaxClass {
 
 /// One syntax class over part of a record's payload, with the length of the capture it
 /// came from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SyntaxSpan {
     /// The payload bytes the class covers.
     pub bytes: PayloadSpan,
@@ -212,7 +212,7 @@ impl<'p, 'h> OldPass<'p, 'h> {
 // Languages
 
 /// A language with a bundled grammar.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 enum Language {
     Rust,
     JavaScript,
@@ -378,7 +378,6 @@ impl BundledGrammar {
 // Projections
 
 /// Which records on a projection's side take its syntax spans.
-#[derive(Clone, Copy)]
 enum StyledRecords {
     /// Only the side's own changes.
     Changes,

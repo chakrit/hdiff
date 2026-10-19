@@ -165,7 +165,7 @@ pub struct PageRows {
 }
 
 /// When a rendered line shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum RowVisibility {
     Always,
     /// A context row this many records from the nearest change in its hunk.
