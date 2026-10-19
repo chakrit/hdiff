@@ -24,9 +24,9 @@ sandbox.
 
 The `live` target in `tests/live/` drives the interactive loop in-process, without
 starting the `hdiff` executable or a terminal. Each test parses a fixture patch, loads it
-into a `Tui`, and sends one event at a time with `tui.step` to a 120-by-36
-`Terminal<TestBackend>`. After each step it asserts on the backend buffer: visible text,
-cell positions, or whole-buffer equality with an earlier frame.
+into a `Tui`, and sends one event at a time with `tui.step` to a `Terminal<TestBackend>`,
+120 by 36 unless the test names a size. After each step it asserts on the backend buffer:
+visible text, cell positions, or whole-buffer equality with an earlier frame.
 
 Run only this target, or one scenario across all modes:
 
