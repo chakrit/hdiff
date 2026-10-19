@@ -6,8 +6,8 @@ use crate::{
     },
     file_identity::FileIdentity,
     headers::{
-        FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
-        is_combined_diff_header,
+        FileHeader, GitHeader, GitMetadata, HeaderPath, binary_block_field, decimal_count,
+        file_header_field, git_header_names, is_binary_patch_header, is_combined_diff_header,
     },
     non_empty::NonEmpty,
     side::{BySide, Side},
@@ -156,7 +156,7 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata.
 fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
     let mut metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
-    if let Some(binary_patch) = lines.next_if(|text| text == "GIT binary patch") {
+    if let Some(binary_patch) = lines.next_if(is_binary_patch_header) {
         metadata.push(binary_patch);
         metadata.extend(parse_binary_patch(lines)?);
     }
@@ -175,6 +175,7 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
     Ok(file)
 }
 
+/// Whether `text` is one of Git's extended header lines after `diff --git`.
 fn is_git_metadata(text: &str) -> bool {
     GitMetadata::of(text).is_some()
 }
@@ -184,12 +185,8 @@ fn is_git_metadata(text: &str) -> bool {
 fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Error> {
     let mut patch = Vec::new();
 
-    loop {
-        let header = match lines.next_header(binary_block_header) {
-            None => break,
-            Some(Header::Read(Taken { line, value: () })) => line,
-            Some(Header::Malformed(error)) => return Err(error),
-        };
+    while let Some(header) = lines.next_if(starts_binary_block) {
+        lines.at_last_line(check_binary_block_size(header.sanitized()))?;
         patch.push(header);
 
         let payload_start = patch.len();
@@ -211,17 +208,19 @@ fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Er
     }
 }
 
-/// What `text` reads as where a `literal` or `delta` block header may start; any other
-/// line is no block header.
-fn binary_block_header(text: &str) -> Option<Header<(), Malformed>> {
-    let literal = text.strip_prefix("literal ");
-    let delta = text.strip_prefix("delta ");
-    let size = literal.or(delta)?;
+/// Whether `text` starts a `literal` or `delta` block, well-formed or not.
+fn starts_binary_block(text: &str) -> bool {
+    binary_block_field(text).is_some()
+}
 
-    Some(match is_decimal_count(size) {
-        true => Header::Read(()),
-        false => Header::Malformed(Malformed::InvalidBinaryPatchHeader),
-    })
+/// Checks that a `literal` or `delta` block header states its size as a count.
+fn check_binary_block_size(header: &str) -> Result<(), Malformed> {
+    let stated = binary_block_field(header).and_then(decimal_count).is_some();
+
+    match stated {
+        true => Ok(()),
+        false => Err(Malformed::InvalidBinaryPatchHeader),
+    }
 }
 
 /// A section with `---` / `+++` headers, after its Git header when it has one.
@@ -239,15 +238,8 @@ fn parse_unified(
     };
 
     let mut hunks = Vec::new();
-    loop {
-        let Taken {
-            line: header,
-            value: expected,
-        } = match lines.next_header(hunk_header) {
-            None => break,
-            Some(Header::Read(taken)) => taken,
-            Some(Header::Malformed(error)) => return Err(error),
-        };
+    while let Some(header) = lines.next_if(starts_hunk_header) {
+        let expected = lines.at_last_line(hunk_counts(header.sanitized()))?;
         hunks.push(parse_hunk(header, expected, lines)?);
     }
     let Some(hunks) = NonEmpty::of(hunks) else {
@@ -343,31 +335,25 @@ fn is_excess_record(line: &SourceLine) -> bool {
     marked && file_header_field(line.sanitized(), Side::Old).is_none()
 }
 
-/// What `text` reads as where a hunk header may start: an `@@ ` line is a hunk header,
-/// and states its counts or is malformed; any other line is no hunk header.
-fn hunk_header(text: &str) -> Option<Header<BySide<usize>, Malformed>> {
-    if !text.starts_with("@@ ") {
-        return None;
-    }
-
-    Some(match hunk_counts(text) {
-        Some(counts) => Header::Read(counts),
-        None => Header::Malformed(Malformed::InvalidHunkHeader),
-    })
+/// Whether `text` starts a hunk header, well-formed or not.
+fn starts_hunk_header(text: &str) -> bool {
+    text.starts_with("@@ ")
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
-fn hunk_counts(header: &str) -> Option<BySide<usize>> {
+fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
     let mut parts = header.split_whitespace();
     let [Some("@@"), Some(old), Some(new), Some("@@")] =
         [parts.next(), parts.next(), parts.next(), parts.next()]
     else {
-        return None;
+        return Err(Malformed::InvalidHunkHeader);
     };
 
-    let old = range_count(old, '-')?;
-    let new = range_count(new, '+')?;
-    Some(BySide { old, new })
+    let old = range_count(old, '-');
+    let new = range_count(new, '+');
+    BySide { old, new }
+        .transpose()
+        .ok_or(Malformed::InvalidHunkHeader)
 }
 
 /// The line count a `-start,count` or `+start,count` hunk range states; a range without
@@ -375,19 +361,11 @@ fn hunk_counts(header: &str) -> Option<BySide<usize>> {
 fn range_count(range: &str, prefix: char) -> Option<usize> {
     let range = range.strip_prefix(prefix)?;
     let (start, count) = match range.split_once(',') {
-        Some((start, count)) => (start, count),
-        None => (range, "1"),
+        Some((start, count)) => (start, decimal_count(count)?),
+        None => (range, 1),
     };
-    if !is_decimal_count(start) {
-        return None;
-    }
 
-    count.parse().ok()
-}
-
-/// Whether `text` is a line number or count a header may state.
-fn is_decimal_count(text: &str) -> bool {
-    text.parse::<usize>().is_ok()
+    decimal_count(start).and(Some(count))
 }
 
 // Reading lines
@@ -399,21 +377,6 @@ struct SourceLines<'a> {
     taken: usize,
 }
 
-/// A line [`SourceLines`] took, with the value it read from the line.
-struct Taken<T> {
-    line: SourceLine,
-    value: T,
-}
-
-/// A line that is a header of one kind: well-formed with the value it states, or
-/// malformed.
-enum Header<T, E> {
-    /// A header that states its value.
-    Read(T),
-    /// A header that states its value wrongly.
-    Malformed(E),
-}
-
 impl<'a> SourceLines<'a> {
     fn new(input: &'a [u8]) -> Self {
         Self {
@@ -423,6 +386,7 @@ impl<'a> SourceLines<'a> {
         }
     }
 
+    /// The next line without taking it, decoded the first time it is read.
     fn peek(&mut self) -> Option<&SourceLine> {
         if self.peeked.is_none() && !self.rest.is_empty() {
             let end = self
@@ -438,6 +402,7 @@ impl<'a> SourceLines<'a> {
         self.peeked.as_ref()
     }
 
+    /// Takes the next line, counting it so errors can name the line they are at.
     fn next(&mut self) -> Option<SourceLine> {
         self.peek();
         let line = self.peeked.take()?;
@@ -456,32 +421,13 @@ impl<'a> SourceLines<'a> {
         }
     }
 
-    /// Takes the next line when `extract` reads a value from its sanitized text, with
-    /// that value.
-    fn next_if_map<T>(&mut self, extract: impl FnOnce(&str) -> Option<T>) -> Option<Taken<T>> {
-        let value = self.peek().and_then(|line| extract(line.sanitized()))?;
-
-        self.next().map(|line| Taken { line, value })
-    }
-
-    /// Takes the next line when `read` finds it a header, well-formed or malformed; a
-    /// malformed header's error is located at that line.
-    fn next_header<T>(
-        &mut self,
-        read: impl FnOnce(&str) -> Option<Header<T, Malformed>>,
-    ) -> Option<Header<Taken<T>, Error>> {
-        let Taken { line, value } = self.next_if_map(read)?;
-
-        Some(match value {
-            Header::Read(value) => Header::Read(Taken { line, value }),
-            Header::Malformed(reason) => Header::Malformed(self.last_line_error(reason)),
-        })
-    }
-
     /// Takes the next line when it is `side`'s file header.
     fn next_file_header(&mut self, side: Side) -> Option<FileHeader> {
-        self.next_if_map(|text| HeaderPath::of_header(text, side))
-            .map(|Taken { line, value: path }| FileHeader { line, path })
+        let path = self
+            .peek()
+            .and_then(|line| HeaderPath::of_header(line.sanitized(), side))?;
+
+        self.next().map(|line| FileHeader { line, path })
     }
 
     /// `result`, with a malformation located at the line most recently taken.
@@ -594,6 +540,28 @@ mod tests {
                 "{suffix}"
             );
         }
+    }
+
+    /// docs/spec/architecture.md#input-contract: structural parsing is strict, so a
+    /// header count is ASCII digits and nothing else.
+    #[test]
+    fn rejects_signed_header_counts() {
+        let files = "--- a/file\n+++ b/file\n";
+        for header in ["@@ -+1,+1 +1 @@", "@@ -1,+1 +1 @@", "@@ -1 ++1 @@"] {
+            let input = format!("{files}{header}\n-old\n+new\n");
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(3, Malformed::InvalidHunkHeader),
+                "{header}"
+            );
+        }
+
+        let binary = "diff --git a/image b/image\nGIT binary patch\nliteral +12\npayload\n\n";
+        assert_eq!(
+            parse_patch(binary.as_bytes()),
+            malformed(3, Malformed::InvalidBinaryPatchHeader)
+        );
     }
 
     #[test]
