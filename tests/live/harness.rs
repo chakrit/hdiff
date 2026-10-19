@@ -60,7 +60,7 @@ impl Live {
     fn start(prepared: PreparedDocument, mode: Mode, size: Size) -> Self {
         let mut terminal =
             Terminal::new(TestBackend::new(size.width, size.height)).expect("test terminal");
-        let mut tui = Tui::new(prepared, size, ColorDepth::TrueColor);
+        let mut tui = Tui::start(prepared, size, ColorDepth::TrueColor);
         tui.draw(&mut terminal).expect("initial frame");
 
         let mut live = Self { tui, terminal };
@@ -238,7 +238,7 @@ impl Live {
     pub fn pane_middle_line(&self) -> usize {
         let screen = self.terminal.backend().buffer().area.as_size();
         let view = EffectiveView::of(self.preferences(), screen);
-        FIRST_CONTENT_LINE + view.pane_content().height.half().get()
+        FIRST_CONTENT_LINE + view.geometry().pane_content().height.half().get()
     }
 
     /// Cell position of the first occurrence of `text`.

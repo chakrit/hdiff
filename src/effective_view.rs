@@ -8,15 +8,14 @@ use ratatui::layout::Size;
 use crate::{
     geometry::{PaneContent, PaneShape, ScreenGeometry},
     preferences::{ViewPreferences, Wrapping},
-    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
+    screen::{Cells, NonZeroCells, ScreenLines},
 };
 
-/// The renderable combination of the view preferences and the screen size: the pane
-/// shape, the screen's areas, the content each diff pane shows, the width rows wrap at,
-/// and whether the screen is too small to show panes, each derived once.
+/// The renderable combination of the view preferences and the screen size: the screen's
+/// areas for the pane shape, the width rows wrap at, and whether the screen is too small
+/// to show panes, each derived once.
 pub struct EffectiveView {
     geometry: ScreenGeometry,
-    pane_content: PaneContent,
     wrap: WrapWidth,
     too_small: Option<TooSmall>,
 }
@@ -42,27 +41,17 @@ impl EffectiveView {
             (false, ScreenLines::ZERO) => Some(TooSmall::Short),
             (false, _) => None,
         };
-        let wrap = WrapWidth::of_panes(preferences.wrapping, pane_content.width);
+        let wrap = WrapWidth::of_panes(preferences.wrapping, pane_content);
 
         Self {
             geometry,
-            pane_content,
             wrap,
             too_small,
         }
     }
 
-    pub fn shape(&self) -> PaneShape {
-        self.geometry.shape()
-    }
-
     pub fn geometry(&self) -> &ScreenGeometry {
         &self.geometry
-    }
-
-    /// The content each diff pane of the shape shows.
-    pub fn pane_content(&self) -> PaneContent {
-        self.pane_content
     }
 
     pub fn wrap(&self) -> WrapWidth {
@@ -87,13 +76,10 @@ pub enum WrapWidth {
 }
 
 impl WrapWidth {
-    /// The wrap width `wrapping` selects for panes whose narrowest content is
-    /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
-    /// width.
-    fn of_panes(wrapping: Wrapping, content_width: Cells) -> Self {
-        let payload_width = NonZeroCells::new(content_width.saturating_sub(MARKER_GUTTER_WIDTH));
-
-        match (wrapping, payload_width) {
+    /// The wrap width `wrapping` selects for panes showing `content`: both side-by-side
+    /// panes wrap at the narrower pane's payload width.
+    fn of_panes(wrapping: Wrapping, content: PaneContent) -> Self {
+        match (wrapping, content.payload_width()) {
             (Wrapping::Disabled, _) => Self::Off,
             (Wrapping::Enabled, Some(width)) => Self::At(width),
             (Wrapping::Enabled, None) => Self::NoPayload,
@@ -122,9 +108,9 @@ mod tests {
 
     use super::{EffectiveView, TooSmall, WrapWidth};
     use crate::{
-        geometry::SplitDirection,
+        geometry::{PaneContent, SplitDirection, SplitPanes},
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-        screen::{Cells, MARKER_GUTTER_WIDTH},
+        screen::{Cells, ScreenLines},
         side::BySide,
     };
 
@@ -192,7 +178,7 @@ mod tests {
             DiffLayout::Vertical,
             DiffLayout::Stacked,
         ];
-        let view = |layout, width| {
+        let view_at = |layout, width| {
             let preferences = ViewPreferences {
                 layout,
                 ..ViewPreferences::INITIAL
@@ -202,17 +188,18 @@ mod tests {
 
         for layout in layouts {
             for width in 20..=80 {
-                let view = view(layout, width);
-                if view.geometry().file_column().is_some() {
+                let view = view_at(layout, width);
+                let geometry = view.geometry();
+                if geometry.file_column().is_some() {
                     assert!(
-                        view.pane_content().width > MARKER_GUTTER_WIDTH,
+                        geometry.pane_content().payload_width().is_some(),
                         "{layout:?} at {width} columns shows the file list over a pane \
                          without a payload column"
                     );
                 }
             }
             assert!(
-                view(layout, 120).geometry().file_column().is_some(),
+                view_at(layout, 120).geometry().file_column().is_some(),
                 "{layout:?} shows the file list where it fits"
             );
         }
@@ -227,10 +214,7 @@ mod tests {
             ..ViewPreferences::INITIAL
         };
         let view = EffectiveView::of(preferences, Size::new(80, 10));
-        let panes = view
-            .geometry()
-            .split_panes(SplitDirection::Vertical)
-            .panes();
+        let panes = SplitPanes::of(view.geometry().diff(), SplitDirection::Vertical).panes();
 
         // 79 columns beside the separator split into a 39-column and a 40-column pane,
         // whose frames leave 37 content columns, two of them the marker gutter.
@@ -251,21 +235,18 @@ mod tests {
 
     #[test]
     fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
-        assert_eq!(
-            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(24)),
-            WrapWidth::at(22)
-        );
-        assert_eq!(
-            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(51)),
-            WrapWidth::at(49)
-        );
-        assert_eq!(
-            WrapWidth::of_panes(Wrapping::Disabled, Cells::new(51)),
-            WrapWidth::Off
-        );
-        assert_eq!(
-            WrapWidth::of_panes(Wrapping::Enabled, Cells::new(78)),
-            WrapWidth::at(76)
-        );
+        let wrap = |wrapping, width| {
+            let content = PaneContent {
+                width: Cells::new(width),
+                height: ScreenLines::ONE,
+            };
+            WrapWidth::of_panes(wrapping, content)
+        };
+
+        assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
+        assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
+        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Off);
+        assert_eq!(wrap(Wrapping::Enabled, 78), WrapWidth::at(76));
+        assert_eq!(wrap(Wrapping::Enabled, 2), WrapWidth::NoPayload);
     }
 }

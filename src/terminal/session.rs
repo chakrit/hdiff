@@ -62,7 +62,7 @@ fn run_loop(
     let screen = terminal.size()?;
     let color_depth = ColorDepth::of_color_count(crossterm::style::available_color_count());
 
-    Tui::new(document, screen, color_depth).run(terminal, TtyEvents::default())
+    Tui::start(document, screen, color_depth).run(terminal, TtyEvents::default())
 }
 
 /// Why an interactive session failed, with every terminal restore step that failed too.
