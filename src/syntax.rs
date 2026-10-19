@@ -232,8 +232,9 @@ impl Language {
     /// The language a header path's extension selects; a path without a known
     /// extension, or a header without a path, selects none.
     fn of_header(path: &HeaderPath) -> Option<Self> {
-        let HeaderPath::Path(text) = path else {
-            return None;
+        let text = match path {
+            HeaderPath::Path(text) => text,
+            HeaderPath::DevNull | HeaderPath::Undecodable => return None,
         };
 
         let (_, extension) = text.rsplit_once('.')?;
@@ -548,7 +549,7 @@ mod tests {
         spans.iter().map(|span| span.class).collect()
     }
 
-    /// The syntax spans of each of the `N` records of the first hunk of `patch`'s first
+    /// The syntax spans of each of the `N` records of the first hunk of `patch`'s only
     /// file, in record order.
     fn highlights_of<const N: usize>(patch: &[u8]) -> [Vec<SyntaxSpan>; N] {
         observed_highlights_of(patch, &mut Unobserved)
