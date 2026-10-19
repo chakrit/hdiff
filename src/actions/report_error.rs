@@ -1,4 +1,5 @@
-//! Rules: docs/spec/architecture.md#error-output.
+//! Writes an error to a stream with every line naming the program, so the message
+//! reads the same wherever it is reported. Rules: docs/spec/architecture.md#error-output.
 
 use std::{fmt::Display, io::Write};
 
