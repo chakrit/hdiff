@@ -22,7 +22,7 @@ fn run_bench(driver: &str, patch: &str) -> Output {
 }
 
 /// Every line of a benchmark `report`, parsed as a record.
-fn records(report: &str) -> Vec<Record<'_>> {
+fn records_of(report: &str) -> Vec<Record<'_>> {
     report.lines().map(Record::parse).collect()
 }
 
@@ -96,7 +96,7 @@ impl<'a> Record<'a> {
 #[test]
 fn benchmark_accounts_for_input_and_parsing_before_preparation() {
     let text = success_output(&run_bench("prepare", PATCH));
-    let records = records(&text);
+    let records = records_of(&text);
 
     let [preparation, startup] = &records[..] else {
         panic!("preparation and startup records: {text}");
@@ -124,7 +124,7 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
 #[test]
 fn stages_partitions_parent_costs_and_counts_real_work() {
     let text = success_output(&run_bench("stages", PATCH));
-    let records = records(&text);
+    let records = records_of(&text);
 
     let [diagnostic, startup, profile, stage_records @ .., work] = &records[..] else {
         panic!("diagnostic, startup, profile, stage and work records: {text}");
@@ -181,7 +181,7 @@ fn malformed_input_never_emits_success_measurements() {
 #[test]
 fn empty_input_prepares_zero_files_and_records() {
     let text = success_output(&run_bench("prepare", ""));
-    let records = records(&text);
+    let records = records_of(&text);
 
     let [preparation, startup] = &records[..] else {
         panic!("preparation and startup records: {text}");
@@ -195,7 +195,7 @@ fn empty_input_prepares_zero_files_and_records() {
 #[test]
 fn empty_input_profiles_zero_files_records_and_work() {
     let text = success_output(&run_bench("stages", ""));
-    let records = records(&text);
+    let records = records_of(&text);
 
     let [diagnostic, startup, profile, .., work] = &records[..] else {
         panic!("diagnostic, startup, profile, stage and work records: {text}");
@@ -214,7 +214,7 @@ fn empty_input_profiles_zero_files_records_and_work() {
 #[test]
 fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
     let text = success_output(&run_bench("movement", PATCH));
-    let records = records(&text);
+    let records = records_of(&text);
 
     for record in &records {
         assert_eq!(record.kind, "movement", "{}", record.line);
@@ -254,7 +254,7 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
 #[test]
 fn unsupported_language_has_no_syntax_parser_work() {
     let text = success_output(&run_bench("stages", &PATCH.replace("a.rs", "a.txt")));
-    let records = records(&text);
+    let records = records_of(&text);
     let [.., work] = &records[..] else {
         panic!("work counters: {text}");
     };
@@ -273,7 +273,7 @@ fn piped_patches_report_their_size() {
     let output = env.run_with_stdin(["--bench", "prepare"], input);
 
     let text = success_output(&output);
-    let records = records(&text);
+    let records = records_of(&text);
     let [_, startup] = &records[..] else {
         panic!("preparation and startup records: {text}");
     };
@@ -289,7 +289,7 @@ fn operand_comparisons_report_their_records_and_the_size_of_diffs_output() {
     let output = env.run(["--bench", "stages", "old.rs", "new.rs"]);
 
     let text = success_output(&output);
-    let records = records(&text);
+    let records = records_of(&text);
     let [diagnostic, startup, ..] = &records[..] else {
         panic!("diagnostic and startup records: {text}");
     };

@@ -262,11 +262,11 @@ mod tests {
     use super::{ListedTree, RowWindow, TreeRow, TreeRowIndex};
     use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
 
-    fn document(input: &str) -> DiffDocument {
+    fn parsed(input: &str) -> DiffDocument {
         parse_patch(input.as_bytes()).expect("valid diff")
     }
 
-    fn listing(document: &DiffDocument) -> ListedTree<'_> {
+    fn listing_of(document: &DiffDocument) -> ListedTree<'_> {
         let DiffDocument::Files(files) = document else {
             panic!("a document with files");
         };
@@ -285,9 +285,9 @@ mod tests {
     }
 
     fn rows(input: &str) -> Vec<String> {
-        let document = document(input);
+        let document = parsed(input);
 
-        listing(&document)
+        listing_of(&document)
             .tree
             .rows()
             .iter()
@@ -297,8 +297,8 @@ mod tests {
 
     /// Each file in list order, as the input names it, and the row its selection marks.
     fn selections(input: &str) -> Vec<(String, String)> {
-        let document = document(input);
-        let listing = listing(&document);
+        let document = parsed(input);
+        let listing = listing_of(&document);
 
         listing
             .files

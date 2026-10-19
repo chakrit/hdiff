@@ -138,17 +138,17 @@ fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
         true => Depth::TopLevel,
         false => Depth::Recursive,
     };
-    let operands = operand_arguments
+    let operand_list = operand_arguments
         .into_iter()
         .map(|argument| operand(argument))
         .collect::<Vec<_>>();
 
-    match <[Operand; 2]>::try_from(operands) {
-        Ok([old, new]) => {
-            let operands = BySide { old, new };
-            Ok(Source::Comparison(Comparison { operands, depth }))
-        }
-        Err(operands) => single_source(operands, depth),
+    match <[Operand; 2]>::try_from(operand_list) {
+        Ok([old, new]) => Ok(Source::Comparison(Comparison {
+            operands: BySide { old, new },
+            depth,
+        })),
+        Err(unpaired) => single_source(unpaired, depth),
     }
 }
 
@@ -182,14 +182,14 @@ mod tests {
     };
 
     fn select_invocation_unpiped(words: &[&str]) -> Result<Invocation, Error> {
-        select_invocation(&arguments(words), StdinState::Unpiped)
+        select_invocation(&arguments_of(words), StdinState::Unpiped)
     }
 
     fn select_input_unpiped(words: &[&str]) -> Result<Source, Error> {
-        select_input(&arguments(words), StdinState::Unpiped)
+        select_input(&arguments_of(words), StdinState::Unpiped)
     }
 
-    fn arguments(words: &[&str]) -> Vec<OsString> {
+    fn arguments_of(words: &[&str]) -> Vec<OsString> {
         words.iter().map(OsString::from).collect()
     }
 
@@ -197,7 +197,7 @@ mod tests {
     fn piped_stdin_is_accepted_only_where_an_operand_reads_it() {
         let reading: [&[&str]; 4] = [&[], &["-"], &["-", "after"], &["before", "-"]];
         for words in reading {
-            let arguments = arguments(words);
+            let arguments = arguments_of(words);
             assert!(
                 select_input(&arguments, StdinState::Piped).is_ok(),
                 "{arguments:?}"
@@ -206,7 +206,7 @@ mod tests {
 
         let ignoring: [&[&str]; 2] = [&["change.patch"], &["before", "after"]];
         for words in ignoring {
-            let arguments = arguments(words);
+            let arguments = arguments_of(words);
             assert_eq!(
                 select_input(&arguments, StdinState::Piped),
                 Err(Error::PipedStdinIgnored),
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn piped_stdin_rejects_bench_operands_that_ignore_it() {
-        let arguments = arguments(&["--bench", "prepare", "change.patch"]);
+        let arguments = arguments_of(&["--bench", "prepare", "change.patch"]);
 
         assert_eq!(
             select_invocation(&arguments, StdinState::Piped),
