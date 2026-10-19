@@ -14,14 +14,14 @@ use crate::{
 
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
-/// The character-detail spans of each `page_rows` line that has changed spans: a paired
+/// The character-detail spans of each `rows` line that has changed spans: a paired
 /// row marks the spans that differ from its peer, and an unmatched row is changed as a
 /// whole. Each changed line takes its side's detail from the pair holding it.
-pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
-    let payload = |line: LineIndex| page_rows.line(line).payload();
+pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
+    let payload = |line: LineIndex| rows.line(line).payload();
     let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
 
-    page_rows.line_values_by_pair(|row| match row {
+    rows.line_values_by_pair(|row| match row {
         SideBySideRow::Paired(lines) => changed_pair_spans(lines.map(payload))
             .map_sides(|side, spans| ChangedDetail::of(side, spans.into_boxed_slice())),
         SideBySideRow::OldOnly(line) => BySide {
@@ -70,27 +70,24 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
     let mut cursor = PairCursor::new(payloads);
 
     while let Some((tag, run)) = changes.next() {
-        let replacement = match tag {
-            ChangeTag::Equal => {
-                cursor.take(tag, tokens_len(run));
-                continue;
-            }
+        let token_run = match tag {
+            ChangeTag::Equal => TokenRun::Kept(run),
             ChangeTag::Delete => match changes.next_if(|(next, _)| *next == ChangeTag::Insert) {
-                Some((_, inserted)) => Replacement::Replaced {
+                Some((_, inserted)) => TokenRun::Replaced {
                     deleted: run,
                     inserted,
                 },
-                None => Replacement::Deleted(run),
+                None => TokenRun::Deleted(run),
             },
             ChangeTag::Insert => match changes.next_if(|(next, _)| *next == ChangeTag::Delete) {
-                Some((_, deleted)) => Replacement::Replaced {
+                Some((_, deleted)) => TokenRun::Replaced {
                     deleted,
                     inserted: run,
                 },
-                None => Replacement::Inserted(run),
+                None => TokenRun::Inserted(run),
             },
         };
-        replacement.mark(&mut cursor);
+        token_run.take(&mut cursor);
     }
 
     cursor
@@ -206,10 +203,12 @@ fn tokens_len(tokens: &[Token<'_>]) -> usize {
     tokens.iter().map(|token| token.text.len()).sum()
 }
 
-// Replacements
+// Token runs
 
-/// A run of changed tokens: deleted only, inserted only, or deleted and replaced.
-enum Replacement<'t, 'a> {
+/// A run of tokens: kept on both sides, deleted only, inserted only, or deleted and
+/// replaced.
+enum TokenRun<'t, 'a> {
+    Kept(&'t [Token<'a>]),
     Deleted(&'t [Token<'a>]),
     Inserted(&'t [Token<'a>]),
     Replaced {
@@ -218,11 +217,13 @@ enum Replacement<'t, 'a> {
     },
 }
 
-impl Replacement<'_, '_> {
-    /// Marks the changed text. A word replaced by one similar word marks only the
-    /// graphemes that differ; any other change is marked whole.
-    fn mark(&self, cursor: &mut PairCursor<'_>) {
+impl TokenRun<'_, '_> {
+    /// Moves `cursor` past the run, marking its changed text. A word replaced by one
+    /// similar word marks only the graphemes that differ; any other change is marked
+    /// whole.
+    fn take(&self, cursor: &mut PairCursor<'_>) {
         match self {
+            Self::Kept(kept) => cursor.take(ChangeTag::Equal, tokens_len(kept)),
             Self::Deleted(deleted) => cursor.mark(Side::Old, tokens_len(deleted)),
             Self::Inserted(inserted) => cursor.mark(Side::New, tokens_len(inserted)),
             Self::Replaced { deleted, inserted } => match similar_word_changes(deleted, inserted) {
@@ -296,8 +297,8 @@ fn is_tiny_island(island: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PayloadSpan, changed_pair_spans, character_details};
-    use crate::{page_rows::PageRows, parser::parse_patch, side::BySide};
+    use super::{changed_pair_spans, character_details};
+    use crate::{page_rows::PageRows, parser::parse_patch, side::BySide, span::PayloadSpan};
 
     fn spans_of(old: &str, new: &str) -> BySide<Vec<PayloadSpan>> {
         changed_pair_spans(BySide { old, new })
@@ -329,10 +330,10 @@ mod tests {
         ] {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
             let document = parse_patch(patch.as_bytes()).expect("valid unmatched diff");
-            let page_rows = PageRows::of_file(&document.file_views().next().expect("first file"));
-            let details = character_details(&page_rows);
+            let rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+            let details = character_details(&rows);
 
-            for (index, line) in page_rows.lines() {
+            for (index, line) in rows.lines() {
                 let found = details
                     .get(index)
                     .as_ref()
