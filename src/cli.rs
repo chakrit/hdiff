@@ -123,7 +123,7 @@ fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Usa
 
     match (stdin, source.reads_stdin()) {
         (StdinState::Piped, false) => Err(UsageError::PipedStdinIgnored),
-        _ => Ok(source),
+        (StdinState::Piped, true) | (StdinState::Unpiped, _) => Ok(source),
     }
 }
 
