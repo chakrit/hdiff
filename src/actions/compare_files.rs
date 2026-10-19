@@ -15,6 +15,8 @@ pub struct CompareFiles<'a> {
 pub struct CompareFilesContext;
 
 impl CompareFiles<'_> {
+    /// Runs `diff`; exit status 0 or 1 is a comparison and returns `diff`'s output, and
+    /// any other status is the trouble `diff` reported.
     pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, Error> {
         let operands = &self.comparison.operands;
         let recursion: &[&str] = match self.comparison.depth {

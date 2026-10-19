@@ -54,6 +54,7 @@ impl Source {
     }
 }
 
+/// Every byte standard input holds, read to its end.
 fn read_stdin() -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     io::stdin().read_to_end(&mut bytes)?;

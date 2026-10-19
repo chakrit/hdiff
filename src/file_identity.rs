@@ -151,7 +151,9 @@ fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Op
     }
 }
 
-/// `None` when a destination's quoting cannot be decoded.
+/// The change a section's extended header `lines` record, the last marking line winning;
+/// lines that mark no change leave it unmarked. `None` when a rename or copy
+/// destination's quoting cannot be decoded.
 fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
     lines
         .iter()
