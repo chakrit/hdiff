@@ -165,12 +165,15 @@ impl PageRows {
 
     fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
         let lines = lines.map(RenderedLine::new).collect::<Vec<_>>();
-        let (pairs, pair_of_line) = side_by_side_rows(&lines);
+        let SideBySideLayout {
+            pairs,
+            pair_of_line,
+        } = SideBySideLayout::of(&lines);
         let visibility = LineMap(row_visibility(&lines).into_boxed_slice());
 
         Self {
             lines: lines.into_boxed_slice(),
-            pairs: pairs.into_boxed_slice(),
+            pairs,
             pair_of_line,
             visibility,
         }
@@ -310,39 +313,47 @@ fn placed_values<T>(
     placed.into_iter().flatten()
 }
 
-/// The side-by-side rows of `rendered_lines`, and the pair holding each line. Each run of
-/// unchanged lines is shared; each block of changed lines pairs its old lines with its
-/// new lines in order.
-fn side_by_side_rows(
-    rendered_lines: &[RenderedLine],
-) -> (Vec<SideBySideRow<LineIndex>>, LineMap<PairIndex>) {
-    let sides = rendered_lines
-        .iter()
-        .enumerate()
-        .map(|(position, line)| (LineIndex::at(position), line.kind().changed_side()))
-        .collect::<Vec<_>>();
-    let blocks = sides
-        .chunk_by(|(_, earlier), (_, later)| earlier.is_some() == later.is_some())
-        .map(BlockRows::of)
-        .collect::<Vec<_>>();
+/// A page's side-by-side rows and the pair holding each of its lines.
+struct SideBySideLayout {
+    pairs: Box<[SideBySideRow<LineIndex>]>,
+    pair_of_line: LineMap<PairIndex>,
+}
 
-    let pair_of_line = blocks
-        .iter()
-        .scan(0, |first_pair, block| {
-            let base = *first_pair;
-            *first_pair += block.rows.len();
-            Some(
-                block
-                    .row_of_line
-                    .iter()
-                    .map(move |row| PairIndex::at(base + row)),
-            )
-        })
-        .flatten()
-        .collect();
-    let rows = blocks.into_iter().flat_map(|block| block.rows).collect();
+impl SideBySideLayout {
+    /// The layout of `rendered_lines`. Each run of unchanged lines is shared; each block
+    /// of changed lines pairs its old lines with its new lines in order.
+    fn of(rendered_lines: &[RenderedLine]) -> Self {
+        let sides = rendered_lines
+            .iter()
+            .enumerate()
+            .map(|(position, line)| (LineIndex::at(position), line.kind().changed_side()))
+            .collect::<Vec<_>>();
+        let blocks = sides
+            .chunk_by(|(_, earlier), (_, later)| earlier.is_some() == later.is_some())
+            .map(BlockRows::of)
+            .collect::<Vec<_>>();
 
-    (rows, LineMap(pair_of_line))
+        let pair_of_line = blocks
+            .iter()
+            .scan(0, |first_pair, block| {
+                let base = *first_pair;
+                *first_pair += block.rows.len();
+                Some(
+                    block
+                        .row_of_line
+                        .iter()
+                        .map(move |row| PairIndex::at(base + row)),
+                )
+            })
+            .flatten()
+            .collect();
+        let pairs = blocks.into_iter().flat_map(|block| block.rows).collect();
+
+        Self {
+            pairs,
+            pair_of_line: LineMap(pair_of_line),
+        }
+    }
 }
 
 /// The rows of one block of lines that are all changed or all unchanged, and the row of
