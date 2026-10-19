@@ -7,11 +7,17 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, Padding, Paragraph},
+    widgets::Paragraph,
 };
 
-use super::bindings::{GROUPS, Key, Shortcut, ShortcutGroup, keymap_closing_keys};
-use crate::{screen::Cells, theme::Theme};
+use super::{
+    bindings::{GROUPS, Key, Shortcut, ShortcutGroup, keymap_closing_keys},
+    chrome::FloatingBox,
+};
+use crate::{
+    screen::{Cells, ScreenLines},
+    theme::Theme,
+};
 
 /// Cells a shortcut row is indented under its heading.
 const KEYS_INDENT: u16 = 2;
@@ -24,10 +30,6 @@ const COLUMN_WIDTH: u16 = KEYS_INDENT + KEYS_WIDTH + KEYS_ACTION_GAP + ACTION_WI
 /// What surrounds the dot between a diamond's left and right keys.
 const DIAMOND_SPACE: &str = " ";
 const COLUMN_GAP: u16 = 3;
-/// A border and a padding column on each side.
-const FRAME_WIDTH: u16 = 4;
-/// A border row above and below.
-const FRAME_HEIGHT: u16 = 2;
 
 /// How many columns of groups the popup lays out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,9 +39,9 @@ enum Columns {
 }
 
 impl Columns {
-    /// Two columns when they fit `width`, one otherwise.
+    /// Two columns when they fit `width` in their floating box, one otherwise.
     fn of(width: u16) -> Self {
-        match width >= Self::Two.width() {
+        match width >= Self::Two.content_width() + FloatingBox::FRAME_WIDTH {
             true => Self::Two,
             false => Self::One,
         }
@@ -56,12 +58,10 @@ impl Columns {
         GROUPS.len().div_ceil(usize::from(self.count()))
     }
 
-    /// The framed popup's width: its columns and the gaps between them.
-    fn width(self) -> u16 {
-        match self {
-            Self::One => COLUMN_WIDTH + FRAME_WIDTH,
-            Self::Two => 2 * COLUMN_WIDTH + COLUMN_GAP + FRAME_WIDTH,
-        }
+    /// The popup's content width: its columns and the gaps between them.
+    fn content_width(self) -> u16 {
+        let count = self.count();
+        count * COLUMN_WIDTH + (count - 1) * COLUMN_GAP
     }
 }
 
@@ -76,42 +76,22 @@ pub(super) fn render_keymap_popup(frame: &mut Frame, area: Rect, theme: &Theme) 
         .collect::<Vec<_>>();
     let tallest = group_columns
         .iter()
-        .map(Vec::len)
+        .map(|lines| ScreenLines::new(lines.len()))
         .max()
         .expect("the keymap has groups");
 
-    let popup = popup_area(area, columns, tallest);
-    let border = Block::bordered()
-        .border_style(Style::default().fg(theme.chrome.separator))
-        .padding(Padding::horizontal(1));
+    let popup = FloatingBox::centered_in(area, columns.content_width(), tallest.frame_rows());
+    let content = popup.render(frame, &theme.chrome);
     let column_areas = Layout::horizontal(vec![
         Constraint::Length(COLUMN_WIDTH);
         usize::from(columns.count())
     ])
     .spacing(COLUMN_GAP)
-    .split(border.inner(popup));
+    .split(content);
 
-    frame.render_widget(Clear, popup);
-    frame.render_widget(border, popup);
     for (lines, column_area) in group_columns.into_iter().zip(column_areas.iter()) {
         frame.render_widget(Paragraph::new(lines), *column_area);
     }
-}
-
-/// The framed popup of `columns`, the tallest `tallest` lines, centered over `area` and
-/// clipped to it.
-fn popup_area(area: Rect, columns: Columns, tallest: usize) -> Rect {
-    let width = columns.width();
-    let height =
-        u16::try_from(tallest).expect("the keymap fits a terminal's height") + FRAME_HEIGHT;
-
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
-    .intersection(area)
 }
 
 /// Headings take the hunk-header tone, since both head sections, and keys the syntax
@@ -141,7 +121,8 @@ impl PopupStyles {
         Span::styled(format!("{indent}{keys}{padding}{gap}"), self.keys)
     }
 
-    fn with_action(&self, keys: String, action: &'static str) -> Line<'static> {
+    /// A shortcut's line: its keys span, then its action.
+    fn shortcut_line(&self, keys: String, action: &'static str) -> Line<'static> {
         Line::from(vec![
             self.keys_span(keys),
             Span::styled(action, self.action),
@@ -171,10 +152,10 @@ fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static
     match shortcut {
         Shortcut::Keys { keys, action } => {
             let keys = keys.iter().map(|binding| binding.key);
-            vec![styles.with_action(key_labels(keys), action)]
+            vec![styles.shortcut_line(key_labels(keys), action)]
         }
         Shortcut::ClosesKeymap { action, .. } => {
-            vec![styles.with_action(key_labels(keymap_closing_keys()), action)]
+            vec![styles.shortcut_line(key_labels(keymap_closing_keys()), action)]
         }
         Shortcut::Diamond {
             up,
@@ -190,7 +171,7 @@ fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static
 
             vec![
                 Line::from(styles.keys_span(format!("{over_dot}{}", up.key.label()))),
-                styles.with_action(middle, action),
+                styles.shortcut_line(middle, action),
                 Line::from(styles.keys_span(format!("{over_dot}{}", down.key.label()))),
             ]
         }
