@@ -86,16 +86,16 @@ fn view(source: input::Source) -> Result<(), RunError> {
 /// Draws `document`, releasing it once prepared: the prepared document keeps every
 /// line it draws.
 fn render_document(document: DiffDocument) -> Result<(), RunError> {
-    let output_mode = terminal::OutputMode::of_stdout();
+    // docs/spec/architecture.md#input-and-terminal-boundary: whatever keeps `/dev/tty`
+    // from opening, the output falls back to finite text.
+    let controlling_terminal = match terminal::OutputMode::of_stdout() {
+        terminal::OutputMode::Finite => None,
+        terminal::OutputMode::Interactive => terminal::open_controlling_terminal().ok(),
+    };
 
-    match output_mode {
-        terminal::OutputMode::Finite => write_stdout(&render::render_unified(&document)),
-        terminal::OutputMode::Interactive => {
-            // architecture.md (Input and terminal boundary): whatever keeps `/dev/tty` from
-            // opening, the output falls back to finite text.
-            let Ok(controlling_terminal) = terminal::open_controlling_terminal() else {
-                return write_stdout(&render::render_unified(&document));
-            };
+    match controlling_terminal {
+        None => write_stdout(&render::render_unified(&document)),
+        Some(controlling_terminal) => {
             let prepared = PreparedDocument::prepare(&document);
             drop(document);
             terminal::run_interactive(controlling_terminal, prepared).map_err(RunError::Terminal)
