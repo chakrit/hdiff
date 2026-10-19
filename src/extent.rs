@@ -44,7 +44,7 @@ impl<R> RowLine<R> {
 /// lines, and the extent's indexes reach only its page's rows. Contract:
 /// docs/spec/architecture.md#viewport-coordinates.
 #[derive(Debug, PartialEq, Eq)]
-pub struct DisplayExtent {
+pub struct ScrollExtent {
     page: PageIndex,
     context: ContextRecords,
     wrap: WrapWidth,
@@ -75,7 +75,7 @@ pub enum ShownLines<'a> {
     },
 }
 
-impl DisplayExtent {
+impl ScrollExtent {
     /// The rows of `page` of `document` that `settings` show.
     pub fn of(document: &PreparedDocument, page: PageIndex, settings: ExtentSettings) -> Self {
         let rows = document.page(page).rows();
@@ -281,7 +281,7 @@ impl DisplayExtent {
 /// Screen lines of an extent's rows, in display order.
 pub struct RowLines<'a, R> {
     rows: &'a [R],
-    extent: &'a DisplayExtent,
+    extent: &'a ScrollExtent,
     /// Position of the row the next line belongs to.
     position: usize,
     wrapped_line: ScreenLines,
@@ -422,7 +422,7 @@ impl<T> MeasuredRows<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DisplayExtent, ExtentSettings, RowLine, ShownLines};
+    use super::{ExtentSettings, RowLine, ScrollExtent, ShownLines};
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
@@ -444,14 +444,14 @@ mod tests {
         shape: PaneShape,
         context: usize,
         wrap: WrapWidth,
-    ) -> DisplayExtent {
+    ) -> ScrollExtent {
         let settings = ExtentSettings {
             shape,
             context: ContextRecords::new(context),
             wrap,
         };
 
-        DisplayExtent::of(document, PageIndex::FIRST, settings)
+        ScrollExtent::of(document, PageIndex::FIRST, settings)
     }
 
     fn first_rows(document: &PreparedDocument) -> &PageRows {
@@ -469,11 +469,7 @@ mod tests {
     }
 
     /// Up to `limit` screen lines of a single-pane extent from line `offset`.
-    fn single_lines(
-        extent: &DisplayExtent,
-        offset: usize,
-        limit: usize,
-    ) -> Vec<RowLine<LineIndex>> {
+    fn single_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<LineIndex>> {
         let ShownLines::Single(lines) = extent.lines(screen_lines(offset), screen_lines(limit))
         else {
             panic!("a single pane shows lines");
@@ -482,7 +478,7 @@ mod tests {
     }
 
     /// Up to `limit` screen lines of a split-pane extent from line `offset`.
-    fn pair_lines(extent: &DisplayExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
+    fn pair_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
         let ShownLines::Split { lines, .. } =
             extent.lines(screen_lines(offset), screen_lines(limit))
         else {
@@ -495,7 +491,7 @@ mod tests {
     /// `line`.
     fn offset_of(
         document: &PreparedDocument,
-        extent: &DisplayExtent,
+        extent: &ScrollExtent,
         line: usize,
         wrapped_line: usize,
     ) -> ScreenLines {

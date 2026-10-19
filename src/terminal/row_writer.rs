@@ -255,7 +255,7 @@ mod tests {
     use super::{Clip, RowPlacement, write_row};
     use crate::{
         effective_view::WrapWidth,
-        extent::{DisplayExtent, ExtentSettings, ShownLines},
+        extent::{ExtentSettings, ScrollExtent, ShownLines},
         geometry::PaneShape,
         parser::parse_patch,
         preferences::{ContextRecords, DiffGranularity},
@@ -458,7 +458,7 @@ mod tests {
             context: ContextRecords::new(3),
             wrap: WrapWidth::Unbounded,
         };
-        let shown = DisplayExtent::of(prepared, PageIndex::FIRST, settings);
+        let shown = ScrollExtent::of(prepared, PageIndex::FIRST, settings);
         let all = ScreenLines::new(usize::MAX);
         let ShownLines::Single(lines) = shown.lines(ScreenLines::ZERO, all) else {
             panic!("a single pane shows lines");
