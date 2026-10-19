@@ -390,16 +390,8 @@ impl SideBySideLayout {
     /// The layout of `rendered_lines`. Each run of unchanged lines is shared; each block
     /// of changed lines pairs its old lines with its new lines in order.
     fn of(rendered_lines: &[RenderedLine]) -> Self {
-        let sides = rendered_lines
+        let blocks = Block::all_of(rendered_lines)
             .iter()
-            .enumerate()
-            .map(|(position, line)| LineSide {
-                line: LineIndex::at(position),
-                side: line.kind().changed_side(),
-            })
-            .collect::<Vec<_>>();
-        let blocks = sides
-            .chunk_by(|earlier, later| earlier.side.is_some() == later.side.is_some())
             .scan(PairIndex::at(0), |first_pair, block| {
                 let block_rows = BlockRows::of(block, *first_pair);
                 *first_pair = first_pair.offset(block_rows.pairs.len());
@@ -420,15 +412,40 @@ impl SideBySideLayout {
     }
 }
 
-/// A line with the side it changes: `Option<Side>` before a block is known to be
-/// changed, `Side` within a changed block.
-struct LineSide<S> {
+/// A changed line with the side it changes.
+struct LineSide {
     line: LineIndex,
-    side: S,
+    side: Side,
 }
 
-/// The rows of one block of lines that are all changed or all unchanged, and the pair
-/// holding each of its lines, in line order.
+/// A maximal run of consecutive lines: all unchanged, or all changed with their sides.
+enum Block {
+    Unchanged(Vec<LineIndex>),
+    Changed(Vec<LineSide>),
+}
+
+impl Block {
+    /// The blocks of `rendered_lines`, in line order. Each line joins the block before
+    /// it when that block is of its kind, and opens a new block otherwise.
+    fn all_of(rendered_lines: &[RenderedLine]) -> Vec<Self> {
+        let mut blocks = Vec::<Self>::new();
+        for (position, rendered_line) in rendered_lines.iter().enumerate() {
+            let line = LineIndex::at(position);
+            match (blocks.last_mut(), rendered_line.kind().changed_side()) {
+                (Some(Self::Unchanged(lines)), None) => lines.push(line),
+                (Some(Self::Changed(lines)), Some(side)) => lines.push(LineSide { line, side }),
+                (None | Some(Self::Changed(_)), None) => blocks.push(Self::Unchanged(vec![line])),
+                (None | Some(Self::Unchanged(_)), Some(side)) => {
+                    blocks.push(Self::Changed(vec![LineSide { line, side }]));
+                }
+            }
+        }
+
+        blocks
+    }
+}
+
+/// The rows of one block, and the pair holding each of its lines, in line order.
 struct BlockRows {
     pairs: Vec<SideBySideRow<LineIndex>>,
     pair_of_line: Vec<PairIndex>,
@@ -436,36 +453,22 @@ struct BlockRows {
 
 impl BlockRows {
     /// The rows of `block`, the first of which is the page's pair `first_pair`.
-    fn of(block: &[LineSide<Option<Side>>], first_pair: PairIndex) -> Self {
-        // A block is uniform, so its lines all carry a side exactly when it is changed.
-        let changed = block
-            .iter()
-            .map(|line_side| {
-                line_side.side.map(|side| LineSide {
-                    line: line_side.line,
-                    side,
-                })
-            })
-            .collect::<Option<Vec<_>>>();
-
-        match changed {
-            None => Self {
-                pairs: block
-                    .iter()
-                    .map(|line_side| SideBySideRow::Shared(line_side.line))
-                    .collect(),
-                pair_of_line: (0..block.len())
+    fn of(block: &Block, first_pair: PairIndex) -> Self {
+        match block {
+            Block::Unchanged(lines) => Self {
+                pairs: lines.iter().copied().map(SideBySideRow::Shared).collect(),
+                pair_of_line: (0..lines.len())
                     .map(|offset| first_pair.offset(offset))
                     .collect(),
             },
-            Some(changed) => Self::changed(&changed, first_pair),
+            Block::Changed(lines) => Self::changed(lines, first_pair),
         }
     }
 
     /// A changed block's *i*th old line and *i*th new line share row *i*. Each side's
     /// lines keep their order, so a no-newline marker sits right after its record in its
     /// side's column, and every line of the block takes a row.
-    fn changed(block: &[LineSide<Side>], first_pair: PairIndex) -> Self {
+    fn changed(block: &[LineSide], first_pair: PairIndex) -> Self {
         let column = |side| {
             block
                 .iter()
