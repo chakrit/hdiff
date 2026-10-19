@@ -6,7 +6,7 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::{TooSmall, WrapWidth},
-    extent::{ScreenLine, ShownLines},
+    extent::{RowLine, ShownLines},
     geometry::{SplitDirection, SplitPanes},
     navigation::Navigation,
     navigation::interaction::KeymapPopup,
@@ -113,7 +113,7 @@ impl PaneDrawing<'_> {
         &self,
         frame: &mut Frame,
         pane: ContinuityFrame,
-        lines: impl IntoIterator<Item = ScreenLine<PaneRow<'a>>>,
+        lines: impl IntoIterator<Item = RowLine<PaneRow<'a>>>,
     ) {
         let buffer = frame.buffer_mut();
         let mut clipped = Clip::default();
@@ -149,7 +149,7 @@ impl PaneDrawing<'_> {
 /// Draws side-by-side lines in the old and new panes of `split`, with their separator.
 fn render_split_rows(
     frame: &mut Frame,
-    lines: Vec<ScreenLine<SideBySideRow<StyledRow>>>,
+    lines: Vec<RowLine<SideBySideRow<StyledRow>>>,
     split: SplitPanes,
     pane_drawing: &PaneDrawing,
 ) {
