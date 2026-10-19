@@ -19,6 +19,13 @@ impl<T> NonEmpty<T> {
         }
     }
 
+    /// `items` in order, or none when there are no items.
+    pub fn of(items: impl IntoIterator<Item = T>) -> Option<Self> {
+        let mut items = items.into_iter();
+
+        items.next().map(|first| Self::new(first, items))
+    }
+
     pub fn first(&self) -> &T {
         &self.first
     }

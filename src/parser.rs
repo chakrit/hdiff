@@ -9,6 +9,7 @@ use crate::{
         FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
         is_combined_diff_header,
     },
+    non_empty::NonEmpty,
     side::{BySide, Side},
     source_text::SourceLine,
 };
@@ -233,9 +234,9 @@ fn parse_unified(
         let expected = lines.at_last_line(declared)?;
         hunks.push(parse_hunk(header, expected, lines)?);
     }
-    if hunks.is_empty() {
+    let Some(hunks) = NonEmpty::of(hunks) else {
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
-    }
+    };
 
     let headers = BySide { old, new };
     let identity = FileIdentity::of_unified(git.as_ref(), &headers);
@@ -244,7 +245,7 @@ fn parse_unified(
         body: FileBody::Unified(Box::new(UnifiedBody {
             git,
             headers,
-            hunks: hunks.into_boxed_slice(),
+            hunks,
         })),
     })
 }
@@ -628,7 +629,7 @@ mod tests {
         let bodies = unified_bodies(&document);
 
         assert_eq!(bodies.len(), 1);
-        assert_eq!(bodies[0].hunks.len(), 1);
+        assert_eq!(bodies[0].hunks.len().get(), 1);
         assert_eq!(first_hunk_record_counts(&bodies), [2]);
     }
 
