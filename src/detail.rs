@@ -21,7 +21,7 @@ pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>>
     let payload = |line: LineIndex| page_rows.line(line).payload();
     let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
 
-    let pair_details = page_rows.map_pairs(|_, row| match row {
+    page_rows.line_values_by_pair(|row| match row {
         SideBySideRow::Paired(lines) => {
             let spans = changed_pair_spans(lines.map(payload));
             BySide {
@@ -38,9 +38,7 @@ pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>>
             new: ChangedDetail::of(Side::New, whole(line)),
         },
         SideBySideRow::Shared(_) => BySide::default(),
-    });
-
-    page_rows.lines_of_pairs(pair_details)
+    })
 }
 
 /// The changed spans of a line that changes `side`.
