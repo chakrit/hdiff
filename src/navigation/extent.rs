@@ -514,6 +514,7 @@ mod tests {
         preferences::ContextRecords,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
+        tab_stops::MeasuredTextRef,
     };
 
     const VERTICAL: PaneShape = PaneShape::Split(SplitDirection::Vertical);
@@ -529,6 +530,10 @@ mod tests {
     fn wrapped_deletion_patch() -> String {
         format!("--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n{WRAPPED_DELETION}\n+abc\n context\n")
     }
+
+    /// One change between three context records before it and one after.
+    const CHANGE_AMONG_CONTEXT: &[u8] =
+        b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n";
 
     /// `patch` parsed and prepared.
     fn prepared(patch: &[u8]) -> PreparedDocument {
@@ -648,8 +653,10 @@ mod tests {
 
     #[test]
     fn measures_the_widest_visible_row_in_terminal_cells() {
+        const FAR_CONTEXT: &str = "far context that is hidden at one line";
+        const ADDITION: &str = "\t界界界界界界界界界界";
         let document = prepared(
-            "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n far context that is hidden at one line\n near\n-old\n+\t界界界界界界界界界界\n"
+            format!("--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n {FAR_CONTEXT}\n near\n-old\n+{ADDITION}\n")
                 .as_bytes(),
         );
 
@@ -657,10 +664,9 @@ mod tests {
             extent_of(&document, shape, ContextRecords::new(count), WrapWidth::Off).width()
         };
 
-        // The addition's payload is a two-cell tab and ten two-cell characters; the far
-        // context line's is 38 cells. Each row also spans the marker gutter.
-        let addition = MARKER_GUTTER_WIDTH + Cells::new(22);
-        let far_context = MARKER_GUTTER_WIDTH + Cells::new(38);
+        // Each row spans the marker gutter and its payload once its tab is expanded.
+        let addition = MARKER_GUTTER_WIDTH + MeasuredTextRef::of_text(ADDITION).cells();
+        let far_context = MARKER_GUTTER_WIDTH + Cells::of_text(FAR_CONTEXT);
 
         assert_eq!(widest(PaneShape::Single, 1), addition);
         assert_eq!(widest(VERTICAL, 1), addition);
@@ -669,8 +675,7 @@ mod tests {
 
     #[test]
     fn maps_a_row_to_its_visible_offset_or_the_next_visible_row() {
-        let document =
-            prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
+        let document = prepared(CHANGE_AMONG_CONTEXT);
         let context = ContextRecords::new(1);
         let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
         let offset =
@@ -757,8 +762,7 @@ mod tests {
     /// layout rebuilds at another context count.
     #[test]
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
-        let document =
-            prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
+        let document = prepared(CHANGE_AMONG_CONTEXT);
         let change_offset = |context| {
             let change = line_at(&document, "-old", ScreenLines::ZERO);
             extent_of(&document, VERTICAL, context, WrapWidth::Off).offset_of(&document, change)
