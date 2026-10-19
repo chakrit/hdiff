@@ -9,6 +9,7 @@ use crate::{
         interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
         scroll::Movement,
     },
+    one_of::OneOf,
     preferences::PreferenceChange,
 };
 
@@ -169,10 +170,10 @@ pub(super) enum Shortcut {
 
 impl Shortcut {
     /// The bindings this row makes.
-    fn bindings(&self) -> ShortcutBindings {
+    fn bindings(&self) -> impl Iterator<Item = Binding> {
         match self {
             Self::Keys { bindings, .. } | Self::ClosesKeymap { bindings, .. } => {
-                ShortcutBindings::Keys(bindings.iter())
+                OneOf::First(bindings.iter().copied())
             }
             Self::Diamond {
                 up,
@@ -180,24 +181,7 @@ impl Shortcut {
                 right,
                 down,
                 ..
-            } => ShortcutBindings::Diamond([*up, *left, *right, *down].into_iter()),
-        }
-    }
-}
-
-/// The bindings of one shortcut row, in row order.
-enum ShortcutBindings {
-    Keys(std::slice::Iter<'static, Binding>),
-    Diamond(std::array::IntoIter<Binding, 4>),
-}
-
-impl Iterator for ShortcutBindings {
-    type Item = Binding;
-
-    fn next(&mut self) -> Option<Binding> {
-        match self {
-            Self::Keys(bindings) => bindings.next().copied(),
-            Self::Diamond(bindings) => bindings.next(),
+            } => OneOf::Second([*up, *left, *right, *down].into_iter()),
         }
     }
 }
