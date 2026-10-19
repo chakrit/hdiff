@@ -41,7 +41,6 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
         return;
     }
 
-    let document = navigation.document();
     let extent = navigation.extent();
     let scroll = interaction.scroll().position();
     let pane_drawing = PaneDrawing {
@@ -67,8 +66,8 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
 
     match geometry.file_column() {
         Some(column) => {
-            let tree = document.file_tree();
-            let page_kind = document.page(interaction.page()).kind();
+            let tree = navigation.file_tree();
+            let page_kind = navigation.page().kind();
             render_file_column(frame, column.list, tree, page_kind, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
