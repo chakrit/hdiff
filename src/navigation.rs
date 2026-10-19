@@ -17,7 +17,7 @@ use self::{
 };
 use crate::{
     effective_view::EffectiveView,
-    file_tree::FileTree,
+    file_tree::FileSelection,
     preferences::ViewPreferences,
     prepared::{PreparedDocument, PreparedPage},
     screen::ScreenLines,
@@ -63,8 +63,10 @@ impl Navigation {
         self.document.page(self.interaction.page())
     }
 
-    pub fn file_tree(&self) -> &FileTree {
-        self.document.file_tree()
+    /// The file list with the row of the file the interaction is at; a document without
+    /// files lists none.
+    pub fn file_selection(&self) -> Option<FileSelection<'_>> {
+        self.document.file_selection(self.interaction.page())
     }
 
     pub fn interaction(&self) -> &Interaction {

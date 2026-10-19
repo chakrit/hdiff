@@ -66,9 +66,8 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
 
     match geometry.file_column() {
         Some(column) => {
-            let tree = navigation.file_tree();
-            let page_kind = navigation.page().kind();
-            render_file_column(frame, column.list, tree, page_kind, &theme.chrome);
+            let list = navigation.file_selection();
+            render_file_column(frame, column.list, list, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
         None => render_help_box(frame, screen, &theme.chrome),

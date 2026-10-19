@@ -78,10 +78,17 @@ pub struct ListedFile<'a> {
     pub row: TreeRowIndex,
 }
 
-/// The file-list rows; a document without files lists none.
-#[derive(Debug, Default, PartialEq, Eq)]
+/// The file-list rows of a document with files.
+#[derive(Debug, PartialEq, Eq)]
 pub struct FileTree {
     rows: Box<[TreeRow]>,
+}
+
+/// A file list with the row of the file a page shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileSelection<'a> {
+    pub tree: &'a FileTree,
+    pub selected: TreeRowIndex,
 }
 
 /// A built file tree and its files in list order. A file's list position is its
