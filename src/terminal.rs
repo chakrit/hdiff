@@ -87,13 +87,13 @@ impl Tui {
         terminal: &mut Terminal<B>,
         event: TerminalEvent,
     ) -> Result<Step, B::Error> {
-        let Some(event) = bindings::event_for(event) else {
+        let Some(session_event) = bindings::event_for(event) else {
             return Ok(Step::Continue);
         };
         let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(screen);
 
-        match self.navigation.respond(event) {
+        match self.navigation.respond(session_event) {
             Step::Exit => Ok(Step::Exit),
             Step::Continue => {
                 self.draw(terminal)?;
@@ -134,9 +134,9 @@ impl Iterator for TtyEvents {
     type Item = io::Result<TerminalEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let event = self.pending.take().map_or_else(event::read, Ok);
+        let read = self.pending.take().map_or_else(event::read, Ok);
 
-        Some(event.and_then(|event| self.coalesce_resize(event)))
+        Some(read.and_then(|event| self.coalesce_resize(event)))
     }
 }
 

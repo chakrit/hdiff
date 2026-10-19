@@ -67,8 +67,8 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
 
     match geometry.file_column() {
         Some(column) => {
-            let list = navigation.file_selection();
-            render_file_column(frame, column.list, list, &theme.chrome);
+            let selection = navigation.file_selection();
+            render_file_column(frame, column.list, selection, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
         None => render_help_box(frame, screen, &theme.chrome),
@@ -147,8 +147,8 @@ fn render_split_rows<'a>(
     let panes = split.panes().map(ContinuityFrame::diff_pane);
     let side_lines = lines
         .map(|line| line.map(SideBySideRow::pane_pair).split())
-        .fold(BySide::<Vec<_>>::default(), |side_lines, line| {
-            side_lines.zip(line).map(|(mut pane_lines, pane_line)| {
+        .fold(BySide::<Vec<_>>::default(), |collected, line| {
+            collected.zip(line).map(|(mut pane_lines, pane_line)| {
                 pane_lines.push(pane_line);
                 pane_lines
             })
