@@ -368,8 +368,9 @@ fn values_on_lines<T>(
     shared.into_iter().chain(changed)
 }
 
-/// The values of `placed`, one per line, in line order. Rows list a changed block's old
-/// lines before its new lines, so values placed row by row are not in line order.
+/// The values of `placed`, one per line, in line order. Lines list a changed block's old
+/// lines before its new lines, while a row holds the block's *i*th old and *i*th new
+/// lines together, so values placed row by row are not in line order.
 fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Box<[T]> {
     let mut placed = placed.into_iter().collect::<Vec<_>>();
     placed.sort_by_key(|line_value| line_value.line);
@@ -478,20 +479,19 @@ impl BlockRows {
         };
         let columns = BySide::of(column);
 
-        let paired_count = columns.old.len().min(columns.new.len());
-        let paired = columns
-            .old
-            .iter()
-            .zip(&columns.new)
-            .map(|(&old, &new)| SideBySideRow::Paired(BySide { old, new }));
+        let paired_count = columns.as_ref().merge(|old, new| old.len().min(new.len()));
+        let paired = columns.as_ref().merge(|old, new| {
+            old.iter()
+                .zip(new)
+                .map(|(&old, &new)| SideBySideRow::Paired(BySide { old, new }))
+        });
         let unmatched = columns.as_ref().map_sides(|side, column| {
             column[paired_count..]
                 .iter()
                 .map(move |&line| SideBySideRow::Unmatched { side, line })
         });
         let pairs = paired
-            .chain(unmatched.old)
-            .chain(unmatched.new)
+            .chain(unmatched.into_iter().flatten())
             .collect::<Vec<_>>();
 
         let placed_pairs = pairs.iter().enumerate().flat_map(|(offset, row)| {
