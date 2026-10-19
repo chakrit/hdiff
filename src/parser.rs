@@ -183,7 +183,10 @@ fn is_git_metadata(text: &str) -> bool {
 fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, ParseError> {
     let mut patch = Vec::new();
 
-    while let Some((header, size_check)) = lines.next_if_map(|text| {
+    while let Some(Taken {
+        line: header,
+        value: size_check,
+    }) = lines.next_if_map(|text| {
         binary_block_size(text).map(|size| {
             is_decimal_count(size)
                 .then_some(())
@@ -234,7 +237,10 @@ fn parse_unified(
     };
 
     let mut hunks = Vec::new();
-    while let Some((header, declared)) = lines.next_if_map(|text| {
+    while let Some(Taken {
+        line: header,
+        value: declared,
+    }) = lines.next_if_map(|text| {
         text.starts_with("@@ ")
             .then(|| hunk_counts(text).ok_or(Malformed::InvalidHunkHeader))
     }) {
@@ -367,6 +373,12 @@ struct SourceLines<'a> {
     taken: usize,
 }
 
+/// A line [`SourceLines::next_if_map`] took, with the value it read from the line.
+struct Taken<T> {
+    line: SourceLine,
+    value: T,
+}
+
 impl<'a> SourceLines<'a> {
     fn new(input: &'a [u8]) -> Self {
         Self {
@@ -402,24 +414,21 @@ impl<'a> SourceLines<'a> {
     /// Takes the next line when its sanitized text satisfies `accepts`.
     fn next_if(&mut self, accepts: impl FnOnce(&str) -> bool) -> Option<SourceLine> {
         self.next_if_map(|text| accepts(text).then_some(()))
-            .map(|(line, ())| line)
+            .map(|taken| taken.line)
     }
 
     /// Takes the next line when `extract` reads a value from its sanitized text, with
     /// that value.
-    fn next_if_map<T>(
-        &mut self,
-        extract: impl FnOnce(&str) -> Option<T>,
-    ) -> Option<(SourceLine, T)> {
-        let extracted = self.peek().and_then(|line| extract(line.sanitized()))?;
+    fn next_if_map<T>(&mut self, extract: impl FnOnce(&str) -> Option<T>) -> Option<Taken<T>> {
+        let value = self.peek().and_then(|line| extract(line.sanitized()))?;
 
-        self.next().map(|line| (line, extracted))
+        self.next().map(|line| Taken { line, value })
     }
 
     /// Takes the next line when it is `side`'s file header.
     fn next_file_header(&mut self, side: Side) -> Option<FileHeader> {
         self.next_if_map(|text| HeaderPath::of_header(text, side))
-            .map(|(line, path)| FileHeader { line, path })
+            .map(|Taken { line, value: path }| FileHeader { line, path })
     }
 
     /// `result`, with a malformation located at the line most recently taken.

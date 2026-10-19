@@ -56,8 +56,8 @@ fn visible(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, char)> {
     let mut state = State::Text;
 
     decoded(bytes).filter_map(move |(source, character)| {
-        let (next, shown) = state.after(character);
-        state = next;
+        let shown = state.shows(character);
+        state = state.after(character);
 
         shown.then_some((source, character))
     })
@@ -98,23 +98,33 @@ enum State {
 }
 
 impl State {
-    /// The state after `character`, and whether `character` is visible.
-    fn after(self, character: char) -> (Self, bool) {
+    /// Whether `character`, read in this state, is visible: only text outside a control
+    /// sequence is, and among control characters only tab.
+    fn shows(self, character: char) -> bool {
+        match self {
+            Self::Text => character == '\t' || !character.is_control(),
+            Self::Escape | Self::ControlSequence | Self::StringSequence | Self::StringEscape => {
+                false
+            }
+        }
+    }
+
+    /// The state after `character`.
+    fn after(self, character: char) -> Self {
         match (self, character) {
-            (Self::Text, '\u{1b}') => (Self::Escape, false),
-            (Self::Text, '\t') => (Self::Text, true),
-            (Self::Text, character) => (Self::Text, !character.is_control()),
-            (Self::Escape, '[') => (Self::ControlSequence, false),
-            (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => (Self::StringSequence, false),
-            (Self::Escape, _) => (Self::Text, false),
-            (Self::ControlSequence, '@'..='~') => (Self::Text, false),
-            (Self::ControlSequence, _) => (Self::ControlSequence, false),
-            (Self::StringSequence, '\u{7}') => (Self::Text, false),
-            (Self::StringSequence, '\u{1b}') => (Self::StringEscape, false),
-            (Self::StringSequence, _) => (Self::StringSequence, false),
-            (Self::StringEscape, '\\') => (Self::Text, false),
-            (Self::StringEscape, '\u{1b}') => (Self::StringEscape, false),
-            (Self::StringEscape, _) => (Self::StringSequence, false),
+            (Self::Text, '\u{1b}') => Self::Escape,
+            (Self::Text, _) => Self::Text,
+            (Self::Escape, '[') => Self::ControlSequence,
+            (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => Self::StringSequence,
+            (Self::Escape, _) => Self::Text,
+            (Self::ControlSequence, '@'..='~') => Self::Text,
+            (Self::ControlSequence, _) => Self::ControlSequence,
+            (Self::StringSequence, '\u{7}') => Self::Text,
+            (Self::StringSequence, '\u{1b}') => Self::StringEscape,
+            (Self::StringSequence, _) => Self::StringSequence,
+            (Self::StringEscape, '\\') => Self::Text,
+            (Self::StringEscape, '\u{1b}') => Self::StringEscape,
+            (Self::StringEscape, _) => Self::StringSequence,
         }
     }
 }

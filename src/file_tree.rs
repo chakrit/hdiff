@@ -157,7 +157,7 @@ impl<'a> Placed<'a> {
     fn of(view: FileView<'a>) -> Self {
         let (group, name, marker) = match &view.file.identity {
             FileIdentity::Path { state, path } => {
-                let (group, name) = grouped(path.as_str());
+                let Grouped { group, name } = Grouped::of(path.as_str());
                 (group, name, StateMarker::State(*state))
             }
             FileIdentity::Unknown { header } => {
@@ -178,12 +178,21 @@ impl<'a> Placed<'a> {
     }
 }
 
-/// The group `path` is listed in and the name its row shows.
-fn grouped(path: &str) -> (Group<'_>, &str) {
-    match path.rsplit_once('/') {
-        Some(("", name)) => (Group::TopLevel, name),
-        Some((directory, name)) => (Group::Directory(directory), name),
-        None => (Group::TopLevel, path),
+/// The group a path is listed in and the name its row shows.
+struct Grouped<'a> {
+    group: Group<'a>,
+    name: &'a str,
+}
+
+impl<'a> Grouped<'a> {
+    fn of(path: &'a str) -> Self {
+        let (group, name) = match path.rsplit_once('/') {
+            Some(("", name)) => (Group::TopLevel, name),
+            Some((directory, name)) => (Group::Directory(directory), name),
+            None => (Group::TopLevel, path),
+        };
+
+        Self { group, name }
     }
 }
 
