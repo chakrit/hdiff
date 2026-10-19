@@ -15,19 +15,12 @@ use crate::{
 /// The session event a terminal event stands for, if any.
 pub(super) fn event_for(event: TerminalEvent) -> Option<Event> {
     match event {
-        TerminalEvent::Key(key) if key.kind == KeyEventKind::Press => event_for_key(key),
+        TerminalEvent::Key(key) if key.kind == KeyEventKind::Press => {
+            Key::of(key).and_then(event_bound_to)
+        }
         TerminalEvent::Resize(..) => Some(Event::Resize),
         _ => None,
     }
-}
-
-/// A Control chord without a binding of its own acts as its plain key.
-fn event_for_key(key: KeyEvent) -> Option<Event> {
-    let key = Key::of(key)?;
-    let chord = event_bound_to(key);
-    let plain = || key.without_control().and_then(event_bound_to);
-
-    chord.or_else(plain)
 }
 
 fn event_bound_to(key: Key) -> Option<Event> {
@@ -95,13 +88,6 @@ impl Key {
             (KeyCode::Down, NONE) => Some(Self::Down),
             (KeyCode::Up, NONE) => Some(Self::Up),
             _ => None,
-        }
-    }
-
-    fn without_control(self) -> Option<Self> {
-        match self {
-            Self::Control(character) => Some(Self::Char(character)),
-            Self::Char(_) | Self::Tab | Self::ShiftTab | Self::Esc | Self::Down | Self::Up => None,
         }
     }
 
@@ -424,11 +410,12 @@ mod tests {
         );
     }
 
-    /// docs/spec/architecture.md#keyboard-bindings: Shift types the character it shifts,
-    /// and a chord the table does not bind does nothing.
+    /// docs/spec/architecture.md#keyboard-bindings: the table names every bound key, so
+    /// Shift-`G` is bound, and `Ctrl-Q`, `Ctrl-J` and `Alt-q` are not.
     #[test]
-    fn admits_only_the_modifiers_the_bindings_name() {
+    fn binds_only_the_keys_the_table_names() {
         let alt = KeyModifiers::ALT;
+        let control = KeyModifiers::CONTROL;
         let control_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
 
         assert_eq!(
@@ -436,6 +423,8 @@ mod tests {
             command(Command::Movement(Movement::Bottom))
         );
         for (code, modifiers) in [
+            (KeyCode::Char('q'), control),
+            (KeyCode::Char('j'), control),
             (KeyCode::Char('q'), alt),
             (KeyCode::Char('c'), control_alt),
             (KeyCode::Char('j'), KeyModifiers::SUPER),
