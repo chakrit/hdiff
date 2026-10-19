@@ -62,6 +62,10 @@ pub enum PreferenceChange {
     ToggleFileList,
 }
 
+// Evaluates `DiffLayout::ALL` in every build, so a broken layout cycle fails to compile
+// even where nothing else reads the list.
+const _: [DiffLayout; 3] = DiffLayout::ALL;
+
 /// How a diff's two sides are laid out: one unified pane, or two panes side by side
 /// (vertical split) or one above the other (stacked).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,19 +76,38 @@ pub enum DiffLayout {
 }
 
 impl DiffLayout {
-    /// Every layout, in the order the layout shortcut cycles through them.
-    pub const ALL: [Self; 3] = [Self::Unified, Self::Vertical, Self::Stacked];
+    /// Every layout, in the order the layout shortcut cycles through them, starting at
+    /// unified. Walked from `next`, which names every layout's successor, so the cycle
+    /// order is written once; the build fails unless the walk closes after exactly
+    /// these layouts.
+    pub const ALL: [Self; 3] = Self::cycle_from(Self::Unified);
 
-    /// The layout the layout shortcut switches to: the one after this in `ALL`, cycling
-    /// back to the first.
-    pub fn next(self) -> Self {
-        let [first, ..] = Self::ALL;
+    /// The layout the layout shortcut switches to.
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Unified => Self::Vertical,
+            Self::Vertical => Self::Stacked,
+            Self::Stacked => Self::Unified,
+        }
+    }
 
-        Self::ALL
-            .into_iter()
-            .skip_while(|&layout| layout != self)
-            .nth(1)
-            .unwrap_or(first)
+    /// The layouts `next` reaches from `first`, in order, checked to return to `first`
+    /// only after the last of them.
+    const fn cycle_from<const COUNT: usize>(first: Self) -> [Self; COUNT] {
+        let mut layouts = [first; COUNT];
+        let mut index = 1;
+        while index < COUNT {
+            let next = layouts[index - 1].next();
+            assert!(next as u8 != first as u8, "the layout cycle closes early");
+            layouts[index] = next;
+            index += 1;
+        }
+
+        assert!(
+            layouts[COUNT - 1].next() as u8 == first as u8,
+            "the layout cycle is longer than ALL"
+        );
+        layouts
     }
 
     /// The layout's name in benchmark movement records.
