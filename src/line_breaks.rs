@@ -41,9 +41,20 @@ impl LineBreaks {
         Some(self.line)
     }
 
-    /// Lines the clusters placed so far occupy; an empty payload still takes one.
-    pub fn line_count(&self) -> ScreenLines {
-        self.line + ScreenLines::ONE
+    /// Lines `clusters` occupy when placed in order on lines `width` cells wide: one past
+    /// the last line a cluster lands on, so an empty payload still takes one.
+    pub fn count_lines<'a>(
+        width: NonZeroCells,
+        clusters: impl IntoIterator<Item = &'a str>,
+    ) -> ScreenLines {
+        clusters
+            .into_iter()
+            .scan(Self::new(width), |breaks, cluster| {
+                Some(breaks.place(cluster))
+            })
+            .flatten()
+            .last()
+            .map_or(ScreenLines::ONE, |line| line + ScreenLines::ONE)
     }
 }
 
@@ -58,16 +69,13 @@ pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> 
     let mut expanded = String::new();
     TabStops::default().expand_into(text, &mut expanded);
 
-    let mut breaks = LineBreaks::new(width);
-    for cluster in expanded.graphemes(true) {
-        breaks.place(cluster);
-    }
-
-    breaks.line_count()
+    LineBreaks::count_lines(width, expanded.graphemes(true))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use super::{LineBreaks, wrapped_line_count};
     use crate::{
         screen::{NonZeroCells, ScreenLines},
@@ -112,7 +120,10 @@ mod tests {
 
         assert_eq!(breaks.place("a"), placed(0));
         assert_eq!(breaks.place("\u{7}"), None);
-        assert_eq!(breaks.line_count(), ScreenLines::new(1));
+        assert_eq!(
+            LineBreaks::count_lines(NonZeroCells::of(1), ["a", "\u{7}"]),
+            ScreenLines::new(1)
+        );
     }
 
     #[test]
@@ -144,12 +155,10 @@ mod tests {
     #[test]
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
-        let mut breaks = LineBreaks::new(NonZeroCells::of(3));
-        for _ in 0..MeasuredTextRef::of_text(text).cells().get() {
-            breaks.place("a");
-        }
+        let cells = MeasuredTextRef::of_text(text).cells().get();
+        let walked = LineBreaks::count_lines(NonZeroCells::of(3), iter::repeat_n("a", cells));
 
-        assert_eq!(wrapped_lines(text, 3), breaks.line_count());
+        assert_eq!(wrapped_lines(text, 3), walked);
         assert_eq!(wrapped_lines(text, 300), ScreenLines::new(1));
     }
 }
