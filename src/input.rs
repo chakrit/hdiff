@@ -13,10 +13,9 @@ use crate::{
         self,
         compare_files::{CompareFiles, CompareFilesContext},
     },
-    comparison::{Comparison, Operand},
+    comparison::Comparison,
     document::DiffDocument,
     parser::{self, ParseError},
-    side::Side,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,9 +30,7 @@ impl Source {
         match self {
             Self::Stdin => true,
             Self::PatchFile(_) => false,
-            Self::Comparison(comparison) => Side::BOTH
-                .into_iter()
-                .any(|side| *comparison.operands.get(side) == Operand::Stdin),
+            Self::Comparison(comparison) => comparison.reads_stdin(),
         }
     }
 
