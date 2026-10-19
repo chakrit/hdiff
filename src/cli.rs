@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::{
-    actions::compare_files::{Comparison, Depth, Operand},
     bench::Driver,
+    comparison::{Comparison, Depth, Operand},
     input::{Source, StdinState},
 };
 
