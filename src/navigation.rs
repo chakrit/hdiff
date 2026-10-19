@@ -209,6 +209,7 @@ mod tests {
         scroll::{Movement, ScrollPosition},
     };
     use crate::{
+        effective_view::{TooSmall, WrapWidth},
         parser::parse_patch,
         preferences::{PreferenceChange, ViewPreferences, Wrapping},
         prepared::PreparedDocument,
@@ -253,9 +254,10 @@ mod tests {
     }
 
     /// docs/spec/architecture.md#view-model: while wrapping is enabled the maximum
-    /// horizontal offset is zero, even in a pane too narrow for a payload column.
+    /// horizontal offset is zero, even on a screen too narrow to give a pane a payload
+    /// column.
     #[test]
-    fn never_scrolls_horizontally_while_wrapping_in_a_pane_without_payload_room() {
+    fn never_scrolls_horizontally_while_wrapping_on_a_screen_without_payload_room() {
         let document = parse_patch(
             b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-a long deleted line\n+a long added line\n",
         )
@@ -265,13 +267,14 @@ mod tests {
             wrapping: Wrapping::Enabled,
             ..ViewPreferences::INITIAL
         };
-        // The file column leaves the diff one column, all of it frame.
-        let mut navigation = Navigation::start(prepared, preferences, Size::new(28, 3));
+        // Four columns leave the pane only its frame and marker gutter.
+        let mut navigation = Navigation::start(prepared, preferences, Size::new(4, 3));
 
         navigation.apply(Effect::Scroll(Movement::Right));
         navigation.apply(Effect::Scroll(Movement::FarRight));
 
-        assert_eq!(navigation.view().too_small(), None, "the panes still show");
+        assert_eq!(navigation.view().wrap(), WrapWidth::NoPayload);
+        assert_eq!(navigation.view().too_small(), Some(TooSmall::Narrow));
         assert_eq!(
             navigation.interaction().scroll().position().horizontal,
             Cells::ZERO

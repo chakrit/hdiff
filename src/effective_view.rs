@@ -15,7 +15,6 @@ use crate::{
 /// shape, the screen's areas, the content each diff pane shows, the width rows wrap at,
 /// and whether the screen is too small to show panes, each derived once.
 pub struct EffectiveView {
-    shape: PaneShape,
     geometry: ScreenGeometry,
     pane_content: PaneContent,
     wrap: WrapWidth,
@@ -35,8 +34,8 @@ impl EffectiveView {
     /// The view `preferences` give on a `screen`-sized terminal.
     pub fn of(preferences: ViewPreferences, screen: Size) -> Self {
         let shape = PaneShape::of(preferences.layout);
-        let geometry = ScreenGeometry::of(screen, preferences.file_list);
-        let pane_content = geometry.pane_content(shape);
+        let geometry = ScreenGeometry::of(screen, preferences.file_list, shape);
+        let pane_content = geometry.pane_content();
 
         let too_small = match (geometry.is_narrow(), pane_content.height) {
             (true, _) => Some(TooSmall::Narrow),
@@ -46,7 +45,6 @@ impl EffectiveView {
         let wrap = WrapWidth::of_panes(preferences.wrapping, pane_content.width);
 
         Self {
-            shape,
             geometry,
             pane_content,
             wrap,
@@ -55,7 +53,7 @@ impl EffectiveView {
     }
 
     pub fn shape(&self) -> PaneShape {
-        self.shape
+        self.geometry.shape()
     }
 
     pub fn geometry(&self) -> &ScreenGeometry {
@@ -83,8 +81,8 @@ pub enum WrapWidth {
     Off,
     /// Payloads wrap at this many cells.
     At(NonZeroCells),
-    /// Wrapping is on, but the pane has no payload column to wrap in: every row is one
-    /// line, never scrolled.
+    /// Wrapping is on, but a screen too narrow to show its panes leaves them no payload
+    /// column to wrap in: every row is one line, never scrolled.
     NoPayload,
 }
 
@@ -126,7 +124,7 @@ mod tests {
     use crate::{
         geometry::SplitDirection,
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-        screen::Cells,
+        screen::{Cells, MARKER_GUTTER_WIDTH},
         side::BySide,
     };
 
@@ -139,7 +137,7 @@ mod tests {
     }
 
     /// docs/spec/architecture.md#interaction-model: the minimum layout shows one content
-    /// line in each diff pane.
+    /// line in each diff pane, and the file list collapses before the diff view.
     #[test]
     fn derives_compact_pane_visibility_from_terminal_size() {
         let cases = [
@@ -154,14 +152,15 @@ mod tests {
                 Shown::Message(TooSmall::Short),
             ),
             (Size::new(27, 3), DiffLayout::Unified, Shown::DiffOnly),
-            (Size::new(28, 3), DiffLayout::Unified, Shown::WithFileList),
-            (Size::new(28, 3), DiffLayout::Vertical, Shown::WithFileList),
+            (Size::new(28, 3), DiffLayout::Unified, Shown::DiffOnly),
+            (Size::new(28, 3), DiffLayout::Vertical, Shown::DiffOnly),
             (
                 Size::new(28, 6),
                 DiffLayout::Stacked,
                 Shown::Message(TooSmall::Short),
             ),
-            (Size::new(28, 7), DiffLayout::Stacked, Shown::WithFileList),
+            (Size::new(28, 7), DiffLayout::Stacked, Shown::DiffOnly),
+            (Size::new(80, 7), DiffLayout::Stacked, Shown::WithFileList),
         ];
 
         for (screen, layout, expected) in cases {
@@ -180,6 +179,41 @@ mod tests {
                 shown, expected,
                 "{}×{} {layout:?}",
                 screen.width, screen.height
+            );
+        }
+    }
+
+    /// docs/spec/architecture.md#interaction-model: as width decreases the file list
+    /// collapses before the diff view, so no pane it leaves lacks a payload column.
+    #[test]
+    fn collapses_the_file_list_before_any_pane_loses_its_payload_column() {
+        let layouts = [
+            DiffLayout::Unified,
+            DiffLayout::Vertical,
+            DiffLayout::Stacked,
+        ];
+        let view = |layout, width| {
+            let preferences = ViewPreferences {
+                layout,
+                ..ViewPreferences::INITIAL
+            };
+            EffectiveView::of(preferences, Size::new(width, 30))
+        };
+
+        for layout in layouts {
+            for width in 20..=80 {
+                let view = view(layout, width);
+                if view.geometry().file_column().is_some() {
+                    assert!(
+                        view.pane_content().width > MARKER_GUTTER_WIDTH,
+                        "{layout:?} at {width} columns shows the file list over a pane \
+                         without a payload column"
+                    );
+                }
+            }
+            assert!(
+                view(layout, 120).geometry().file_column().is_some(),
+                "{layout:?} shows the file list where it fits"
             );
         }
     }
