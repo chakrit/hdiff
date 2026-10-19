@@ -10,6 +10,7 @@ use crate::{
         UnifiedBody,
     },
     headers::GitHeader,
+    one_of::OneOf,
     side::Side,
     source_text::SourceLine,
 };
@@ -172,27 +173,6 @@ fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
             kind: LineKind::Metadata,
             source,
         })
-}
-
-/// An iterator over whichever of two line sources was chosen.
-enum OneOf<A, B> {
-    First(A),
-    Second(B),
-}
-
-impl<'a, A, B> Iterator for OneOf<A, B>
-where
-    A: Iterator<Item = DisplayLine<'a>>,
-    B: Iterator<Item = DisplayLine<'a>>,
-{
-    type Item = DisplayLine<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::First(lines) => lines.next(),
-            Self::Second(lines) => lines.next(),
-        }
-    }
 }
 
 #[cfg(test)]
