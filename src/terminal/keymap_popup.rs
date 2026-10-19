@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use super::bindings::{GROUPS, Key, Shortcut, ShortcutGroup, keymap_closing_keys};
-use crate::theme::Theme;
+use crate::{screen::Cells, theme::Theme};
 
 const KEYS_WIDTH: u16 = 9;
 const ACTION_WIDTH: u16 = 21;
@@ -126,10 +126,11 @@ impl PopupStyles {
         }
     }
 
-    /// Keys padded to one column, with the row indent.
+    /// Keys padded to the keys column's cells, with the row indent.
     fn keys_span(&self, keys: String) -> Span<'static> {
-        let width = usize::from(KEYS_WIDTH);
-        Span::styled(format!("  {keys:<width$} "), self.keys)
+        let padding = Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys));
+        let padding = " ".repeat(padding.get());
+        Span::styled(format!("  {keys}{padding} "), self.keys)
     }
 
     fn with_action(&self, keys: String, action: &'static str) -> Line<'static> {
