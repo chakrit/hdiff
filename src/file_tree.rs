@@ -103,30 +103,16 @@ impl<'a> ListedTree<'a> {
         let placed = files.views().map(|view| Placed::of(*view));
         let ordered = list_order(&placed);
 
-        let mut rows = Vec::new();
-        let mut directory = "";
-        let listed = ordered.map(|file| {
-            if file.directory != directory {
-                let heading = format!("{}/", file.directory);
-                rows.push(TreeRow::Directory(heading.into()));
-                directory = file.directory;
-            }
-            let row = TreeRowIndex(rows.len());
-            rows.push(TreeRow::File {
-                marker: file.marker,
-                name: file.name.into(),
-            });
-            ListedFile {
-                view: file.view,
-                row,
-            }
-        });
+        let mut rows = TreeRows::default();
+        let first = rows.push(ordered.first());
+        let mut rest = Vec::new();
+        for file in ordered.rest() {
+            rest.push(rows.push(file));
+        }
 
         Self {
-            tree: FileTree {
-                rows: rows.into_boxed_slice(),
-            },
-            files: listed,
+            tree: rows.finish(),
+            files: NonEmpty::new(first, rest),
         }
     }
 }
@@ -180,6 +166,42 @@ impl<'a> Placed<'a> {
 
     fn is_top_level(&self) -> bool {
         self.directory.is_empty()
+    }
+}
+
+/// File-list rows built in list order, with the directory of the group being listed.
+#[derive(Default)]
+struct TreeRows<'a> {
+    rows: Vec<TreeRow>,
+    /// Empty while listing top-level files.
+    directory: &'a str,
+}
+
+impl<'a> TreeRows<'a> {
+    /// Lists `file` after the rows so far, under its directory's heading when it opens a
+    /// new group.
+    fn push(&mut self, file: &Placed<'a>) -> ListedFile<'a> {
+        if file.directory != self.directory {
+            let heading = format!("{}/", file.directory);
+            self.rows.push(TreeRow::Directory(heading.into()));
+            self.directory = file.directory;
+        }
+
+        let row = TreeRowIndex(self.rows.len());
+        self.rows.push(TreeRow::File {
+            marker: file.marker,
+            name: file.name.into(),
+        });
+        ListedFile {
+            view: file.view,
+            row,
+        }
+    }
+
+    fn finish(self) -> FileTree {
+        FileTree {
+            rows: self.rows.into_boxed_slice(),
+        }
     }
 }
 
