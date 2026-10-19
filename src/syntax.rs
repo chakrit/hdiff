@@ -10,6 +10,7 @@ use crate::{
     span::PayloadSpan,
 };
 
+/// The kind of syntax a highlight capture marks, which picks its color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxClass {
     Keyword,
@@ -42,6 +43,8 @@ impl SyntaxClass {
     }
 }
 
+/// One syntax class over part of a record's payload, with the length of the capture it
+/// came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxSpan {
     /// The payload bytes the class covers.
@@ -91,8 +94,8 @@ impl SyntaxHighlighter {
             },
         };
         let projections = observer.measure(Stage::Projection, |observer| {
-            let projections =
-                styles.map_sides(|side, styles| Projection::from_hunk(hunk, side, styles));
+            let projections = styles
+                .map_sides(|side, side_styles| Projection::from_hunk(hunk, side, side_styles));
             for projection in projections.iter() {
                 observer.count(Work::ProjectedBytes(projection.source.len()));
             }
@@ -190,6 +193,7 @@ struct ParseBase<'p, 'h> {
 
 // Languages
 
+/// A language with a bundled grammar.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Language {
     Rust,
@@ -251,6 +255,7 @@ impl<T> ByLanguage<T> {
     }
 }
 
+/// One language's parser and highlight query, with the cursor that runs the query.
 struct LanguageHighlighter {
     parser: Parser,
     query: Query,
@@ -353,7 +358,7 @@ struct Projection<'h> {
 /// A record's payload range in its projection's source.
 struct ProjectedRecord<'h> {
     position: RecordPosition<'h>,
-    source: Range<usize>,
+    payload_bytes: Range<usize>,
 }
 
 impl<'h> Projection<'h> {
@@ -375,7 +380,7 @@ impl<'h> Projection<'h> {
             if styled {
                 records.push(ProjectedRecord {
                     position,
-                    source: start..source.len(),
+                    payload_bytes: start..source.len(),
                 });
             }
             source.push('\n');
@@ -384,31 +389,31 @@ impl<'h> Projection<'h> {
         Self { source, records }
     }
 
-    /// The spans the `source` range gives the records it overlaps, clipped to each
+    /// The spans the `capture` range gives the records it overlaps, clipped to each
     /// record's payload.
     fn map_span(
         &self,
-        source: Range<usize>,
+        capture: Range<usize>,
         class: SyntaxClass,
     ) -> impl Iterator<Item = RecordEntry<'h, SyntaxSpan>> + '_ {
-        let first_record = self.first_overlapping_record(source.start);
-        let capture_end = source.end;
-        let capture_length = source.len();
+        let first_record = self.first_overlapping_record(capture.start);
+        let capture_end = capture.end;
+        let capture_length = capture.len();
 
         self.records
             .iter()
             .skip(first_record)
-            .take_while(move |record| record.source.start < capture_end)
+            .take_while(move |record| record.payload_bytes.start < capture_end)
             .filter_map(move |record| {
-                let offset = record.source.start;
-                let clipped_start = source.start.max(offset) - offset;
-                let clipped_end = source.end.min(record.source.end) - offset;
+                let offset = record.payload_bytes.start;
+                let clipped_start = capture.start.max(offset) - offset;
+                let clipped_end = capture.end.min(record.payload_bytes.end) - offset;
                 let clipped = clipped_start..clipped_end;
                 if clipped.is_empty() {
                     return None;
                 }
 
-                let payload = &self.source[record.source.clone()];
+                let payload = &self.source[record.payload_bytes.clone()];
                 let span = SyntaxSpan {
                     bytes: PayloadSpan::within(payload, clipped),
                     capture_length,
@@ -453,7 +458,7 @@ impl<'h> Projection<'h> {
 
     fn first_overlapping_record(&self, start: usize) -> usize {
         self.records
-            .partition_point(|record| record.source.end <= start)
+            .partition_point(|record| record.payload_bytes.end <= start)
     }
 }
 
