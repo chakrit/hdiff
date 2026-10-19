@@ -120,8 +120,8 @@ enum EndingSoFar {
 
 impl EndingSoFar {
     /// The ending after `read`. Hidden characters between a plain CR and the LF, such as
-    /// the SGR codes Git paints around a CR, leave the CR pending. The scanner never shows
-    /// a CR or an LF, so their arms need not ask what reading them did.
+    /// the SGR codes Git paints around a CR, leave the CR pending. The scanner never
+    /// shows a CR or an LF, so their arms need not ask what reading them did.
     fn after(self, read: &Read) -> Self {
         match (read.class, read.read_in, read.step, self) {
             (Class::LineFeed, _, _, Self::CarriageReturn) => Self::Closed(LineEnding::CrLf),

@@ -111,15 +111,15 @@ pub enum RowTone {
 }
 
 impl RowTone {
-    /// The tone of a line of `kind`: a record payload's change, if any; a no-newline
+    /// The tone of a line of `line_kind`: a record payload's change, if any; a no-newline
     /// marker is unchanged whatever its record changed.
-    fn of(kind: LineKind) -> Self {
-        match kind {
+    fn of(line_kind: LineKind) -> Self {
+        match line_kind {
             LineKind::Record {
-                kind,
+                kind: record_kind,
                 part: RecordPart::Payload,
                 ..
-            } => kind
+            } => record_kind
                 .changed_side()
                 .map_or(Self::UnchangedRecord, Self::Changed),
             LineKind::Record {
