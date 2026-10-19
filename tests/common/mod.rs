@@ -169,9 +169,9 @@ pub fn assert_fixture_succeeded(command: &Command, output: &Output) {
     assert!(output.status.success(), "{command:?}: {output:?}");
 }
 
-/// The standard error of an hdiff run that failed: it exited with the trouble status,
-/// wrote nothing to standard output, and wrote UTF-8. Rules:
-/// docs/spec/architecture.md#error-output.
+/// The standard error of an hdiff run that failed.
+/// docs/spec/architecture.md#error-output: a failed run exits with the trouble status,
+/// writes nothing to standard output, and writes UTF-8 to standard error.
 #[allow(dead_code)]
 pub fn failure_output(output: &Output) -> String {
     assert_eq!(
