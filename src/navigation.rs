@@ -212,13 +212,13 @@ mod tests {
         effective_view::WrapWidth,
         geometry::TooSmall,
         parser::parse_patch,
-        preferences::{PreferenceChange, ViewPreferences, Wrapping},
+        preferences::{DiffLayout, PreferenceChange, ViewPreferences, Wrapping},
         prepared::PreparedDocument,
         screen::{Cells, ScreenLines},
     };
 
     /// docs/spec/architecture.md#view-model: cycling layouts and toggling detail keep the
-    /// page and position, and three layout changes return to the start.
+    /// page and position, and one layout change per layout returns to the start.
     #[test]
     fn keeps_the_page_and_position_through_kept_preference_changes() {
         let document = parse_patch(b"--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n")
@@ -237,7 +237,7 @@ mod tests {
             *navigation.interaction()
         };
 
-        let [_, _, unified] = [PreferenceChange::NextLayout; 3].map(&mut redisplayed);
+        let [.., unified] = DiffLayout::ALL.map(|_| redisplayed(PreferenceChange::NextLayout));
         let character = redisplayed(PreferenceChange::ToggleGranularity);
 
         let one_line_down = ScrollPosition {
@@ -249,7 +249,10 @@ mod tests {
             one_line_down,
             "the patch scrolls by a line"
         );
-        assert_eq!(unified, start, "three layout changes return to the start");
+        assert_eq!(
+            unified, start,
+            "one layout change per layout returns to the start"
+        );
         assert_eq!(character.page(), start.page());
         assert_eq!(character.scroll(), start.scroll());
     }
