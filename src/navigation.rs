@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// Whether the session goes on after an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Step {
     Continue,
     Exit,

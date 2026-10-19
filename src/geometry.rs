@@ -28,7 +28,7 @@ const FILE_COLUMN_WIDTH: u16 =
     FILE_LIST_WIDTH + SEPARATOR_PADDING + SEPARATOR_WIDTH + SEPARATOR_PADDING;
 
 /// How a layout divides the diff area: one pane, or a before and an after pane.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneShape {
     Single,
     Split(SplitDirection),
@@ -45,7 +45,7 @@ impl PaneShape {
 }
 
 /// Which way a split layout divides the diff area between its panes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
     /// The old pane left of the new pane.
     Vertical,
@@ -55,7 +55,6 @@ pub enum SplitDirection {
 
 /// A screen's areas: the whole screen, the file-list column when it is shown, and the
 /// diff area beside it.
-#[derive(Debug)]
 pub struct ScreenGeometry {
     screen: Rect,
     file_column: Option<FileColumn>,
@@ -116,7 +115,7 @@ impl ScreenGeometry {
 }
 
 /// The file list and the full-height separator beside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileColumn {
     pub list: Rect,
     pub separator: Rect,
@@ -138,7 +137,6 @@ impl FileColumn {
 
 /// The old and new panes of a split in one direction, frames included, and the separator
 /// between them.
-#[derive(Clone, Copy, Debug)]
 pub struct SplitPanes {
     direction: SplitDirection,
     panes: BySide<Rect>,
@@ -198,7 +196,7 @@ impl SplitPanes {
 
 /// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
 /// lines every pane shows.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct PaneContent {
     pub width: Cells,
     pub height: ScreenLines,
@@ -218,7 +216,7 @@ impl PaneContent {
 
 /// The rows a frame takes on each of its top and bottom edges, and the columns it takes
 /// on each of its side edges.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct FrameEdges {
     pub rows: u16,
     pub columns: u16,
@@ -267,7 +265,6 @@ impl FrameEdges {
 }
 
 /// An area with a continuity-marker frame, and the content inside the frame.
-#[derive(Debug)]
 pub struct FramedArea {
     area: Rect,
     content: Rect,

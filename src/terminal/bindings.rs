@@ -109,14 +109,14 @@ impl Key {
 }
 
 /// A key and the action it takes.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(super) struct Binding {
     pub(super) key: Key,
     action: KeyAction,
 }
 
 /// What a key can stand for: a command, or the interrupt. A resize is never a key.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum KeyAction {
     Command(Command),
     Interrupt,
