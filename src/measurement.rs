@@ -18,13 +18,18 @@ impl Stage {
     /// [`ByStage`], so a stage cannot exist without appearing here.
     pub const ALL: [Self; 8] = ByStage::STAGES.into_array();
 
-    /// The stages grouped under their parents, in report order.
+    /// The stages grouped under their parents, in report order. A family's parent is its
+    /// first stage's; `chunk_by` yields no empty group, so every group has one.
     pub fn families() -> impl Iterator<Item = Family> {
         Self::ALL
             .chunk_by(|stage, next| stage.parent() == next.parent())
-            .map(|stages| Family {
-                parent: stages[0].parent(),
-                stages,
+            .filter_map(|stages| {
+                let (first, _) = stages.split_first()?;
+
+                Some(Family {
+                    parent: first.parent(),
+                    stages,
+                })
             })
     }
 

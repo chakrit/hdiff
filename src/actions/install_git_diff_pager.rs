@@ -251,7 +251,12 @@ fn utf8(path: &Path, role: PathRole) -> Result<Utf8Path, Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsStr, fs, os::unix::ffi::OsStrExt, path::Path};
+    use std::{
+        ffi::OsStr,
+        fs,
+        os::unix::{ffi::OsStrExt, fs::symlink},
+        path::Path,
+    };
 
     use super::{Error, InstallPlan, PathRole, backup_path};
     use crate::actions::global_git_config::GitConfigEnvironment;
@@ -359,7 +364,7 @@ mod tests {
         fs::create_dir_all(&versioned).expect("create versioned directory");
         fs::write(versioned.join("hdiff"), "").expect("write executable");
         fs::create_dir(directory.path().join("bin")).expect("create link directory");
-        std::os::unix::fs::symlink(
+        symlink(
             "../cellar/1.0/bin/hdiff",
             directory.path().join("bin/hdiff"),
         )
@@ -385,7 +390,7 @@ mod tests {
         let target = directory.path().join("elsewhere/bin");
         fs::create_dir_all(&target).expect("create link target");
         fs::write(directory.path().join("elsewhere/hdiff"), "").expect("write executable");
-        std::os::unix::fs::symlink(&target, directory.path().join("tools")).expect("link");
+        symlink(&target, directory.path().join("tools")).expect("link");
         let config_path = directory.path().join("gitconfig");
 
         let plan = InstallPlan::of(
