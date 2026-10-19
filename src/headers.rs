@@ -81,60 +81,6 @@ impl<'a> GitMetadata<'a> {
     }
 }
 
-/// Whether `text` is the `GIT binary patch` line that opens a binary patch's blocks.
-pub fn is_binary_patch_header(text: &str) -> bool {
-    text == "GIT binary patch"
-}
-
-/// The size field after a `literal ` or `delta ` binary block header's prefix; any other
-/// line has none.
-pub fn binary_block_field(text: &str) -> Option<&str> {
-    let literal = text.strip_prefix("literal ");
-    let delta = text.strip_prefix("delta ");
-
-    literal.or(delta)
-}
-
-/// Whether `text` is a binary block payload line in Git's form: a character stating how
-/// many bytes the line holds (`A`–`Z` for 1–26, `a`–`z` for 27–52), then base-85 text in
-/// groups of five characters, each group holding four bytes, with no more than three
-/// bytes of filler. Rules: docs/spec/architecture.md#input-contract.
-pub fn is_binary_payload_line(text: &str) -> bool {
-    let Some((stated, encoded)) = text.split_at_checked(1) else {
-        return false;
-    };
-    let Some(stated) = payload_byte_count(stated) else {
-        return false;
-    };
-
-    let groups = encoded.len() / BASE85_GROUP;
-    let whole_groups = encoded.len() % BASE85_GROUP == 0;
-    let held = groups * 4;
-    let fits = groups > 0 && whole_groups && stated <= held && stated > held - 4;
-
-    fits && encoded.bytes().all(|byte| BASE85.contains(&byte))
-}
-
-/// The characters in one base-85 group.
-const BASE85_GROUP: usize = 5;
-
-/// Git's base-85 alphabet.
-const BASE85: &[u8] =
-    b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~";
-
-/// The byte count a payload line's first character states; none for any other character.
-fn payload_byte_count(stated: &str) -> Option<usize> {
-    let [byte] = stated.as_bytes() else {
-        return None;
-    };
-
-    match byte {
-        b'A'..=b'Z' => Some(usize::from(byte - b'A') + 1),
-        b'a'..=b'z' => Some(usize::from(byte - b'a') + 27),
-        _ => None,
-    }
-}
-
 /// The line number or count a header `field` states. Only ASCII digits are a count:
 /// Rust's integer parsing also admits a leading `+`, which no diff writes. Rules:
 /// docs/spec/architecture.md#input-contract.
