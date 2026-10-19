@@ -13,18 +13,10 @@ and safe rendering". This note keeps the reference.
 
 ## States
 
-The reference has fourteen states; its actions (collect, param, dispatch, put) don't
-change what shows, so its substates fold together:
-
-| `src/source_text.rs` | Reference states                                         |
-|----------------------|----------------------------------------------------------|
-| `Ground`             | ground                                                   |
-| `Escape`             | escape                                                   |
-| `EscapeIntermediate` | escape_intermediate                                      |
-| `ControlSequence`    | csi_entry, csi_param, csi_intermediate, csi_ignore       |
-| `OscString`          | osc_string                                               |
-| `CommandString`      | dcs_entry, dcs_param, dcs_intermediate, dcs_passthrough, |
-|                      | dcs_ignore, sos_pm_apc_string                            |
+ground, escape, escape_intermediate, csi_entry, csi_param, csi_intermediate, csi_ignore,
+dcs_entry, dcs_param, dcs_intermediate, dcs_passthrough, dcs_ignore, osc_string and
+sos_pm_apc_string. Its actions (collect, param, dispatch, put, osc_put) act on the
+sequence's content; none of them prints.
 
 ## Transitions
 
@@ -42,6 +34,13 @@ control go to ground.
   0x40–0x7E is the final byte that returns to ground.
 - **DCS and SOS/PM/APC strings:** everything stays inside the string until an anywhere
   transition.
-- **OSC string:** as the strings above. xterm also ends it at BEL (0x07).
+- **OSC string:** as the strings above; the reference ignores C0 controls other than CAN,
+  SUB and ESC inside it, BEL included.
+
+xterm, unlike the reference, also ends an OSC string at BEL: its control-sequence
+documentation spells an operating system command `OSC Ps ; Pt BEL` as well as
+`OSC Ps ; Pt ST` (Thomas E. Dickey, [XTerm Control
+Sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html), "Operating System
+Commands").
 
 The reference reads GR codes (0xA0–0xFF) like GL codes; it predates UTF-8 input.

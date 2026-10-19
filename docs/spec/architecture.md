@@ -610,10 +610,11 @@ It never replays arbitrary source CSI, OSC, DCS, or control bytes into the termi
 The scanner reads input as the DEC terminal parser in
 `docs/vendor/terminal-control-parser.md` does and shows what a terminal shows. A tab is
 the one visible control character; inside an escape or control sequence it shows and the
-sequence continues. DCS, SOS, PM and APC strings end only at ST, CAN, SUB, `ESC` or a C1
-introducer; an OSC string also ends at BEL. A non-ASCII character after `ESC` ends the
-escape and shows. A non-ASCII character inside a control sequence stays part of the
-sequence.
+sequence continues, and inside a string it is hidden with the string. DCS, SOS, PM and
+APC strings end at ST, CAN, SUB, `ESC` or any other C1 control; an OSC string also ends
+at BEL. A non-ASCII character after `ESC` ends the escape and shows. A non-ASCII
+character inside a control sequence stays part of the sequence.
+Each line is read from plain text, so a sequence still open at a line's end ends with it.
 Interactive rows expand each tab to the next 2-column tab stop, counted from the start
 of the payload.
 Interactive rows are segmented into grapheme clusters once per row, across style spans;
