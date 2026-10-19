@@ -4,6 +4,7 @@ pub mod actions;
 pub mod bench;
 pub mod cli;
 pub mod compact;
+pub mod comparison;
 pub mod detail;
 pub mod display_lines;
 pub mod document;

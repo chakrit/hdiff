@@ -11,8 +11,9 @@ use std::{
 use crate::{
     actions::{
         child_process::ProcessError,
-        compare_files::{CompareFiles, CompareFilesContext, Comparison, Operand},
+        compare_files::{CompareFiles, CompareFilesContext},
     },
+    comparison::{Comparison, Operand},
     document::DiffDocument,
     parser::{self, ParseError},
 };
