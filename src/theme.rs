@@ -101,8 +101,6 @@ pub struct ChangeColors {
 
 /// Colors for the file list, the help hint, separators, and continuity markers.
 pub struct ChromePalette {
-    /// A directory heading in the file list.
-    pub directory_heading: Color,
     /// A file name in the file list, and the marker of a file in an unknown state.
     pub file_name: Color,
     /// The state marker of a modified file.
@@ -126,6 +124,12 @@ pub struct ChromePalette {
 }
 
 impl ChromePalette {
+    /// A directory heading in the file list, drawn in the outer separator's tone. Rules:
+    /// docs/spec/architecture.md#file-tree.
+    pub fn directory_heading(&self) -> Color {
+        self.separator
+    }
+
     /// The color of a file list row's state `marker`.
     pub fn marker(&self, marker: StateMarker) -> Color {
         match marker {
@@ -172,7 +176,6 @@ static TRUECOLOR: Theme = Theme {
         hunk_header: Color::Rgb(100, 155, 175),
     },
     chrome: ChromePalette {
-        directory_heading: Color::Rgb(125, 125, 125),
         file_name: Color::Rgb(160, 160, 160),
         modified_marker: Color::Rgb(190, 170, 120),
         added_marker: Color::Rgb(130, 185, 130),
@@ -220,7 +223,6 @@ static INDEXED: Theme = Theme {
         hunk_header: Color::Indexed(109),
     },
     chrome: ChromePalette {
-        directory_heading: Color::Indexed(243),
         file_name: Color::Indexed(246),
         modified_marker: Color::Indexed(144),
         added_marker: Color::Indexed(108),
@@ -268,7 +270,6 @@ static BASIC: Theme = Theme {
         hunk_header: Color::Cyan,
     },
     chrome: ChromePalette {
-        directory_heading: Color::DarkGray,
         file_name: Color::Gray,
         modified_marker: Color::Yellow,
         added_marker: Color::Green,
@@ -355,7 +356,6 @@ mod tests {
             [*background, *body, *unchanged, *marker]
         };
         let ChromePalette {
-            directory_heading,
             file_name,
             modified_marker,
             added_marker,
@@ -371,7 +371,6 @@ mod tests {
         let syntax_colors = syntax_colors(syntax);
         let row_colors = [*context_body, *hunk_header];
         let chrome_colors = [
-            *directory_heading,
             *file_name,
             *modified_marker,
             *added_marker,

@@ -295,7 +295,7 @@ fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
         TreeRow::Directory(heading) => Line::styled(
             &**heading,
             Style::default()
-                .fg(palette.directory_heading)
+                .fg(palette.directory_heading())
                 .add_modifier(Modifier::BOLD),
         ),
         TreeRow::File { marker, name } => Line::from(vec![
