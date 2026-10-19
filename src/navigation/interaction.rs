@@ -155,6 +155,7 @@ impl KeymapPopup {
         }
     }
 
+    /// The popup after `command`: toggling flips it, and closing leaves it closed.
     const fn after(self, command: KeymapCommand) -> Self {
         match (self, command) {
             (Self::Closed, KeymapCommand::Toggle) => Self::Open,

@@ -12,10 +12,15 @@ use crate::{
     side::BySide,
 };
 
+/// Columns below which a screen shows only the too-narrow message.
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
+/// Columns of the file list.
 const FILE_LIST_WIDTH: u16 = 24;
+/// Columns of the separator between the file list and the diff panes.
 const SEPARATOR_WIDTH: u16 = 1;
+/// Blank columns on each side of that separator.
 const SEPARATOR_PADDING: u16 = 1;
+/// Rows of the separator between stacked panes.
 const STACKED_SEPARATOR_HEIGHT: u16 = 1;
 
 /// The file list and its padded separator.
@@ -39,6 +44,7 @@ impl PaneShape {
     }
 }
 
+/// Which way a split layout divides the diff area between its panes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SplitDirection {
     /// The old pane left of the new pane.
@@ -47,6 +53,8 @@ pub enum SplitDirection {
     Stacked,
 }
 
+/// A screen's areas: the whole screen, the file-list column when it is shown, and the
+/// diff area beside it.
 #[derive(Debug)]
 pub struct ScreenGeometry {
     screen: Rect,
