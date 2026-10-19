@@ -1,5 +1,5 @@
 //! Row tones and the styled segments of each row's payload. Rules:
-//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#palette-and-character-detail and
 //! docs/spec/architecture.md#technology-direction.
 
 use std::{cmp::Reverse, collections::BinaryHeap};

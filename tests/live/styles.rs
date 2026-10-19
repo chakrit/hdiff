@@ -75,8 +75,8 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
     assert_eq!(marker.fg, THEME.chrome.dim_separator);
 }
 
-/// docs/spec/architecture.md#view-model: an alignment peer keeps its change's background,
-/// and only a deletion's dimming.
+/// docs/spec/architecture.md#palette-and-character-detail: an alignment peer keeps its
+/// change's background, and only a deletion's dimming.
 #[test]
 fn renders_vertical_alignment_peers_with_their_change_background() {
     let addition_peer =
@@ -148,8 +148,8 @@ fn renders_stacked_alignment_peers_as_markerless_rows() {
     );
 }
 
-/// docs/spec/architecture.md#view-model: syntax colors sit on low-contrast change rows
-/// whose backgrounds reach the diff pane's edge.
+/// docs/spec/architecture.md#palette-and-character-detail: syntax colors sit on
+/// low-contrast change rows whose backgrounds reach the diff pane's edge.
 #[test]
 fn renders_syntax_and_low_contrast_record_styles() {
     let live = Live::sized(
@@ -258,8 +258,8 @@ fn highlights_the_selected_file_row_as_one() {
     );
 }
 
-/// docs/spec/architecture.md#view-model: changed spans take undimmed change colors over
-/// text one step dimmer.
+/// docs/spec/architecture.md#palette-and-character-detail: changed spans take undimmed
+/// change colors over text one step dimmer.
 #[test]
 fn renders_character_detail_with_bright_changes_over_muted_text() {
     let live = Live::sized(
@@ -291,9 +291,9 @@ fn renders_character_detail_with_bright_changes_over_muted_text() {
     );
 }
 
-/// docs/spec/architecture.md#view-model: in character mode, unmatched source payloads
-/// take their change color with no unchanged characters, and line mode restores their
-/// syntax colors.
+/// docs/spec/architecture.md#palette-and-character-detail: in character mode, unmatched
+/// source payloads take their change color with no unchanged characters, and line mode
+/// restores their syntax colors.
 #[test]
 fn toggles_unmatched_payload_colors_in_every_layout() {
     for layout in [
@@ -305,8 +305,8 @@ fn toggles_unmatched_payload_colors_in_every_layout() {
     }
 }
 
-/// docs/spec/architecture.md#view-model: hunk headers are muted cyan-blue; file headers
-/// stay neutral.
+/// docs/spec/architecture.md#palette-and-character-detail: hunk headers are muted
+/// cyan-blue; file headers stay neutral.
 #[test]
 fn renders_hunk_headers_as_muted_cyan_blue() {
     let live = Live::sized(

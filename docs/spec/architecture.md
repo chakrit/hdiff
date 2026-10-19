@@ -408,6 +408,8 @@ The file list has the same reserved row above and below its rows, with no side c
 `▴` shows while tree rows exist above the first listed row and `▾` while tree rows exist
 below the last.
 
+### Palette and character detail
+
 The `low` palette is the only palette and the locked preferred display: additions are
 strongest; deletion text and syntax spans are muted by a row-wide dim modifier over a dim
 red background; context is quieter neutral text, and raw records take the same
