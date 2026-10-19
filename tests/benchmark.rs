@@ -159,11 +159,10 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
         startup.integer("preparation_ns"),
         "{text}"
     );
-    assert_eq!(
-        parent_sum("syntax"),
-        stages[&("preparation", "syntax")],
-        "{text}"
-    );
+    let syntax_stage = stages
+        .get(&("preparation", "syntax"))
+        .unwrap_or_else(|| panic!("a preparation/syntax stage record: {text}"));
+    assert_eq!(parent_sum("syntax"), *syntax_stage, "{text}");
     assert_eq!(work.integer("hunks"), 1, "{text}");
     assert_eq!(work.integer("parse_calls"), 2, "{text}");
     assert_eq!(work.integer("projected_bytes"), 24, "{text}");
