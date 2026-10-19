@@ -223,6 +223,9 @@ recognition while the original source bytes remain available for safe rendering.
 Metadata-only Git sections, including binary changes, pure renames, and mode-only changes,
 are valid review content and render without requiring unified headers or hunks. A
 `diff --git` line followed by neither an extended header nor file headers is malformed.
+Each `literal` or `delta` block of a `GIT binary patch` holds payload lines in Git's form,
+a byte-count character (`A`–`Z` for 1–26, `a`–`z` for 27–52) then base-85 text in groups
+of five that hold that many bytes, and ends with a blank line.
 
 ## Initial CLI surface
 
