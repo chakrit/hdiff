@@ -2,18 +2,30 @@
 //! headers, and Git's C-style quoting of paths. Rules:
 //! docs/spec/architecture.md#core-model.
 
-use std::str::CharIndices;
+use std::{iter, str::CharIndices};
 
 use crate::{
     side::{BySide, Side},
     source_text::SourceLine,
 };
 
-/// A `diff --git` line and the extended header lines after it.
+/// A `diff --git` line and the extended header lines after it. `H` holds the extended
+/// headers: any number of them before `---` / `+++` headers, and at least one in a
+/// section without them.
 #[derive(Debug, PartialEq, Eq)]
-pub struct GitHeader {
+pub struct GitHeader<H> {
     pub line: SourceLine,
-    pub metadata: Box<[SourceLine]>,
+    pub extended_headers: H,
+}
+
+impl<H> GitHeader<H>
+where
+    for<'a> &'a H: IntoIterator<Item = &'a SourceLine>,
+{
+    /// The `diff --git` line, then each extended header, in input order.
+    pub fn lines(&self) -> impl Iterator<Item = &SourceLine> {
+        iter::once(&self.line).chain(&self.extended_headers)
+    }
 }
 
 /// The names after a `diff --git ` line's prefix; any other line has none.

@@ -28,27 +28,32 @@ pub enum FileIdentity {
 
 impl FileIdentity {
     /// A section with `---` / `+++` headers, after its Git header when it has one.
-    pub fn of_unified(git: Option<&GitHeader>, headers: &BySide<FileHeader>) -> Self {
+    pub fn of_unified(
+        git: Option<&GitHeader<Box<[SourceLine]>>>,
+        headers: &BySide<FileHeader>,
+    ) -> Self {
         let git_line = git.map(|git| &git.line);
-        let metadata = git.map_or(&[][..], |git| &git.metadata);
         let paths = headers.as_ref().map(|header| &header.path);
-        let located = git_change(metadata)
-            .and_then(|change| change.identity(|| read_headers(git_line, paths)));
+        let change = match git {
+            Some(git) => git_change(git),
+            None => Some(GitChange::Unmarked),
+        };
+        let located = change.and_then(|change| change.identity(|| read_headers(git_line, paths)));
 
         let first_line = git_line.unwrap_or(&headers.old.line);
         located.unwrap_or_else(|| Self::unknown(first_line))
     }
 
     /// A Git section without `---` / `+++` headers.
-    pub fn of_metadata(git_line: &SourceLine, extended_headers: &NonEmpty<SourceLine>) -> Self {
-        let located = git_change(extended_headers.iter()).and_then(|change| {
+    pub fn of_metadata(git: &GitHeader<NonEmpty<SourceLine>>) -> Self {
+        let located = git_change(git).and_then(|change| {
             change.identity(|| {
-                let path = git_header_path(git_line)?;
+                let path = git_header_path(&git.line)?;
                 Some(Located::new(FileState::Modified, path))
             })
         });
 
-        located.unwrap_or_else(|| Self::unknown(git_line))
+        located.unwrap_or_else(|| Self::unknown(&git.line))
     }
 
     /// A section named by its first line because its path cannot be determined.
@@ -152,11 +157,14 @@ fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Op
     }
 }
 
-/// The change a section's extended header `lines` record, the last marking line winning;
-/// lines that mark no change leave it unmarked. `None` when a rename or copy
-/// destination's quoting cannot be decoded.
-fn git_change<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Option<GitChange> {
-    lines
+/// The change `git`'s extended headers record, the last marking line winning; lines that
+/// mark no change leave it unmarked. `None` when a rename or copy destination's quoting
+/// cannot be decoded.
+fn git_change<H>(git: &GitHeader<H>) -> Option<GitChange>
+where
+    for<'a> &'a H: IntoIterator<Item = &'a SourceLine>,
+{
+    (&git.extended_headers)
         .into_iter()
         .map(|line| line.sanitized())
         .try_fold(GitChange::Unmarked, |change, line| {

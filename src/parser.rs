@@ -186,16 +186,16 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata, and
 /// otherwise its metadata with the binary patch after it when it has one.
 fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
-    let metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
+    let extended_headers = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(old) = lines.next_file_header(Side::Old) {
         let git = GitHeader {
             line: header,
-            metadata: metadata.into_boxed_slice(),
+            extended_headers: extended_headers.into_boxed_slice(),
         };
         return parse_unified(Some(git), old, lines);
     }
 
-    let Some(extended_headers) = NonEmpty::of(metadata) else {
+    let Some(extended_headers) = NonEmpty::of(extended_headers) else {
         return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
     let binary_patch = match lines.next_if(is_binary_patch_header) {
@@ -203,14 +203,14 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
         None => None,
     };
 
-    let identity = FileIdentity::of_metadata(&header, &extended_headers);
+    let git = GitHeader {
+        line: header,
+        extended_headers,
+    };
+    let identity = FileIdentity::of_metadata(&git);
     Ok(DiffFile {
         identity,
-        body: FileBody::Metadata(MetadataBody {
-            git_line: header,
-            extended_headers,
-            binary_patch,
-        }),
+        body: FileBody::Metadata(MetadataBody { git, binary_patch }),
     })
 }
 
@@ -221,7 +221,7 @@ fn is_git_metadata(text: &str) -> bool {
 
 /// A section with `---` / `+++` headers, after its Git header when it has one.
 fn parse_unified(
-    git: Option<GitHeader>,
+    git: Option<GitHeader<Box<[SourceLine]>>>,
     old: FileHeader,
     lines: &mut SourceLines<'_>,
 ) -> Result<DiffFile, Error> {
@@ -466,7 +466,7 @@ mod tests {
             );
         };
 
-        assert_eq!(body.extended_headers.len().get(), 2);
+        assert_eq!(body.git.extended_headers.len().get(), 2);
         assert_eq!(message.sanitized(), "message");
         assert_eq!(footer.sanitized(), "footer");
         assert_eq!(finite_output::of_document(&document), input);
@@ -492,12 +492,16 @@ mod tests {
 
         let document = parse_patch(input).expect("valid Git fixture");
         let bodies = unified_bodies(&document);
-        let metadata_counts = bodies
+        let extended_header_counts = bodies
             .iter()
-            .map(|body| body.git.as_ref().map(|header| header.metadata.len()))
+            .map(|body| {
+                body.git
+                    .as_ref()
+                    .map(|header| header.extended_headers.len())
+            })
             .collect::<Vec<_>>();
 
-        assert_eq!(metadata_counts, [Some(2), Some(1)]);
+        assert_eq!(extended_header_counts, [Some(2), Some(1)]);
         assert_eq!(first_hunk_record_counts(&bodies), [3, 4]);
     }
 

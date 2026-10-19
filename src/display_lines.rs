@@ -180,18 +180,28 @@ fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
 fn metadata_lines(body: &MetadataBody) -> impl Iterator<Item = DisplayLine<'_>> {
     let binary_patch_lines = body.binary_patch.iter().flat_map(|patch| patch.lines());
 
-    body.git_lines()
+    body.git
+        .lines()
         .chain(binary_patch_lines)
-        .map(|source| DisplayLine {
-            kind: LineKind::Metadata,
-            source,
-        })
+        .map(metadata_line)
+}
+
+/// A Git header or binary patch line, which displays as metadata.
+fn metadata_line(source: &SourceLine) -> DisplayLine<'_> {
+    DisplayLine {
+        kind: LineKind::Metadata,
+        source,
+    }
 }
 
 /// The lines of a unified body: its Git header and metadata when it has one, its file
 /// headers, then each hunk's header and records.
 fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
-    let git = body.git.iter().flat_map(git_header_lines);
+    let git = body
+        .git
+        .iter()
+        .flat_map(GitHeader::lines)
+        .map(metadata_line);
     let file_headers = body.headers.iter().map(|file_header| DisplayLine {
         kind: LineKind::FileHeader,
         source: &file_header.line,
@@ -227,16 +237,6 @@ fn record_lines(
         .map(|marker| line(RecordPart::NoNewlineMarker, marker));
 
     iter::once(payload).chain(marker)
-}
-
-/// The Git header's `diff --git` line, then its metadata lines.
-fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
-    iter::once(&git.line)
-        .chain(&git.metadata)
-        .map(|source| DisplayLine {
-            kind: LineKind::Metadata,
-            source,
-        })
 }
 
 #[cfg(test)]

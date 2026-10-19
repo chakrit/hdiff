@@ -180,6 +180,7 @@ mod tests {
         };
 
         let metadata = body
+            .git
             .extended_headers
             .iter()
             .map(|line| line.sanitized())
