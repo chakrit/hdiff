@@ -2,7 +2,7 @@ mod common;
 
 use std::{fs, path::Path, process::Stdio};
 
-use common::{TestEnv, assert_error, error_output, fixture, run_fixture, success_output};
+use common::{TestEnv, assert_error, failure_output, fixture, run_fixture, success_output};
 
 fn short_commit_hash() -> String {
     let env = TestEnv::new();
@@ -201,7 +201,7 @@ fn usage_errors_name_the_program_on_one_stderr_line() {
 fn failed_comparisons_report_each_diff_error_line() {
     let output = TestEnv::new().run(["missing-before", "missing-after"]);
 
-    let stderr = error_output(&output);
+    let stderr = failure_output(&output);
     let lines = stderr.lines().collect::<Vec<_>>();
     let [before, after] = lines[..] else {
         panic!("two error lines: {stderr}");
@@ -217,7 +217,7 @@ fn failed_comparisons_report_each_diff_error_line() {
 fn unreadable_patch_files_are_named_in_the_error() {
     let output = TestEnv::new().run(["missing.patch"]);
 
-    let stderr = error_output(&output);
+    let stderr = failure_output(&output);
     assert!(stderr.starts_with("hdiff: missing.patch: "), "{stderr}");
     assert_eq!(stderr.matches('\n').count(), 1, "{stderr}");
 }

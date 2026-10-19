@@ -173,7 +173,7 @@ pub fn assert_fixture_succeeded(command: &Command, output: &Output) {
 /// wrote nothing to standard output, and wrote UTF-8. Rules:
 /// docs/spec/architecture.md#error-output.
 #[allow(dead_code)]
-pub fn error_output(output: &Output) -> String {
+pub fn failure_output(output: &Output) -> String {
     assert_eq!(
         output.status.code(),
         Some(i32::from(DiffStatus::Trouble.code())),
@@ -190,7 +190,7 @@ pub fn error_output(output: &Output) -> String {
 /// prefix.
 #[allow(dead_code)]
 pub fn assert_error(output: &Output, message: &str) {
-    assert_eq!(error_output(output), format!("hdiff: {message}\n"));
+    assert_eq!(failure_output(output), format!("hdiff: {message}\n"));
 }
 
 /// A file under `tests/fixtures/`, as an absolute path usable from any sandbox.
