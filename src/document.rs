@@ -153,36 +153,15 @@ pub enum FileBody {
 /// patch Git writes for a binary change when it has one.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MetadataBody {
-    git: GitHeader,
-    binary_patch: Option<Box<BinaryPatch>>,
+    pub git_line: SourceLine,
+    pub extended_headers: NonEmpty<SourceLine>,
+    pub binary_patch: Option<Box<BinaryPatch>>,
 }
 
 impl MetadataBody {
-    /// `git` without a binary patch when it holds an extended header; otherwise none.
-    pub fn of(git: GitHeader) -> Option<Self> {
-        match git.metadata.is_empty() {
-            true => None,
-            false => Some(Self {
-                git,
-                binary_patch: None,
-            }),
-        }
-    }
-
-    /// The body with `binary_patch` after its extended headers.
-    pub fn with_binary_patch(self, binary_patch: BinaryPatch) -> Self {
-        Self {
-            binary_patch: Some(Box::new(binary_patch)),
-            ..self
-        }
-    }
-
-    pub fn git(&self) -> &GitHeader {
-        &self.git
-    }
-
-    pub fn binary_patch(&self) -> Option<&BinaryPatch> {
-        self.binary_patch.as_deref()
+    /// The `diff --git` line and every extended header after it, in input order.
+    pub fn git_lines(&self) -> impl Iterator<Item = &SourceLine> {
+        iter::once(&self.git_line).chain(self.extended_headers.iter())
     }
 }
 

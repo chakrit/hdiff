@@ -5,6 +5,7 @@ use crate::{
     headers::{
         FileHeader, GitHeader, GitMetadata, GitNames, HeaderPath, git_header_names, quoted_or_plain,
     },
+    non_empty::NonEmpty,
     side::BySide,
     source_text::{SourceLine, sanitize},
 };
@@ -39,15 +40,15 @@ impl FileIdentity {
     }
 
     /// A Git section without `---` / `+++` headers.
-    pub fn of_metadata(git: &GitHeader) -> Self {
-        let located = git_change(&git.metadata).and_then(|change| {
+    pub fn of_metadata(git_line: &SourceLine, extended_headers: &NonEmpty<SourceLine>) -> Self {
+        let located = git_change(extended_headers.iter()).and_then(|change| {
             change.identity(|| {
-                let path = git_header_path(&git.line)?;
+                let path = git_header_path(git_line)?;
                 Some(Located::new(FileState::Modified, path))
             })
         });
 
-        located.unwrap_or_else(|| Self::unknown(&git.line))
+        located.unwrap_or_else(|| Self::unknown(git_line))
     }
 
     /// A section named by its first line because its path cannot be determined.
@@ -154,9 +155,9 @@ fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Op
 /// The change a section's extended header `lines` record, the last marking line winning;
 /// lines that mark no change leave it unmarked. `None` when a rename or copy
 /// destination's quoting cannot be decoded.
-fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
+fn git_change<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Option<GitChange> {
     lines
-        .iter()
+        .into_iter()
         .map(|line| line.sanitized())
         .try_fold(GitChange::Unmarked, |change, line| {
             match GitMetadata::of(line) {
