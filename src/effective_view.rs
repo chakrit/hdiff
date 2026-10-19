@@ -14,7 +14,7 @@ use crate::{
 /// The renderable combination of the view preferences and the screen size: the pane
 /// shape, the screen's areas, the content each diff pane shows, the width rows wrap at,
 /// and whether the screen is too small to show panes, each derived once.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct EffectiveView {
     shape: PaneShape,
     geometry: ScreenGeometry,

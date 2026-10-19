@@ -47,7 +47,7 @@ fn renders_compact_file_and_diff_panes_with_one_separator() {
         assert_eq!(rendered[(x, y)].symbol(), expected, "{name}");
     }
     assert_eq!(rendered[(2, 1)].fg, THEME.chrome.file_name, "file name");
-    assert_eq!(rendered[(0, 9)].fg, THEME.chrome.hint, "help hint");
+    assert_eq!(rendered[(1, 9)].fg, THEME.chrome.hint, "help hint");
 }
 
 #[test]

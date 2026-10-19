@@ -103,7 +103,7 @@ impl fmt::Display for SessionError {
 impl std::error::Error for SessionError {}
 
 /// The part of a session that failed.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum SessionStage {
     /// The terminal could not be set up: its size, raw mode, or the alternate screen.
     Start,
@@ -174,7 +174,7 @@ impl RestoreStep {
 
 /// How far a session got into the terminal modes it enters, each implying the ones
 /// before.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 enum Entered {
     RawMode,
     AlternateScreen,
