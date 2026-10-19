@@ -56,7 +56,7 @@ impl WrapWidth {
     /// panes wrap at the narrower pane's payload width.
     fn of_panes(wrapping: Wrapping, content: PaneContent) -> Self {
         match (wrapping, content.payload_width()) {
-            (Wrapping::Disabled, _) => Self::Off,
+            (Wrapping::Disabled, Some(_) | None) => Self::Off,
             (Wrapping::Enabled, Some(width)) => Self::At(width),
             (Wrapping::Enabled, None) => Self::NoPayload,
         }
