@@ -78,20 +78,18 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
         .as_ref()
         .merge(|old, new| diff_slices(Algorithm::Myers, old, new))
         .into_iter()
-        .map(|(tag, run)| (changed_side(tag), run))
         .peekable();
     let mut cursor = PairCursor::new(payloads);
 
-    while let Some((side, run)) = changes.next() {
-        let token_run = match side {
-            None => TokenRun::Kept(run),
-            Some(side) => {
-                let opposite = changes.next_if(|(next, _)| next.is_some_and(|next| next != side));
-                match opposite {
-                    Some((_, opposite)) => TokenRun::Replaced(BySide::of_side(side, run, opposite)),
-                    None => TokenRun::Changed { side, run },
-                }
-            }
+    while let Some((tag, run)) = changes.next() {
+        let replacement = changed_side(tag).and_then(|side| {
+            changes
+                .next_if(|(next, _)| changed_side(*next).is_some_and(|next| next != side))
+                .map(|(_, opposite)| BySide::of_side(side, run, opposite))
+        });
+        let token_run = match replacement {
+            Some(runs) => TokenRun::Replaced(runs),
+            None => TokenRun::Marked(MarkedRun::of(tag, tokens_len(run))),
         };
         token_run.advance(&mut cursor);
     }
@@ -220,11 +218,10 @@ fn tokens_len(tokens: &[Token<'_>]) -> usize {
 
 // Token runs
 
-/// A run of tokens: kept on both sides, changed on one side only, or deleted and
-/// replaced.
+/// A run of tokens: kept on both sides or changed on one, measured in bytes, or deleted
+/// and replaced.
 enum TokenRun<'t, 'a> {
-    Kept(&'t [Token<'a>]),
-    Changed { side: Side, run: &'t [Token<'a>] },
+    Marked(MarkedRun),
     Replaced(BySide<&'t [Token<'a>]>),
 }
 
@@ -232,11 +229,10 @@ impl TokenRun<'_, '_> {
     /// Moves `cursor` past the run, marking its changed text. A word replaced by one
     /// similar word marks only the graphemes that differ; any other change is marked
     /// whole.
-    fn advance(&self, cursor: &mut PairCursor<'_>) {
+    fn advance(self, cursor: &mut PairCursor<'_>) {
         match self {
-            Self::Kept(kept) => cursor.pass(tokens_len(kept)),
-            Self::Changed { side, run } => cursor.mark(*side, tokens_len(run)),
-            Self::Replaced(runs) => match similar_word_changes(*runs) {
+            Self::Marked(run) => run.advance(cursor),
+            Self::Replaced(runs) => match similar_word_changes(runs) {
                 Some(changes) => {
                     for change in changes {
                         change.advance(cursor);
@@ -261,14 +257,14 @@ fn changed_side(tag: ChangeTag) -> Option<Side> {
     }
 }
 
-/// A run of graphemes within a replaced word, measured in bytes: kept on both sides, or
-/// changed on one.
-enum GraphemeChange {
+/// A run of a changed pair's text, measured in bytes, whether counted from tokens or
+/// from the graphemes of a replaced word: kept on both sides, or changed on one.
+enum MarkedRun {
     Kept(usize),
     Changed { side: Side, bytes: usize },
 }
 
-impl GraphemeChange {
+impl MarkedRun {
     /// The run `tag` names: an equal run is kept, a deletion changes the old side, and an
     /// insertion changes the new side.
     fn of(tag: ChangeTag, bytes: usize) -> Self {
@@ -289,7 +285,7 @@ impl GraphemeChange {
 
 /// The grapheme changes when one word replaces one similar word: one sharing at least
 /// half of the shorter word's graphemes. Any other replacement has none.
-fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<GraphemeChange>> {
+fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<MarkedRun>> {
     let BySide {
         old: [before],
         new: [after],
@@ -317,7 +313,7 @@ fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<GraphemeChange
 
     let grapheme_changes = changes.into_iter().map(|(tag, graphemes)| {
         let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-        GraphemeChange::of(tag, bytes)
+        MarkedRun::of(tag, bytes)
     });
     Some(grapheme_changes.collect())
 }
