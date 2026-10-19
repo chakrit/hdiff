@@ -115,7 +115,9 @@ fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
     if let Some(record) = marked_record(&line) {
         return Ok(record);
     }
-    if line.sanitized().is_empty() {
+
+    let text = line.sanitized();
+    if text.is_empty() {
         return Ok(Record {
             kind: RecordKind::Context(ContextMarker::Blank),
             payload: line,
@@ -123,7 +125,6 @@ fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
         });
     }
 
-    let text = line.sanitized();
     reject_unsupported_header(text)?;
     match git_header_names(text) {
         Some(_) => Err(Malformed::UnexpectedGitHeaderInHunk),

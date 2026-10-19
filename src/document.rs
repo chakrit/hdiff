@@ -122,10 +122,8 @@ impl DiffFile {
             .iter()
             .map(|hunk| {
                 hunk.with_records(|records| {
-                    let mut values = hunk
-                        .records
-                        .iter()
-                        .map(|_| Vec::new())
+                    let mut values = iter::repeat_with(Vec::new)
+                        .take(hunk.records.len())
                         .collect::<Box<[_]>>();
                     for RecordEntry { position, value } in entries(&body.headers, records) {
                         values[position.index].push(value);

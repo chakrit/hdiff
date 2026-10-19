@@ -3,6 +3,7 @@ mod common;
 use std::{fs, path::Path, process::Stdio};
 
 use common::{TestEnv, assert_error, failure_output, fixture, run_fixture, success_output};
+use hdiff::bench::Driver;
 
 fn short_commit_hash() -> String {
     let env = TestEnv::new();
@@ -30,7 +31,7 @@ fn comparison_tree() -> TestEnv {
 #[test]
 fn help_describes_the_cli_without_reading_diff_input() {
     let help = TestEnv::new().run(["--help"]);
-    let drivers = ["prepare", "stages", "movement"];
+    let drivers = Driver::ALL.map(Driver::label);
 
     let text = success_output(&help);
     assert!(text.starts_with("Usage: hdiff"), "{text}");
