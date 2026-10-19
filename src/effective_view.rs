@@ -33,6 +33,7 @@ pub enum TooSmall {
 }
 
 impl EffectiveView {
+    /// The view `preferences` give on a `screen`-sized terminal.
     pub fn of(preferences: ViewPreferences, screen: Size) -> Self {
         let shape = PaneShape::of(preferences.layout);
         let geometry = ScreenGeometry::of(screen, preferences.file_list);

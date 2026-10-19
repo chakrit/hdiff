@@ -141,6 +141,7 @@ impl KeyAction {
 
 /// One row of the popup: its keys and the action they take.
 pub(super) enum Shortcut {
+    /// Keys listed side by side on one line, the action after them.
     Keys {
         bindings: &'static [Binding],
         action: &'static str,

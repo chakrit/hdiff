@@ -63,6 +63,7 @@ impl Tui {
         self.navigation.interaction().preferences()
     }
 
+    /// Draws the first frame, then steps through `events` until one exits or they end.
     pub fn run<B: Backend<Error = io::Error>>(
         &mut self,
         terminal: &mut Terminal<B>,
@@ -78,6 +79,8 @@ impl Tui {
         Ok(())
     }
 
+    /// Answers one terminal event at the terminal's current size, drawing the result
+    /// unless it exits; an event no binding names changes nothing.
     pub fn step<B: Backend>(
         &mut self,
         terminal: &mut Terminal<B>,
