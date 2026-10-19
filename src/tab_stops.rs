@@ -29,15 +29,15 @@ impl TabStops {
     /// to; a chunk without a tab ends `text`.
     fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(&'t str, Cells)) {
         for piece in text.split_inclusive('\t') {
-            let chunk = piece.strip_suffix('\t');
-            let text = chunk.unwrap_or(piece);
-            self.column += Cells::of_text(text);
+            let before_tab = piece.strip_suffix('\t');
+            let chunk = before_tab.unwrap_or(piece);
+            self.column += Cells::of_text(chunk);
 
-            let padding = match chunk {
+            let padding = match before_tab {
                 Some(_) => self.advance_to_tab_stop(),
                 None => Cells::ZERO,
             };
-            visit(text, padding);
+            visit(chunk, padding);
         }
     }
 
