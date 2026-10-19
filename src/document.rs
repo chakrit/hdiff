@@ -1,12 +1,13 @@
 //! The parsed document: file diffs in input order with their surrounding text. Rules:
 //! docs/spec/architecture.md#core-model.
 
-use std::{iter, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::{
     compact::Count,
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader},
+    non_empty::NonEmpty,
     side::{BySide, Side},
     source_text::SourceLine,
 };
@@ -23,8 +24,7 @@ pub enum DiffDocument {
 /// after the last file.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DiffFiles {
-    earlier: Box<[FileSection]>,
-    last: FileSection,
+    sections: NonEmpty<FileSection>,
     trailing: Box<[SourceLine]>,
 }
 
@@ -42,62 +42,72 @@ pub struct FileView<'a> {
     pub trailing: &'a [SourceLine],
 }
 
+/// What a document shows, in input order: each file with its surrounding text, then the
+/// text the document holds outside any file — all of a text document's text, and none
+/// of a document with files.
+pub struct DocumentParts<'a> {
+    pub file_views: Vec<FileView<'a>>,
+    pub unattached: &'a [SourceLine],
+}
+
 impl DiffDocument {
     /// The document `sections` and the `trailing` text after them form: their files, or
     /// the text alone when there are none.
-    pub(crate) fn new(mut sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
-        match sections.pop() {
-            Some(last) => Self::Files(DiffFiles {
-                earlier: sections.into_boxed_slice(),
-                last,
+    pub(crate) fn new(sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
+        let mut sections = sections.into_iter();
+
+        match sections.next() {
+            Some(first) => Self::Files(DiffFiles {
+                sections: NonEmpty::new(first, sections),
                 trailing,
             }),
             None => Self::Text(trailing),
         }
     }
 
+    pub fn parts(&self) -> DocumentParts<'_> {
+        match self {
+            Self::Files(files) => DocumentParts {
+                file_views: files.views().into_iter().collect(),
+                unattached: &[],
+            },
+            Self::Text(text) => DocumentParts {
+                file_views: Vec::new(),
+                unattached: text,
+            },
+        }
+    }
+
     /// The document's files in input order; a text document has none.
+    #[cfg(test)]
     pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
         self.file_views().map(|view| view.file)
     }
 
     /// Each file with its surrounding text; a text document has none.
+    #[cfg(test)]
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
-        let files = match self {
-            Self::Files(files) => Some(files),
-            Self::Text(_) => None,
-        };
-        files.into_iter().flat_map(DiffFiles::views)
+        self.parts().file_views.into_iter()
     }
 }
 
 impl DiffFiles {
     /// Each file with the text leading up to it; the last file also carries the trailing
     /// text.
-    pub fn views(&self) -> impl Iterator<Item = FileView<'_>> {
-        let (first, rest) = self.split_views();
-        iter::once(first).chain(rest)
-    }
-
-    /// The first file's view, and the views after it.
-    pub fn split_views(&self) -> (FileView<'_>, impl Iterator<Item = FileView<'_>>) {
-        let last = self.last.view(&self.trailing);
-        let (first, middle, last) = match self.earlier.split_first() {
-            Some((first, middle)) => (first.view(&[]), middle, Some(last)),
-            None => (last, [].as_slice(), None),
-        };
-
-        let rest = middle.iter().map(|section| section.view(&[]));
-        (first, rest.chain(last))
+    pub fn views(&self) -> NonEmpty<FileView<'_>> {
+        let mut views = self.sections.map(FileSection::view);
+        views.last_mut().trailing = &self.trailing;
+        views
     }
 }
 
 impl FileSection {
-    fn view<'a>(&'a self, trailing: &'a [SourceLine]) -> FileView<'a> {
+    /// The section's file with its leading text, and no trailing text.
+    fn view(&self) -> FileView<'_> {
         FileView {
             file: &self.file,
             leading: &self.leading,
-            trailing,
+            trailing: &[],
         }
     }
 }

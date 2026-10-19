@@ -6,8 +6,7 @@ use std::iter;
 
 use crate::{
     document::{
-        DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind,
-        UnifiedBody,
+        DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind, UnifiedBody,
     },
     headers::GitHeader,
     side::Side,
@@ -100,16 +99,13 @@ impl LineEnding {
 
 /// Every line of `document`, in input order.
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
-    let (files, text) = match document {
-        DiffDocument::Files(files) => (Some(files), [].as_slice()),
-        DiffDocument::Text(text) => (None, &**text),
-    };
+    let parts = document.parts();
 
-    files
+    parts
+        .file_views
         .into_iter()
-        .flat_map(DiffFiles::views)
         .flat_map(of_file_view)
-        .chain(of_text(text))
+        .chain(of_text(parts.unattached))
 }
 
 /// The lines `view` displays: its leading text, its file, then its trailing text.

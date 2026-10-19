@@ -1,9 +1,10 @@
-use std::{iter, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use crate::{
     document::{DiffDocument, DiffFiles},
     file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
+    non_empty::NonEmpty,
     page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
     source_text::SourceLine,
@@ -13,8 +14,7 @@ use crate::{
 
 /// A document ready to draw: at least one page, and the file list.
 pub struct PreparedDocument {
-    first: PreparedPage,
-    rest: Box<[PreparedPage]>,
+    pages: NonEmpty<PreparedPage>,
     file_tree: FileTree,
 }
 
@@ -49,14 +49,11 @@ impl PreparedDocument {
     ///
     /// Panics when `index` is not below [`page_count`](Self::page_count).
     pub fn page(&self, index: PageIndex) -> &PreparedPage {
-        match index.0.checked_sub(1) {
-            None => &self.first,
-            Some(rest_index) => &self.rest[rest_index],
-        }
+        &self.pages[index.0]
     }
 
     pub fn page_count(&self) -> PageCount {
-        PageCount(NonZeroUsize::MIN.saturating_add(self.rest.len()))
+        PageCount(self.pages.len())
     }
 
     pub fn file_count(&self) -> usize {
@@ -74,7 +71,7 @@ impl PreparedDocument {
     }
 
     fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
-        iter::once(&self.first).chain(&self.rest)
+        self.pages.iter()
     }
 
     // Preparation
@@ -83,15 +80,12 @@ impl PreparedDocument {
     fn of_files(files: &DiffFiles, observer: &mut impl Observer) -> Self {
         let ListedTree {
             tree: file_tree,
-            first,
-            rest,
+            files: listed,
         } = observer.measure(Stage::Labels, |_| ListedTree::build(files));
 
         let mut syntax = SyntaxHighlighter::default();
-        let mut prepare = |listed: &ListedFile| PreparedPage::file(*listed, &mut syntax, observer);
         Self {
-            first: prepare(&first),
-            rest: rest.iter().map(prepare).collect(),
+            pages: listed.map(|file| PreparedPage::file(*file, &mut syntax, observer)),
             file_tree,
         }
     }
@@ -99,8 +93,7 @@ impl PreparedDocument {
     /// One page of all the text, with an empty file list.
     fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
-            first: PreparedPage::text(text, observer),
-            rest: Box::default(),
+            pages: NonEmpty::new(PreparedPage::text(text, observer), []),
             file_tree: FileTree::default(),
         }
     }

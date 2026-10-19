@@ -19,6 +19,7 @@ pub mod input;
 pub mod line_breaks;
 pub mod measurement;
 pub mod navigation;
+pub mod non_empty;
 pub mod page_rows;
 pub mod parser;
 pub mod preferences;

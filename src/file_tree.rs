@@ -6,6 +6,7 @@ use std::num::NonZeroUsize;
 use crate::{
     document::{DiffFiles, FileView},
     file_identity::{FileIdentity, FileState},
+    non_empty::NonEmpty,
     screen::ScreenLines,
 };
 
@@ -83,46 +84,42 @@ pub struct FileTree {
     rows: Box<[TreeRow]>,
 }
 
-/// A built file tree and its files in list order, the first apart from the rest. A
-/// file's list position is its selection index.
+/// A built file tree and its files in list order. A file's list position is its
+/// selection index.
 pub struct ListedTree<'a> {
     pub tree: FileTree,
-    pub first: ListedFile<'a>,
-    pub rest: Box<[ListedFile<'a>]>,
+    pub files: NonEmpty<ListedFile<'a>>,
 }
 
 impl<'a> ListedTree<'a> {
     pub fn build(files: &'a DiffFiles) -> Self {
-        let (first, rest) = files.split_views();
-        let (first, rest) = list_order(Placed::of(first), rest.map(Placed::of));
+        let placed = files.views().map(|view| Placed::of(*view));
+        let ordered = list_order(&placed);
 
         let mut rows = Vec::new();
         let mut directory = "";
-        let mut list = |file: Placed<'a>| {
+        let listed = ordered.map(|file| {
             if file.directory != directory {
                 let heading = format!("{}/", file.directory);
                 rows.push(TreeRow::Directory(heading.into()));
                 directory = file.directory;
             }
-            let listed = ListedFile {
-                view: file.view,
-                row: TreeRowIndex(rows.len()),
-            };
+            let row = TreeRowIndex(rows.len());
             rows.push(TreeRow::File {
                 marker: file.marker,
                 name: file.name.into(),
             });
-            listed
-        };
-        let first = list(first);
-        let rest = rest.into_iter().map(list).collect();
+            ListedFile {
+                view: file.view,
+                row,
+            }
+        });
 
         Self {
             tree: FileTree {
                 rows: rows.into_boxed_slice(),
             },
-            first,
-            rest,
+            files: listed,
         }
     }
 }
@@ -146,6 +143,7 @@ impl FileTree {
 // Rows
 
 /// A file view with where its row goes and what it shows.
+#[derive(Clone, Copy)]
 struct Placed<'a> {
     view: FileView<'a>,
     /// Empty at the top level.
@@ -178,31 +176,27 @@ impl<'a> Placed<'a> {
     }
 }
 
-/// `first` and `rest` in list order, the first listed apart from the rest: top-level
-/// files come first, so a directory heading never needs to be closed, and each group
-/// keeps input order.
-fn list_order<'a>(
-    first: Placed<'a>,
-    rest: impl Iterator<Item = Placed<'a>>,
-) -> (Placed<'a>, Vec<Placed<'a>>) {
-    let (top_level, nested): (Vec<_>, Vec<_>) = rest.partition(Placed::is_top_level);
+/// `placed` in list order: top-level files come first, so a directory heading never needs
+/// to be closed, and each group keeps input order.
+fn list_order<'a>(placed: &NonEmpty<Placed<'a>>) -> NonEmpty<Placed<'a>> {
+    let first = *placed.first();
+    let (top_level, nested): (Vec<_>, Vec<_>) = placed
+        .rest()
+        .iter()
+        .copied()
+        .partition(Placed::is_top_level);
     let mut top_level = top_level.into_iter();
 
     match (first.is_top_level(), top_level.next()) {
-        (true, next) => (
-            first,
-            next.into_iter().chain(top_level).chain(nested).collect(),
-        ),
-        (false, Some(head)) => (head, top_level.chain([first]).chain(nested).collect()),
-        (false, None) => (first, nested),
+        (true, next) => NonEmpty::new(first, next.into_iter().chain(top_level).chain(nested)),
+        (false, Some(head)) => NonEmpty::new(head, top_level.chain([first]).chain(nested)),
+        (false, None) => NonEmpty::new(first, nested),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
-
-    use std::iter;
 
     use super::{ListedTree, RowWindow, TreeRow, TreeRowIndex};
     use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
@@ -245,8 +239,9 @@ mod tests {
         let document = document(input);
         let listing = listing(&document);
 
-        iter::once(&listing.first)
-            .chain(&listing.rest)
+        listing
+            .files
+            .iter()
             .map(|file| {
                 let named = match &file.view.file.identity {
                     FileIdentity::Path { path, .. } => path.as_str().to_owned(),
