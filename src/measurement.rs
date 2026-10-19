@@ -57,9 +57,9 @@ pub enum Parent {
 
 impl Parent {
     pub const fn label(self) -> &'static str {
-        match self.measured_by() {
-            None => "preparation",
-            Some(stage) => stage.label(),
+        match self {
+            Self::Preparation => "preparation",
+            Self::Syntax => Stage::Syntax.label(),
         }
     }
 
