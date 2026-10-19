@@ -330,7 +330,7 @@ mod tests {
         ] {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
             let document = parse_patch(patch.as_bytes()).expect("valid unmatched diff");
-            let rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+            let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
             let details = character_details(&rows);
 
             for (index, line) in rows.lines() {
