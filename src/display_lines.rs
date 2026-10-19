@@ -5,7 +5,7 @@
 use std::iter;
 
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind},
+    document::{DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind},
     headers::GitHeader,
     side::Side,
     source_text::SourceLine,
@@ -99,12 +99,15 @@ impl LineEnding {
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
     document
         .file_views()
-        .flat_map(|view| {
-            of_text(view.leading)
-                .chain(of_file(view.file))
-                .chain(of_text(view.trailing))
-        })
+        .flat_map(of_file_view)
         .chain(of_text(document.unattached_text()))
+}
+
+/// The lines `view` displays: its leading text, its file, then its trailing text.
+pub fn of_file_view(view: FileView<'_>) -> impl Iterator<Item = DisplayLine<'_>> {
+    of_text(view.leading)
+        .chain(of_file(view.file))
+        .chain(of_text(view.trailing))
 }
 
 /// Surrounding-text lines.
