@@ -20,6 +20,7 @@ const HOME: &str = "HOME";
 const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
 
 impl GitConfigEnvironment {
+    /// The variables as this process received them.
     pub fn of_process() -> Self {
         Self {
             git_config_global: env::var_os(GIT_CONFIG_GLOBAL),
@@ -31,9 +32,18 @@ impl GitConfigEnvironment {
     /// Every variable by name, so a child process can receive exactly this environment.
     pub fn variables(&self) -> [EnvironmentVariable<'_>; 3] {
         [
-            EnvironmentVariable::of(GIT_CONFIG_GLOBAL, &self.git_config_global),
-            EnvironmentVariable::of(HOME, &self.home),
-            EnvironmentVariable::of(XDG_CONFIG_HOME, &self.xdg_config_home),
+            EnvironmentVariable {
+                name: GIT_CONFIG_GLOBAL,
+                value: self.git_config_global.as_deref(),
+            },
+            EnvironmentVariable {
+                name: HOME,
+                value: self.home.as_deref(),
+            },
+            EnvironmentVariable {
+                name: XDG_CONFIG_HOME,
+                value: self.xdg_config_home.as_deref(),
+            },
         ]
     }
 }
@@ -42,13 +52,4 @@ impl GitConfigEnvironment {
 pub struct EnvironmentVariable<'a> {
     pub name: &'static str,
     pub value: Option<&'a OsStr>,
-}
-
-impl<'a> EnvironmentVariable<'a> {
-    fn of(name: &'static str, value: &'a Option<OsString>) -> Self {
-        Self {
-            name,
-            value: value.as_deref(),
-        }
-    }
 }
