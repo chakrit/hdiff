@@ -22,10 +22,7 @@ const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 /// from the pair holding it. A no-newline marker says something about its record, not a
 /// change, so it has none and is no payload's peer.
 pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
-    let payload_line = |line: LineIndex| {
-        let is_payload = !rows.line(line).kind().is_no_newline_marker();
-        is_payload.then_some(line)
-    };
+    let payload_line = |line: LineIndex| rows.line(line).kind().payload_record().map(|_| line);
 
     rows.line_values_by_pair(|row| {
         let payload_lines = row.changed_lines().map(|line| line.and_then(payload_line));
