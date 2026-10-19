@@ -775,14 +775,18 @@ mod tests {
             .map(|(index, _)| index)
             .expect("the marker's record shares its address");
 
-        for records in [0, 1] {
+        for (records, record_shown) in [(0, false), (1, true)] {
             let context = ContextRecords::new(records);
-            let record_shown = rows.shows_line(record, context);
 
+            assert_eq!(
+                rows.shows_line(record, context),
+                record_shown,
+                "context {records}: the context record"
+            );
             assert_eq!(
                 rows.shows_line(marker, context),
                 record_shown,
-                "context {records}"
+                "context {records}: its no-newline marker"
             );
         }
     }
