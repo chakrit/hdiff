@@ -15,6 +15,9 @@ use crate::{
     harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, SCREEN, WIDTH, change_label},
 };
 
+/// The screen the resize scenarios shrink the terminal to.
+const RESIZED: Size = Size::new(80, 20);
+
 matrix!(
     vertical_movement,
     horizontal_movement,
@@ -110,9 +113,9 @@ fn layout_cycle(mode: Mode) {
     assert_eq!(side_by_side, mode.layout == DiffLayout::Vertical);
 
     for _ in 0..3 {
-        let layout = live.tui.preferences().layout;
+        let layout = live.preferences().layout;
         live.press('v');
-        assert_eq!(live.tui.preferences().layout, layout.next());
+        assert_eq!(live.preferences().layout, layout.next());
         assert!(live.shows(old) && live.shows(new));
     }
     assert_eq!(
@@ -127,7 +130,7 @@ fn detail_toggle(mode: Mode) {
     let start = live.buffer();
 
     live.press('c');
-    assert_ne!(live.tui.preferences().granularity, mode.granularity);
+    assert_ne!(live.preferences().granularity, mode.granularity);
     assert_ne!(live.buffer(), start, "c changes change emphasis");
     live.press('c');
     assert_eq!(live.buffer(), start, "c toggles back");
@@ -158,8 +161,8 @@ fn resize(mode: Mode) {
     let mut live = Live::load(MIXED_LANGUAGES, mode);
     let start = live.buffer();
 
-    assert_eq!(live.resize(Size::new(80, 20)), Step::Continue);
-    assert_eq!(live.buffer().area.as_size(), Size::new(80, 20));
+    assert_eq!(live.resize(RESIZED), Step::Continue);
+    assert_eq!(live.buffer().area.as_size(), RESIZED);
     assert!(live.shows("pub fn greeting("));
 
     live.resize(SCREEN);
@@ -207,7 +210,7 @@ fn keymap_popup(mode: Mode) {
             assert_eq!(live.press(key), Step::Continue);
         }
         assert_eq!(live.buffer(), open, "other keys do nothing while open");
-        assert_eq!(live.tui.preferences().layout, mode.layout);
+        assert_eq!(live.preferences().layout, mode.layout);
 
         assert_eq!(live.press(close), Step::Continue, "{close} does not exit");
         assert_eq!(live.buffer(), start, "{close} closes the popup");
@@ -248,12 +251,12 @@ fn half_page_movement(mode: Mode) {
 /// frame.
 fn key_before_resize_event(mode: Mode) {
     let mut resized = Live::load(MIXED_LANGUAGES, mode);
-    resized.resize(Size::new(80, 20));
+    resized.resize(RESIZED);
     resized.press('j');
     let expected = resized.buffer();
 
     let mut live = Live::load(MIXED_LANGUAGES, mode);
-    live.resize_backend_only(Size::new(80, 20));
+    live.resize_backend_only(RESIZED);
     live.press('j');
     assert_eq!(
         live.buffer(),
@@ -261,7 +264,7 @@ fn key_before_resize_event(mode: Mode) {
         "the key draws the frame at the new size"
     );
 
-    live.resize(Size::new(80, 20));
+    live.resize(RESIZED);
     assert_eq!(
         live.buffer(),
         expected,
@@ -273,12 +276,12 @@ fn key_before_resize_event(mode: Mode) {
 /// screen size, so a resize event naming a size the terminal no longer has moves nothing.
 fn stale_resize_event(mode: Mode) {
     let mut resized = Live::load(&long_patch(), mode);
-    resized.resize(Size::new(80, 20));
+    resized.resize(RESIZED);
     resized.press('G');
     let expected = resized.buffer();
 
     let mut live = Live::load(&long_patch(), mode);
-    live.resize(Size::new(80, 20));
+    live.resize(RESIZED);
     live.press('G');
     live.event(Event::Resize(WIDTH, HEIGHT));
     assert_eq!(

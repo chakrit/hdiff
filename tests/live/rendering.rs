@@ -5,7 +5,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{INDENTED, long_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, cells, diff_pane},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, cells, right_of_first_separator},
 };
 
 matrix!(
@@ -99,12 +99,17 @@ fn frame_cells_never_hold_diff_content() {
         "the top frame row precedes the content"
     );
     assert!(
-        rows[0].contains('│') && diff_pane(&rows[0]).chars().all(|symbol| symbol == ' '),
+        rows[0].contains('│')
+            && right_of_first_separator(&rows[0])
+                .chars()
+                .all(|symbol| symbol == ' '),
         "the top frame row holds no content: {:?}",
         rows[0]
     );
     assert_eq!(
-        diff_pane(&rows[usize::from(wide.y)]).chars().last(),
+        right_of_first_separator(&rows[usize::from(wide.y)])
+            .chars()
+            .last(),
         Some(' '),
         "the right frame column holds no row text"
     );

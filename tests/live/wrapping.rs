@@ -5,7 +5,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::long_patch,
-    harness::{FIRST_CONTENT_LINE, Live, Mode, diff_pane},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, right_of_first_separator},
 };
 
 matrix!(wrapping);
@@ -81,12 +81,12 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     for _ in 0..5 {
         live.press('j');
     }
-    let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
+    let top = right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "the wide row's second line: {top:?}");
 
     live.resize(Size::new(100, 20));
 
-    let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
+    let top = right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "still the second line: {top:?}");
     assert!(!top.contains("wide_") && !top.starts_with('+'));
 }

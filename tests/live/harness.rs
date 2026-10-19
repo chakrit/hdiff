@@ -5,7 +5,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     effective_view::EffectiveView,
     parser::{parse_comparison, parse_patch},
-    preferences::{DiffGranularity, DiffLayout},
+    preferences::{DiffGranularity, DiffLayout, ViewPreferences},
     prepared::PreparedDocument,
     screen::Cells,
     terminal::{Step, Tui},
@@ -29,7 +29,7 @@ pub const FIRST_CONTENT_LINE: usize = 1;
 pub const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
 pub struct Live {
-    pub tui: Tui,
+    tui: Tui,
     terminal: Terminal<TestBackend>,
 }
 
@@ -59,6 +59,10 @@ impl Live {
         let mut live = Self { tui, terminal };
         live.enter(mode);
         live
+    }
+
+    pub fn preferences(&self) -> ViewPreferences {
+        self.tui.preferences()
     }
 
     pub fn enter(&mut self, mode: Mode) {
@@ -269,8 +273,9 @@ pub fn change_label(row: &str) -> Option<String> {
     Some(label)
 }
 
-/// The diff pane's part of a screen row, right of the file-list separator.
-pub fn diff_pane(row: &str) -> String {
+/// The part of a screen row right of its first `│`, its leading blanks trimmed: the diff
+/// panes, while the file list is shown and draws its separator there.
+pub fn right_of_first_separator(row: &str) -> String {
     row.split_once('│')
         .map_or(row, |(_, pane)| pane)
         .trim_start_matches(' ')
