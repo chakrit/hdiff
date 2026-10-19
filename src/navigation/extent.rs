@@ -517,12 +517,17 @@ mod tests {
 
     const VERTICAL: PaneShape = PaneShape::Split(SplitDirection::Vertical);
 
-    /// A deletion that wraps to three lines at 20 cells, the addition it pairs with, and
-    /// a context record.
-    const WRAPPED_DELETION_PATCH: &[u8] = b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n";
+    /// The wrap width at which [`WRAPPED_DELETION`] takes three lines.
+    const DELETION_WRAP: WrapWidth = WrapWidth::at(20);
 
-    /// The deletion in [`WRAPPED_DELETION_PATCH`], as its line reads.
+    /// A deletion of 45 payload cells, three lines at [`DELETION_WRAP`], as its line
+    /// reads.
     const WRAPPED_DELETION: &str = "-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi";
+
+    /// [`WRAPPED_DELETION`], the addition it pairs with, and a context record.
+    fn wrapped_deletion_patch() -> String {
+        format!("--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n{WRAPPED_DELETION}\n+abc\n context\n")
+    }
 
     /// `patch` parsed and prepared.
     fn prepared(patch: &[u8]) -> PreparedDocument {
@@ -684,8 +689,8 @@ mod tests {
 
     #[test]
     fn counts_and_shows_the_wrapped_lines_of_each_visible_row() {
-        let document = prepared(WRAPPED_DELETION_PATCH);
-        let wrap = WrapWidth::at(20);
+        let document = prepared(wrapped_deletion_patch().as_bytes());
+        let wrap = DELETION_WRAP;
         let context = ContextRecords::new(3);
         let unified = extent_of(&document, PaneShape::Single, context, wrap);
         let vertical = extent_of(&document, VERTICAL, context, wrap);
@@ -725,9 +730,9 @@ mod tests {
 
     #[test]
     fn maps_an_anchor_to_its_wrapped_line_clamped_to_its_rows_lines() {
-        let document = prepared(WRAPPED_DELETION_PATCH);
+        let document = prepared(wrapped_deletion_patch().as_bytes());
         let context = ContextRecords::new(3);
-        let unified = extent_of(&document, PaneShape::Single, context, WrapWidth::at(20));
+        let unified = extent_of(&document, PaneShape::Single, context, DELETION_WRAP);
         let anchor_offset = |text, wrapped_line| {
             unified.offset_of(&document, line_at(&document, text, wrapped_line))
         };

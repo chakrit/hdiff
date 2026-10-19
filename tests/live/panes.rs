@@ -5,16 +5,13 @@ use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;
 
 use crate::{
-    fixtures::EXTRA_DELETION,
+    fixtures::{EXTRA_DELETION, one_change_file},
     harness::{Live, Mode, THEME},
 };
 
 /// Two files, each with one changed line.
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
-
-/// One file with one changed line.
-const ONE_FILE: &str = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
 
 /// An 80-column screen ten rows tall.
 const TEN_ROWS: Size = Size::new(80, 10);
@@ -55,7 +52,8 @@ fn renders_compact_file_and_diff_panes_with_one_separator() {
 
 #[test]
 fn collapses_the_file_list_before_the_diff_pane() {
-    let live = Live::sized(ONE_FILE, Mode::line(DiffLayout::Unified), Size::new(23, 8));
+    let one_file = one_change_file("file");
+    let live = Live::sized(&one_file, Mode::line(DiffLayout::Unified), Size::new(23, 8));
 
     let rendered = live.buffer();
     assert_eq!(rendered[(1, 4)].symbol(), "-");
@@ -142,7 +140,8 @@ fn floats_a_help_box_while_the_file_list_is_hidden() {
 /// per pane, and the final text follows the last file.
 #[test]
 fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
-    let input = format!("first message\n{ONE_FILE}second message\n{ONE_FILE}trailer\n");
+    let one_file = one_change_file("file");
+    let input = format!("first message\n{one_file}second message\n{one_file}trailer\n");
 
     for (layout, copies) in [
         (DiffLayout::Unified, 1),
