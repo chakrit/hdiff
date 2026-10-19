@@ -128,15 +128,21 @@ impl ScreenGeometry {
 
     /// The content each pane of `shape` shows.
     pub fn pane_content(&self, shape: PaneShape) -> PaneContent {
-        let width = match shape {
-            PaneShape::Single => frame_interior(self.single_pane()).width,
-            PaneShape::Split(direction) => self.split_panes(direction).content_width(),
-        };
-        let height = pane_height(self.screen.height, shape).saturating_sub(PANE_FRAME_HEIGHT);
+        match shape {
+            PaneShape::Single => PaneContent::inside(self.single_pane()),
+            PaneShape::Split(direction) => self.split_panes(direction).content(),
+        }
+    }
+}
 
-        PaneContent {
-            width: Cells::from(width),
-            height: ScreenLines::from(height),
+impl PaneContent {
+    /// The content inside `pane`'s frame.
+    fn inside(pane: Rect) -> Self {
+        let interior = frame_interior(pane);
+
+        Self {
+            width: Cells::from(interior.width),
+            height: ScreenLines::from(interior.height),
         }
     }
 }
@@ -165,7 +171,7 @@ impl SplitPanes {
             ])
             .areas(area),
             SplitDirection::Stacked => {
-                let height = pane_height(area.height, PaneShape::Split(direction));
+                let height = stacked_pane_height(area.height);
                 Layout::vertical([
                     Constraint::Length(height),
                     Constraint::Length(STACKED_SEPARATOR_HEIGHT),
@@ -195,10 +201,14 @@ impl SplitPanes {
         self.separator
     }
 
-    fn content_width(self) -> u16 {
-        let widths = self.panes.map(|pane| frame_interior(pane).width);
+    /// The narrowest pane's content columns and the shortest pane's content lines.
+    fn content(self) -> PaneContent {
+        let contents = self.panes.map(PaneContent::inside);
 
-        widths.old.min(widths.new)
+        PaneContent {
+            width: contents.old.width.min(contents.new.width),
+            height: contents.old.height.min(contents.new.height),
+        }
     }
 }
 
@@ -235,15 +245,10 @@ fn shows_file_list(width: u16, file_list: FileList) -> bool {
     }
 }
 
-/// Rows of each diff pane, frame included; stacked panes share the height around a
-/// one-row separator.
-fn pane_height(screen_height: u16, shape: PaneShape) -> u16 {
-    match shape {
-        PaneShape::Single | PaneShape::Split(SplitDirection::Vertical) => screen_height,
-        PaneShape::Split(SplitDirection::Stacked) => {
-            screen_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2
-        }
-    }
+/// Rows of each stacked pane, frame included: the panes share the height around a one-row
+/// separator.
+fn stacked_pane_height(area_height: u16) -> u16 {
+    area_height.saturating_sub(STACKED_SEPARATOR_HEIGHT) / 2
 }
 
 #[cfg(test)]
