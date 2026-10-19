@@ -30,26 +30,27 @@ impl BoundedScroll {
     /// This position after `movement`, within `bounds`.
     pub(super) fn moved(self, movement: Movement, bounds: DisplayBounds) -> Self {
         let scroll = self.0;
-        let horizontal = |horizontal| ScrollPosition {
-            horizontal,
+        let at_column = |column| ScrollPosition {
+            horizontal: column,
             ..scroll
         };
-        let vertical = |vertical| ScrollPosition { vertical, ..scroll };
-        let one_cell = Cells::ONE;
-        let one_line = ScreenLines::ONE;
-        let half_page = bounds.pane_lines.half().max(one_line);
+        let at_line = |line| ScrollPosition {
+            vertical: line,
+            ..scroll
+        };
+        let half_page = bounds.pane_lines.half().max(ScreenLines::ONE);
 
         let moved = match movement {
-            Movement::Left => horizontal(scroll.horizontal.saturating_sub(one_cell)),
-            Movement::Right => horizontal(scroll.horizontal.saturating_add(one_cell)),
-            Movement::FarLeft => horizontal(Cells::ZERO),
-            Movement::FarRight => horizontal(bounds.maximum_horizontal_offset),
-            Movement::Down => vertical(scroll.vertical.saturating_add(one_line)),
-            Movement::Up => vertical(scroll.vertical.saturating_sub(one_line)),
-            Movement::HalfPageDown => vertical(scroll.vertical.saturating_add(half_page)),
-            Movement::HalfPageUp => vertical(scroll.vertical.saturating_sub(half_page)),
-            Movement::Top => vertical(ScreenLines::ZERO),
-            Movement::Bottom => vertical(bounds.maximum_vertical_offset),
+            Movement::Left => at_column(scroll.horizontal.saturating_sub(Cells::ONE)),
+            Movement::Right => at_column(scroll.horizontal.saturating_add(Cells::ONE)),
+            Movement::FarLeft => at_column(Cells::ZERO),
+            Movement::FarRight => at_column(bounds.maximum_horizontal_offset),
+            Movement::Down => at_line(scroll.vertical.saturating_add(ScreenLines::ONE)),
+            Movement::Up => at_line(scroll.vertical.saturating_sub(ScreenLines::ONE)),
+            Movement::HalfPageDown => at_line(scroll.vertical.saturating_add(half_page)),
+            Movement::HalfPageUp => at_line(scroll.vertical.saturating_sub(half_page)),
+            Movement::Top => at_line(ScreenLines::ZERO),
+            Movement::Bottom => at_line(bounds.maximum_vertical_offset),
         };
 
         bounds.clamp(moved)

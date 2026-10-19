@@ -333,12 +333,17 @@ fn measured_row<R>(
     wrap: WrapWidth,
 ) -> MeasuredRow<R> {
     let measure = |line| (rows.payload_width(line), line_height(rows, line, wrap));
-    let (payload_width, height) = second.map(measure).into_iter().fold(
-        measure(first),
-        |(width, height), (other_width, other_height)| {
-            (width.max(other_width), height.max(other_height))
-        },
-    );
+    let (first_width, first_height) = measure(first);
+    let (payload_width, height) = match second {
+        None => (first_width, first_height),
+        Some(line) => {
+            let (second_width, second_height) = measure(line);
+            (
+                first_width.max(second_width),
+                first_height.max(second_height),
+            )
+        }
+    };
 
     MeasuredRow {
         index,

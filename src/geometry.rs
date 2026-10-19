@@ -238,10 +238,8 @@ pub fn inside_frame_rows(area: Rect) -> Rect {
 /// The file list is shown, and its column, padded separator, and at least one diff column
 /// fit.
 fn shows_file_list(width: u16, file_list: FileList) -> bool {
-    let fits = width > FILE_COLUMN_WIDTH;
-
     match file_list {
-        FileList::Shown => fits,
+        FileList::Shown => width > FILE_COLUMN_WIDTH,
         FileList::Hidden => false,
     }
 }
