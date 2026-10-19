@@ -6,7 +6,8 @@ use std::iter;
 
 use crate::{
     document::{
-        DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind, UnifiedBody,
+        AddressedRecord, DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind,
+        UnifiedBody,
     },
     headers::GitHeader,
     side::Side,
@@ -146,7 +147,7 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
             kind: LineKind::HunkHeader,
             source: hunk.header(),
         };
-        let records = hunk.records().map(|(address, record)| {
+        let records = hunk.records().map(|AddressedRecord { address, record }| {
             let kind = LineKind::Record {
                 address,
                 kind: record.kind,
@@ -171,8 +172,7 @@ fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
         })
 }
 
-/// Lines from one of two sources, chosen once: a file's body kind, or whether a document
-/// has files.
+/// An iterator over whichever of two line sources was chosen.
 enum OneOf<A, B> {
     First(A),
     Second(B),
@@ -213,7 +213,7 @@ mod tests {
             .addressed_hunks()
             .map(|hunk| {
                 hunk.records()
-                    .map(|(address, _)| address)
+                    .map(|record| record.address)
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();

@@ -368,9 +368,13 @@ impl<'h> Projection<'h> {
         let mut records = Vec::new();
         let side_records = hunk
             .positioned()
-            .filter(|(_, record)| record.kind.on_side(side));
+            .filter(|entry| entry.value.kind.on_side(side));
 
-        for (position, record) in side_records {
+        for RecordEntry {
+            position,
+            value: record,
+        } in side_records
+        {
             let start = source.len();
             source.push_str(record.payload.sanitized());
             let styled = match styles {
@@ -508,7 +512,7 @@ mod tests {
                 .next()
                 .expect("first hunk")
                 .records()
-                .map(|(address, _)| highlights.get(address).clone())
+                .map(|record| highlights.get(record.address).clone())
                 .collect()
         })
     }
@@ -602,7 +606,7 @@ mod tests {
         let incremental_spans = highlights_of(patch);
 
         let full_spans = with_first_hunk(patch, |hunk| {
-            let (addition, _) = hunk.positioned().nth(1).expect("the added record");
+            let addition = hunk.positioned().nth(1).expect("the added record").position;
             let new_projection = Projection::from_hunk(hunk, Side::New, Styles::ChangesAndContext);
             let full_pass = SyntaxHighlighter::default()
                 .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)

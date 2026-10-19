@@ -51,16 +51,24 @@ impl<T> NonEmpty<T> {
         NonEmpty::new(first, self.rest.iter().map(convert))
     }
 
-    /// Each item mapped by `convert` with its index, in order.
-    pub fn map_indexed<'a, U>(&'a self, mut convert: impl FnMut(usize, &'a T) -> U) -> NonEmpty<U> {
-        let first = convert(0, &self.first);
-        let rest = self
-            .rest
-            .iter()
-            .enumerate()
-            .map(|(index, item)| convert(index + 1, item));
+    /// Each item mapped by `convert` in order, except the last, which `convert_last`
+    /// maps.
+    pub fn map_with_last<'a, U>(
+        &'a self,
+        mut convert: impl FnMut(&'a T) -> U,
+        convert_last: impl FnOnce(&'a T) -> U,
+    ) -> NonEmpty<U> {
+        let Some((last, between)) = self.rest.split_last() else {
+            return NonEmpty::new(convert_last(&self.first), []);
+        };
 
-        NonEmpty::new(first, rest)
+        let first = convert(&self.first);
+        let middle = between.iter().map(&mut convert).collect::<Vec<_>>();
+
+        NonEmpty::new(
+            first,
+            middle.into_iter().chain(iter::once(convert_last(last))),
+        )
     }
 }
 
@@ -90,15 +98,15 @@ mod tests {
     use super::NonEmpty;
 
     #[test]
-    fn maps_each_item_with_its_index() {
-        let items = NonEmpty::new('a', ['b', 'c']);
+    fn maps_the_last_item_apart_from_the_others() {
+        let several = NonEmpty::new('a', ['b', 'c']);
+        let one = NonEmpty::new('a', []);
 
-        let indexed = items.map_indexed(|index, item| (index, *item));
+        let mapped = several.map_with_last(|item| item.to_ascii_uppercase(), |item| *item);
+        let only = one.map_with_last(|item| item.to_ascii_uppercase(), |item| *item);
 
-        assert_eq!(
-            indexed.iter().collect::<Vec<_>>(),
-            [&(0, 'a'), &(1, 'b'), &(2, 'c')]
-        );
+        assert_eq!(mapped.iter().collect::<Vec<_>>(), [&'A', &'B', &'c']);
+        assert_eq!(only.iter().collect::<Vec<_>>(), [&'a']);
     }
 
     #[test]

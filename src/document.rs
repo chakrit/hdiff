@@ -74,12 +74,10 @@ impl DiffFiles {
     /// Each file with the text leading up to it; the last file also carries the trailing
     /// text.
     pub fn views(&self) -> NonEmpty<FileView<'_>> {
-        let last = self.sections.len().get() - 1;
-
-        self.sections.map_indexed(|index, section| {
-            let trailing = if index == last { &*self.trailing } else { &[] };
-            section.view(trailing)
-        })
+        self.sections.map_with_last(
+            |section| section.view(&[]),
+            |section| section.view(&self.trailing),
+        )
     }
 }
 
@@ -194,16 +192,24 @@ impl<'a> AddressedHunk<'a> {
     }
 
     /// The hunk's records, each with its address in the file.
-    pub fn records(self) -> impl Iterator<Item = (RecordAddress, &'a Record)> {
+    pub fn records(self) -> impl Iterator<Item = AddressedRecord<'a>> {
         let hunk_index = self.index;
         self.hunk
             .records
             .iter()
             .enumerate()
-            .map(move |(record_index, record)| {
-                (RecordAddress::new(hunk_index, record_index), record)
+            .map(move |(record_index, record)| AddressedRecord {
+                address: RecordAddress::new(hunk_index, record_index),
+                record,
             })
     }
+}
+
+/// A record with its address in its file, as [`AddressedHunk::records`] yields them.
+#[derive(Clone, Copy)]
+pub struct AddressedRecord<'a> {
+    pub address: RecordAddress,
+    pub record: &'a Record,
 }
 
 /// One hunk's records under the brand `'h` of a single [`Hunk::with_records`] call.
@@ -221,18 +227,18 @@ impl<'a, 'h> HunkRecords<'a, 'h> {
         }
     }
 
-    /// The hunk's records, each with its branded position among them.
-    pub fn positioned(self) -> impl Iterator<Item = (RecordPosition<'h>, &'a Record)> {
+    /// The hunk's records, each at its branded position among them.
+    pub fn positioned(self) -> impl Iterator<Item = RecordEntry<'h, &'a Record>> {
         self.hunk
             .records
             .iter()
             .enumerate()
-            .map(move |(index, record)| {
-                let position = RecordPosition {
+            .map(move |(index, value)| RecordEntry {
+                position: RecordPosition {
                     index,
                     brand: self.brand,
-                };
-                (position, record)
+                },
+                value,
             })
     }
 }
@@ -245,7 +251,8 @@ pub struct RecordPosition<'h> {
     brand: Brand<'h>,
 }
 
-/// A value for the record at `position`, as [`DiffFile::record_map`] gathers them.
+/// A value at a record's `position`: the record itself, as [`HunkRecords::positioned`]
+/// yields it, or a value [`DiffFile::record_map`] gathers for it.
 pub struct RecordEntry<'h, E> {
     pub position: RecordPosition<'h>,
     pub value: E,
