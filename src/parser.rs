@@ -362,7 +362,7 @@ impl<'a> SourceLines<'a> {
 mod tests {
     use super::{Error, Malformed, parse_comparison, parse_patch};
     use crate::{
-        document::{DiffDocument, FileBody, UnifiedBody},
+        document::{DiffDocument, DiffFile, FileBody, UnifiedBody},
         finite_output,
     };
 
@@ -379,6 +379,15 @@ mod tests {
                 FileBody::Metadata(_) => panic!("fixture section should be unified"),
             })
             .collect()
+    }
+
+    /// The fixture's only file; a fixture holding any other count fails the test.
+    fn only_file(document: &DiffDocument) -> &DiffFile {
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the fixture holds one file: {} files", files.len());
+        };
+        file
     }
 
     /// Each body's first-hunk record count.
@@ -524,10 +533,7 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
-        let files = document.files().collect::<Vec<_>>();
-        let [file] = files.as_slice() else {
-            panic!("the fixture holds one file: {} files", files.len());
-        };
+        let file = only_file(&document);
 
         assert!(
             matches!(file.body, FileBody::Metadata(_)),
@@ -541,10 +547,7 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
-        let files = document.files().collect::<Vec<_>>();
-        let [file] = files.as_slice() else {
-            panic!("the fixture holds one file: {} files", files.len());
-        };
+        let file = only_file(&document);
 
         assert!(
             matches!(file.body, FileBody::Metadata(_)),

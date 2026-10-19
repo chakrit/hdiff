@@ -83,7 +83,10 @@ impl PreparedDocument {
     /// How many hunk records every page holds together.
     pub fn record_count(&self) -> usize {
         match self {
-            Self::Files { pages, .. } => pages.iter().map(|file| file.page.record_count()).sum(),
+            Self::Files { pages, .. } => pages
+                .iter()
+                .map(|file_page| file_page.page.record_count())
+                .sum(),
             Self::Text(page) => page.record_count(),
         }
     }
@@ -104,7 +107,7 @@ impl PreparedDocument {
     #[cfg(test)]
     fn pages(&self) -> Vec<&PreparedPage> {
         match self {
-            Self::Files { pages, .. } => pages.iter().map(|file| &file.page).collect(),
+            Self::Files { pages, .. } => pages.iter().map(|file_page| &file_page.page).collect(),
             Self::Text(page) => vec![page],
         }
     }

@@ -100,17 +100,18 @@ fn check_payload_line(text: &str) -> Result<(), Malformed> {
 /// groups of five characters, each group holding four bytes, with no more than three
 /// bytes of filler.
 fn is_payload_line(text: &str) -> bool {
-    let Some((stated, encoded)) = text.split_at_checked(1) else {
+    let Some((count_character, encoded)) = text.split_at_checked(1) else {
         return false;
     };
-    let Some(stated) = payload_byte_count(stated) else {
+    let Some(byte_count) = payload_byte_count(count_character) else {
         return false;
     };
 
     let groups = encoded.len() / BASE85_GROUP_CHARACTERS;
     let whole_groups = encoded.len() % BASE85_GROUP_CHARACTERS == 0;
     let held = groups * BASE85_GROUP_BYTES;
-    let fits = groups > 0 && whole_groups && stated <= held && stated > held - BASE85_GROUP_BYTES;
+    let fits =
+        groups > 0 && whole_groups && byte_count <= held && byte_count > held - BASE85_GROUP_BYTES;
 
     fits && encoded.bytes().all(|byte| BASE85.contains(&byte))
 }
