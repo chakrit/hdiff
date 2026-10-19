@@ -13,8 +13,8 @@ use crate::{
     },
     file_identity::FileIdentity,
     headers::{
-        FileHeader, GitHeader, GitMetadata, HeaderPath, decimal_count, file_header_field,
-        git_header_names, is_combined_diff_header,
+        FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
+        is_combined_diff_header,
     },
     non_empty::NonEmpty,
     side::{BySide, Side},
@@ -58,7 +58,7 @@ pub enum Malformed {
     InvalidHunkHeader,
     TruncatedHunk,
     ExcessRecords,
-    UnexpectedFileHeaderInHunk,
+    UnexpectedGitHeaderInHunk,
     UnmarkedHunkLine,
     MisplacedNoNewlineMarker,
     RecordAfterNoNewlineMarker,
@@ -86,7 +86,7 @@ impl Malformed {
             Self::InvalidHunkHeader => "invalid hunk header",
             Self::TruncatedHunk => "truncated hunk",
             Self::ExcessRecords => "hunk records exceed declared counts",
-            Self::UnexpectedFileHeaderInHunk => "unexpected file header in hunk",
+            Self::UnexpectedGitHeaderInHunk => "unexpected Git header in hunk",
             Self::UnmarkedHunkLine => "unmarked line in hunk",
             Self::MisplacedNoNewlineMarker => "no-newline marker does not follow a record",
             Self::RecordAfterNoNewlineMarker => {
@@ -347,13 +347,13 @@ fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
     let text = line.sanitized();
     reject_unsupported_header(text)?;
     match git_header_names(text) {
-        Some(_) => Err(Malformed::UnexpectedFileHeaderInHunk),
+        Some(_) => Err(Malformed::UnexpectedGitHeaderInHunk),
         None => Err(Malformed::UnmarkedHunkLine),
     }
 }
 
-/// Whether `text` is a no-newline marker. Producers translate its wording, so like
-/// `git apply` it is known by its `\ ` prefix alone.
+/// Whether `text` is a no-newline marker. Producers translate its wording, so hdiff knows
+/// it by its `\ ` prefix alone, whatever follows.
 fn is_no_newline_marker(text: &str) -> bool {
     text.starts_with("\\ ")
 }
@@ -407,12 +407,25 @@ fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
 /// The line count a `start,count` hunk range states, after its `-` or `+`; a range
 /// without a count states one line.
 fn range_count(range: &str) -> Option<usize> {
-    let (start, count) = match range.split_once(',') {
-        Some((start, count)) => (start, decimal_count(count)?),
-        None => (range, 1),
-    };
+    match range.split_once(',') {
+        Some((start, count)) => {
+            decimal_count(start)?;
+            decimal_count(count)
+        }
+        None => decimal_count(range).map(|_| 1),
+    }
+}
 
-    decimal_count(start).and(Some(count))
+/// The line number or count a header `field` states. Only ASCII digits are a count:
+/// Rust's integer parsing also admits a leading `+`, which no diff writes. Rules:
+/// docs/spec/architecture.md#input-contract.
+fn decimal_count(field: &str) -> Option<usize> {
+    let digits = !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit());
+    if !digits {
+        return None;
+    }
+
+    field.parse().ok()
 }
 
 // Reading lines
@@ -703,9 +716,9 @@ mod tests {
         }
     }
 
-    /// docs/spec/architecture.md#input-contract: a no-newline marker ends its record's side
-    /// of the file, so no later record on that side follows it, in its hunk or a later
-    /// one.
+    /// docs/spec/architecture.md#input-contract: a no-newline marker ends its record's
+    /// side of the file, so no later record on that side follows it, in its hunk or a
+    /// later one.
     #[test]
     fn rejects_a_record_after_the_marker_that_ended_its_side() {
         let files = "--- a/f\n+++ b/f\n";
@@ -766,12 +779,19 @@ mod tests {
 
     #[test]
     fn rejects_diff_headers_inside_incomplete_hunks() {
-        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n@@ malformed\n-old\n+new\n";
+        let files = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n";
+        for (header, reason) in [
+            ("@@ malformed", Malformed::UnexpectedDiffHeader),
+            ("diff --git a/g b/g", Malformed::UnexpectedGitHeaderInHunk),
+        ] {
+            let input = format!("{files}{header}\n-old\n+new\n");
 
-        assert_eq!(
-            parse_patch(input),
-            malformed(4, Malformed::UnexpectedDiffHeader)
-        );
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(4, reason),
+                "{header}"
+            );
+        }
     }
 
     #[test]

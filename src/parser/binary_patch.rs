@@ -2,8 +2,8 @@
 //! the base-85 payload lines each block holds. Rules:
 //! docs/spec/architecture.md#input-contract.
 
-use super::{Error, LineStart, Malformed, SourceLines, line_start};
-use crate::{headers::decimal_count, source_text::SourceLine};
+use super::{Error, LineStart, Malformed, SourceLines, decimal_count, line_start};
+use crate::source_text::SourceLine;
 
 /// Whether `text` is the `GIT binary patch` line that opens a binary patch's blocks.
 pub(super) fn is_binary_patch_header(text: &str) -> bool {
