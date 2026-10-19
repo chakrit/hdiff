@@ -12,10 +12,16 @@ use ratatui::{
 use super::bindings::{GROUPS, Key, Shortcut, ShortcutGroup, keymap_closing_keys};
 use crate::{screen::Cells, theme::Theme};
 
+/// Cells a shortcut row is indented under its heading.
+const KEYS_INDENT: u16 = 2;
 const KEYS_WIDTH: u16 = 9;
+/// Cells between the keys column and the action.
+const KEYS_ACTION_GAP: u16 = 1;
 const ACTION_WIDTH: u16 = 21;
-/// A shortcut row: a two-cell indent under its heading, the keys, a space, and the action.
-const COLUMN_WIDTH: u16 = 2 + KEYS_WIDTH + 1 + ACTION_WIDTH;
+/// A shortcut row: the indent, the keys, the gap, and the action.
+const COLUMN_WIDTH: u16 = KEYS_INDENT + KEYS_WIDTH + KEYS_ACTION_GAP + ACTION_WIDTH;
+/// What surrounds the dot between a diamond's left and right keys.
+const DIAMOND_SPACE: &str = " ";
 const COLUMN_GAP: u16 = 3;
 /// A border and a padding column on each side.
 const FRAME_WIDTH: u16 = 4;
@@ -128,9 +134,10 @@ impl PopupStyles {
 
     /// Keys padded to the keys column's cells, with the row indent.
     fn keys_span(&self, keys: String) -> Span<'static> {
-        let padding = Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys));
-        let padding = " ".repeat(padding.get());
-        Span::styled(format!("  {keys}{padding} "), self.keys)
+        let indent = blank(Cells::from(KEYS_INDENT));
+        let padding = blank(Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys)));
+        let gap = blank(Cells::from(KEYS_ACTION_GAP));
+        Span::styled(format!("{indent}{keys}{padding}{gap}"), self.keys)
     }
 
     fn with_action(&self, keys: String, action: &'static str) -> Line<'static> {
@@ -174,15 +181,24 @@ fn shortcut_lines(shortcut: &Shortcut, styles: &PopupStyles) -> Vec<Line<'static
             right,
             down,
             action,
-        } => vec![
-            Line::from(styles.keys_span(format!("  {}", up.key.label()))),
-            styles.with_action(
-                format!("{} · {}", left.key.label(), right.key.label()),
-                action,
-            ),
-            Line::from(styles.keys_span(format!("  {}", down.key.label()))),
-        ],
+        } => {
+            let left = left.key.label();
+            // The up and down keys sit over the dot.
+            let over_dot = blank(Cells::of_text(&left) + Cells::of_text(DIAMOND_SPACE));
+            let middle = format!("{left}{DIAMOND_SPACE}·{DIAMOND_SPACE}{}", right.key.label());
+
+            vec![
+                Line::from(styles.keys_span(format!("{over_dot}{}", up.key.label()))),
+                styles.with_action(middle, action),
+                Line::from(styles.keys_span(format!("{over_dot}{}", down.key.label()))),
+            ]
+        }
     }
+}
+
+/// `cells` spaces.
+fn blank(cells: Cells) -> String {
+    " ".repeat(cells.get())
 }
 
 fn key_labels(keys: impl Iterator<Item = Key>) -> String {
