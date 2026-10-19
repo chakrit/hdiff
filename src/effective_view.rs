@@ -167,7 +167,7 @@ mod tests {
     }
 
     fn wrap_at(cells: usize) -> WrapWidth {
-        WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
+        WrapWidth::At(NonZeroCells::of(cells))
     }
 
     #[test]

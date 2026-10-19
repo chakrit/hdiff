@@ -133,6 +133,12 @@ impl NonZeroCells {
     pub const fn get(self) -> Cells {
         Cells(self.0.get())
     }
+
+    /// A test's width of `cells`; panics on zero.
+    #[cfg(test)]
+    pub const fn of(cells: usize) -> Self {
+        Self::new(Cells(cells)).expect("a nonzero test width")
+    }
 }
 
 /// A count or offset of screen lines down a pane.
@@ -177,6 +183,12 @@ impl Add for ScreenLines {
 
     fn add(self, other: Self) -> Self {
         Self(self.0 + other.0)
+    }
+}
+
+impl AddAssign for ScreenLines {
+    fn add_assign(&mut self, other: Self) {
+        self.0 += other.0;
     }
 }
 
