@@ -168,7 +168,8 @@ impl PreparationClock {
     }
 }
 
-/// Durations from the start of the run until the prepared document is ready.
+/// Durations from the start of the run until the prepared document is ready, and the
+/// size of the input read.
 struct Startup {
     input: Duration,
     parse: Duration,
