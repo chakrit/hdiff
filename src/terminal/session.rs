@@ -11,7 +11,7 @@ use std::{
 
 use crossterm::{
     cursor, execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
@@ -188,17 +188,16 @@ fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFai
         Entered::AlternateScreen => Some(execute!(terminal, LeaveAlternateScreen)),
         Entered::RawMode => None,
     };
-    let raw_mode_left = terminal::disable_raw_mode();
+    let raw_mode_left = disable_raw_mode();
 
     let failures = [
         RestoreFailure::of(RestoreStep::Cursor, cursor_shown),
         left_screen.and_then(|result| RestoreFailure::of(RestoreStep::AlternateScreen, result)),
         RestoreFailure::of(RestoreStep::RawMode, raw_mode_left),
     ];
-    match NonEmpty::of(failures.into_iter().flatten()) {
-        None => Ok(()),
-        Some(failures) => Err(RestoreFailures(failures)),
-    }
+    NonEmpty::of(failures.into_iter().flatten())
+        .map(RestoreFailures)
+        .map_or(Ok(()), Err)
 }
 
 /// Raw mode and the alternate screen on the controlling terminal, both entered, and the
@@ -213,7 +212,7 @@ impl TerminalSession {
     /// leaving raw mode again when the alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, Error> {
         let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))
-            .and_then(|created| terminal::enable_raw_mode().map(|()| created))
+            .and_then(|created| enable_raw_mode().map(|()| created))
             .map_err(|error| start_failed(error, Ok(())))?;
         let panic_hook = RestoringPanicHook::install();
 

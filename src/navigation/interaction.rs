@@ -80,7 +80,9 @@ impl Interaction {
             Command::Page(step) => {
                 Outcome::Effect(Effect::TurnPage(step.applied(self.page, pages)))
             }
-            Command::Keymap(command) => Outcome::Effect(Effect::Keymap(self.keymap.after(command))),
+            Command::Keymap(keymap_command) => {
+                Outcome::Effect(Effect::Keymap(self.keymap.after(keymap_command)))
+            }
             Command::Preference(change) => Outcome::Effect(Effect::Redisplay {
                 preferences: self.preferences.after(change),
                 placement: placement_after(change),
