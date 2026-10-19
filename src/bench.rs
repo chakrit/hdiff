@@ -52,8 +52,7 @@ impl Driver {
 
     /// The driver names as an English list, such as `prepare, stages, or movement`.
     pub fn choices() -> String {
-        let labels = Self::ALL.map(Self::label);
-        let (last, leading) = labels.split_last().expect("at least one driver");
+        let [leading @ .., last] = Self::ALL.map(Self::label);
 
         format!("{}, or {last}", leading.join(", "))
     }
