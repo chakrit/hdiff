@@ -104,6 +104,7 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
 enum State {
     Text,
     Escape,
+    EscapeIntermediate,
     ControlSequence,
     StringSequence,
     StringEscape,
@@ -115,33 +116,49 @@ impl State {
     fn shows(self, character: char) -> bool {
         match self {
             Self::Text => character == '\t' || !character.is_control(),
-            Self::Escape | Self::ControlSequence | Self::StringSequence | Self::StringEscape => {
-                false
-            }
+            Self::Escape
+            | Self::EscapeIntermediate
+            | Self::ControlSequence
+            | Self::StringSequence
+            | Self::StringEscape => false,
         }
     }
 
     /// The state after `character`. Each introducer has a 7-bit spelling (`ESC` and a
-    /// letter) and a single-character C1 spelling, and both open the same sequence.
+    /// letter) and a single-character C1 spelling, and both open the same sequence. An
+    /// escape may carry intermediate bytes before its final byte, and an introducer read
+    /// inside an unfinished escape or control sequence starts a new sequence.
     fn after(self, character: char) -> Self {
         match (self, character) {
-            (Self::Text, '\u{1b}') => Self::Escape,
-            (Self::Text, '\u{9b}') => Self::ControlSequence,
-            (Self::Text, '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}') => {
-                Self::StringSequence
-            }
-            (Self::Text, _) => Self::Text,
+            (Self::Text, _) => Self::opened_by(character).unwrap_or(Self::Text),
             (Self::Escape, '[') => Self::ControlSequence,
             (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => Self::StringSequence,
-            (Self::Escape, _) => Self::Text,
+            (Self::Escape | Self::EscapeIntermediate, '\u{20}'..='\u{2f}') => {
+                Self::EscapeIntermediate
+            }
+            (Self::Escape | Self::EscapeIntermediate, _) => {
+                Self::opened_by(character).unwrap_or(Self::Text)
+            }
             (Self::ControlSequence, '@'..='~') => Self::Text,
-            (Self::ControlSequence, _) => Self::ControlSequence,
+            (Self::ControlSequence, _) => {
+                Self::opened_by(character).unwrap_or(Self::ControlSequence)
+            }
             (Self::StringSequence, '\u{7}' | '\u{9c}') => Self::Text,
             (Self::StringSequence, '\u{1b}') => Self::StringEscape,
             (Self::StringSequence, _) => Self::StringSequence,
             (Self::StringEscape, '\\') => Self::Text,
             (Self::StringEscape, '\u{1b}') => Self::StringEscape,
             (Self::StringEscape, _) => Self::StringSequence,
+        }
+    }
+
+    /// The sequence `character` introduces, if it is an introducer.
+    fn opened_by(character: char) -> Option<Self> {
+        match character {
+            '\u{1b}' => Some(Self::Escape),
+            '\u{9b}' => Some(Self::ControlSequence),
+            '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}' => Some(Self::StringSequence),
+            _ => None,
         }
     }
 }
@@ -214,5 +231,22 @@ mod tests {
             assert_eq!(sanitize(c1), sanitize(escape), "{c1:?}");
         }
         assert_eq!(sanitize(b"\xc2\x9b31mred \xc2\x9d8;;u\x07link"), "red link");
+    }
+
+    /// An escape with intermediate bytes (`ESC ( B`, which `tput sgr0` writes) ends at
+    /// its final byte, and an introducer inside an unfinished sequence starts a new
+    /// sequence, so no part of either shows as text.
+    #[test]
+    fn strips_intermediate_escapes_and_sequences_an_introducer_restarts() {
+        for (line, shown) in [
+            (b"-\x1b(B\x1b[mold".as_slice(), "-old"),
+            (b"\x1b\x1b[31mred", "red"),
+            (b"\x1b\xc2\x9b5mblink", "blink"),
+            (b"\x1b[31\x1b[0mred", "red"),
+            (b"\x1b[31\xc2\x9b0mred", "red"),
+            (b"\x1b$)Bkanji", "kanji"),
+        ] {
+            assert_eq!(sanitize(line), shown, "{line:?}");
+        }
     }
 }
