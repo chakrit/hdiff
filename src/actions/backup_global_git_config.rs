@@ -19,12 +19,11 @@ impl BackupGlobalGitConfig {
 
     /// Makes the copy; a failure carries this backup so its message names both paths.
     pub fn run(self, _context: &mut GlobalGitConfigContext) -> Result<(), Error> {
-        match fs::copy(self.config.as_path(), self.copy.as_path()) {
-            Ok(_) => Ok(()),
-            Err(source) => Err(Error::Backup {
+        fs::copy(self.config.as_path(), self.copy.as_path())
+            .map(drop)
+            .map_err(|source| Error::Backup {
                 backup: self,
                 source,
-            }),
-        }
+            })
     }
 }
