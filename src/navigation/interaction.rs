@@ -291,18 +291,27 @@ mod tests {
         effect
     }
 
-    fn redisplay(
+    fn preference_effect(interaction: &Interaction, change: PreferenceChange) -> Effect {
+        effect(interaction, command(Command::Preference(change)))
+    }
+
+    /// The preferences `change` redisplays the page with.
+    fn redisplayed_preferences(
         interaction: &Interaction,
         change: PreferenceChange,
-    ) -> (ViewPreferences, Placement) {
-        let Effect::Redisplay {
-            preferences,
-            placement,
-        } = effect(interaction, command(Command::Preference(change)))
-        else {
+    ) -> ViewPreferences {
+        let Effect::Redisplay { preferences, .. } = preference_effect(interaction, change) else {
             panic!("{change:?} redisplays the page");
         };
-        (preferences, placement)
+        preferences
+    }
+
+    /// Where `change` places the redisplayed page.
+    fn placement(interaction: &Interaction, change: PreferenceChange) -> Placement {
+        let Effect::Redisplay { placement, .. } = preference_effect(interaction, change) else {
+            panic!("{change:?} redisplays the page");
+        };
+        placement
     }
 
     #[test]
@@ -329,7 +338,7 @@ mod tests {
     #[test]
     fn anchors_preference_changes_that_move_rows_on_the_middle_line() {
         let start = interaction(second_page(), DiffLayout::Vertical);
-        let placement = |change| redisplay(&start, change).1;
+        let placement_of = |change| placement(&start, change);
 
         for change in [
             PreferenceChange::ToggleWrapping,
@@ -338,7 +347,7 @@ mod tests {
             PreferenceChange::ToggleFileList,
         ] {
             assert_eq!(
-                placement(change),
+                placement_of(change),
                 Placement::Anchor(AnchorLine::PaneMiddle),
                 "{change:?}"
             );
@@ -347,14 +356,14 @@ mod tests {
             PreferenceChange::NextLayout,
             PreferenceChange::ToggleGranularity,
         ] {
-            assert_eq!(placement(change), Placement::Keep, "{change:?}");
+            assert_eq!(placement_of(change), Placement::Keep, "{change:?}");
         }
     }
 
     #[test]
     fn redisplays_the_same_page_with_the_changed_preference() {
         let start = interaction(second_page(), DiffLayout::Unified);
-        let after = |change| redisplay(&start, change).0;
+        let after = |change| redisplayed_preferences(&start, change);
 
         assert_eq!(
             after(PreferenceChange::NextLayout).layout,
@@ -424,8 +433,20 @@ mod tests {
         }
         assert_eq!(respond(open, Event::Interrupt), Outcome::Exit);
         assert_eq!(respond(open, Event::Resize), Outcome::Redraw);
-        assert_eq!(respond(closed, command(Command::Quit)), Outcome::Exit);
-        assert_eq!(respond(closed, command(close)), Outcome::Redraw);
+    }
+
+    /// docs/spec/architecture.md#interaction-model: with the keymap popup closed, `q`
+    /// exits and closing the popup changes nothing.
+    #[test]
+    fn quits_and_ignores_closing_while_the_keymap_is_closed() {
+        let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
+        let close = Command::Keymap(KeymapCommand::Close);
+
+        assert_eq!(
+            closed.respond(command(Command::Quit), TWO_PAGES),
+            Outcome::Exit
+        );
+        assert_eq!(closed.respond(command(close), TWO_PAGES), Outcome::Redraw);
     }
 
     #[test]

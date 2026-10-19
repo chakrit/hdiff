@@ -391,17 +391,16 @@ mod tests {
         ] {
             assert_eq!(key(code, KeyModifiers::NONE), command(expected), "{code:?}");
         }
-        for character in ['{', '}'] {
-            assert_eq!(
-                plain(character),
-                None,
-                "{character} has no cursor-visible destination"
-            );
-        }
         assert_eq!(
             event_for(TerminalEvent::Resize(100, 30)),
             Some(Event::Resize)
         );
+    }
+
+    /// docs/spec/architecture.md#keyboard-bindings: `Ctrl-C` exits as an interrupt, which
+    /// applies in every mode.
+    #[test]
+    fn maps_control_c_to_an_interrupt() {
         assert_eq!(
             key(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(Event::Interrupt)
@@ -409,7 +408,7 @@ mod tests {
     }
 
     /// docs/spec/architecture.md#keyboard-bindings: the table names every bound key, so
-    /// Shift-`G` is bound, and `Ctrl-Q`, `Ctrl-J` and `Alt-q` are not.
+    /// Shift-`G` is bound, and `{`, `}`, `Ctrl-Q`, `Ctrl-J` and `Alt-q` are not.
     #[test]
     fn binds_only_the_keys_the_table_names() {
         let alt = KeyModifiers::ALT;
@@ -421,6 +420,8 @@ mod tests {
             command(Command::Movement(Movement::Bottom))
         );
         for (code, modifiers) in [
+            (KeyCode::Char('{'), KeyModifiers::NONE),
+            (KeyCode::Char('}'), KeyModifiers::NONE),
             (KeyCode::Char('q'), control),
             (KeyCode::Char('j'), control),
             (KeyCode::Char('q'), alt),
