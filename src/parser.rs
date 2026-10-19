@@ -5,7 +5,7 @@ use crate::{
         DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind, UnifiedBody,
     },
     file_identity::FileIdentity,
-    headers::{FileHeader, GitHeader, HeaderPath},
+    headers::{FileHeader, GitHeader, GitMetadata, HeaderPath, git_header_names},
     side::{BySide, Side},
     source_text::SourceLine,
 };
@@ -71,7 +71,7 @@ impl Malformed {
 
 /// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
 pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
-    let document = parse_sections(input)?;
+    let document = parse_comparison(input)?;
 
     match (&document, input.is_empty()) {
         (DiffDocument::Text(_), false) => Err(ParseError::NoDiff),
@@ -79,14 +79,9 @@ pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
     }
 }
 
-/// Parses `diff` output, which may hold only surrounding text such as
-/// `Binary files … differ`.
+/// Parses `diff` output into its surrounding text and file sections. It may hold only
+/// surrounding text, such as `Binary files … differ`.
 pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
-    parse_sections(input)
-}
-
-/// Parses any diff output into its surrounding text and file sections.
-fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut lines = SourceLines::new(input);
     let mut sections = Vec::new();
     let mut text = Vec::new();
@@ -125,7 +120,7 @@ enum LineStart {
 fn line_start(text: &str) -> Result<LineStart, Malformed> {
     reject_unsupported_header(text)?;
 
-    if text.starts_with("diff --git ") {
+    if git_header_names(text).is_some() {
         return Ok(LineStart::GitHeader);
     }
     let start = header_path(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
@@ -154,7 +149,7 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     {
         return Err(Malformed::CombinedDiff);
     }
-    if text.starts_with("@@") || text.starts_with("+++ ") {
+    if text.starts_with("@@") || header_field(text, Side::New).is_some() {
         return Err(Malformed::UnexpectedDiffHeader);
     }
 
@@ -187,22 +182,7 @@ fn parse_git_section(
 }
 
 fn is_git_metadata(text: &str) -> bool {
-    [
-        "old mode ",
-        "new mode ",
-        "deleted file mode ",
-        "new file mode ",
-        "copy from ",
-        "copy to ",
-        "rename from ",
-        "rename to ",
-        "similarity index ",
-        "dissimilarity index ",
-        "index ",
-    ]
-    .iter()
-    .any(|prefix| text.starts_with(prefix))
-        || (text.starts_with("Binary files ") && text.ends_with(" differ"))
+    GitMetadata::of(text).is_some()
 }
 
 /// The `literal` and `delta` blocks after `GIT binary patch`, each with its payload and

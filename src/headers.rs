@@ -13,6 +13,56 @@ pub struct GitHeader {
     pub metadata: Box<[SourceLine]>,
 }
 
+/// The names after a `diff --git ` line's prefix; any other line has none.
+pub fn git_header_names(text: &str) -> Option<&str> {
+    text.strip_prefix("diff --git ")
+}
+
+/// One of Git's extended header lines after `diff --git`, as far as naming a file needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitMetadata<'a> {
+    Added,
+    Deleted,
+    /// A rename's destination field, as written.
+    RenameTo(&'a str),
+    /// A copy's destination field, as written.
+    CopyTo(&'a str),
+    /// Mode, source, similarity, index, and binary-difference lines.
+    Other,
+}
+
+impl<'a> GitMetadata<'a> {
+    /// The extended header `text` is; a line that is not one has none.
+    pub fn of(text: &'a str) -> Option<Self> {
+        const OTHER_PREFIXES: [&str; 7] = [
+            "old mode ",
+            "new mode ",
+            "copy from ",
+            "rename from ",
+            "similarity index ",
+            "dissimilarity index ",
+            "index ",
+        ];
+
+        if text.starts_with("new file mode ") {
+            return Some(Self::Added);
+        }
+        if text.starts_with("deleted file mode ") {
+            return Some(Self::Deleted);
+        }
+        if let Some(field) = text.strip_prefix("rename to ") {
+            return Some(Self::RenameTo(field));
+        }
+        if let Some(field) = text.strip_prefix("copy to ") {
+            return Some(Self::CopyTo(field));
+        }
+
+        let other = OTHER_PREFIXES.iter().any(|prefix| text.starts_with(prefix))
+            || (text.starts_with("Binary files ") && text.ends_with(" differ"));
+        other.then_some(Self::Other)
+    }
+}
+
 /// A `---` or `+++` line and the path it names.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileHeader {
