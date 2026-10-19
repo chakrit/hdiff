@@ -4,7 +4,7 @@
 
 use std::str::CharIndices;
 
-use crate::source_text::SourceLine;
+use crate::{side::Side, source_text::SourceLine};
 
 /// A `diff --git` line and the extended header lines after it.
 #[derive(Debug, PartialEq, Eq)]
@@ -16,6 +16,22 @@ pub struct GitHeader {
 /// The names after a `diff --git ` line's prefix; any other line has none.
 pub fn git_header_names(text: &str) -> Option<&str> {
     text.strip_prefix("diff --git ")
+}
+
+/// Whether `text` opens a combined diff's file section: `diff --cc` or `diff --combined`.
+pub fn is_combined_diff_header(text: &str) -> bool {
+    text.starts_with("diff --cc ") || text.starts_with("diff --combined ")
+}
+
+/// The field after a `---` (old) or `+++` (new) file header line's prefix; any other
+/// line has none.
+pub fn file_header_field(text: &str, side: Side) -> Option<&str> {
+    let prefix = match side {
+        Side::Old => "--- ",
+        Side::New => "+++ ",
+    };
+
+    text.strip_prefix(prefix)
 }
 
 /// One of Git's extended header lines after `diff --git`, as far as naming a file needs.
@@ -79,6 +95,12 @@ pub enum HeaderPath {
 }
 
 impl HeaderPath {
+    /// The path a `---` (old) or `+++` (new) file header line names; any other line names
+    /// none.
+    pub fn of_header(text: &str, side: Side) -> Option<Self> {
+        file_header_field(text, side).map(Self::of_field)
+    }
+
     /// Reads a header's field after `--- ` or `+++ `, without its timestamp.
     pub fn of_field(field: &str) -> Self {
         // Git escapes tabs inside quotes, so the first tab ends a quoted path too.

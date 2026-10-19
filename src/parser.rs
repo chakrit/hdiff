@@ -5,7 +5,10 @@ use crate::{
         DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind, UnifiedBody,
     },
     file_identity::FileIdentity,
-    headers::{FileHeader, GitHeader, GitMetadata, HeaderPath, git_header_names},
+    headers::{
+        FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
+        is_combined_diff_header,
+    },
     side::{BySide, Side},
     source_text::SourceLine,
 };
@@ -123,33 +126,16 @@ fn line_start(text: &str) -> Result<LineStart, Malformed> {
     if git_header_names(text).is_some() {
         return Ok(LineStart::GitHeader);
     }
-    let start = header_path(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
+    let start =
+        HeaderPath::of_header(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
     Ok(start)
 }
 
-/// The path a `---` (old) or `+++` (new) file header line names.
-fn header_path(text: &str, side: Side) -> Option<HeaderPath> {
-    header_field(text, side).map(HeaderPath::of_field)
-}
-
-/// The field of a `---` (old) or `+++` (new) file header line.
-fn header_field(text: &str, side: Side) -> Option<&str> {
-    let prefix = match side {
-        Side::Old => "--- ",
-        Side::New => "+++ ",
-    };
-
-    text.strip_prefix(prefix)
-}
-
 fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
-    if text.starts_with("diff --cc ")
-        || text.starts_with("diff --combined ")
-        || text.starts_with("@@@")
-    {
+    if is_combined_diff_header(text) || text.starts_with("@@@") {
         return Err(Malformed::CombinedDiff);
     }
-    if text.starts_with("@@") || header_field(text, Side::New).is_some() {
+    if text.starts_with("@@") || file_header_field(text, Side::New).is_some() {
         return Err(Malformed::UnexpectedDiffHeader);
     }
 
@@ -337,7 +323,7 @@ fn marked_record(line: &SourceLine) -> Option<Record> {
 fn is_excess_record(line: &SourceLine) -> bool {
     let marked = marked_record(line).is_some();
 
-    marked && header_field(line.sanitized(), Side::Old).is_none()
+    marked && file_header_field(line.sanitized(), Side::Old).is_none()
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
@@ -422,7 +408,7 @@ impl<'a> SourceLines<'a> {
 
     /// Takes the next line when it is `side`'s file header.
     fn next_file_header(&mut self, side: Side) -> Option<FileHeader> {
-        self.next_if_map(|text| header_path(text, side))
+        self.next_if_map(|text| HeaderPath::of_header(text, side))
             .map(|(line, path)| FileHeader { line, path })
     }
 
