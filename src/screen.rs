@@ -15,8 +15,12 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::compact::Count;
 
-/// Cells of the marker gutter that precedes every row's payload.
-pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(2);
+/// Clusters of the marker gutter that precedes every row's payload: the marker column,
+/// then the payload spacer. Each gutter cluster covers one cell.
+pub const MARKER_GUTTER_CLUSTERS: usize = 2;
+
+/// Cells of the marker gutter: one per gutter cluster.
+pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(MARKER_GUTTER_CLUSTERS);
 
 /// A count or offset of terminal cells across a row.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
