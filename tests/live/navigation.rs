@@ -351,8 +351,10 @@ fn preferences_start_in_unified_line_mode() {
     assert_eq!(start.context, ContextRecords::new(3));
 }
 
-/// docs/spec/architecture.md#lossless-and-safe-rendering: the document is never
-/// truncated, so `$` reaches the end of a row wider than any terminal offset type.
+/// docs/spec/architecture.md#lossless-and-safe-rendering and
+/// docs/spec/architecture.md#viewport-coordinates: the document is never truncated, and
+/// no offset type caps how far a row reaches, so `$` reaches the end of a row wider than
+/// any terminal offset type.
 #[test]
 fn far_right_reaches_the_end_of_a_very_wide_row() {
     let patch = format!(

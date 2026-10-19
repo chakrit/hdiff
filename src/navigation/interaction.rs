@@ -313,7 +313,7 @@ mod tests {
         }
     }
 
-    /// docs/spec/architecture.md#viewport-coordinates: the terminal is the one source of
+    /// docs/spec/architecture.md#core-model: the terminal is the one source of
     /// the screen size, so a resize event asks only for a frame at the terminal's size.
     #[test]
     fn redraws_for_a_resize() {

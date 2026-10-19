@@ -178,7 +178,7 @@ mod tests {
         assert_eq!(up, scroll(4, 0));
     }
 
-    /// docs/spec/architecture.md#lossless-and-safe-rendering: no terminal offset type
+    /// docs/spec/architecture.md#viewport-coordinates: no terminal offset type
     /// caps how far a row reaches.
     #[test]
     fn bounds_horizontal_movement_to_the_widest_row() {

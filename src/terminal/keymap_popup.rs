@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
     }
 
-    /// docs/spec/architecture.md#interaction-model: headings take the hunk-header tone in
+    /// docs/spec/architecture.md#keyboard-bindings: headings take the hunk-header tone in
     /// bold, keys the syntax function color, and actions the file-name tone.
     #[test]
     fn colors_headings_keys_and_actions_from_the_existing_palettes() {
