@@ -21,14 +21,18 @@ use ratatui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Columns of the screen a test runs on unless it names a size.
 pub const WIDTH: u16 = 120;
+/// Rows of the screen a test runs on unless it names a size.
 pub const HEIGHT: u16 = 36;
 /// The screen a test runs on unless it names a size.
 pub const SCREEN: Size = Size::new(WIDTH, HEIGHT);
 /// The screen row of a diff pane's first content line, below its top frame row.
 pub const FIRST_CONTENT_LINE: usize = 1;
+/// The palette every live test draws with: true color.
 pub const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
+/// A TUI session drawn into an in-memory terminal, driven by key and resize events.
 pub struct Live {
     tui: Tui,
     terminal: Terminal<TestBackend>,
@@ -147,8 +151,9 @@ impl Live {
             .collect()
     }
 
-    /// The file-list column: each row's text left of the pane separator.
-    pub fn file_list(&self) -> Vec<String> {
+    /// Each screen row left of its first `│`, its trailing blanks trimmed: the file-list
+    /// column, while the file list is shown and draws its separator there.
+    pub fn left_of_first_separator(&self) -> Vec<String> {
         self.rows()
             .iter()
             .map(|row| {
@@ -254,6 +259,7 @@ pub struct FileRowColors {
     pub name: Color,
 }
 
+/// The layout and granularity a session starts in.
 #[derive(Debug, Clone, Copy)]
 pub struct Mode {
     pub layout: DiffLayout,
