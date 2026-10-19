@@ -74,7 +74,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
         None => render_help_box(frame, screen, &theme.chrome),
     }
     if let KeymapPopup::Open = interaction.keymap() {
-        render_keymap_popup(frame, screen, theme);
+        render_keymap_popup(frame, geometry.diff(), theme);
     }
 }
 
