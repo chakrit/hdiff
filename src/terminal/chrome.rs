@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{Constraint, Layout, Rect, Size},
+    layout::{Constraint, Layout, Position, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
@@ -84,23 +84,26 @@ impl FloatingBox {
 
     /// A box around `content` in the bottom-left corner of `area`.
     fn bottom_left_of(area: Rect, content: Size) -> Self {
-        let Size { width, height } = Self::EDGES.around(content);
-        let box_area = Rect::new(area.x, area.bottom().saturating_sub(height), width, height);
-
-        Self {
-            area: box_area.intersection(area),
-        }
+        Self::placed(area, content, |size| {
+            Position::new(area.x, area.bottom().saturating_sub(size.height))
+        })
     }
 
     /// A box around `content` centered over `area`.
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
-        let Size { width, height } = Self::EDGES.around(content);
-        let box_area = Rect::new(
-            area.x + area.width.saturating_sub(width) / 2,
-            area.y + area.height.saturating_sub(height) / 2,
-            width,
-            height,
-        );
+        Self::placed(area, content, |size| {
+            Position::new(
+                area.x + area.width.saturating_sub(size.width) / 2,
+                area.y + area.height.saturating_sub(size.height) / 2,
+            )
+        })
+    }
+
+    /// A box around `content`, its corner at the position `origin` picks for the box's
+    /// size, clipped to `area`.
+    fn placed(area: Rect, content: Size, origin: impl FnOnce(Size) -> Position) -> Self {
+        let size = Self::EDGES.around(content);
+        let box_area = Rect::from((origin(size), size));
 
         Self {
             area: box_area.intersection(area),
@@ -147,8 +150,14 @@ pub(super) fn draw_inner_separator(
 pub(super) struct ContinuityFrame(FramedArea);
 
 impl ContinuityFrame {
-    pub(super) fn of(framed: FramedArea) -> Self {
-        Self(framed)
+    /// The frame of a diff pane filling `area`.
+    pub(super) fn diff_pane(area: Rect) -> Self {
+        Self(FramedArea::diff_pane(area))
+    }
+
+    /// The frame of the file list filling `area`.
+    fn file_list(area: Rect) -> Self {
+        Self(FramedArea::file_list(area))
     }
 
     pub(super) fn content(&self) -> Rect {
@@ -252,7 +261,7 @@ fn render_file_list(
     FileSelection { tree, selected }: FileSelection<'_>,
     palette: &ChromePalette,
 ) {
-    let list_frame = ContinuityFrame::of(FramedArea::file_list(area));
+    let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
     let Some(height) = NonZeroUsize::new(usize::from(content.height)) else {
         return;

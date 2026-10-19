@@ -7,7 +7,7 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::{TooSmall, WrapWidth},
-    geometry::{FramedArea, SplitDirection, SplitPanes},
+    geometry::{SplitDirection, SplitPanes},
     navigation::{
         Navigation,
         extent::{RowLine, ShownLines},
@@ -15,6 +15,7 @@ use crate::{
     },
     page_rows::SideBySideRow,
     screen::{Cells, ScreenLines},
+    side::BySide,
     styling::StyledRow,
     theme::Theme,
 };
@@ -54,9 +55,9 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
     };
     match navigation.shown() {
         ShownLines::Single(lines) => {
-            let lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
-            let pane = ContinuityFrame::of(FramedArea::diff_pane(geometry.single_pane()));
-            pane_drawing.render(frame, pane, lines);
+            let pane_lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
+            let pane = ContinuityFrame::diff_pane(geometry.single_pane());
+            pane_drawing.render(frame, pane, pane_lines);
         }
         ShownLines::Split { direction, lines } => {
             let split = geometry.split_panes(direction);
@@ -139,14 +140,16 @@ fn render_split_rows<'a>(
 ) {
     let direction = split.direction();
     let separator = split.separator();
-    let panes = split
-        .panes()
-        .map(|pane| ContinuityFrame::of(FramedArea::diff_pane(pane)));
-    let (old_lines, new_lines): (Vec<_>, Vec<_>) = lines
+    let panes = split.panes().map(ContinuityFrame::diff_pane);
+    let side_lines = lines
         .map(|line| line.map(SideBySideRow::pane_pair).split())
-        .map(|sides| (sides.old, sides.new))
-        .unzip();
-    let shown = ScreenLines::new(old_lines.len());
+        .fold(BySide::<Vec<_>>::default(), |side_lines, line| {
+            side_lines.zip(line).map(|(mut pane_lines, pane_line)| {
+                pane_lines.push(pane_line);
+                pane_lines
+            })
+        });
+    let shown = ScreenLines::new(side_lines.old.len());
 
     let palette = &pane_drawing.theme.chrome;
     match direction {
@@ -161,8 +164,9 @@ fn render_split_rows<'a>(
             draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
     }
-    pane_drawing.render(frame, panes.old, old_lines);
-    pane_drawing.render(frame, panes.new, new_lines);
+    for (pane, pane_lines) in panes.zip(side_lines) {
+        pane_drawing.render(frame, pane, pane_lines);
+    }
 }
 
 /// Rows of a `height`-row area that `lines` fill: all of it when they reach past it.
