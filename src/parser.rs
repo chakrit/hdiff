@@ -813,7 +813,7 @@ mod tests {
     fn cuts_record_payloads_after_the_marker_sanitizing_recognizes() {
         for (line, payload) in [
             (b"\xc2\x85-old\n".as_slice(), b"old\n".as_slice()),
-            (b"\x1b]x\x1b\x07a\x1b\\-old\n", b"old\n"),
+            (b"\x1b]x\x07\x1b]y\x1b\\-old\n", b"old\n"),
         ] {
             let input = [b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n".as_slice(), line].concat();
 
