@@ -12,10 +12,13 @@ sh tests/benchmark-runner.sh
 `cargo test` runs the unit tests, the CLI and benchmark-report integration tests, and the
 `live` interaction tests. None of them assert timing.
 
-Integration tests that start the `hdiff` executable or Git build them through
+Integration tests that start the `hdiff` executable, Git, or `sh` build them through
 `TestEnv` in `tests/common/mod.rs`: each test gets its own temporary directory, and the
-process runs there with only `HOME`, `PATH`, and `TERM` set. Name repository fixtures with
-`common::fixture`, which works from any sandbox.
+process runs there from a cleared environment with `HOME`, `PATH`, and `TERM` set. Git
+also gets a fixed author and committer identity and reads no system or global config. A
+test adds only the variables its scenario needs, such as `GIT_CONFIG_GLOBAL` for the
+`--install` tests. Name repository fixtures with `common::fixture`, which works from any
+sandbox.
 
 ## Live interaction tests
 
