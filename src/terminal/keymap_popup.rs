@@ -228,9 +228,19 @@ mod tests {
         })
     }
 
+    /// `h`, `j`, `k`, and `l` drawn as a diamond: `h · l` with `k` above and `j` below.
+    fn assert_diamond(buffer: &Buffer) {
+        let middle = position(buffer, &["h", " ", "·", " ", "l"]).expect("h · l is drawn");
+        let center = middle.x + 2;
+
+        assert_eq!(buffer[(center, middle.y - 1)].symbol(), "k", "k above");
+        assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
+    }
+
     /// docs/spec/architecture.md#interaction-model and
     /// docs/spec/architecture.md#keyboard-bindings: a bordered popup lists every shortcut
-    /// under four headings, in two columns when they fit.
+    /// under four headings, in two columns when they fit, and Scroll shows `h`, `j`, `k`,
+    /// and `l` as a diamond.
     #[test]
     fn groups_every_shortcut_under_headings_in_columns_that_fit() {
         let wide = popup_text(120);
@@ -277,16 +287,6 @@ mod tests {
                 .any(|row| row.contains("Scroll") && row.contains("View")),
             "one column when narrow"
         );
-    }
-
-    /// docs/spec/architecture.md#keyboard-bindings: Scroll shows `h`, `j`, `k`, and `l`
-    /// as a diamond.
-    fn assert_diamond(buffer: &Buffer) {
-        let middle = position(buffer, &["h", " ", "·", " ", "l"]).expect("h · l is drawn");
-        let center = middle.x + 2;
-
-        assert_eq!(buffer[(center, middle.y - 1)].symbol(), "k", "k above");
-        assert_eq!(buffer[(center, middle.y + 1)].symbol(), "j", "j below");
     }
 
     /// docs/spec/architecture.md#keyboard-bindings: headings take the hunk-header tone in
