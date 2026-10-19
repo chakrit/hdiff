@@ -4,8 +4,10 @@
 use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::{
-    navigation::interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
-    navigation::scroll::Movement,
+    navigation::{
+        interaction::{Command, Event, KeymapCommand, KeymapPopup, PageStep},
+        scroll::Movement,
+    },
     preferences::PreferenceChange,
 };
 
@@ -330,8 +332,10 @@ mod tests {
 
     use super::{Key, all_bindings, event_for, keymap_closing_keys};
     use crate::{
-        navigation::interaction::{Command, Event, KeymapCommand, PageStep},
-        navigation::scroll::Movement,
+        navigation::{
+            interaction::{Command, Event, KeymapCommand, PageStep},
+            scroll::Movement,
+        },
         preferences::PreferenceChange,
     };
 

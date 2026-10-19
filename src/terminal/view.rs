@@ -8,8 +8,7 @@ use crate::{
     effective_view::{TooSmall, WrapWidth},
     extent::{RowLine, ShownLines},
     geometry::{SplitDirection, SplitPanes},
-    navigation::Navigation,
-    navigation::interaction::KeymapPopup,
+    navigation::{Navigation, interaction::KeymapPopup},
     page_rows::SideBySideRow,
     prepared::PreparedDocument,
     screen::{Cells, ScreenLines},
@@ -60,19 +59,17 @@ pub(super) fn render_prepared_frame(
     };
     match extent.lines(scroll.vertical, pane_lines) {
         ShownLines::Single(lines) => {
-            let lines =
-                lines.map(|line| line.map(|line| PaneRow::Text(page.row(line, granularity))));
+            let lines = lines.map(|screen_line| {
+                screen_line.map(|row| PaneRow::Text(page.row(row, granularity)))
+            });
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
             pane_drawing.render(frame, pane, lines);
         }
         ShownLines::Split { direction, lines } => {
             let lines = lines
-                .map(|line| {
-                    line.map(|pair| {
-                        page.rows()
-                            .pair(pair)
-                            .map(|line| page.row(line, granularity))
-                    })
+                .map(|screen_line| {
+                    screen_line
+                        .map(|pair| page.rows().pair(pair).map(|row| page.row(row, granularity)))
                 })
                 .collect();
             render_split_rows(frame, lines, geometry.split_panes(direction), &pane_drawing);
