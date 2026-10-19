@@ -108,24 +108,23 @@ impl SyntaxHighlighter {
 
         let passes = match shared_language {
             Some(language) => {
-                let old_pass =
+                let old_highlighted =
                     self.highlight_projection(language, &projections.old, None, observer);
-                let old = OldPass::of(old_pass, &projections.old);
-                let new_pass =
-                    self.highlight_projection(language, &projections.new, old.base, observer);
+                let old_pass = OldPass::of(old_highlighted, &projections.old);
+                let new_highlighted =
+                    self.highlight_projection(language, &projections.new, old_pass.base, observer);
                 BySide {
-                    old: old.spans,
-                    new: new_pass.map_or_else(Vec::new, |pass| pass.spans),
+                    old: old_pass.spans,
+                    new: new_highlighted.spans,
                 }
             }
             None => languages
                 .zip(projections.as_ref())
                 .map(|(selected, projection)| {
-                    selected
-                        .and_then(|language| {
-                            self.highlight_projection(language, projection, None, observer)
-                        })
-                        .map_or_else(Vec::new, |pass| pass.spans)
+                    let highlighted = selected.map_or_else(Highlighted::unparsed, |language| {
+                        self.highlight_projection(language, projection, None, observer)
+                    });
+                    highlighted.spans
                 }),
         };
 
@@ -140,9 +139,9 @@ impl SyntaxHighlighter {
         projection: &Projection<'h>,
         base: Option<ParseBase<'_, 'h>>,
         observer: &mut impl Observer,
-    ) -> Option<Highlighted<'h>> {
+    ) -> Highlighted<'h> {
         if projection.records.is_empty() {
-            return None;
+            return Highlighted::unparsed();
         }
         let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
 
@@ -163,7 +162,10 @@ impl SyntaxHighlighter {
             highlighter.highlight(projection, &tree, observer)
         });
 
-        Some(Highlighted { tree, spans })
+        Highlighted {
+            tree: Some(tree),
+            spans,
+        }
     }
 
     /// The highlighter for `language`, loaded on first use.
@@ -174,10 +176,21 @@ impl SyntaxHighlighter {
     }
 }
 
-/// One projection's parse tree and the spans its captures give its records.
+/// One projection's parse tree and the spans its captures give its records; a projection
+/// that was not parsed has neither.
 struct Highlighted<'h> {
-    tree: Tree,
+    tree: Option<Tree>,
     spans: Vec<RecordEntry<'h, SyntaxSpan>>,
+}
+
+impl Highlighted<'_> {
+    /// A projection that was not parsed: no tree, and no spans for its records.
+    fn unparsed() -> Self {
+        Self {
+            tree: None,
+            spans: Vec::new(),
+        }
+    }
 }
 
 /// The tree an edited parse starts from, with the projection it was parsed from.
@@ -194,17 +207,12 @@ struct OldPass<'p, 'h> {
 }
 
 impl<'p, 'h> OldPass<'p, 'h> {
-    /// The old side's pass from its highlighting of `projection`, if it was highlighted.
-    fn of(highlighted: Option<Highlighted<'h>>, projection: &'p Projection<'h>) -> Self {
-        match highlighted {
-            Some(Highlighted { tree, spans }) => Self {
-                spans,
-                base: Some(ParseBase { projection, tree }),
-            },
-            None => Self {
-                spans: Vec::new(),
-                base: None,
-            },
+    /// The old side's pass from its highlighting of `projection`.
+    fn of(highlighted: Highlighted<'h>, projection: &'p Projection<'h>) -> Self {
+        let Highlighted { tree, spans } = highlighted;
+        Self {
+            spans,
+            base: tree.map(|tree| ParseBase { projection, tree }),
         }
     }
 }
@@ -212,7 +220,7 @@ impl<'p, 'h> OldPass<'p, 'h> {
 // Languages
 
 /// A language with a bundled grammar.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Language {
     Rust,
     JavaScript,
@@ -667,10 +675,17 @@ mod tests {
             let addition = hunk.positioned().nth(1).expect("the added record").position;
             let new_projection =
                 Projection::from_hunk(hunk, Side::New, StyledRecords::ChangesAndContext);
-            let full_pass = SyntaxHighlighter::default()
-                .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
-                .expect("the new side has styled records");
-            full_pass
+            let full_highlighted = SyntaxHighlighter::default().highlight_projection(
+                Language::Rust,
+                &new_projection,
+                None,
+                &mut Unobserved,
+            );
+            assert!(
+                full_highlighted.tree.is_some(),
+                "the new side has styled records, so it is parsed"
+            );
+            full_highlighted
                 .spans
                 .into_iter()
                 .filter(|entry| entry.position == addition)
