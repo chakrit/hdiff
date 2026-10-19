@@ -11,6 +11,7 @@ pub struct SetGlobalDiffPager<'a> {
     pub command: &'a str,
 }
 
+/// The program that writes Git config, found on `PATH`.
 const GIT: &str = "git";
 
 impl SetGlobalDiffPager<'_> {
@@ -21,6 +22,7 @@ impl SetGlobalDiffPager<'_> {
         shell_words::command_line(&[GIT, config, global, key, value])
     }
 
+    /// Runs the write with exactly the context's Git config environment.
     pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
         let mut git = Command::new(GIT);
         git.args(self.arguments());
@@ -33,6 +35,7 @@ impl SetGlobalDiffPager<'_> {
         Ok(())
     }
 
+    /// The `git` arguments both the write and its shell spelling use.
     fn arguments(&self) -> [&str; 4] {
         ["config", "--global", "pager.diff", self.command]
     }

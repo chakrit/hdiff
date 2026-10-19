@@ -35,6 +35,7 @@ pub fn help() -> String {
     )
 }
 
+/// What `--version` prints: the package version and the commit it was built from.
 pub const VERSION: &str = concat!(
     "hdiff ",
     env!("CARGO_PKG_VERSION"),
@@ -43,7 +44,8 @@ pub const VERSION: &str = concat!(
     ")\n"
 );
 
-#[derive(Debug, PartialEq, Eq)]
+/// What the command line asks hdiff to do.
+#[derive(Debug, PartialEq)]
 pub enum Invocation {
     Help,
     Install,
@@ -52,7 +54,8 @@ pub enum Invocation {
     View { source: Source },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// Why the command line was rejected.
+#[derive(Debug, PartialEq)]
 pub enum Error {
     InstallWithOperands,
     MissingBenchDriver,
@@ -88,6 +91,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// The invocation `arguments` select, given whether standard input is piped.
 pub fn select_invocation(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
     if arguments.iter().any(|argument| argument == "--install") {
         return match arguments {
@@ -104,6 +108,7 @@ pub fn select_invocation(arguments: &[OsString], stdin: StdinState) -> Result<In
     }
 }
 
+/// A benchmark run: the driver name, then the input operands.
 fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
     let Some((name, operands)) = arguments.split_first() else {
         return Err(Error::MissingBenchDriver);
@@ -115,6 +120,7 @@ fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation,
     select_input(operands, stdin).map(|source| Invocation::Bench { driver, source })
 }
 
+/// The input the operands select; piped standard input must be what they read.
 fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Error> {
     let source = select_source(arguments)?;
 
@@ -124,6 +130,7 @@ fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Err
     }
 }
 
+/// The input operands and `-r` flags name: two operands compare, fewer read a patch.
 fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
     let (recursion_flags, operand_arguments): (Vec<_>, Vec<_>) =
         arguments.iter().partition(|argument| *argument == "-r");

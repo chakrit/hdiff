@@ -40,6 +40,7 @@ fn main() -> ExitCode {
     }
 }
 
+/// Does what the command line asks.
 fn run() -> Result<(), RunError> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
     let stdin = StdinState::inspect().map_err(RunError::Input)?;
@@ -68,6 +69,8 @@ fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
     write_stdout(report.as_bytes())
 }
 
+/// Registers this executable as the global Git diff pager and prints the commands it
+/// applied.
 fn install() -> Result<(), RunError> {
     let executable = env::current_exe().map_err(RunError::Executable)?;
 
@@ -81,6 +84,7 @@ fn install() -> Result<(), RunError> {
     write_stdout(output.as_bytes())
 }
 
+/// Reads, parses, and draws `source`; empty input shows nothing.
 fn view(source: input::Source) -> Result<(), RunError> {
     let content = source.read().map_err(RunError::Input)?;
     if content.bytes().is_empty() {
@@ -110,6 +114,7 @@ fn render_document(document: DiffDocument) -> Result<(), RunError> {
     }
 }
 
+/// Writes `bytes` to standard output.
 fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
     WriteOutput { bytes }
         .run(&mut OutputContext {
@@ -118,7 +123,7 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
         .map_err(RunError::Output)
 }
 
-#[derive(Debug)]
+/// Why a run failed, from whichever step failed.
 enum RunError {
     Usage(cli::Error),
     Input(input::Error),

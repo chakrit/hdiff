@@ -31,16 +31,19 @@ pub struct FilePage {
 
 /// What one selection shows: a file occurrence with its surrounding text, or all the
 /// text of a document that holds no file.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct PreparedPage {
     rows: StyledRows,
 }
 
 impl PreparedDocument {
+    /// `document` ready to draw.
     pub fn prepare(document: &DiffDocument) -> Self {
         Self::prepare_observed(document, &mut Unobserved)
     }
 
+    /// `document` ready to draw, with each stage and unit of work reported to
+    /// `observer`.
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         match document {
             DiffDocument::Files(files) => Self::of_files(files, observer),
@@ -61,6 +64,7 @@ impl PreparedDocument {
         }
     }
 
+    /// How many pages the document holds: one per listed file, or the one text page.
     pub fn page_count(&self) -> PageCount {
         match self {
             Self::Files { pages, .. } => PageCount(pages.len()),
@@ -68,6 +72,7 @@ impl PreparedDocument {
         }
     }
 
+    /// How many file occurrences the document lists.
     pub fn file_count(&self) -> usize {
         match self {
             Self::Files { pages, .. } => pages.len().get(),
@@ -75,6 +80,7 @@ impl PreparedDocument {
         }
     }
 
+    /// How many hunk records every page holds together.
     pub fn record_count(&self) -> usize {
         match self {
             Self::Files { pages, .. } => pages.iter().map(|file| file.page.record_count()).sum(),
@@ -148,7 +154,6 @@ impl PageIndex {
 
 /// How many pages a prepared document holds; only the document issues one, so page steps
 /// stay among its pages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageCount(NonZeroUsize);
 
 impl PageCount {

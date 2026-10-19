@@ -10,6 +10,7 @@ use crate::{
     screen::ScreenLines,
 };
 
+/// One line of the file list: a directory heading, or a file with its change mark.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TreeRow {
     Directory(Box<str>),
@@ -24,6 +25,7 @@ pub enum StateMarker {
 }
 
 impl StateMarker {
+    /// The mark as the file row draws it.
     pub fn label(self) -> &'static str {
         match self {
             Self::State(FileState::Modified) => "~",
@@ -64,7 +66,7 @@ impl TreeRowIndex {
 }
 
 /// A window of file-list rows that shows one selected row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct RowWindow {
     pub first: TreeRowIndex,
     /// Rows from `first` down to the selected row.
@@ -85,7 +87,7 @@ pub struct FileTree {
 }
 
 /// A file list with the row of the file a page shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct FileSelection<'a> {
     pub tree: &'a FileTree,
     pub selected: TreeRowIndex,
@@ -99,6 +101,7 @@ pub struct ListedTree<'a> {
 }
 
 impl<'a> ListedTree<'a> {
+    /// The file list of `files`, top-level files first, with each file's row.
     pub fn build(files: &'a DiffFiles) -> Self {
         let placed = files.views().map(|view| Placed::of(*view));
         let ordered = list_order(&placed);
@@ -136,7 +139,7 @@ impl FileTree {
 // Rows
 
 /// The group a file's row is listed in.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq)]
 enum Group<'a> {
     #[default]
     TopLevel,
@@ -154,6 +157,8 @@ struct Placed<'a> {
 }
 
 impl<'a> Placed<'a> {
+    /// Where `view`'s file is listed: by its path's directory, or at the top level
+    /// under its header when the path is unknown.
     fn of(view: FileView<'a>) -> Self {
         let (group, name, marker) = match &view.file.identity {
             FileIdentity::Path { state, path } => {
@@ -185,6 +190,7 @@ struct Grouped<'a> {
 }
 
 impl<'a> Grouped<'a> {
+    /// `path` split at its last `/` into its directory's group and its file name.
     fn of(path: &'a str) -> Self {
         let (group, name) = match path.rsplit_once('/') {
             Some(("", name)) => (Group::TopLevel, name),
@@ -226,6 +232,7 @@ impl<'a> TreeRows<'a> {
         }
     }
 
+    /// The rows listed so far, as the finished file list.
     fn finish(self) -> FileTree {
         FileTree {
             rows: self.rows.into_boxed_slice(),

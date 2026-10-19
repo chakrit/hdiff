@@ -4,7 +4,7 @@
 use std::{iter, num::NonZeroUsize, ops::Index};
 
 /// One or more items in order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NonEmpty<T> {
     first: T,
     rest: Box<[T]>,

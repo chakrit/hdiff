@@ -18,6 +18,8 @@ use crate::{
     parser,
 };
 
+/// Where hdiff's input comes from: a patch on standard input or in a file, or the
+/// output of comparing two operands.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Source {
     Stdin,
@@ -26,6 +28,7 @@ pub enum Source {
 }
 
 impl Source {
+    /// Whether reading this source consumes standard input.
     pub fn reads_stdin(&self) -> bool {
         match self {
             Self::Stdin => true,
@@ -34,6 +37,7 @@ impl Source {
         }
     }
 
+    /// The source's bytes, running `diff` for a comparison.
     pub fn read(self) -> Result<Content, Error> {
         match self {
             Self::Stdin => read_stdin().map(Content::Patch).map_err(Error::Stdin),
@@ -57,13 +61,13 @@ fn read_stdin() -> io::Result<Vec<u8>> {
 }
 
 /// Whether standard input is a pipe or socket, as when another process feeds hdiff.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdinState {
     Piped,
     Unpiped,
 }
 
 impl StdinState {
+    /// Standard input's state, read from its file type without consuming it.
     pub fn inspect() -> Result<Self, Error> {
         let file_type = io::stdin()
             .as_fd()
@@ -81,7 +85,6 @@ impl StdinState {
 }
 
 /// Bytes read from a source, tagged by whether they must hold a file diff.
-#[derive(Debug, PartialEq, Eq)]
 pub enum Content {
     /// Viewer input: stdin or a patch file.
     Patch(Vec<u8>),
@@ -90,6 +93,7 @@ pub enum Content {
 }
 
 impl Content {
+    /// The bytes read, whichever kind they are.
     pub fn bytes(&self) -> &[u8] {
         match self {
             Self::Patch(bytes) | Self::Comparison(bytes) => bytes,
@@ -105,6 +109,7 @@ impl Content {
     }
 }
 
+/// Why input could not be read.
 #[derive(Debug)]
 pub enum Error {
     Stdin(io::Error),

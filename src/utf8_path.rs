@@ -3,7 +3,8 @@
 
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A path whose bytes were checked to be UTF-8 when it was made.
+#[derive(Debug)]
 pub struct Utf8Path(Box<str>);
 
 impl Utf8Path {

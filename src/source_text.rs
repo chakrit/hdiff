@@ -13,6 +13,8 @@ pub struct SourceLine {
 }
 
 impl SourceLine {
+    /// The line read from `bytes`, which keeps them exactly and decodes its sanitized
+    /// text once.
     pub fn decode(bytes: &[u8]) -> Self {
         Self {
             bytes: bytes.into(),

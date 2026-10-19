@@ -2,10 +2,12 @@ use std::io::{self, Write};
 
 use super::Error;
 
+/// Writes `bytes` whole; a reader that has gone away ends output quietly.
 pub struct WriteOutput<'a> {
     pub bytes: &'a [u8],
 }
 
+/// The stream an output unit writes to.
 pub struct OutputContext<'a, Writer> {
     pub writer: &'a mut Writer,
 }

@@ -9,6 +9,7 @@ use crate::{
     source_text::{SourceLine, sanitize},
 };
 
+/// How a section changed its file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileState {
     Modified,
@@ -49,6 +50,7 @@ impl FileIdentity {
         located.unwrap_or_else(|| Self::unknown(&git.line))
     }
 
+    /// A section named by its first line because its path cannot be determined.
     fn unknown(first_line: &SourceLine) -> Self {
         Self::Unknown {
             header: DisplayText::of_line(first_line),
@@ -118,6 +120,7 @@ impl Located {
         Self { state, path }
     }
 
+    /// The same path, with the state a Git header states instead.
     fn in_state(self, state: FileState) -> Self {
         Self { state, ..self }
     }

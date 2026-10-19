@@ -38,7 +38,6 @@ pub fn file_header_field(text: &str, side: Side) -> Option<&str> {
 }
 
 /// One of Git's extended header lines after `diff --git`, as far as naming a file needs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitMetadata<'a> {
     Added,
     Deleted,
@@ -184,6 +183,8 @@ fn unquote(field: &str) -> Option<Unquoted<'_>> {
     None
 }
 
+/// The byte a Git quoted-path escape stands for, read after its backslash; an escape Git
+/// does not write is none.
 fn escaped_byte(characters: &mut CharIndices) -> Option<u8> {
     let (_, escape) = characters.next()?;
 
@@ -207,6 +208,7 @@ fn escaped_byte(characters: &mut CharIndices) -> Option<u8> {
     }
 }
 
+/// The value of an octal digit.
 fn octal_digit(character: char) -> Option<u8> {
     character
         .to_digit(8)

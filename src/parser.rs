@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Why input was rejected.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     /// Nonempty viewer input holds no file diff.
     NoDiff,
@@ -36,6 +36,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// How a recognized diff section breaks the unified diff or Git patch format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Malformed {
     CombinedDiff,
@@ -54,6 +55,7 @@ pub enum Malformed {
 }
 
 impl Malformed {
+    /// The reason as error messages state it.
     pub fn label(self) -> &'static str {
         match self {
             Self::CombinedDiff => "combined diffs are not supported",
@@ -119,7 +121,7 @@ fn section_after(text: &mut Vec<SourceLine>, file: DiffFile) -> FileSection {
 // Sections
 
 /// How a line outside a file section starts.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq)]
 enum LineStart {
     Text,
     GitHeader,
@@ -127,6 +129,7 @@ enum LineStart {
     OldFileHeader(HeaderPath),
 }
 
+/// How `text` starts; a diff header that cannot start a section here is malformed.
 fn line_start(text: &str) -> Result<LineStart, Malformed> {
     reject_unsupported_header(text)?;
 
@@ -138,6 +141,7 @@ fn line_start(text: &str) -> Result<LineStart, Malformed> {
     Ok(start)
 }
 
+/// Rejects combined-diff headers, and hunk or `+++` headers outside a file section.
 fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     if is_combined_diff_header(text) || text.starts_with("@@@") {
         return Err(Malformed::CombinedDiff);
@@ -265,6 +269,7 @@ fn parse_unified(
 
 // Hunks
 
+/// The line that follows a record whose source line has no line ending.
 const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file";
 
 /// The records after a hunk `header` that declares `expected` counts.
@@ -307,6 +312,8 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
     counted.transpose().ok_or(Malformed::ExcessRecords)
 }
 
+/// The record a hunk line holds: marked by its first visible character, or raw when
+/// unmarked; a Git header cannot appear inside a hunk.
 fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
     if let Some(record) = marked_record(&line) {
         return Ok(record);
@@ -364,6 +371,8 @@ fn hunk_counts(header: &str) -> Option<BySide<usize>> {
     Some(BySide { old, new })
 }
 
+/// The line count a `-start,count` or `+start,count` hunk range states; a range without
+/// a count states one line.
 fn range_count(range: &str, prefix: char) -> Option<usize> {
     let range = range.strip_prefix(prefix)?;
     let (start, count) = match range.split_once(',') {
