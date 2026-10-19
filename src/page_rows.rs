@@ -472,13 +472,16 @@ impl BlockRows {
         let columns = BySide::of(column);
 
         let paired_count = columns.as_ref().merge(|old, new| old.len().min(new.len()));
-        let paired = columns.as_ref().merge(|old, new| {
+        let paired_lines = columns.as_ref().map(|column| &column[..paired_count]);
+        let unmatched_lines = columns.as_ref().map(|column| &column[paired_count..]);
+
+        let paired = paired_lines.merge(|old, new| {
             old.iter()
                 .zip(new)
                 .map(|(&old, &new)| SideBySideRow::Paired(BySide { old, new }))
         });
-        let unmatched = columns.as_ref().map_sides(|side, column| {
-            column[paired_count..]
+        let unmatched = unmatched_lines.map_sides(|side, lines| {
+            lines
                 .iter()
                 .map(move |&line| SideBySideRow::Unmatched { side, line })
         });
