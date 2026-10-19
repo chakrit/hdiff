@@ -87,7 +87,7 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
                 None => TokenRun::Inserted(run),
             },
         };
-        token_run.take(&mut cursor);
+        token_run.advance(&mut cursor);
     }
 
     cursor
@@ -112,17 +112,10 @@ impl<'a> PairCursor<'a> {
         }
     }
 
-    /// Takes the next `bytes` bytes `tag` names: equal text passes on both sides, deleted
-    /// text is marked on the old side, and inserted text on the new side.
-    fn take(&mut self, tag: ChangeTag, bytes: usize) {
-        match tag {
-            ChangeTag::Equal => {
-                self.offsets.old += bytes;
-                self.offsets.new += bytes;
-            }
-            ChangeTag::Delete => self.mark(Side::Old, bytes),
-            ChangeTag::Insert => self.mark(Side::New, bytes),
-        }
+    /// Passes the next `bytes` bytes of both sides, which are equal, unmarked.
+    fn pass(&mut self, bytes: usize) {
+        self.offsets.old += bytes;
+        self.offsets.new += bytes;
     }
 
     /// Marks the next `bytes` bytes of `side` changed.
@@ -221,15 +214,15 @@ impl TokenRun<'_, '_> {
     /// Moves `cursor` past the run, marking its changed text. A word replaced by one
     /// similar word marks only the graphemes that differ; any other change is marked
     /// whole.
-    fn take(&self, cursor: &mut PairCursor<'_>) {
+    fn advance(&self, cursor: &mut PairCursor<'_>) {
         match self {
-            Self::Kept(kept) => cursor.take(ChangeTag::Equal, tokens_len(kept)),
+            Self::Kept(kept) => cursor.pass(tokens_len(kept)),
             Self::Deleted(deleted) => cursor.mark(Side::Old, tokens_len(deleted)),
             Self::Inserted(inserted) => cursor.mark(Side::New, tokens_len(inserted)),
             Self::Replaced { deleted, inserted } => match similar_word_changes(deleted, inserted) {
                 Some(changes) => {
-                    for (tag, bytes) in changes {
-                        cursor.take(tag, bytes);
+                    for change in changes {
+                        change.advance(cursor);
                     }
                 }
                 None => {
@@ -241,13 +234,37 @@ impl TokenRun<'_, '_> {
     }
 }
 
-/// The grapheme changes, as tags and byte lengths, when one word replaces one similar
-/// word: one sharing at least half of the shorter word's graphemes. Any other replacement
-/// has none.
+/// A run of graphemes within a replaced word, measured in bytes: kept on both sides, or
+/// changed on one.
+enum GraphemeChange {
+    Kept(usize),
+    Changed(Side, usize),
+}
+
+impl GraphemeChange {
+    fn of(tag: ChangeTag, bytes: usize) -> Self {
+        match tag {
+            ChangeTag::Equal => Self::Kept(bytes),
+            ChangeTag::Delete => Self::Changed(Side::Old, bytes),
+            ChangeTag::Insert => Self::Changed(Side::New, bytes),
+        }
+    }
+
+    /// Moves `cursor` past the run, marking it when it is changed.
+    fn advance(self, cursor: &mut PairCursor<'_>) {
+        match self {
+            Self::Kept(bytes) => cursor.pass(bytes),
+            Self::Changed(side, bytes) => cursor.mark(side, bytes),
+        }
+    }
+}
+
+/// The grapheme changes when one word replaces one similar word: one sharing at least
+/// half of the shorter word's graphemes. Any other replacement has none.
 fn similar_word_changes(
     deleted: &[Token<'_>],
     inserted: &[Token<'_>],
-) -> Option<Vec<(ChangeTag, usize)>> {
+) -> Option<Vec<GraphemeChange>> {
     let ([before], [after]) = (deleted, inserted) else {
         return None;
     };
@@ -268,11 +285,11 @@ fn similar_word_changes(
         return None;
     }
 
-    let lengths = changes.into_iter().map(|(tag, graphemes)| {
+    let grapheme_changes = changes.into_iter().map(|(tag, graphemes)| {
         let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-        (tag, bytes)
+        GraphemeChange::of(tag, bytes)
     });
-    Some(lengths.collect())
+    Some(grapheme_changes.collect())
 }
 
 // Spans
