@@ -472,11 +472,7 @@ mod tests {
     }
 
     /// Up to `limit` screen lines of a split-pane extent from line `offset`.
-    fn pair_lines(
-        extent: &DisplayExtent,
-        offset: usize,
-        limit: usize,
-    ) -> Vec<RowLine<PairIndex>> {
+    fn pair_lines(extent: &DisplayExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
         let ShownLines::Split { lines, .. } = extent.lines(lines(offset), lines(limit)) else {
             panic!("split panes show pairs");
         };
