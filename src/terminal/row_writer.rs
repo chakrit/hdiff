@@ -58,15 +58,15 @@ pub(super) fn write_row(
     theme: &Theme,
 ) -> Clip {
     buffer.set_style(area, row_style(row.tone(), &theme.rows));
-    let PaneRow::Text(row) = row else {
+    let PaneRow::Text(text_row) = row else {
         return Clip::default();
     };
 
-    let payload = ExpandedPayload::new(row);
+    let payload = ExpandedPayload::new(text_row);
     let payload_clusters = payload
         .clusters()
         .map(|(cluster, text_style)| (cluster, segment_style(text_style, theme)));
-    let gutter = gutter(row.tone(), &theme.rows);
+    let gutter = gutter(text_row.tone(), &theme.rows);
 
     let cursor = RowCursor {
         buffer,
@@ -235,8 +235,8 @@ impl RowCursor<'_> {
 
         self.buffer[(x, y)].set_symbol(cluster).set_style(style);
         for continuation in (cell + Cells::ONE).columns_until(cell + width) {
-            let x = self.x(continuation);
-            self.buffer[(x, y)].reset();
+            let continuation_x = self.x(continuation);
+            self.buffer[(continuation_x, y)].reset();
         }
     }
 

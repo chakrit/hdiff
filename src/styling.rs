@@ -116,7 +116,7 @@ pub enum RowTone {
 impl RowTone {
     fn of(kind: LineKind) -> Self {
         match kind {
-            LineKind::Record { kind, .. } => kind
+            LineKind::Record { kind: record, .. } => record
                 .changed_side()
                 .map_or(Self::UnchangedRecord, Self::Changed),
             LineKind::HunkHeader => Self::HunkHeader,
@@ -181,7 +181,7 @@ fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
     let annotations = syntax
         .iter()
         .map(|span| Annotation {
-            span: span.span,
+            span: span.bytes,
             priority_length: span.capture_length,
             style: TextStyle::Syntax(span.class),
         })
@@ -232,10 +232,8 @@ pub struct Boundary {
 
 impl Partition {
     /// Splits `text` at annotation edges, which are spans of `text`; text no annotation
-    /// covers takes `uncovered`.
-    ///
-    /// docs/spec/architecture.md#technology-direction: where annotations overlap, the
-    /// shortest capture wins and later encounters break ties.
+    /// covers takes `uncovered`. Where annotations overlap, the shortest capture wins and
+    /// later encounters break ties. Rules: docs/spec/architecture.md#technology-direction.
     fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self::Uniform(Boundary {
@@ -252,28 +250,33 @@ impl Partition {
         offsets.sort_unstable();
         offsets.dedup();
 
-        let mut starts = (0..annotations.len()).collect::<Vec<_>>();
-        starts.sort_unstable_by_key(|index| annotations[*index].span.start());
-        let mut starts = starts.into_iter().peekable();
+        let mut start_order = (0..annotations.len()).collect::<Vec<_>>();
+        start_order.sort_unstable_by_key(|index| annotations[*index].span.start());
+        let mut starts = start_order.into_iter().peekable();
+
         let mut active = BinaryHeap::new();
         let mut boundaries: Vec<Boundary> = Vec::new();
 
         for interval in offsets.windows(2) {
             let [start, end] = [interval[0], interval[1]];
+
             while let Some(index) =
                 starts.next_if(|index| annotations[*index].span.start() <= start)
             {
                 let annotation = &annotations[index];
                 active.push((Reverse(annotation.priority_length), index));
             }
+
             while let Some((_, index)) = active.peek()
                 && annotations[*index].span.end() <= start
             {
                 active.pop();
             }
+
             let style = active
                 .peek()
                 .map_or(uncovered, |(_, index)| annotations[*index].style);
+
             if let Some(previous) = boundaries.last_mut()
                 && previous.style == style
             {
@@ -322,7 +325,7 @@ mod tests {
 
     fn syntax(text: &str, bytes: Range<usize>, length: usize, class: SyntaxClass) -> SyntaxSpan {
         SyntaxSpan {
-            span: PayloadSpan::within(text, bytes),
+            bytes: PayloadSpan::within(text, bytes),
             capture_length: length,
             class,
         }
