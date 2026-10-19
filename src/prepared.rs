@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    document::{DiffDocument, FileView},
+    document::DiffDocument,
     file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     page_rows::{LineIndex, PageRows},
@@ -47,9 +47,8 @@ impl PreparedDocument {
             [] => (PreparedPage::text(document, observer), Vec::new()),
             [first, rest @ ..] => {
                 let mut syntax = SyntaxHighlighter::default();
-                let mut prepare = |listed: &ListedFile| {
-                    PreparedPage::file(listed.view, listed.row, &mut syntax, observer)
-                };
+                let mut prepare =
+                    |listed: &ListedFile| PreparedPage::file(*listed, &mut syntax, observer);
                 (prepare(first), rest.iter().map(prepare).collect())
             }
         };
@@ -130,14 +129,13 @@ impl PageCount {
 
 impl PreparedPage {
     fn file(
-        view: FileView<'_>,
-        row: TreeRowIndex,
+        listed: ListedFile<'_>,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
         Self {
-            rows: StyledRows::of_file(&view, syntax, observer),
-            kind: PageKind::File { row },
+            rows: StyledRows::of_file(&listed.view, syntax, observer),
+            kind: PageKind::File { row: listed.row },
         }
     }
 
@@ -185,24 +183,24 @@ mod tests {
 
         assert_eq!(prepared.file_count(), 2);
         assert_eq!(prepared.record_count(), 4);
-        for (file, expected) in prepared.pages().zip([
+        for (page, expected) in prepared.pages().zip([
             format!("first message\n{patch}"),
             format!("second message\n{patch}trailer\n"),
         ]) {
-            let rendered: String = file
+            let rendered: String = page
                 .rows()
                 .lines()
                 .map(|(_, line)| format!("{}{}\n", line.kind().marker(), line.payload()))
                 .collect();
             assert_eq!(rendered, expected);
             assert!(
-                file.row(file.rows().line_index(0), DiffGranularity::Line)
+                page.row(page.rows().line_index(0), DiffGranularity::Line)
                     .segments()
                     .all(|(_, style)| style == TextStyle::Plain),
                 "message is not source code"
             );
-            assert!(file.rows().line_indices().skip(4).any(|row| {
-                file.row(row, DiffGranularity::Line)
+            assert!(page.rows().line_indices().skip(4).any(|row| {
+                page.row(row, DiffGranularity::Line)
                     .segments()
                     .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))
             }));
@@ -245,9 +243,9 @@ mod tests {
 
         let prepared = PreparedDocument::prepare(&document);
 
-        let file = prepared.page(PageIndex::FIRST);
-        assert!(file.rows().line_indices().any(|row| {
-            file.row(row, DiffGranularity::Character)
+        let page = prepared.page(PageIndex::FIRST);
+        assert!(page.rows().line_indices().any(|row| {
+            page.row(row, DiffGranularity::Character)
                 .segments()
                 .any(|(_, style)| matches!(style, TextStyle::Detail(_, DetailStyle::Changed)))
         }));
