@@ -60,7 +60,7 @@ fn collapses_the_file_list_before_the_diff_pane() {
     assert_eq!(rendered[(2, 4)].symbol(), " ");
 }
 
-/// docs/spec/architecture.md#interaction-model: vertical panes sit on either side of a
+/// docs/spec/architecture.md#view-model: vertical panes sit on either side of a
 /// dimmer inner separator, and a one-sided change pairs with a markerless alignment peer.
 #[test]
 fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
@@ -89,7 +89,7 @@ fn renders_vertical_pairs_with_a_dimmer_inner_separator() {
     );
 }
 
-/// docs/spec/architecture.md#interaction-model: one horizontal offset scrolls both
+/// docs/spec/architecture.md#keyboard-bindings: one horizontal offset scrolls both
 /// vertical panes.
 #[test]
 fn scrolls_both_vertical_panes_by_one_horizontal_offset() {
