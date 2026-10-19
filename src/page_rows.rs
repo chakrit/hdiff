@@ -129,11 +129,6 @@ impl<T> LineMap<T> {
     }
 }
 
-/// One value for each side-by-side row of a page's rows, looked up by [`PairIndex`]; only
-/// those rows build one.
-#[derive(Debug, PartialEq, Eq)]
-pub struct PairMap<T>(Box<[T]>);
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct PageRows {
     lines: Box<[RenderedLine]>,
@@ -209,27 +204,17 @@ impl PageRows {
         LineMap(values.collect())
     }
 
-    /// One value for each side-by-side row, computed from the row and its index, in row
-    /// order.
-    pub fn map_pairs<T>(
+    /// One value for each line, computed per side-by-side row: each pair's per-side values
+    /// go to the lines it holds, so a changed line takes its side's value and a shared
+    /// line takes none.
+    pub fn line_values_by_pair<T>(
         &self,
-        mut value: impl FnMut(PairIndex, SideBySideRow<LineIndex>) -> T,
-    ) -> PairMap<T> {
-        let values = self
-            .pair_indices()
-            .map(|index| value(index, self.pair(index)));
-
-        PairMap(values.collect())
-    }
-
-    /// Hands each pair's per-side values to the lines it holds: a changed line takes its
-    /// side's value, and a shared line takes none.
-    pub fn lines_of_pairs<T>(&self, pairs: PairMap<BySide<Option<T>>>) -> LineMap<Option<T>> {
+        mut value: impl FnMut(SideBySideRow<LineIndex>) -> BySide<Option<T>>,
+    ) -> LineMap<Option<T>> {
         let mut placed = self
             .pairs
             .iter()
-            .zip(pairs.0)
-            .flat_map(|(row, values)| placed_values(*row, values))
+            .flat_map(|row| placed_values(*row, value(*row)))
             .collect::<Vec<_>>();
         // A changed block lists its old lines before its new lines, so pair order is not
         // line order.
