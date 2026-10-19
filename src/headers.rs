@@ -1,5 +1,5 @@
 //! Diff header lines and the fields they name: `diff --git` sections, `---` / `+++`
-//! headers, and Git's C-style quoting of paths. Contract:
+//! headers, and Git's C-style quoting of paths. Rules:
 //! docs/spec/architecture.md#core-model.
 
 use std::str::CharIndices;

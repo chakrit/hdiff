@@ -1,4 +1,4 @@
-//! Command-line selection. Contract: docs/spec/architecture.md#current-argument-selection.
+//! Command-line selection. Rules: docs/spec/architecture.md#current-argument-selection.
 
 use std::{
     ffi::{OsStr, OsString},

@@ -751,8 +751,8 @@ mod tests {
         assert_eq!(payload.sanitized(), "old");
     }
 
-    /// Contract: docs/spec/architecture.md#lossless-and-safe-rendering (parsing uses ANSI-free
-    /// text): the payload starts after the marker the sanitized text shows.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: parsing uses ANSI-free text,
+    /// so the payload starts after the marker the sanitized text shows.
     #[test]
     fn cuts_record_payloads_after_the_marker_sanitizing_recognizes() {
         for (line, payload) in [

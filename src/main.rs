@@ -24,7 +24,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     };
 
-    // Contract: docs/spec/architecture.md#error-output.
+    // Rules: docs/spec/architecture.md#error-output.
     let trouble = ExitCode::from(DiffStatus::Trouble.code());
     match report(&error) {
         Ok(()) => trouble,

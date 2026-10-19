@@ -53,7 +53,6 @@ impl<T> RowLine<BySide<T>> {
 /// The rows of one page that one pane shape shows at one context count and wrap width,
 /// their screen lines, and the widest row. A viewport's vertical offset indexes these
 /// lines; the extent resolves its rows on its own page, so its indexes reach no other.
-/// Contract: docs/spec/architecture.md#viewport-coordinates.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ScrollExtent {
     page: PageIndex,

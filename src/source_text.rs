@@ -1,5 +1,5 @@
 //! Input text decoded once: each line's exact bytes and its sanitized display text, read
-//! through one escape-sequence scanner. Contract:
+//! through one escape-sequence scanner. Rules:
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use std::ops::Range;

@@ -1,4 +1,4 @@
-//! The parsed document: surrounding text and file diffs in input order. Contract:
+//! The parsed document: surrounding text and file diffs in input order. Rules:
 //! docs/spec/architecture.md#core-model.
 
 use std::marker::PhantomData;

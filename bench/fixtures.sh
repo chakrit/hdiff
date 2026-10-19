@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs every --bench driver over the repository fixtures and the generated movement
-# workload. Contract: docs/spec/performance.md#measurement-scripts.
+# workload. Rules: docs/spec/performance.md#measurement-scripts.
 set -eu
 
 readonly movement_hunks=1024

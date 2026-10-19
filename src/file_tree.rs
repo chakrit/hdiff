@@ -1,5 +1,5 @@
 //! The file list: top-level files first, then files under directory headings, each part
-//! in input order. Contract: docs/spec/architecture.md#file-tree.
+//! in input order. Rules: docs/spec/architecture.md#file-tree.
 
 use std::num::NonZeroUsize;
 
@@ -243,7 +243,7 @@ mod tests {
             .collect()
     }
 
-    /// Contract: docs/spec/architecture.md#file-tree (root-level files first).
+    /// docs/spec/architecture.md#file-tree: root-level files first.
     #[test]
     fn lists_top_level_files_first_then_the_rest_in_input_order() {
         let input = ["src/b.rs", "z.md", "lib/a.rs", "a.md", "src/c.rs"]

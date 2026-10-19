@@ -1,4 +1,4 @@
-//! Diff input acquisition. Contract: docs/spec/architecture.md#input-contract.
+//! Diff input acquisition. Rules: docs/spec/architecture.md#input-contract.
 
 use std::{
     fmt,

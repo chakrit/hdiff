@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, path::PathBuf};
 
-/// Two operands for `diff -u`. Contract: docs/spec/architecture.md#input-contract.
+/// Two operands for `diff -u`. Rules: docs/spec/architecture.md#input-contract.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Comparison {
     pub operands: [Operand; 2],

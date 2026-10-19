@@ -1,4 +1,4 @@
-//! `--bench <driver>` measurement. Contract: docs/spec/performance.md#benchmark-drivers.
+//! `--bench <driver>` measurement. Rules: docs/spec/performance.md#benchmark-drivers.
 
 use std::{
     ffi::OsStr,

@@ -1,4 +1,4 @@
-//! Live interaction tests. Contract: docs/spec/architecture.md#interactive-loop; each
+//! Live interaction tests. Rules: docs/spec/architecture.md#interactive-loop; each
 //! test drives a `Tui` one event at a time on a 120-by-36 `TestBackend` and asserts on
 //! the buffer after each step.
 

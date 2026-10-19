@@ -1,5 +1,5 @@
 //! Which file a diff section names and how it changed, decoded from Git metadata and
-//! `---` / `+++` headers. Contract: docs/spec/architecture.md#file-tree.
+//! `---` / `+++` headers. Rules: docs/spec/architecture.md#file-tree.
 
 use crate::{
     headers::{FileHeader, GitHeader, HeaderPath, quoted_or_plain, unquote},
@@ -258,7 +258,7 @@ mod tests {
         }
     }
 
-    /// Contract: docs/spec/architecture.md#file-tree (path naming).
+    /// docs/spec/architecture.md#file-tree: path naming.
     #[test]
     fn plain_dev_null_sections_show_the_path_as_written() {
         assert_eq!(

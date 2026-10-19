@@ -1,4 +1,4 @@
-//! The controlling-terminal session. Contracts: docs/spec/architecture.md#terminal-lifecycle
+//! The controlling-terminal session. Rules: docs/spec/architecture.md#terminal-lifecycle
 //! and docs/spec/architecture.md#input-and-terminal-boundary.
 
 use std::{

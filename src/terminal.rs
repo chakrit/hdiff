@@ -52,7 +52,7 @@ pub enum Step {
     Exit,
 }
 
-/// The interactive loop. Contract: docs/spec/architecture.md#interactive-loop.
+/// The interactive loop. Rules: docs/spec/architecture.md#interactive-loop.
 pub struct Tui {
     document: PreparedDocument,
     navigation: Navigation,

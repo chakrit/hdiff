@@ -94,7 +94,7 @@ fn tab_moves_between_files_and_skips_headings() {
     );
 }
 
-/// Contract: docs/spec/architecture.md#file-tree (markers take their state's color).
+/// docs/spec/architecture.md#file-tree: markers take their state's color.
 #[test]
 fn colors_markers_by_state() {
     let mut live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
