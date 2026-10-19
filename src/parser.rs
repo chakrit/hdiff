@@ -8,7 +8,8 @@ use crate::{
     file_identity::FileIdentity,
     headers::{
         FileHeader, GitHeader, GitMetadata, HeaderPath, binary_block_field, decimal_count,
-        file_header_field, git_header_names, is_binary_patch_header, is_combined_diff_header,
+        file_header_field, git_header_names, is_binary_patch_header, is_binary_payload_line,
+        is_combined_diff_header,
     },
     non_empty::NonEmpty,
     side::{BySide, Side},
@@ -56,6 +57,7 @@ pub enum Malformed {
     UnmarkedHunkLine,
     MisplacedNoNewlineMarker,
     MissingGitMetadata,
+    InvalidBinaryPatchPayload,
 }
 
 impl Malformed {
@@ -78,6 +80,7 @@ impl Malformed {
             Self::UnmarkedHunkLine => "unmarked line in hunk",
             Self::MisplacedNoNewlineMarker => "no-newline marker does not follow a record",
             Self::MissingGitMetadata => "Git header has no extended header or file headers",
+            Self::InvalidBinaryPatchPayload => "invalid binary patch payload line",
         }
     }
 }
@@ -201,20 +204,35 @@ fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, Er
 
         let payload_start = patch.len();
         while let Some(line) = lines.next_if(|text| !text.is_empty()) {
-            if lines.at_last_line(line_start(line.sanitized()))? != LineStart::Text {
-                return Err(lines.last_line_error(Malformed::TruncatedBinaryPatch));
-            }
+            lines.at_last_line(check_binary_payload_line(line.sanitized()))?;
             patch.push(line);
         }
         if patch.len() == payload_start {
             return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
         }
-        patch.extend(lines.next_if(str::is_empty));
+
+        let Some(blank) = lines.next_if(str::is_empty) else {
+            return Err(lines.next_line_error(Malformed::TruncatedBinaryPatch));
+        };
+        patch.push(blank);
     }
 
     match patch.is_empty() {
         true => Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock)),
         false => Ok(patch),
+    }
+}
+
+/// Checks a binary block payload line: a line that starts a section means the block was
+/// cut short, and any other line must be in Git's payload form.
+fn check_binary_payload_line(text: &str) -> Result<(), Malformed> {
+    if line_start(text)? != LineStart::Text {
+        return Err(Malformed::TruncatedBinaryPatch);
+    }
+
+    match is_binary_payload_line(text) {
+        true => Ok(()),
+        false => Err(Malformed::InvalidBinaryPatchPayload),
     }
 }
 
@@ -512,6 +530,13 @@ mod tests {
         &body.hunks[0]
     }
 
+    /// A binary patch whose one `literal` block holds `payload` and its closing blank line.
+    fn binary_patch(payload: &str) -> String {
+        format!(
+            "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\n{payload}\n\n"
+        )
+    }
+
     /// Each body's first-hunk record count.
     fn first_hunk_record_counts(bodies: &[&UnifiedBody]) -> Vec<usize> {
         bodies
@@ -767,26 +792,49 @@ mod tests {
     }
 
     #[test]
-    fn only_a_section_start_cuts_a_binary_payload_short() {
-        let patch = |payload: &str| {
-            format!(
-                "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\n{payload}\n\n"
-            )
-        };
+    fn reads_a_section_start_inside_a_binary_payload_as_truncation() {
+        for section in ["diff --git a/next b/next", "--- a/next"] {
+            let input = binary_patch(section);
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(5, Malformed::TruncatedBinaryPatch),
+                "{section}"
+            );
+        }
+    }
+
+    /// docs/spec/architecture.md#input-contract: a payload line is Git's length character
+    /// then base-85 text in groups of five that hold that many bytes.
+    #[test]
+    fn rejects_binary_payload_lines_outside_gits_form() {
+        for payload in [
+            "diff --stat",
+            "!!!!",
+            "K",
+            "KcmZQzWC8#H2LJ>",
+            "AcmZQzWC8#H2LJ>B",
+            "Kcm\"QzWC8#H2LJ>B",
+        ] {
+            let input = binary_patch(payload);
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(5, Malformed::InvalidBinaryPatchPayload),
+                "{payload}"
+            );
+        }
+    }
+
+    /// docs/spec/architecture.md#input-contract: Git ends every binary block with a blank
+    /// line, so a block that runs to the end of input is truncated.
+    #[test]
+    fn rejects_a_binary_block_without_its_closing_blank_line() {
+        let input = "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n";
 
         assert_eq!(
-            parse_patch(patch("diff --git a/next b/next").as_bytes()),
-            malformed(5, Malformed::TruncatedBinaryPatch)
-        );
-        assert_eq!(
-            parse_patch(patch("--- a/next").as_bytes()),
-            malformed(5, Malformed::TruncatedBinaryPatch)
-        );
-        let stat_payload = parse_patch(patch("diff --stat").as_bytes());
-        assert!(
-            stat_payload.is_ok(),
-            "a line that starts no section is not a new section inside a payload either: \
-             {stat_payload:?}"
+            parse_patch(input.as_bytes()),
+            malformed(6, Malformed::TruncatedBinaryPatch)
         );
     }
 
