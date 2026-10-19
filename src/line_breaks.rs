@@ -73,8 +73,8 @@ mod tests {
         tab_stops::MeasuredTextRef,
     };
 
-    fn line_count(text: &str, cells: usize) -> usize {
-        wrapped_line_count(MeasuredTextRef::new(text), NonZeroCells::of(cells)).get()
+    fn line_count(text: &str, cells: usize) -> ScreenLines {
+        wrapped_line_count(MeasuredTextRef::new(text), NonZeroCells::of(cells))
     }
 
     fn placed(line: usize) -> Option<ScreenLines> {
@@ -111,13 +111,28 @@ mod tests {
 
     #[test]
     fn counts_wrapped_lines_of_expanded_payloads() {
-        assert_eq!(line_count("", 4), 1);
-        assert_eq!(line_count("abcd", 4), 1);
-        assert_eq!(line_count("abcde", 4), 2);
-        assert_eq!(line_count("a\tbc", 4), 1, "the tab expands to one cell");
-        assert_eq!(line_count("ab\tc", 4), 2, "the tab expands to two cells");
-        assert_eq!(line_count("abc界", 4), 2, "the wide cluster moves down");
-        assert_eq!(line_count("e\u{301}e\u{301}e\u{301}e\u{301}", 4), 1);
+        assert_eq!(line_count("", 4), ScreenLines::new(1));
+        assert_eq!(line_count("abcd", 4), ScreenLines::new(1));
+        assert_eq!(line_count("abcde", 4), ScreenLines::new(2));
+        assert_eq!(
+            line_count("a\tbc", 4),
+            ScreenLines::new(1),
+            "the tab expands to one cell"
+        );
+        assert_eq!(
+            line_count("ab\tc", 4),
+            ScreenLines::new(2),
+            "the tab expands to two cells"
+        );
+        assert_eq!(
+            line_count("abc界", 4),
+            ScreenLines::new(2),
+            "the wide cluster moves down"
+        );
+        assert_eq!(
+            line_count("e\u{301}e\u{301}e\u{301}e\u{301}", 4),
+            ScreenLines::new(1)
+        );
     }
 
     #[test]
@@ -128,7 +143,7 @@ mod tests {
             breaks.place("a");
         }
 
-        assert_eq!(line_count(text, 3), breaks.line_count().get());
-        assert_eq!(line_count(text, 300), 1);
+        assert_eq!(line_count(text, 3), breaks.line_count());
+        assert_eq!(line_count(text, 300), ScreenLines::new(1));
     }
 }
