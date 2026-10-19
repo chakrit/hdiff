@@ -17,7 +17,7 @@ use crate::{
     file_tree::{FileTree, TreeRow, TreeRowIndex},
     geometry::{PANE_FRAME_HEIGHT, SplitDirection, frame_interior, inside_frame_rows},
     prepared::PageKind,
-    screen::ScreenLines,
+    screen::{Cells, ScreenLines},
     theme::ChromePalette,
 };
 
@@ -56,7 +56,8 @@ pub(super) fn render_file_column(
 /// The help hint in a box floating over the bottom-left corner of `area`, while the file list
 /// is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
-    let hint_width = u16::try_from(HELP_HINT.len()).expect("the help hint fits a row");
+    let hint_width =
+        u16::try_from(Cells::of_text(HELP_HINT).get()).expect("the help hint fits a row");
     let help_box = Rect::new(
         area.x,
         area.bottom().saturating_sub(HELP_BOX_HEIGHT),
