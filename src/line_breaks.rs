@@ -86,10 +86,7 @@ mod tests {
     fn breaks_before_a_cluster_that_does_not_fit_the_rest_of_its_line() {
         let mut breaks = LineBreaks::new(NonZeroCells::of(4));
 
-        let mut lines = Vec::new();
-        for cluster in ["a", "a", "a", "界", "界", "界"] {
-            lines.push(breaks.place(cluster));
-        }
+        let lines = ["a", "a", "a", "界", "界", "界"].map(|cluster| breaks.place(cluster));
 
         assert_eq!(lines, [0, 0, 0, 1, 1, 2].map(placed));
         assert_eq!(breaks.line_count(), ScreenLines::new(3));

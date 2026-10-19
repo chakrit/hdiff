@@ -377,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn unmatched_payloads_are_fully_changed_in_character_mode() {
+    fn changes_unmatched_lines_whole_and_paired_lines_by_span() {
         for (hunk, records, expected) in [
             ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", "café")]),
             ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", "café")]),

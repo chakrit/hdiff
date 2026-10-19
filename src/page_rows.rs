@@ -521,8 +521,14 @@ fn distances_from_previous_change<'a>(
 ) -> Vec<Option<Count>> {
     lines
         .scan(None, |last_change: &mut Option<RecordAddress>, line| {
-            let LineKind::Record { address, kind, .. } = line.kind() else {
-                return Some(None);
+            let (address, kind) = match line.kind() {
+                LineKind::Record { address, kind, .. } => (address, kind),
+                LineKind::Text
+                | LineKind::Metadata
+                | LineKind::FileHeader
+                | LineKind::HunkHeader => {
+                    return Some(None);
+                }
             };
             if kind.changed_side().is_some() {
                 *last_change = Some(address);
@@ -611,7 +617,11 @@ mod tests {
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");
-        let rows = PageRows::of_file_view(document.file_views().nth(1).expect("second file"));
+        let views = document.file_views().collect::<Vec<_>>();
+        let [_, second] = views.as_slice() else {
+            panic!("the patch holds two files: {} files", views.len());
+        };
+        let rows = PageRows::of_file_view(*second);
 
         let shown = shown_lines(&rows);
         let hunk_headers = rows
@@ -754,12 +764,11 @@ mod tests {
                 None
             }
         };
-        let (marker, marker_kind) = rows
+        let (marker, marker_line) = rows
             .lines()
-            .map(|(index, line)| (index, line.kind()))
-            .find(|(_, kind)| {
+            .find(|(_, line)| {
                 matches!(
-                    kind,
+                    line.kind(),
                     LineKind::Record {
                         part: RecordPart::NoNewlineMarker,
                         ..
@@ -770,7 +779,7 @@ mod tests {
         let record = rows
             .lines()
             .find(|(index, line)| {
-                *index != marker && address_of(line.kind()) == address_of(marker_kind)
+                *index != marker && address_of(line.kind()) == address_of(marker_line.kind())
             })
             .map(|(index, _)| index)
             .expect("the marker's record shares its address");
