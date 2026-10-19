@@ -316,14 +316,14 @@ fn label_number(row: &str) -> usize {
         .expect("an old_N label")
 }
 
+/// docs/spec/architecture.md#view-model: context changes keep the middle row on the
+/// middle line.
 #[test]
 fn context_changes_keep_the_middle_row() {
     let mut live = Live::load(&hidden_context_patch(), Mode::line(DiffLayout::Unified));
     for _ in 0..14 {
         live.press('j');
     }
-    // docs/spec/architecture.md#view-model: context changes keep the middle row
-    // on the middle line.
     let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
 

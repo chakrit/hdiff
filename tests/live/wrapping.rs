@@ -70,6 +70,8 @@ fn wrapping_pads_the_shorter_side_of_a_pair() {
     );
 }
 
+/// docs/spec/architecture.md#view-model: resizing keeps the top record on the same line
+/// within it.
 #[test]
 fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
@@ -84,21 +86,19 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
 
     live.resize(Size::new(100, 20));
 
-    // docs/spec/architecture.md#view-model: resizing keeps the top record on the
-    // same line within it.
     let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "still the second line: {top:?}");
     assert!(!top.contains("wide_") && !top.starts_with('+'));
 }
 
+/// docs/spec/architecture.md#view-model: toggling wrapping keeps the middle row on the
+/// middle line.
 #[test]
 fn toggling_wrapping_keeps_the_middle_row() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     for _ in 0..20 {
         live.press('j');
     }
-    // docs/spec/architecture.md#view-model: toggling wrapping keeps the middle row on the
-    // middle line.
     let middle_line = live.pane_middle_line();
     let middle = live.rows()[middle_line].clone();
 
