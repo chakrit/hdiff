@@ -6,8 +6,9 @@ use std::{
 
 use super::{
     backup_global_git_config::BackupGlobalGitConfig,
+    child_process::ProcessError,
     global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
-    set_global_diff_pager::{self, SetGlobalDiffPager},
+    set_global_diff_pager::SetGlobalDiffPager,
 };
 use crate::shell_words;
 
@@ -24,16 +25,9 @@ pub enum Error {
     MissingHome,
     GlobalConfigDisabled,
     NonUtf8Path(PathRole),
-    InspectConfig {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Backup {
-        source_path: String,
-        destination: String,
-        source: io::Error,
-    },
-    SetPager(set_global_diff_pager::Error),
+    InspectConfig { path: PathBuf, source: io::Error },
+    Backup { backup: Backup, source: io::Error },
+    SetPager(ProcessError),
 }
 
 /// Which path `--install` could not spell as a shell command.
@@ -49,25 +43,26 @@ impl InstallGitDiffPager {
         self,
         context: &mut GlobalGitConfigContext,
     ) -> Result<InstallGitDiffPagerReport, Error> {
-        let plan = InstallPlan::new(&context.environment, &self.executable)?;
+        let InstallPlan {
+            backup,
+            pager_command,
+        } = InstallPlan::new(&context.environment, &self.executable)?;
         let mut completed_commands = Vec::new();
 
-        if let Some(backup) = &plan.backup {
+        if let Some(backup) = backup {
             let copy = BackupGlobalGitConfig {
-                source: &backup.source,
-                destination: &backup.destination,
+                source: &backup.config,
+                destination: &backup.copy,
             };
             let copy_command = copy.shell_command();
-            copy.run(context).map_err(|source| Error::Backup {
-                source_path: backup.source.clone(),
-                destination: backup.destination.clone(),
-                source,
-            })?;
+            if let Err(source) = copy.run(context) {
+                return Err(Error::Backup { backup, source });
+            }
             completed_commands.push(copy_command);
         }
 
         let set_pager = SetGlobalDiffPager {
-            command: &plan.pager_command,
+            command: &pager_command,
         };
         let config_command = set_pager.shell_command();
         set_pager.run(context).map_err(Error::SetPager)?;
@@ -90,13 +85,10 @@ impl fmt::Display for Error {
             Self::InspectConfig { path, source } => {
                 write!(formatter, "{}: {source}", path.display())
             }
-            Self::Backup {
-                source_path,
-                destination,
-                source,
-            } => write!(
+            Self::Backup { backup, source } => write!(
                 formatter,
-                "backing up {source_path} to {destination}: {source}"
+                "backing up {} to {}: {source}",
+                backup.config, backup.copy
             ),
             Self::SetPager(error) => write!(formatter, "{error}"),
         }
@@ -122,9 +114,12 @@ struct InstallPlan {
     pager_command: String,
 }
 
-struct Backup {
-    source: String,
-    destination: String,
+/// The config file to copy and the path of its copy, both UTF-8 so the copy has a shell
+/// spelling.
+#[derive(Debug)]
+pub struct Backup {
+    config: String,
+    copy: String,
 }
 
 impl InstallPlan {
@@ -146,12 +141,12 @@ impl InstallPlan {
 }
 
 impl Backup {
-    fn of(source: PathBuf) -> Result<Self, Error> {
-        let destination = backup_path(&source);
+    fn of(config: PathBuf) -> Result<Self, Error> {
+        let copy = backup_path(&config);
 
         Ok(Self {
-            source: utf8(&source, PathRole::Config)?.to_owned(),
-            destination: utf8(&destination, PathRole::Backup)?.to_owned(),
+            config: utf8(&config, PathRole::Config)?.to_owned(),
+            copy: utf8(&copy, PathRole::Backup)?.to_owned(),
         })
     }
 }

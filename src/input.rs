@@ -9,7 +9,10 @@ use std::{
 };
 
 use crate::{
-    actions::compare_files::{self, CompareFiles, CompareFilesContext, Comparison, Operand},
+    actions::{
+        child_process::ProcessError,
+        compare_files::{CompareFiles, CompareFilesContext, Comparison, Operand},
+    },
     document::DiffDocument,
     parser::{self, ParseError},
 };
@@ -104,7 +107,7 @@ impl Content {
 pub enum Error {
     Stdin(io::Error),
     PatchFile { path: PathBuf, source: io::Error },
-    Comparison(compare_files::Error),
+    Comparison(ProcessError),
 }
 
 impl fmt::Display for Error {
