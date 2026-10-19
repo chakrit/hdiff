@@ -87,7 +87,8 @@ impl SyntaxHighlighter {
         let languages = headers
             .as_ref()
             .map(|header| Language::of_header(&header.path));
-        let shared_language = languages.merge(|old, new| old.filter(|_| old == new));
+        let shared_language =
+            languages.merge(|old, new| old.filter(|language| new == Some(*language)));
         let styled_records = BySide {
             old: StyledRecords::Changes,
             new: match shared_language {
@@ -701,7 +702,7 @@ mod tests {
                 .filter(|entry| entry.position == addition)
                 .map(|entry| entry.value)
                 .collect::<Vec<_>>();
-            full_highlighted.tree.map(|_| addition_spans)
+            full_highlighted.tree.is_some().then_some(addition_spans)
         })
         .expect("the new side has styled records, so it is parsed");
 
