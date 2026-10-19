@@ -209,7 +209,8 @@ mod tests {
         scroll::{Movement, ScrollPosition},
     };
     use crate::{
-        effective_view::{TooSmall, WrapWidth},
+        effective_view::WrapWidth,
+        geometry::TooSmall,
         parser::parse_patch,
         preferences::{PreferenceChange, ViewPreferences, Wrapping},
         prepared::PreparedDocument,
@@ -274,7 +275,10 @@ mod tests {
         navigation.apply(Effect::Scroll(Movement::FarRight));
 
         assert_eq!(navigation.view().wrap(), WrapWidth::NoPayload);
-        assert_eq!(navigation.view().too_small(), Some(TooSmall::Narrow));
+        assert_eq!(
+            navigation.view().geometry().too_small(),
+            Some(TooSmall::Narrow)
+        );
         assert_eq!(
             navigation.interaction().scroll().position().horizontal,
             Cells::ZERO

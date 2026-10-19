@@ -6,8 +6,8 @@
 use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
-    effective_view::{TooSmall, WrapWidth},
-    geometry::{SplitDirection, SplitPanes},
+    effective_view::WrapWidth,
+    geometry::{SplitDirection, SplitPanes, TooSmall},
     navigation::{
         Navigation,
         extent::{RowLine, ShownLines},
@@ -38,7 +38,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
     let geometry = view.geometry();
     let screen = geometry.screen();
 
-    if let Some(too_small) = view.too_small() {
+    if let Some(too_small) = geometry.too_small() {
         frame.render_widget(Paragraph::new(too_small_message(too_small)), screen);
         return;
     }

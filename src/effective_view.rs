@@ -8,25 +8,15 @@ use ratatui::layout::Size;
 use crate::{
     geometry::{PaneContent, PaneShape, ScreenGeometry},
     preferences::{ViewPreferences, Wrapping},
-    screen::{Cells, NonZeroCells, ScreenLines},
+    screen::{Cells, NonZeroCells},
 };
 
 /// The renderable combination of the view preferences and the screen size: the screen's
-/// areas for the pane shape, the width rows wrap at, and whether the screen is too small
-/// to show panes, each derived once.
+/// areas for the pane shape, which also say whether the screen is too small to show
+/// panes, and the width rows wrap at, each derived once.
 pub struct EffectiveView {
     geometry: ScreenGeometry,
     wrap: WrapWidth,
-    too_small: Option<TooSmall>,
-}
-
-/// Why a screen shows only a message instead of its panes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TooSmall {
-    /// The screen is narrower than the minimum layout.
-    Narrow,
-    /// A diff pane would have no content line.
-    Short,
 }
 
 impl EffectiveView {
@@ -34,20 +24,10 @@ impl EffectiveView {
     pub fn of(preferences: ViewPreferences, screen: Size) -> Self {
         let shape = PaneShape::of(preferences.layout);
         let geometry = ScreenGeometry::of(screen, preferences.file_list, shape);
-        let pane_content = geometry.pane_content();
 
-        let too_small = match (geometry.is_narrow(), pane_content.height) {
-            (true, _) => Some(TooSmall::Narrow),
-            (false, ScreenLines::ZERO) => Some(TooSmall::Short),
-            (false, _) => None,
-        };
-        let wrap = WrapWidth::of_panes(preferences.wrapping, pane_content);
+        let wrap = WrapWidth::of_panes(preferences.wrapping, geometry.pane_content());
 
-        Self {
-            geometry,
-            wrap,
-            too_small,
-        }
+        Self { geometry, wrap }
     }
 
     pub fn geometry(&self) -> &ScreenGeometry {
@@ -56,10 +36,6 @@ impl EffectiveView {
 
     pub fn wrap(&self) -> WrapWidth {
         self.wrap
-    }
-
-    pub fn too_small(&self) -> Option<TooSmall> {
-        self.too_small
     }
 }
 
@@ -106,9 +82,9 @@ impl WrapWidth {
 mod tests {
     use ratatui::layout::Size;
 
-    use super::{EffectiveView, TooSmall, WrapWidth};
+    use super::{EffectiveView, WrapWidth};
     use crate::{
-        geometry::{PaneContent, SplitDirection, SplitPanes},
+        geometry::{PaneContent, SplitDirection, SplitPanes, TooSmall},
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
         screen::{Cells, ScreenLines},
         side::BySide,
@@ -155,7 +131,7 @@ mod tests {
                 ..ViewPreferences::INITIAL
             };
             let view = EffectiveView::of(preferences, screen);
-            let shown = match (view.too_small(), view.geometry().file_column()) {
+            let shown = match (view.geometry().too_small(), view.geometry().file_column()) {
                 (Some(too_small), _) => Shown::Message(too_small),
                 (None, None) => Shown::DiffOnly,
                 (None, Some(_)) => Shown::WithFileList,
