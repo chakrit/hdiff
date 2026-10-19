@@ -1,7 +1,7 @@
 //! The parsed document: file diffs in input order with their surrounding text. Rules:
 //! docs/spec/architecture.md#core-model.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use crate::{
     compact::Count,
@@ -149,21 +149,75 @@ pub enum FileBody {
 }
 
 /// A Git section's `diff --git` line with at least one extended header after it, which
-/// Git writes for every change it reports without `---` / `+++` headers.
+/// Git writes for every change it reports without `---` / `+++` headers, then the binary
+/// patch Git writes for a binary change when it has one.
 #[derive(Debug, PartialEq, Eq)]
-pub struct MetadataBody(GitHeader);
+pub struct MetadataBody {
+    git: GitHeader,
+    binary_patch: Option<Box<BinaryPatch>>,
+}
 
 impl MetadataBody {
-    /// `git` when it holds an extended header; otherwise none.
+    /// `git` without a binary patch when it holds an extended header; otherwise none.
     pub fn of(git: GitHeader) -> Option<Self> {
         match git.metadata.is_empty() {
             true => None,
-            false => Some(Self(git)),
+            false => Some(Self {
+                git,
+                binary_patch: None,
+            }),
+        }
+    }
+
+    /// The body with `binary_patch` after its extended headers.
+    pub fn with_binary_patch(self, binary_patch: BinaryPatch) -> Self {
+        Self {
+            binary_patch: Some(Box::new(binary_patch)),
+            ..self
         }
     }
 
     pub fn git(&self) -> &GitHeader {
-        &self.0
+        &self.git
+    }
+
+    pub fn binary_patch(&self) -> Option<&BinaryPatch> {
+        self.binary_patch.as_deref()
+    }
+}
+
+/// Git's binary patch: the `GIT binary patch` line, then its `literal` and `delta`
+/// blocks. Rules: docs/spec/architecture.md#input-contract.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BinaryPatch {
+    pub header: SourceLine,
+    pub blocks: NonEmpty<BinaryBlock>,
+}
+
+impl BinaryPatch {
+    /// Every line of the patch, in input order.
+    pub fn lines(&self) -> impl Iterator<Item = &SourceLine> {
+        let blocks = self.blocks.iter().flat_map(BinaryBlock::lines);
+
+        iter::once(&self.header).chain(blocks)
+    }
+}
+
+/// A `literal` or `delta` block: its header, its base-85 payload lines, and the blank
+/// line that ends it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BinaryBlock {
+    pub header: SourceLine,
+    pub payload: NonEmpty<SourceLine>,
+    pub end: SourceLine,
+}
+
+impl BinaryBlock {
+    /// Every line of the block, in input order.
+    fn lines(&self) -> impl Iterator<Item = &SourceLine> {
+        iter::once(&self.header)
+            .chain(self.payload.iter())
+            .chain(iter::once(&self.end))
     }
 }
 
