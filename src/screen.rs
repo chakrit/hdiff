@@ -53,10 +53,27 @@ impl Cells {
         Self(self.0.saturating_sub(other.0))
     }
 
+    /// These cells less `other`, or `None` when `other` is more.
+    pub const fn checked_sub(self, other: Self) -> Option<Self> {
+        match self.0.checked_sub(other.0) {
+            Some(cells) => Some(Self(cells)),
+            None => None,
+        }
+    }
+
     /// Cells from this column to the next multiple of `interval` after it.
     pub const fn padding_to_next_multiple_of(self, interval: NonZeroCells) -> Self {
         let interval = interval.0.get();
         Self(interval - self.0 % interval)
+    }
+
+    /// Lines these cells fill at `width` when every line but the last is full; none still
+    /// take one line.
+    pub const fn lines_filled_at(self, width: NonZeroCells) -> ScreenLines {
+        match self.0.div_ceil(width.0.get()) {
+            0 => ScreenLines::ONE,
+            lines => ScreenLines(lines),
+        }
     }
 
     /// Each cell column from this one up to, but not including, `end`.
@@ -69,14 +86,6 @@ impl Cells {
     /// Panics when they do not fit a frame.
     pub fn frame_columns(self) -> u16 {
         u16::try_from(self.0).expect("cells drawn on a frame fit u16")
-    }
-
-    /// These cells less `other`, or `None` when `other` is more.
-    pub const fn checked_sub(self, other: Self) -> Option<Self> {
-        match self.0.checked_sub(other.0) {
-            Some(cells) => Some(Self(cells)),
-            None => None,
-        }
     }
 }
 
