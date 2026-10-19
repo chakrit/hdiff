@@ -309,14 +309,15 @@ mod tests {
         PreparedDocument::prepare(&document)
     }
 
-    /// The text row at line `line` of `prepared`'s first page.
-    fn first_page_row(
-        prepared: &PreparedDocument,
-        line: usize,
-        granularity: DiffGranularity,
-    ) -> PaneRow<'_> {
+    /// The text row of the first added line on `prepared`'s first page.
+    fn first_added_row(prepared: &PreparedDocument, granularity: DiffGranularity) -> PaneRow<'_> {
         let page = prepared.page(PageIndex::FIRST);
-        PaneRow::Text(page.row(page.rows().line_index(line), granularity))
+        let (addition, _) = page
+            .rows()
+            .lines()
+            .find(|(_, line)| line.kind().changed_side() == Some(Side::New))
+            .expect("the patch adds a line");
+        PaneRow::Text(page.row(addition, granularity))
     }
 
     /// The one-line buffer `row` draws into, `width` cells wide, scrolled right by
@@ -426,7 +427,7 @@ mod tests {
     #[test]
     fn keeps_a_cluster_whole_when_its_mark_starts_a_style_segment() {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
-        let addition = first_page_row(&prepared, 4, DiffGranularity::Character);
+        let addition = first_added_row(&prepared, DiffGranularity::Character);
 
         let buffer = scrolled_buffer(addition, 8, Cells::ZERO);
 
@@ -441,7 +442,7 @@ mod tests {
     #[test]
     fn blanks_the_visible_cell_of_a_wide_cluster_cut_by_the_left_edge() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
-        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
+        let addition = first_added_row(&prepared, DiffGranularity::Line);
 
         let offset = Cells::new(3);
         let buffer = scrolled_buffer(addition, 8, offset);
@@ -455,7 +456,7 @@ mod tests {
     #[test]
     fn leaves_a_wide_cluster_that_does_not_fit_the_right_edge_blank() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
-        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
+        let addition = first_added_row(&prepared, DiffGranularity::Line);
 
         let buffer = scrolled_buffer(addition, 5, Cells::ZERO);
 
@@ -469,7 +470,7 @@ mod tests {
     #[test]
     fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
-        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
+        let addition = first_added_row(&prepared, DiffGranularity::Line);
         let wrapped_line = |line| {
             let placement = RowPlacement::Wrapped {
                 line: ScreenLines::new(line),
@@ -478,7 +479,9 @@ mod tests {
             write_placed(addition, 6, placement).buffer
         };
 
-        let (first, second, past_the_end) = (wrapped_line(0), wrapped_line(1), wrapped_line(2));
+        let first = wrapped_line(0);
+        let second = wrapped_line(1);
+        let past_the_end = wrapped_line(2);
 
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
@@ -495,7 +498,7 @@ mod tests {
     #[test]
     fn reports_the_sides_where_a_row_leaves_the_pane() {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
-        let row = first_page_row(&prepared, 3, DiffGranularity::Line);
+        let row = first_added_row(&prepared, DiffGranularity::Line);
         let clip = |width, horizontal_offset| {
             let placement = RowPlacement::Scrolled { horizontal_offset };
             write_placed(row, width, placement).clip
@@ -504,19 +507,34 @@ mod tests {
             line: ScreenLines::new(1),
             width: NonZeroCells::of(1),
         };
-        let sides = |left, right| Clip { left, right };
+        let inside = Clip {
+            left: false,
+            right: false,
+        };
+        let past_right = Clip {
+            left: false,
+            right: true,
+        };
+        let past_left = Clip {
+            left: true,
+            right: false,
+        };
+        let past_both = Clip {
+            left: true,
+            right: true,
+        };
 
-        assert_eq!(clip(7, Cells::ZERO), sides(false, false), "the row fits");
+        assert_eq!(clip(7, Cells::ZERO), inside, "the row fits");
         assert_eq!(
             clip(6, Cells::ZERO),
-            sides(false, true),
+            past_right,
             "a wide cluster that does not fit"
         );
-        assert_eq!(clip(4, Cells::ONE), sides(true, true));
-        assert_eq!(clip(6, Cells::ONE), sides(true, false));
+        assert_eq!(clip(4, Cells::ONE), past_both);
+        assert_eq!(clip(6, Cells::ONE), past_left);
         assert_eq!(
             write_placed(row, 3, wrapped).clip,
-            sides(false, false),
+            inside,
             "a wrapped line shows its whole part of the row"
         );
     }
