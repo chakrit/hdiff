@@ -34,7 +34,7 @@ impl Interaction {
         }
     }
 
-    pub fn page(&self) -> PageIndex {
+    pub(super) fn page(&self) -> PageIndex {
         self.page
     }
 
@@ -42,7 +42,7 @@ impl Interaction {
         self.preferences
     }
 
-    pub fn screen(&self) -> Size {
+    pub(super) fn screen(&self) -> Size {
         self.screen
     }
 
@@ -56,7 +56,7 @@ impl Interaction {
 
     /// What `event` asks of the session among `pages` pages, once the keymap popup has
     /// filtered its command.
-    pub fn respond(&self, event: Event, pages: PageCount) -> Outcome {
+    pub(super) fn respond(&self, event: Event, pages: PageCount) -> Outcome {
         match event {
             Event::Interrupt => Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
@@ -220,7 +220,7 @@ impl PageStep {
 /// What an event asks of the session: to end it, to go on and draw the unchanged
 /// interaction, or to change the interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
+pub(super) enum Outcome {
     Exit,
     Redraw,
     Effect(Effect),
@@ -228,7 +228,7 @@ pub enum Outcome {
 
 /// What an event does to the interaction, before navigation places the scroll position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Effect {
+pub(super) enum Effect {
     /// Moves within what is shown now.
     Scroll(Movement),
     /// Shows another page from its start.
@@ -244,7 +244,7 @@ pub enum Effect {
 
 /// Where a redisplayed page places its first line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Placement {
+pub(super) enum Placement {
     /// The current position, within the new bounds.
     Keep,
     /// The position that keeps the row on this diff-pane line on that line.
@@ -253,7 +253,7 @@ pub enum Placement {
 
 /// The diff-pane line whose row a redisplay keeps on that line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnchorLine {
+pub(super) enum AnchorLine {
     PaneTop,
     PaneMiddle,
 }

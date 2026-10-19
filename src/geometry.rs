@@ -299,7 +299,7 @@ pub struct FrameEdges {
 impl FrameEdges {
     /// A diff pane's continuity-marker frame: a row above and below and a column on
     /// either side.
-    pub const DIFF_PANE: Self = Self {
+    const DIFF_PANE: Self = Self {
         rows: 1,
         columns: 1,
     };
