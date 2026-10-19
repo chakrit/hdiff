@@ -104,7 +104,13 @@ impl SyntaxHighlighter {
                 let old_pass =
                     self.highlight_projection(language, &projections.old, None, observer);
                 let (old_spans, base) = match old_pass {
-                    Some(pass) => (pass.spans, Some((&projections.old, pass.tree))),
+                    Some(pass) => {
+                        let base = ParseBase {
+                            projection: &projections.old,
+                            tree: pass.tree,
+                        };
+                        (pass.spans, Some(base))
+                    }
                     None => (Vec::new(), None),
                 };
                 let new_pass =
@@ -134,7 +140,7 @@ impl SyntaxHighlighter {
         &mut self,
         language: Language,
         projection: &Projection<'h>,
-        base: Option<(&Projection<'h>, Tree)>,
+        base: Option<ParseBase<'_, 'h>>,
         observer: &mut impl Observer,
     ) -> Option<Highlighted<'h>> {
         if projection.records.is_empty() {
@@ -143,10 +149,15 @@ impl SyntaxHighlighter {
         let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
 
         let tree = observer.measure(Stage::Parse, |observer| {
-            let edited_base = base.map(|(base_projection, mut base_tree)| {
-                base_tree.edit(&base_projection.edit_to(projection));
-                base_tree
-            });
+            let edited_base = base.map(
+                |ParseBase {
+                     projection: from,
+                     mut tree,
+                 }| {
+                    tree.edit(&from.edit_to(projection));
+                    tree
+                },
+            );
             observer.count(Work::ParseCall);
             highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
         });
@@ -169,6 +180,12 @@ impl SyntaxHighlighter {
 struct Highlighted<'h> {
     tree: Tree,
     spans: Vec<(RecordPosition<'h>, SyntaxSpan)>,
+}
+
+/// The tree an edited parse starts from, with the projection it was parsed from.
+struct ParseBase<'p, 'h> {
+    projection: &'p Projection<'h>,
+    tree: Tree,
 }
 
 // Languages
@@ -461,7 +478,13 @@ mod tests {
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
+        span::PayloadSpan,
     };
+
+    /// The classes of `spans`, in order.
+    fn classes(spans: &[SyntaxSpan]) -> Vec<SyntaxClass> {
+        spans.iter().map(|span| span.class).collect()
+    }
 
     /// The syntax spans of each record of the first hunk of `patch`'s first file, in
     /// record order.
@@ -544,8 +567,10 @@ mod tests {
             highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
 
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
-        assert_eq!(highlights[1][0].bytes.start(), 0);
-        assert_eq!(highlights[1][0].bytes.end(), 2);
+        assert_eq!(
+            highlights[1][0].bytes,
+            PayloadSpan::within("fn added() {}", 0..2)
+        );
     }
 
     /// docs/spec/architecture.md#technology-direction: matching languages use the new
@@ -556,26 +581,13 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         );
 
-        assert!(
-            highlights[2]
-                .iter()
-                .any(|span| span.class == SyntaxClass::Keyword)
-        );
-        assert!(
-            highlights[2]
-                .iter()
-                .all(|span| span.class != SyntaxClass::Comment)
-        );
-        assert!(
-            highlights[0]
-                .iter()
-                .any(|span| span.class == SyntaxClass::Comment)
-        );
-        assert!(
-            highlights[3]
-                .iter()
-                .any(|span| span.class == SyntaxClass::Comment)
-        );
+        let context = classes(&highlights[2]);
+        assert!(context.contains(&SyntaxClass::Keyword), "{context:?}");
+        assert!(!context.contains(&SyntaxClass::Comment), "{context:?}");
+        let deleted = classes(&highlights[0]);
+        assert!(deleted.contains(&SyntaxClass::Comment), "{deleted:?}");
+        let added = classes(&highlights[3]);
+        assert!(added.contains(&SyntaxClass::Comment), "{added:?}");
     }
 
     #[test]
@@ -622,12 +634,19 @@ mod tests {
                         .iter()
                         .position(|projected| projected.record == position)
                         .expect("a mapped span names a projected record");
-                    (projected_index, span.bytes.start(), span.bytes.end())
+                    (projected_index, span.bytes)
                 })
                 .collect::<Vec<_>>()
         });
 
-        assert_eq!(spans, [(0, 2, 4), (1, 0, 4), (2, 0, 2)]);
+        assert_eq!(
+            spans,
+            [
+                (0, PayloadSpan::within("aaaa", 2..4)),
+                (1, PayloadSpan::within("bbbb", 0..4)),
+                (2, PayloadSpan::within("cccc", 0..2)),
+            ]
+        );
     }
 
     #[test]
@@ -645,17 +664,11 @@ mod tests {
             b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
         );
 
-        assert!(highlights[0].is_empty());
-        assert!(
-            highlights[1]
-                .iter()
-                .any(|span| span.class == SyntaxClass::Keyword)
-        );
-        assert!(
-            highlights[2]
-                .iter()
-                .any(|span| span.class == SyntaxClass::Keyword)
-        );
+        assert_eq!(highlights[0], []);
+        let deleted = classes(&highlights[1]);
+        assert!(deleted.contains(&SyntaxClass::Keyword), "{deleted:?}");
+        let added = classes(&highlights[2]);
+        assert!(added.contains(&SyntaxClass::Keyword), "{added:?}");
     }
 
     #[test]
