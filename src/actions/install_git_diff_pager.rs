@@ -51,7 +51,6 @@ impl InstallGitDiffPager {
     }
 }
 
-/// Which path `--install` could not spell as a shell command.
 /// Which path `--install` could not spell as UTF-8.
 #[derive(Clone, Copy, Debug)]
 pub enum PathRole {
@@ -72,6 +71,7 @@ impl PathRole {
 }
 
 /// Every path and value `--install` needs, validated as UTF-8 before anything is written.
+#[derive(Debug)]
 struct InstallPlan {
     backup: Option<BackupGlobalGitConfig>,
     /// The `pager.diff` value: the executable as one shell word.
@@ -81,13 +81,13 @@ struct InstallPlan {
 impl InstallPlan {
     /// The plan for `environment` and `executable`; any path that is not UTF-8 fails it.
     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
-        let config_path = global_config_path(environment)?;
+        let config = GlobalConfig::of(environment)?;
         let executable = utf8(executable, PathRole::Executable)?;
         let pager_command = shell_words::quote(executable.as_str()).into_owned();
 
-        let backup = match exists(&config_path)? {
-            true => Some(backup_of(&config_path)?),
-            false => None,
+        let backup = match config {
+            GlobalConfig::Existing(path) => Some(backup_of(&path)?),
+            GlobalConfig::Absent => None,
         };
 
         Ok(Self {
@@ -107,32 +107,46 @@ fn backup_of(config: &Path) -> Result<BackupGlobalGitConfig, Error> {
     })
 }
 
-/// Resolves the file `git config --global` writes, in the order of git-config(1) FILES.
-fn global_config_path(environment: &GitConfigEnvironment) -> Result<PathBuf, Error> {
-    if let Some(path) = &environment.git_config_global {
-        return configured_global_path(path);
+/// The file `git config --global` writes, as resolution found it on disk.
+enum GlobalConfig {
+    /// The config file exists at this path, so `--install` backs it up.
+    Existing(PathBuf),
+    /// No config file exists yet; Git creates it, so there is nothing to back up.
+    Absent,
+}
+
+impl GlobalConfig {
+    /// Resolves the file `git config --global` writes, in the order of git-config(1)
+    /// FILES, probing each candidate's existence once.
+    fn of(environment: &GitConfigEnvironment) -> Result<Self, Error> {
+        if let Some(path) = &environment.git_config_global {
+            return Self::probed(configured_global_path(path)?);
+        }
+
+        let home = environment
+            .home
+            .as_ref()
+            .map(PathBuf::from)
+            .ok_or(Error::MissingHome)?;
+        let home_config = home.join(".gitconfig");
+        if exists(&home_config)? {
+            return Ok(Self::Existing(home_config));
+        }
+
+        let xdg_config_home = match &environment.xdg_config_home {
+            Some(path) => PathBuf::from(path),
+            None => home.join(".config"),
+        };
+        Self::probed(xdg_config_home.join("git/config"))
     }
 
-    let home = environment
-        .home
-        .as_ref()
-        .map(PathBuf::from)
-        .ok_or(Error::MissingHome)?;
-    let home_config = home.join(".gitconfig");
-    if exists(&home_config)? {
-        return Ok(home_config);
+    /// `path` as existing or absent.
+    fn probed(path: PathBuf) -> Result<Self, Error> {
+        Ok(match exists(&path)? {
+            true => Self::Existing(path),
+            false => Self::Absent,
+        })
     }
-
-    let xdg_config_home = match &environment.xdg_config_home {
-        Some(path) => PathBuf::from(path),
-        None => home.join(".config"),
-    };
-    let xdg_config = xdg_config_home.join("git/config");
-    if exists(&xdg_config)? {
-        return Ok(xdg_config);
-    }
-
-    Ok(home_config)
 }
 
 /// The config file `GIT_CONFIG_GLOBAL` names; `/dev/null` disables the global config.
@@ -192,7 +206,7 @@ mod tests {
 
         assert!(
             matches!(plan, Err(Error::NonUtf8Path(PathRole::Executable))),
-            "a non-UTF-8 executable cannot form a pager command"
+            "a non-UTF-8 executable cannot form a pager command: {plan:?}"
         );
     }
 
@@ -203,7 +217,10 @@ mod tests {
             Path::new("/bin/hdiff"),
         );
 
-        assert!(matches!(plan, Err(Error::GlobalConfigDisabled)));
+        assert!(
+            matches!(plan, Err(Error::GlobalConfigDisabled)),
+            "/dev/null disables the global config: {plan:?}"
+        );
     }
 
     #[test]
@@ -218,8 +235,14 @@ mod tests {
         let present = InstallPlan::new(&environment_for(&config_path), executable)
             .expect("plan with a config");
 
-        assert!(absent.backup.is_none());
-        assert!(present.backup.is_some());
+        assert!(
+            absent.backup.is_none(),
+            "no backup without a config: {absent:?}"
+        );
+        assert!(
+            present.backup.is_some(),
+            "a backup of an existing config: {present:?}"
+        );
     }
 
     #[test]

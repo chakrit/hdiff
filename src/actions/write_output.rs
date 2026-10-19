@@ -89,7 +89,10 @@ mod tests {
 
         let result = WriteOutput { bytes: b"output" }.run(&mut context);
 
-        assert!(result.is_ok(), "broken pipe should end output quietly");
+        assert!(
+            result.is_ok(),
+            "broken pipe should end output quietly: {result:?}"
+        );
     }
 
     #[test]
