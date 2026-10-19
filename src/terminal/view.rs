@@ -7,7 +7,7 @@ use ratatui::{Frame, layout::Rect, widgets::Paragraph};
 
 use crate::{
     effective_view::{TooSmall, WrapWidth},
-    geometry::{SplitDirection, SplitPanes},
+    geometry::{FramedArea, SplitDirection, SplitPanes},
     navigation::{
         Navigation,
         extent::{RowLine, ShownLines},
@@ -56,7 +56,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
     match navigation.shown() {
         ShownLines::Single(lines) => {
             let lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
-            let pane = ContinuityFrame::diff_pane(geometry.single_pane());
+            let pane = ContinuityFrame::of(FramedArea::diff_pane(geometry.single_pane()));
             pane_drawing.render(frame, pane, lines);
         }
         ShownLines::Split { direction, lines } => {
@@ -142,7 +142,9 @@ fn render_split_rows<'a>(
 ) {
     let direction = split.direction();
     let separator = split.separator();
-    let panes = split.panes().map(ContinuityFrame::diff_pane);
+    let panes = split
+        .panes()
+        .map(|pane| ContinuityFrame::of(FramedArea::diff_pane(pane)));
     let (old_lines, new_lines): (Vec<_>, Vec<_>) = lines
         .map(|line| line.map(SideBySideRow::pane_pair).split())
         .map(|sides| (sides.old, sides.new))
