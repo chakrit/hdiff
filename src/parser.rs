@@ -198,10 +198,10 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
     let Some(extended_headers) = NonEmpty::of(extended_headers) else {
         return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
-    let binary_patch = match lines.next_if(is_binary_patch_header) {
-        Some(binary_header) => Some(Box::new(parse_binary_patch(binary_header, lines)?)),
-        None => None,
-    };
+    let binary_patch = lines
+        .next_if(is_binary_patch_header)
+        .map(|binary_header| parse_binary_patch(binary_header, lines).map(Box::new))
+        .transpose()?;
 
     let git = GitHeader {
         line: header,
@@ -234,7 +234,7 @@ fn parse_unified(
     };
 
     let mut hunks = Vec::new();
-    let mut ended = BySide::<bool>::default();
+    let mut ended = BySide::default();
     while let Some(header) = lines.next_if(starts_hunk_header) {
         let expected = lines.at_last_line(hunk_counts(header.sanitized()))?;
         let hunk = parse_hunk(header, expected, ended, lines)?;
