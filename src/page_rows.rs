@@ -99,6 +99,25 @@ impl<T> SideBySideRow<T> {
     pub(crate) fn first(self) -> T {
         self.split_first().first
     }
+
+    /// The changed line each side holds in this row; a shared row changes neither side.
+    pub(crate) fn changed_lines(self) -> BySide<Option<T>> {
+        match self {
+            Self::Shared(_) => BySide {
+                old: None,
+                new: None,
+            },
+            Self::Paired(lines) => lines.map(Some),
+            Self::OldOnly(line) => BySide {
+                old: Some(line),
+                new: None,
+            },
+            Self::NewOnly(line) => BySide {
+                old: None,
+                new: Some(line),
+            },
+        }
+    }
 }
 
 /// A side-by-side row's lines: the one it starts with, and the new line when it pairs
@@ -177,17 +196,17 @@ enum RowVisibility {
 impl PageRows {
     /// The rows of a file page: the file's lines with the text around it.
     pub fn of_file_view(view: FileView<'_>) -> Self {
-        Self::new(display_lines::of_file_view(view))
+        Self::of_lines(display_lines::of_file_view(view))
     }
 
     /// The rows of a document that holds only surrounding text.
     pub fn of_text<'a>(lines: impl IntoIterator<Item = &'a SourceLine>) -> Self {
-        Self::new(display_lines::of_text(lines))
+        Self::of_lines(display_lines::of_text(lines))
     }
 
     /// The rows of `lines`, with their side-by-side layout and each line's visibility
     /// derived once.
-    fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
+    fn of_lines<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
         let lines = lines.map(RenderedLine::of).collect::<Vec<_>>();
         let SideBySideLayout {
             pairs,
@@ -456,14 +475,19 @@ impl BlockRows {
             new: column(Side::New),
         };
 
-        let pairs = (0..columns.old.len().max(columns.new.len()))
-            .filter_map(|position| {
-                changed_row(BySide {
-                    old: columns.old.get(position).copied(),
-                    new: columns.new.get(position).copied(),
-                })
-            })
-            .collect::<Vec<_>>();
+        let paired_count = columns.old.len().min(columns.new.len());
+        let paired = columns
+            .old
+            .iter()
+            .zip(&columns.new)
+            .map(|(&old, &new)| SideBySideRow::Paired(BySide { old, new }));
+        let old_only = columns.old[paired_count..]
+            .iter()
+            .map(|&line| SideBySideRow::OldOnly(line));
+        let new_only = columns.new[paired_count..]
+            .iter()
+            .map(|&line| SideBySideRow::NewOnly(line));
+        let pairs = paired.chain(old_only).chain(new_only).collect::<Vec<_>>();
 
         let mut placed = pairs
             .iter()
@@ -485,17 +509,6 @@ impl BlockRows {
             pairs,
             pair_of_line,
         }
-    }
-}
-
-/// The row holding a changed block's old and new `lines` at one position; a position
-/// neither side reaches holds no row.
-fn changed_row(lines: BySide<Option<LineIndex>>) -> Option<SideBySideRow<LineIndex>> {
-    match (lines.old, lines.new) {
-        (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
-        (Some(old), None) => Some(SideBySideRow::OldOnly(old)),
-        (None, Some(new)) => Some(SideBySideRow::NewOnly(new)),
-        (None, None) => None,
     }
 }
 
@@ -710,7 +723,7 @@ mod tests {
         );
     }
 
-    /// docs/spec/architecture.md#view-model: a no-newline marker shows on its record's
+    /// docs/spec/architecture.md#core-model: a no-newline marker shows on its record's
     /// side, right after its record, even when the other side of its changed block holds
     /// more records.
     #[test]
@@ -740,8 +753,8 @@ mod tests {
     }
 
     /// docs/spec/architecture.md#view-model: context records show within the
-    /// context-record count of a change; a no-newline marker shows exactly when the
-    /// record it follows does.
+    /// context-record count of a change. docs/spec/architecture.md#core-model: a
+    /// no-newline marker shows exactly when the record it follows does.
     #[test]
     fn hides_a_no_newline_marker_with_the_context_record_it_follows() {
         let rows = rows_of(
