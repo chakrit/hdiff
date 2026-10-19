@@ -103,6 +103,12 @@ impl WrapWidth {
             Self::At(cells) => width.min(cells.get()),
         }
     }
+
+    /// A test's wrap width of `cells`; panics on zero.
+    #[cfg(test)]
+    pub const fn at(cells: usize) -> Self {
+        Self::At(NonZeroCells::of(cells))
+    }
 }
 
 #[cfg(test)]
@@ -113,7 +119,7 @@ mod tests {
     use crate::{
         geometry::SplitDirection,
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-        screen::{Cells, NonZeroCells},
+        screen::Cells,
     };
 
     /// What a screen shows: a message, or its panes with or without the file list.
@@ -166,10 +172,6 @@ mod tests {
         }
     }
 
-    fn wrap_at(cells: usize) -> WrapWidth {
-        WrapWidth::At(NonZeroCells::of(cells))
-    }
-
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
         let preferences = ViewPreferences {
@@ -187,16 +189,16 @@ mod tests {
         // 79 columns beside the separator split into a 39-column and a 40-column pane,
         // whose frames leave 37 content columns, two of them the marker gutter.
         assert_eq!((panes.old.width, panes.new.width), (39, 40));
-        assert_eq!(view.wrap(), wrap_at(35));
+        assert_eq!(view.wrap(), WrapWidth::at(35));
     }
 
     #[test]
     fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
         let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
 
-        assert_eq!(wrap(Wrapping::Enabled, 24), wrap_at(22));
-        assert_eq!(wrap(Wrapping::Enabled, 51), wrap_at(49));
+        assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
+        assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
         assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Unbounded);
-        assert_eq!(wrap(Wrapping::Enabled, 78), wrap_at(76));
+        assert_eq!(wrap(Wrapping::Enabled, 78), WrapWidth::at(76));
     }
 }
