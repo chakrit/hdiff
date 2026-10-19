@@ -134,7 +134,7 @@ mod tests {
     enum Shown {
         Message(TooSmall),
         DiffOnly,
-        Split,
+        WithFileList,
     }
 
     /// docs/spec/architecture.md#interaction-model: the minimum layout shows one content
@@ -153,14 +153,14 @@ mod tests {
                 Shown::Message(TooSmall::Short),
             ),
             ((27, 3), DiffLayout::Unified, Shown::DiffOnly),
-            ((28, 3), DiffLayout::Unified, Shown::Split),
-            ((28, 3), DiffLayout::Vertical, Shown::Split),
+            ((28, 3), DiffLayout::Unified, Shown::WithFileList),
+            ((28, 3), DiffLayout::Vertical, Shown::WithFileList),
             (
                 (28, 6),
                 DiffLayout::Stacked,
                 Shown::Message(TooSmall::Short),
             ),
-            ((28, 7), DiffLayout::Stacked, Shown::Split),
+            ((28, 7), DiffLayout::Stacked, Shown::WithFileList),
         ];
 
         for ((width, height), layout, expected) in cases {
@@ -172,7 +172,7 @@ mod tests {
             let shown = match (view.too_small(), view.geometry().file_column()) {
                 (Some(too_small), _) => Shown::Message(too_small),
                 (None, None) => Shown::DiffOnly,
-                (None, Some(_)) => Shown::Split,
+                (None, Some(_)) => Shown::WithFileList,
             };
 
             assert_eq!(shown, expected, "{width}×{height} {layout:?}");

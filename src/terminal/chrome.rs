@@ -40,7 +40,7 @@ const FLOATING_BOX_PADDING: u16 = 1;
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
-    list: Option<FileSelection<'_>>,
+    selection: Option<FileSelection<'_>>,
     palette: &ChromePalette,
 ) {
     let list_height = FrameEdges::FILE_LIST.rows_around(MINIMUM_FILE_LIST_HEIGHT);
@@ -57,8 +57,8 @@ pub(super) fn render_file_column(
         Layout::horizontal([Constraint::Length(HELP_HINT_INDENT), Constraint::Fill(1)])
             .areas(hint_row);
 
-    if let Some(list) = list {
-        render_file_list(frame, list_area, list, palette);
+    if let Some(selection) = selection {
+        render_file_list(frame, list_area, selection, palette);
     }
     draw_help_hint(frame.buffer_mut(), hint_area, palette);
 }
@@ -270,14 +270,14 @@ fn render_file_list(
         return;
     };
 
-    let selection = selected.window(height);
-    let window = LineWindow {
-        first: selection.first.screen_line(),
+    let row_window = selected.window(height);
+    let line_window = LineWindow {
+        first: row_window.first.screen_line(),
         total: tree.line_count(),
     };
 
     let items = tree
-        .rows_from(selection.first)
+        .rows_from(row_window.first)
         .iter()
         .take(height.get())
         .map(|row| tree_item(row, palette));
@@ -286,10 +286,10 @@ fn render_file_list(
             .fg(palette.selected_file)
             .bg(palette.selected_file_background),
     );
-    let mut state = ListState::default().with_selected(Some(selection.selected_offset));
+    let mut state = ListState::default().with_selected(Some(row_window.selected_offset));
 
     frame.render_stateful_widget(file_list, content, &mut state);
-    list_frame.draw_window_markers(frame.buffer_mut(), window, palette);
+    list_frame.draw_window_markers(frame.buffer_mut(), line_window, palette);
 }
 
 /// The file-list item for `row`: a bold directory heading, or a file's colored marker and
@@ -349,12 +349,12 @@ mod tests {
         let document = parse_patch(b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n")
             .expect("valid diff");
         let prepared = PreparedDocument::prepare(&document);
-        let list = prepared.file_selection(PageIndex::FIRST);
+        let selection = prepared.file_selection(PageIndex::FIRST);
         let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
         let palette = &Theme::for_depth(ColorDepth::TrueColor).chrome;
 
         terminal
-            .draw(|frame| render_file_column(frame, frame.area(), list, palette))
+            .draw(|frame| render_file_column(frame, frame.area(), selection, palette))
             .expect("render file column");
 
         let buffer = terminal.backend().buffer();
