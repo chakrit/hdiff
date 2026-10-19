@@ -202,7 +202,6 @@ fn is_git_metadata(text: &str) -> bool {
 /// blank separator.
 fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseError> {
     let mut patch = Vec::new();
-    let mut blocks = 0;
 
     while let Some((header, valid_size)) =
         lines.next_if_map(|text| binary_block_size(text).map(|size| size.parse::<usize>().is_ok()))
@@ -225,12 +224,11 @@ fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseErr
             return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
         }
         patch.extend(lines.next_if(str::is_empty));
-        blocks += 1;
     }
 
-    match blocks {
-        0 => Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock)),
-        _ => Ok(patch),
+    match patch.is_empty() {
+        true => Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock)),
+        false => Ok(patch),
     }
 }
 
