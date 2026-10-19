@@ -1,5 +1,6 @@
 //! The built-in palette for each terminal color depth. Rules:
-//! docs/spec/architecture.md#view-model and
+//! docs/spec/architecture.md#view-model,
+//! docs/spec/architecture.md#palette-and-character-detail, and
 //! docs/spec/architecture.md#failure-and-safety-posture.
 
 use ratatui::style::{Color, Modifier};
@@ -397,8 +398,8 @@ mod tests {
         }
     }
 
-    /// docs/spec/architecture.md#continuity-markers: unchanged text on rows with detail
-    /// spans is one step dimmer than the row's line-mode text.
+    /// docs/spec/architecture.md#palette-and-character-detail: unchanged text on rows
+    /// with detail spans is one step dimmer than the row's line-mode text.
     #[test]
     fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
         for depth in every_depth() {

@@ -1,6 +1,7 @@
 //! Writes one pane row into the frame buffer. Rules:
-//! docs/spec/architecture.md#lossless-and-safe-rendering and
-//! docs/spec/architecture.md#view-model.
+//! docs/spec/architecture.md#lossless-and-safe-rendering,
+//! docs/spec/architecture.md#view-model, and
+//! docs/spec/architecture.md#palette-and-character-detail.
 
 use std::ops::ControlFlow;
 

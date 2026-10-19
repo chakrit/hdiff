@@ -1,5 +1,5 @@
 //! The terminal styles of a row's tone and text styles, drawn from the row palette.
-//! Rules: docs/spec/architecture.md#view-model.
+//! Rules: docs/spec/architecture.md#palette-and-character-detail.
 
 use ratatui::style::{Modifier, Style};
 
