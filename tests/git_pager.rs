@@ -29,7 +29,7 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
         fs::read_to_string(env.path("gitconfig.bak")).expect("read backup"),
         ORIGINAL_CONFIG
     );
-    let pager = configured_value(&env, &config_path, "pager.diff");
+    let pager = configured_pager(&env, &config_path);
     let pager_version = env
         .shell(&format!("{pager} --version"))
         .output()
@@ -70,8 +70,8 @@ fn install_prints_the_commands_it_applied() {
         fs::read_to_string(&config_path).expect("read installed config")
     );
     assert_eq!(
-        configured_value(&env, &replayed_path, "pager.diff"),
-        configured_value(&env, &config_path, "pager.diff")
+        configured_pager(&env, &replayed_path),
+        configured_pager(&env, &config_path)
     );
 }
 
@@ -241,17 +241,17 @@ fn pipe_git_to_hdiff(env: &TestEnv, arguments: &[&str]) -> Output {
     output
 }
 
-/// Reads `key` from the global config file at `config_path`.
-fn configured_value(env: &TestEnv, config_path: &Path, key: &str) -> String {
+/// Reads `pager.diff` from the global config file at `config_path`.
+fn configured_pager(env: &TestEnv, config_path: &Path) -> String {
     let output = env
-        .git(&["config", "--global", "--get", key])
+        .git(&["config", "--global", "--get", "pager.diff"])
         .env("GIT_CONFIG_GLOBAL", config_path)
         .output()
         .expect("read global Git config");
 
     assert!(
         output.status.success(),
-        "Git could not read {key}: {}",
+        "Git could not read pager.diff: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
