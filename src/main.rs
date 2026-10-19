@@ -46,8 +46,9 @@ fn run() -> Result<(), RunError> {
     }
 }
 
-/// Reads and parses the input as [`view`] does, including empty input, timing each phase
-/// for the driver's report.
+/// Reads and parses the input like [`view`], but parses empty input too so the driver
+/// reports zero counts (docs/spec/performance.md#benchmark-drivers), timing each phase for
+/// the driver's report.
 fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
     let clock = bench::InputClock::start();
     let content = source.read().map_err(RunError::Input)?;
