@@ -4,7 +4,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    document::FileView,
+    document::{DiffFiles, FileView},
     file_identity::{FileIdentity, FileState},
 };
 
@@ -71,50 +71,52 @@ pub struct ListedFile<'a> {
     pub row: TreeRowIndex,
 }
 
-/// The file-list rows.
-#[derive(Debug, PartialEq, Eq)]
+/// The file-list rows; a document without files lists none.
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct FileTree {
     rows: Box<[TreeRow]>,
 }
 
-/// A built file tree and its files in list order. A file's list position is its
-/// selection index.
+/// A built file tree and its files in list order, the first apart from the rest. A
+/// file's list position is its selection index.
 pub struct ListedTree<'a> {
     pub tree: FileTree,
-    pub files: Box<[ListedFile<'a>]>,
+    pub first: ListedFile<'a>,
+    pub rest: Box<[ListedFile<'a>]>,
 }
 
 impl<'a> ListedTree<'a> {
-    pub fn build(views: impl IntoIterator<Item = FileView<'a>>) -> Self {
-        let placed = views.into_iter().map(Placed::of);
-        let (top_level, nested): (Vec<_>, Vec<_>) =
-            placed.partition(|file| file.directory.is_empty());
+    pub fn build(files: &'a DiffFiles) -> Self {
+        let (first, rest) = files.split_views();
+        let (first, rest) = list_order(Placed::of(first), rest.map(Placed::of));
 
-        // Top-level files come first, so a directory heading never needs to be closed.
         let mut rows = Vec::new();
-        let mut files = Vec::new();
         let mut directory = "";
-        for file in top_level.into_iter().chain(nested) {
+        let mut list = |file: Placed<'a>| {
             if file.directory != directory {
                 let heading = format!("{}/", file.directory);
                 rows.push(TreeRow::Directory(heading.into()));
                 directory = file.directory;
             }
-            files.push(ListedFile {
+            let listed = ListedFile {
                 view: file.view,
                 row: TreeRowIndex(rows.len()),
-            });
+            };
             rows.push(TreeRow::File {
                 marker: file.marker,
                 name: file.name.into(),
             });
-        }
+            listed
+        };
+        let first = list(first);
+        let rest = rest.into_iter().map(list).collect();
 
         Self {
             tree: FileTree {
                 rows: rows.into_boxed_slice(),
             },
-            files: files.into_boxed_slice(),
+            first,
+            rest,
         }
     }
 }
@@ -159,41 +161,50 @@ impl<'a> Placed<'a> {
             marker,
         }
     }
+
+    fn is_top_level(&self) -> bool {
+        self.directory.is_empty()
+    }
+}
+
+/// `first` and `rest` in list order, the first listed apart from the rest: top-level
+/// files come first, so a directory heading never needs to be closed, and each group
+/// keeps input order.
+fn list_order<'a>(
+    first: Placed<'a>,
+    rest: impl Iterator<Item = Placed<'a>>,
+) -> (Placed<'a>, Vec<Placed<'a>>) {
+    let (top_level, nested): (Vec<_>, Vec<_>) = rest.partition(Placed::is_top_level);
+    let mut top_level = top_level.into_iter();
+
+    match (first.is_top_level(), top_level.next()) {
+        (true, next) => (
+            first,
+            next.into_iter().chain(top_level).chain(nested).collect(),
+        ),
+        (false, Some(head)) => (head, top_level.chain([first]).chain(nested).collect()),
+        (false, None) => (first, nested),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
 
+    use std::iter;
+
     use super::{ListedTree, RowWindow, TreeRow, TreeRowIndex};
     use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
-
-    #[test]
-    fn a_window_ends_at_its_selection_or_starts_at_the_top() {
-        let height = NonZeroUsize::new(3).expect("nonzero height");
-
-        assert_eq!(
-            TreeRowIndex(1).window(height),
-            RowWindow {
-                first: TreeRowIndex(0),
-                selected_offset: 1,
-            }
-        );
-        assert_eq!(
-            TreeRowIndex(7).window(height),
-            RowWindow {
-                first: TreeRowIndex(5),
-                selected_offset: 2,
-            }
-        );
-    }
 
     fn document(input: &str) -> DiffDocument {
         parse_patch(input.as_bytes()).expect("valid diff")
     }
 
     fn listing(document: &DiffDocument) -> ListedTree<'_> {
-        ListedTree::build(document.file_views())
+        let DiffDocument::Files(files) = document else {
+            panic!("a document with files");
+        };
+        ListedTree::build(files)
     }
 
     fn modified(path: &str) -> String {
@@ -223,9 +234,8 @@ mod tests {
         let document = document(input);
         let listing = listing(&document);
 
-        listing
-            .files
-            .iter()
+        iter::once(&listing.first)
+            .chain(&listing.rest)
             .map(|file| {
                 let named = match &file.view.file.identity {
                     FileIdentity::Path { path, .. } => path.as_str().to_owned(),
@@ -241,6 +251,26 @@ mod tests {
             .iter()
             .map(|(path, row)| (path.to_string(), row.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn a_window_ends_at_its_selection_or_starts_at_the_top() {
+        let height = NonZeroUsize::new(3).expect("nonzero height");
+
+        assert_eq!(
+            TreeRowIndex(1).window(height),
+            RowWindow {
+                first: TreeRowIndex(0),
+                selected_offset: 1,
+            }
+        );
+        assert_eq!(
+            TreeRowIndex(7).window(height),
+            RowWindow {
+                first: TreeRowIndex(5),
+                selected_offset: 2,
+            }
+        );
     }
 
     /// docs/spec/architecture.md#file-tree: root-level files first.

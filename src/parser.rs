@@ -73,9 +73,9 @@ impl Malformed {
 pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let document = parse_sections(input)?;
 
-    match !input.is_empty() && document.files().next().is_none() {
-        true => Err(ParseError::NoDiff),
-        false => Ok(document),
+    match (&document, input.is_empty()) {
+        (DiffDocument::Text(_), false) => Err(ParseError::NoDiff),
+        _ => Ok(document),
     }
 }
 
@@ -88,7 +88,7 @@ pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
 /// Parses any diff output into its surrounding text and file sections.
 fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut lines = SourceLines::new(input);
-    let mut files = Vec::new();
+    let mut sections = Vec::new();
     let mut text = Vec::new();
 
     while let Some(line) = lines.next() {
@@ -102,16 +102,13 @@ fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
                 parse_unified(None, FileHeader { line, path }, &mut lines)?
             }
         };
-        files.push(FileSection {
+        sections.push(FileSection {
             leading: mem::take(&mut text).into_boxed_slice(),
             file,
         });
     }
 
-    Ok(DiffDocument::new(
-        files.into_boxed_slice(),
-        text.into_boxed_slice(),
-    ))
+    Ok(DiffDocument::new(sections, text.into_boxed_slice()))
 }
 
 // Sections
@@ -497,7 +494,7 @@ mod tests {
         for input in [b"ordinary text\n".as_slice(), b" \t\r\n", b"\n"] {
             assert_eq!(parse_patch(input), Err(ParseError::NoDiff));
         }
-        assert_eq!(parse_patch(b""), Ok(DiffDocument::default()));
+        assert_eq!(parse_patch(b""), Ok(DiffDocument::Text(Box::default())));
     }
 
     #[test]
