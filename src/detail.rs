@@ -12,6 +12,8 @@ use crate::{
     span::PayloadSpan,
 };
 
+/// The most graphemes an unchanged gap between two changed spans can hold and still be
+/// absorbed into one span.
 const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
 /// The character-detail spans of each `rows` line that has changed spans: a paired
@@ -129,18 +131,27 @@ impl<'a> PairCursor<'a> {
 
 // Tokens
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Whether a token is part of a word or a run of delimiters between words.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum TokenKind {
     Word,
     Delimiter,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A run of a payload's characters of one kind: the unit a changed pair is diffed by.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Token<'a> {
     text: &'a str,
     kind: TokenKind,
 }
 
+/// Where a token starts in its text, and its kind.
+struct TokenStart {
+    at: usize,
+    kind: TokenKind,
+}
+
+/// `text` split into tokens, in order: a token ends where the next one starts.
 fn tokens(text: &str) -> Vec<Token<'_>> {
     let Some(first) = text.chars().next() else {
         return Vec::new();
@@ -150,22 +161,28 @@ fn tokens(text: &str) -> Vec<Token<'_>> {
         .chars()
         .zip(text.char_indices().skip(1))
         .filter(|&(previous, (_, current))| starts_token(previous, current))
-        .map(|(_, (index, current))| (index, token_kind(current)));
-    let starts = iter::once((0, token_kind(first)))
-        .chain(later_starts)
-        .collect::<Vec<_>>();
+        .map(|(_, (at, current))| TokenStart {
+            at,
+            kind: token_kind(current),
+        });
+    let starts = iter::once(TokenStart {
+        at: 0,
+        kind: token_kind(first),
+    })
+    .chain(later_starts)
+    .collect::<Vec<_>>();
     let ends = starts
         .iter()
         .skip(1)
-        .map(|&(index, _)| index)
+        .map(|start| start.at)
         .chain(iter::once(text.len()));
 
     starts
         .iter()
         .zip(ends)
-        .map(|(&(start, kind), end)| Token {
-            text: &text[start..end],
-            kind,
+        .map(|(start, end)| Token {
+            text: &text[start.at..end],
+            kind: start.kind,
         })
         .collect()
 }
@@ -183,6 +200,7 @@ fn starts_token(previous: char, current: char) -> bool {
     previous_kind != current_kind || camel_case_boundary
 }
 
+/// Letters, digits and `_` make words; every other character is a delimiter.
 fn token_kind(character: char) -> TokenKind {
     match character.is_alphanumeric() || character == '_' {
         true => TokenKind::Word,
@@ -190,6 +208,7 @@ fn token_kind(character: char) -> TokenKind {
     }
 }
 
+/// The bytes `tokens` cover together.
 fn tokens_len(tokens: &[Token<'_>]) -> usize {
     tokens.iter().map(|token| token.text.len()).sum()
 }
@@ -297,16 +316,19 @@ fn similar_word_changes(
 /// between neighbors absorbed into one span.
 fn coalesce_tiny_equal_islands(spans: Vec<PayloadSpan>, payload: &str) -> Vec<PayloadSpan> {
     spans.into_iter().fold(Vec::new(), |mut coalesced, span| {
-        match coalesced.last_mut() {
-            Some(previous) if is_tiny_island(&payload[previous.end()..span.start()]) => {
-                *previous = previous.through(span);
-            }
-            _ => coalesced.push(span),
+        let absorbing = coalesced
+            .last_mut()
+            .filter(|previous| is_tiny_island(&payload[previous.end()..span.start()]));
+
+        match absorbing {
+            Some(previous) => *previous = previous.through(span),
+            None => coalesced.push(span),
         }
         coalesced
     })
 }
 
+/// Whether the unchanged `island` between two changed spans is small enough to absorb.
 fn is_tiny_island(island: &str) -> bool {
     island.graphemes(true).count() <= MAX_EQUAL_ISLAND_GRAPHEMES
 }
@@ -316,6 +338,7 @@ mod tests {
     use super::{changed_pair_spans, character_details};
     use crate::{page_rows::PageRows, parser::parse_patch, side::BySide, span::PayloadSpan};
 
+    /// The changed spans of the pair `old` and `new`.
     fn spans_of(old: &str, new: &str) -> BySide<Vec<PayloadSpan>> {
         changed_pair_spans(BySide { old, new })
     }
