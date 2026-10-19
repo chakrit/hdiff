@@ -32,40 +32,45 @@ impl SourceLine {
 
     /// The first visible character and the rest of the line after it.
     pub fn split_first(&self) -> Option<(char, SourceLine)> {
-        let (source, first) = visible(&self.bytes).next()?;
+        let DecodedChar { source, character } = visible(&self.bytes).next()?;
 
         // Visible text resumes from plain text after a visible character, so the rest's
         // sanitized text is the remainder of this line's.
         let rest = Self {
             bytes: self.bytes[source.end..].into(),
-            sanitized: self.sanitized[first.len_utf8()..].into(),
+            sanitized: self.sanitized[character.len_utf8()..].into(),
         };
-        Some((first, rest))
+        Some((character, rest))
     }
 }
 
 /// The visible text of `bytes`, decoded as lossy UTF-8.
 pub fn sanitize(bytes: &[u8]) -> String {
-    visible(bytes).map(|(_, character)| character).collect()
+    visible(bytes).map(|decoded| decoded.character).collect()
 }
 
-/// Each visible character of `bytes`, decoded as lossy UTF-8, with the source bytes it
-/// was decoded from. Terminal control sequences and control characters other than tab
-/// are not visible.
-fn visible(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, char)> {
+/// A character decoded from input, with the source bytes it was decoded from.
+struct DecodedChar {
+    source: Range<usize>,
+    character: char,
+}
+
+/// Each visible character of `bytes`, decoded as lossy UTF-8. Terminal control
+/// sequences and control characters other than tab are not visible.
+fn visible(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
     let mut state = State::Text;
 
-    decoded(bytes).filter_map(move |(source, character)| {
-        let shown = state.shows(character);
-        state = state.after(character);
+    decoded(bytes).filter(move |decoded| {
+        let shown = state.shows(decoded.character);
+        state = state.after(decoded.character);
 
-        shown.then_some((source, character))
+        shown
     })
 }
 
-/// Lossy UTF-8 decoding with the source bytes of each character; an invalid sequence
-/// decodes to one replacement character.
-fn decoded(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, char)> {
+/// Lossy UTF-8 decoding of `bytes`; an invalid sequence decodes to one replacement
+/// character.
+fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
     let mut start = 0;
 
     bytes.utf8_chunks().flat_map(move |chunk| {
@@ -78,10 +83,15 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, char)> {
             .char_indices()
             .map(move |(offset, character)| {
                 let begin = valid_start + offset;
-                (begin..begin + character.len_utf8(), character)
+                DecodedChar {
+                    source: begin..begin + character.len_utf8(),
+                    character,
+                }
             });
-        let invalid = (!chunk.invalid().is_empty())
-            .then_some((invalid_start..start, char::REPLACEMENT_CHARACTER));
+        let invalid = (!chunk.invalid().is_empty()).then_some(DecodedChar {
+            source: invalid_start..start,
+            character: char::REPLACEMENT_CHARACTER,
+        });
 
         valid.chain(invalid)
     })
