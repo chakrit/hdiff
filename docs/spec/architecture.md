@@ -607,6 +607,13 @@ recognizes control sequences for both sanitizing and locating a record's marker.
 Prepared partitions own display styling. Parsing uses ANSI-free text; rendering strips
 input control sequences, including SGR colors, and applies hdiff's own styling.
 It never replays arbitrary source CSI, OSC, DCS, or control bytes into the terminal.
+The scanner reads input as the DEC terminal parser in
+`docs/vendor/terminal-control-parser.md` does and shows what a terminal shows. A tab is
+the one visible control character; inside an escape or control sequence it shows and the
+sequence continues. DCS, SOS, PM and APC strings end only at ST, CAN, SUB, `ESC` or a C1
+introducer; an OSC string also ends at BEL. A non-ASCII character after `ESC` ends the
+escape and shows. A non-ASCII character inside a control sequence stays part of the
+sequence.
 Interactive rows expand each tab to the next 2-column tab stop, counted from the start
 of the payload.
 Interactive rows are segmented into grapheme clusters once per row, across style spans;
@@ -650,6 +657,8 @@ effort; SIGKILL and abort-style termination cannot be restored.
 
 - What exact option names and rc-file location should the input and display contract use?
 - Which Tree-sitter semantic-diff algorithm should implement the semantic strategy?
+- What should a non-ASCII character inside a control sequence do? Terminals disagree on
+  this malformed input; until it is decided, it stays part of the sequence.
 
 Prior-art review of Delta, Tig, and Difftastic is recorded in
 `docs/vendor/terminal-diff-viewers.md`.
