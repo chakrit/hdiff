@@ -1,6 +1,8 @@
 //! Tab expansion for interactive rows, to 2-column tab stops. Rules:
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
+use std::iter;
+
 use crate::{
     compact::Count,
     screen::{Cells, NonZeroCells},
@@ -21,7 +23,7 @@ impl TabStops {
     pub fn expand_into(&mut self, text: &str, expanded: &mut String) {
         self.walk(text, |chunk, padding| {
             expanded.push_str(chunk);
-            expanded.extend(std::iter::repeat_n(' ', padding.get()));
+            expanded.extend(iter::repeat_n(' ', padding.get()));
         });
     }
 
