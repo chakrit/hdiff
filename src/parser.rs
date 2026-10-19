@@ -84,7 +84,7 @@ pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
 
 /// Parses any diff output into its surrounding text and file sections.
 fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
-    let mut lines = Lines::new(input);
+    let mut lines = SourceLines::new(input);
     let mut sections = Vec::new();
 
     while let Some(line) = lines.next() {
@@ -151,14 +151,17 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     Ok(())
 }
 
-fn parse_text(first: SourceLine, lines: &mut Lines<'_>) -> Box<[SourceLine]> {
+fn parse_text(first: SourceLine, lines: &mut SourceLines<'_>) -> Box<[SourceLine]> {
     let rest = std::iter::from_fn(|| lines.next_if(|text| line_start(text) == Ok(LineStart::Text)));
 
     std::iter::once(first).chain(rest).collect()
 }
 
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata.
-fn parse_git_section(header: SourceLine, lines: &mut Lines<'_>) -> Result<Section, ParseError> {
+fn parse_git_section(
+    header: SourceLine,
+    lines: &mut SourceLines<'_>,
+) -> Result<Section, ParseError> {
     let mut metadata = std::iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(binary_patch) = lines.next_if(|text| text == "GIT binary patch") {
         metadata.push(binary_patch);
@@ -200,7 +203,7 @@ fn is_git_metadata(text: &str) -> bool {
 
 /// The `literal` and `delta` blocks after `GIT binary patch`, each with its payload and
 /// blank separator.
-fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseError> {
+fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, ParseError> {
     let mut patch = Vec::new();
 
     while let Some((header, valid_size)) =
@@ -241,7 +244,7 @@ fn binary_block_size(text: &str) -> Option<&str> {
 fn parse_unified(
     git: Option<GitHeader>,
     old: FileHeader,
-    lines: &mut Lines<'_>,
+    lines: &mut SourceLines<'_>,
 ) -> Result<DiffFile, ParseError> {
     let Some(new) = lines.next_file_header(Side::New) else {
         let error = match lines.peek() {
@@ -283,7 +286,7 @@ const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file";
 fn parse_hunk(
     header: SourceLine,
     expected: BySide<usize>,
-    lines: &mut Lines<'_>,
+    lines: &mut SourceLines<'_>,
 ) -> Result<Hunk, ParseError> {
     let exhausted = BySide::<usize>::default();
     let mut remaining = expected;
@@ -382,13 +385,13 @@ fn range_count(range: &str, prefix: char) -> Option<usize> {
 // Reading lines
 
 /// The input's lines, each decoded once when first read.
-struct Lines<'a> {
+struct SourceLines<'a> {
     rest: &'a [u8],
     peeked: Option<SourceLine>,
     taken: usize,
 }
 
-impl<'a> Lines<'a> {
+impl<'a> SourceLines<'a> {
     fn new(input: &'a [u8]) -> Self {
         Self {
             rest: input,
