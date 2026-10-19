@@ -42,14 +42,6 @@ pub struct FileView<'a> {
     pub trailing: &'a [SourceLine],
 }
 
-/// What a document shows, in input order: each file with its surrounding text, then the
-/// text the document holds outside any file — all of a text document's text, and none
-/// of a document with files.
-pub struct DocumentParts<'a> {
-    pub file_views: Vec<FileView<'a>>,
-    pub unattached: &'a [SourceLine],
-}
-
 impl DiffDocument {
     /// The document `sections` and the `trailing` text after them form: their files, or
     /// the text alone when there are none.
@@ -65,19 +57,6 @@ impl DiffDocument {
         }
     }
 
-    pub fn parts(&self) -> DocumentParts<'_> {
-        match self {
-            Self::Files(files) => DocumentParts {
-                file_views: files.views().into_iter().collect(),
-                unattached: &[],
-            },
-            Self::Text(text) => DocumentParts {
-                file_views: Vec::new(),
-                unattached: text,
-            },
-        }
-    }
-
     /// The document's files in input order; a text document has none.
     #[cfg(test)]
     pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
@@ -87,7 +66,12 @@ impl DiffDocument {
     /// Each file with its surrounding text; a text document has none.
     #[cfg(test)]
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
-        self.parts().file_views.into_iter()
+        let views = match self {
+            Self::Files(files) => Some(files.views()),
+            Self::Text(_) => None,
+        };
+
+        views.into_iter().flatten()
     }
 }
 

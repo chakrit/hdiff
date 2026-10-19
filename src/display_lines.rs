@@ -99,13 +99,12 @@ impl LineEnding {
 
 /// Every line of `document`, in input order.
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
-    let parts = document.parts();
-
-    parts
-        .file_views
-        .into_iter()
-        .flat_map(of_file_view)
-        .chain(of_text(parts.unattached))
+    match document {
+        DiffDocument::Files(files) => {
+            DocumentLines::Files(files.views().into_iter().flat_map(of_file_view))
+        }
+        DiffDocument::Text(text) => DocumentLines::Text(of_text(text)),
+    }
 }
 
 /// The lines `view` displays: its leading text, its file, then its trailing text.
@@ -189,6 +188,27 @@ where
         match self {
             Self::Metadata(lines) => lines.next(),
             Self::Unified(lines) => lines.next(),
+        }
+    }
+}
+
+/// A document's lines: its files with their surrounding text, or the text alone.
+enum DocumentLines<F, T> {
+    Files(F),
+    Text(T),
+}
+
+impl<'a, F, T> Iterator for DocumentLines<F, T>
+where
+    F: Iterator<Item = DisplayLine<'a>>,
+    T: Iterator<Item = DisplayLine<'a>>,
+{
+    type Item = DisplayLine<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Files(lines) => lines.next(),
+            Self::Text(lines) => lines.next(),
         }
     }
 }
