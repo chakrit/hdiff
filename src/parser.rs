@@ -517,7 +517,7 @@ impl<'a> SourceLines<'a> {
 mod tests {
     use super::{Error, Malformed, parse_comparison, parse_patch};
     use crate::{
-        document::{ContextMarker, DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
+        document::{ContextMarker, DiffDocument, FileBody, Hunk, Record, RecordKind, UnifiedBody},
         finite_output,
     };
 
@@ -542,14 +542,24 @@ mod tests {
             panic!("fixture should hold one file");
         };
 
-        &body.hunks[0]
+        body.hunks.first()
+    }
+
+    /// The `N` records of the first hunk of a document holding one unified file.
+    fn first_hunk_records<const N: usize>(document: &DiffDocument) -> &[Record; N] {
+        let records = &first_hunk(document).records;
+
+        records
+            .as_ref()
+            .try_into()
+            .unwrap_or_else(|_| panic!("the first hunk holds {} records, not {N}", records.len()))
     }
 
     /// Each body's first-hunk record count.
     fn first_hunk_record_counts(bodies: &[&UnifiedBody]) -> Vec<usize> {
         bodies
             .iter()
-            .map(|body| body.hunks[0].records.len())
+            .map(|body| body.hunks.first().records.len())
             .collect()
     }
 
@@ -684,7 +694,9 @@ mod tests {
         let FileBody::Unified(first) = &first.file.body else {
             panic!("first file is unified");
         };
-        let marker = first.hunks[0]
+        let marker = first
+            .hunks
+            .first()
             .records
             .last()
             .and_then(|record| record.no_newline.as_ref())
@@ -843,14 +855,22 @@ mod tests {
             b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
         let document = parse_patch(input).expect("mode-only diff with text");
         let views = document.file_views().collect::<Vec<_>>();
-        let FileBody::Metadata(body) = &views[0].file.body else {
+        let [view] = views.as_slice() else {
+            panic!("the patch holds one file: {} views", views.len());
+        };
+        let FileBody::Metadata(body) = &view.file.body else {
             panic!("mode-only diff is metadata");
         };
+        let ([message], [footer]) = (view.leading, view.trailing) else {
+            panic!(
+                "one line on each side: {:?} {:?}",
+                view.leading, view.trailing
+            );
+        };
 
-        assert_eq!(views.len(), 1);
         assert_eq!(body.git().metadata.len(), 2);
-        assert_eq!(views[0].leading[0].sanitized(), "message");
-        assert_eq!(views[0].trailing[0].sanitized(), "footer");
+        assert_eq!(message.sanitized(), "message");
+        assert_eq!(footer.sanitized(), "footer");
         assert_eq!(finite_output::of_document(&document), input);
     }
 
@@ -860,9 +880,11 @@ mod tests {
 
         let document = parse_patch(input.as_bytes()).expect("valid unified diff");
         let bodies = unified_bodies(&document);
+        let [body] = bodies[..] else {
+            panic!("the patch holds one file: {} bodies", bodies.len());
+        };
 
-        assert_eq!(bodies.len(), 1);
-        assert_eq!(bodies[0].hunks.len().get(), 1);
+        assert_eq!(body.hunks.len().get(), 1);
         assert_eq!(first_hunk_record_counts(&bodies), [2]);
     }
 
@@ -933,7 +955,8 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
 
         let document = parse_patch(input).expect("structurally valid diff");
-        let payload = &first_hunk(&document).records[1].payload;
+        let [_, addition] = first_hunk_records(&document);
+        let payload = &addition.payload;
 
         assert_eq!(payload.bytes(), b"\xffnew\n");
         assert_eq!(payload.sanitized(), "\u{fffd}new");
@@ -944,7 +967,8 @@ mod tests {
         let input = b"--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n";
 
         let document = parse_patch(input).expect("valid CRLF diff");
-        let payload = &first_hunk(&document).records[0].payload;
+        let [deletion, _] = first_hunk_records(&document);
+        let payload = &deletion.payload;
 
         assert_eq!(payload.bytes(), b"old\r\n");
         assert_eq!(payload.sanitized(), "old");
@@ -961,7 +985,7 @@ mod tests {
             let input = [b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n".as_slice(), line].concat();
 
             let document = parse_patch(&input).expect("valid deletion");
-            let record = &first_hunk(&document).records[0];
+            let [record] = first_hunk_records(&document);
 
             assert_eq!(record.kind, RecordKind::Deletion);
             assert_eq!(record.payload.bytes(), payload, "{line:?}");
@@ -973,7 +997,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n--- filename\n";
 
         let document = parse_patch(input).expect("valid deletion record");
-        let record = &first_hunk(&document).records[0];
+        let [record] = first_hunk_records(&document);
 
         assert_eq!(record.kind, RecordKind::Deletion);
         assert_eq!(record.payload.sanitized(), "-- filename");
