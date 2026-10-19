@@ -213,8 +213,8 @@ impl TerminalSession {
     /// leaving raw mode again when the alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, Error> {
         let mut terminal = Terminal::new(CrosstermBackend::new(controlling_terminal))
+            .and_then(|created| terminal::enable_raw_mode().map(|()| created))
             .map_err(|error| start_failed(error, Ok(())))?;
-        terminal::enable_raw_mode().map_err(|error| start_failed(error, Ok(())))?;
         let panic_hook = RestoringPanicHook::install();
 
         if let Err(error) = execute!(terminal.backend_mut(), EnterAlternateScreen) {
