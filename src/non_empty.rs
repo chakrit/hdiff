@@ -36,10 +36,6 @@ impl<T> NonEmpty<T> {
         &self.rest
     }
 
-    pub fn last_mut(&mut self) -> &mut T {
-        self.rest.last_mut().unwrap_or(&mut self.first)
-    }
-
     pub fn len(&self) -> NonZeroUsize {
         NonZeroUsize::MIN.saturating_add(self.rest.len())
     }
@@ -53,6 +49,18 @@ impl<T> NonEmpty<T> {
         let first = convert(&self.first);
 
         NonEmpty::new(first, self.rest.iter().map(convert))
+    }
+
+    /// Each item mapped by `convert` with its index, in order.
+    pub fn map_indexed<'a, U>(&'a self, mut convert: impl FnMut(usize, &'a T) -> U) -> NonEmpty<U> {
+        let first = convert(0, &self.first);
+        let rest = self
+            .rest
+            .iter()
+            .enumerate()
+            .map(|(index, item)| convert(index + 1, item));
+
+        NonEmpty::new(first, rest)
     }
 }
 
@@ -82,15 +90,15 @@ mod tests {
     use super::NonEmpty;
 
     #[test]
-    fn the_last_item_is_the_first_when_there_is_no_other() {
-        let mut alone = NonEmpty::new(1, []);
-        *alone.last_mut() = 2;
+    fn maps_each_item_with_its_index() {
+        let items = NonEmpty::new('a', ['b', 'c']);
 
-        let mut several = NonEmpty::new(1, [2, 3]);
-        *several.last_mut() = 4;
+        let indexed = items.map_indexed(|index, item| (index, *item));
 
-        assert_eq!(alone.iter().collect::<Vec<_>>(), [&2]);
-        assert_eq!(several.iter().collect::<Vec<_>>(), [&1, &2, &4]);
+        assert_eq!(
+            indexed.iter().collect::<Vec<_>>(),
+            [&(0, 'a'), &(1, 'b'), &(2, 'c')]
+        );
     }
 
     #[test]

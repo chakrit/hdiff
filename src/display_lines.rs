@@ -101,9 +101,9 @@ impl LineEnding {
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
     match document {
         DiffDocument::Files(files) => {
-            DocumentLines::Files(files.views().into_iter().flat_map(of_file_view))
+            OneOf::First(files.views().into_iter().flat_map(of_file_view))
         }
-        DiffDocument::Text(text) => DocumentLines::Text(of_text(text)),
+        DiffDocument::Text(text) => OneOf::Second(of_text(text)),
     }
 }
 
@@ -128,8 +128,8 @@ pub fn of_text<'a>(
 /// header and records.
 fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     match &file.body {
-        FileBody::Metadata(git) => FileLines::Metadata(git_header_lines(git)),
-        FileBody::Unified(body) => FileLines::Unified(unified_lines(body)),
+        FileBody::Metadata(git) => OneOf::First(git_header_lines(git)),
+        FileBody::Unified(body) => OneOf::Second(unified_lines(body)),
     }
 }
 
@@ -144,7 +144,7 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
     let hunks = body.addressed_hunks().flat_map(|hunk| {
         let hunk_header = DisplayLine {
             kind: LineKind::HunkHeader,
-            source: &hunk.hunk.header,
+            source: hunk.header(),
         };
         let records = hunk.records().map(|(address, record)| {
             let kind = LineKind::Record {
@@ -171,44 +171,24 @@ fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
         })
 }
 
-/// The lines of a file, whichever body it has.
-enum FileLines<M, U> {
-    Metadata(M),
-    Unified(U),
+/// Lines from one of two sources, chosen once: a file's body kind, or whether a document
+/// has files.
+enum OneOf<A, B> {
+    First(A),
+    Second(B),
 }
 
-impl<'a, M, U> Iterator for FileLines<M, U>
+impl<'a, A, B> Iterator for OneOf<A, B>
 where
-    M: Iterator<Item = DisplayLine<'a>>,
-    U: Iterator<Item = DisplayLine<'a>>,
+    A: Iterator<Item = DisplayLine<'a>>,
+    B: Iterator<Item = DisplayLine<'a>>,
 {
     type Item = DisplayLine<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Metadata(lines) => lines.next(),
-            Self::Unified(lines) => lines.next(),
-        }
-    }
-}
-
-/// A document's lines: its files with their surrounding text, or the text alone.
-enum DocumentLines<F, T> {
-    Files(F),
-    Text(T),
-}
-
-impl<'a, F, T> Iterator for DocumentLines<F, T>
-where
-    F: Iterator<Item = DisplayLine<'a>>,
-    T: Iterator<Item = DisplayLine<'a>>,
-{
-    type Item = DisplayLine<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Files(lines) => lines.next(),
-            Self::Text(lines) => lines.next(),
+            Self::First(lines) => lines.next(),
+            Self::Second(lines) => lines.next(),
         }
     }
 }

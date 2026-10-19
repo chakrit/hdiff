@@ -74,19 +74,22 @@ impl DiffFiles {
     /// Each file with the text leading up to it; the last file also carries the trailing
     /// text.
     pub fn views(&self) -> NonEmpty<FileView<'_>> {
-        let mut views = self.sections.map(FileSection::view);
-        views.last_mut().trailing = &self.trailing;
-        views
+        let last = self.sections.len().get() - 1;
+
+        self.sections.map_indexed(|index, section| {
+            let trailing = if index == last { &*self.trailing } else { &[] };
+            section.view(trailing)
+        })
     }
 }
 
 impl FileSection {
-    /// The section's file with its leading text, and no trailing text.
-    fn view(&self) -> FileView<'_> {
+    /// The section's file with its leading text and `trailing` text.
+    fn view<'a>(&'a self, trailing: &'a [SourceLine]) -> FileView<'a> {
         FileView {
             file: &self.file,
             leading: &self.leading,
-            trailing: &[],
+            trailing,
         }
     }
 }
@@ -182,18 +185,24 @@ impl Hunk {
 #[derive(Clone, Copy)]
 pub struct AddressedHunk<'a> {
     index: usize,
-    pub hunk: &'a Hunk,
+    hunk: &'a Hunk,
 }
 
 impl<'a> AddressedHunk<'a> {
+    pub fn header(self) -> &'a SourceLine {
+        &self.hunk.header
+    }
+
     /// The hunk's records, each with its address in the file.
     pub fn records(self) -> impl Iterator<Item = (RecordAddress, &'a Record)> {
-        let hunk = self.index;
+        let hunk_index = self.index;
         self.hunk
             .records
             .iter()
             .enumerate()
-            .map(move |(record, value)| (RecordAddress::new(hunk, record), value))
+            .map(move |(record_index, record)| {
+                (RecordAddress::new(hunk_index, record_index), record)
+            })
     }
 }
 
