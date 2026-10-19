@@ -15,13 +15,9 @@ const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new(
 
 fn run(driver: &str, patch: &str) -> Output {
     let env = TestEnv::new();
-    let path = env.write_file("input.patch", patch);
+    env.write_file("input.patch", patch);
 
-    env.hdiff()
-        .args(["--bench", driver])
-        .arg(path)
-        .output()
-        .expect("run measurement")
+    env.run(["--bench", driver, "input.patch"])
 }
 
 fn records(report: &str) -> Vec<Record<'_>> {
@@ -83,6 +79,10 @@ impl<'a> Record<'a> {
             .parse()
             .unwrap_or_else(|_| panic!("integer {key} in {:?}", self.line))
     }
+
+    fn is_integer(&self, key: &str) -> bool {
+        self.text(key).parse::<u128>().is_ok()
+    }
 }
 
 #[test]
@@ -95,13 +95,14 @@ fn benchmark_accounts_for_input_and_parsing_before_preparation() {
     };
     assert_eq!(preparation.kind, "preparation", "{text}");
     assert_eq!(startup.kind, "startup", "{text}");
-    assert_eq!(preparation.integer("files"), 1);
-    assert_eq!(preparation.integer("records"), 2);
-    assert_eq!(startup.integer("version"), 1);
-    assert_eq!(startup.integer("bytes"), patch_bytes());
+    assert_eq!(preparation.integer("files"), 1, "{text}");
+    assert_eq!(preparation.integer("records"), 2, "{text}");
+    assert_eq!(startup.integer("version"), 1, "{text}");
+    assert_eq!(startup.integer("bytes"), patch_bytes(), "{text}");
     assert_eq!(
         startup.integer("preparation_ns"),
-        preparation.integer("duration_ns")
+        preparation.integer("duration_ns"),
+        "{text}"
     );
     assert!(
         startup.integer("ready_ns")
@@ -140,13 +141,22 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
     assert_eq!(profile.line, "profile version=1", "{text}");
     assert_eq!(
         stages.keys().copied().collect::<BTreeSet<_>>(),
-        expected_stages()
+        expected_stages(),
+        "{text}"
     );
-    assert_eq!(parent_sum("preparation"), startup.integer("preparation_ns"));
-    assert_eq!(parent_sum("syntax"), stages[&("preparation", "syntax")]);
-    assert_eq!(work.integer("hunks"), 1);
-    assert_eq!(work.integer("parse_calls"), 2);
-    assert_eq!(work.integer("projected_bytes"), 24);
+    assert_eq!(
+        parent_sum("preparation"),
+        startup.integer("preparation_ns"),
+        "{text}"
+    );
+    assert_eq!(
+        parent_sum("syntax"),
+        stages[&("preparation", "syntax")],
+        "{text}"
+    );
+    assert_eq!(work.integer("hunks"), 1, "{text}");
+    assert_eq!(work.integer("parse_calls"), 2, "{text}");
+    assert_eq!(work.integer("projected_bytes"), 24, "{text}");
     assert!(work.integer("captures") > 0, "{text}");
 }
 
@@ -167,10 +177,10 @@ fn empty_input_prepares_zero_files_and_records() {
     let [preparation, startup] = &records[..] else {
         panic!("preparation and startup records: {text}");
     };
-    assert_eq!(preparation.integer("files"), 0);
-    assert_eq!(preparation.integer("records"), 0);
-    assert_eq!(startup.integer("version"), 1);
-    assert_eq!(startup.integer("bytes"), 0);
+    assert_eq!(preparation.integer("files"), 0, "{text}");
+    assert_eq!(preparation.integer("records"), 0, "{text}");
+    assert_eq!(startup.integer("version"), 1, "{text}");
+    assert_eq!(startup.integer("bytes"), 0, "{text}");
 }
 
 #[test]
@@ -181,10 +191,10 @@ fn empty_input_profiles_zero_files_records_and_work() {
     let [diagnostic, startup, profile, .., work] = &records[..] else {
         panic!("diagnostic, startup, profile, stage and work records: {text}");
     };
-    assert_eq!(diagnostic.integer("files"), 0);
-    assert_eq!(diagnostic.integer("records"), 0);
-    assert_eq!(startup.integer("version"), 1);
-    assert_eq!(startup.integer("bytes"), 0);
+    assert_eq!(diagnostic.integer("files"), 0, "{text}");
+    assert_eq!(diagnostic.integer("records"), 0, "{text}");
+    assert_eq!(startup.integer("version"), 1, "{text}");
+    assert_eq!(startup.integer("bytes"), 0, "{text}");
     assert_eq!(profile.line, "profile version=1", "{text}");
     assert!(
         work.keys().iter().all(|key| work.integer(key) == 0),
@@ -212,7 +222,7 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
                 "{}",
                 record.line
             );
-            record.integer("step_ns");
+            assert!(record.is_integer("step_ns"), "{}", record.line);
             (
                 record.text("layout"),
                 record.text("detail"),
@@ -226,44 +236,51 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
         .flat_map(|layout| ["line", "character"].map(|detail| (layout, detail)))
         .flat_map(|(layout, detail)| ["off", "on"].map(|wrap| (layout, detail, wrap)))
         .collect::<BTreeSet<_>>();
-    assert_eq!(modes, expected);
+    assert_eq!(modes, expected, "{text}");
 }
 
 #[test]
 fn unsupported_language_has_no_syntax_parser_work() {
     let text = success_output(&run("stages", &PATCH.replace("a.rs", "a.txt")));
     let records = records(&text);
-    let work = records.last().expect("work counters");
+    let [.., work] = &records[..] else {
+        panic!("work counters: {text}");
+    };
 
-    assert_eq!(work.integer("hunks"), 1);
-    assert_eq!(work.integer("parse_calls"), 0);
-    assert_eq!(work.integer("captures"), 0);
+    assert_eq!(work.integer("hunks"), 1, "{text}");
+    assert_eq!(work.integer("parse_calls"), 0, "{text}");
+    assert_eq!(work.integer("captures"), 0, "{text}");
 }
 
 #[test]
 fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
     let env = TestEnv::new();
     let patch = env.write_file("input.patch", PATCH);
-    let stdin = env
+    let piped = env
         .hdiff()
         .args(["--bench", "prepare"])
         .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
         .output()
         .expect("stdin benchmark");
-    let text = success_output(&stdin);
-    assert_eq!(records(&text)[1].integer("bytes"), patch_bytes());
+    let piped_text = success_output(&piped);
+    let piped_records = records(&piped_text);
+    let [_, piped_startup] = &piped_records[..] else {
+        panic!("preparation and startup records: {piped_text}");
+    };
+    assert_eq!(
+        piped_startup.integer("bytes"),
+        patch_bytes(),
+        "{piped_text}"
+    );
 
-    let old = env.write_file("old.rs", "fn old() {}\n");
-    let new = env.write_file("new.rs", "fn new() {}\n");
-    let comparison = env
-        .hdiff()
-        .args(["--bench", "stages"])
-        .arg(old)
-        .arg(new)
-        .output()
-        .expect("operand profile");
-    let text = success_output(&comparison);
-    let records = records(&text);
-    assert_eq!(records[0].integer("records"), 2);
-    assert!(records[1].integer("bytes") > 0, "{text}");
+    env.write_file("old.rs", "fn old() {}\n");
+    env.write_file("new.rs", "fn new() {}\n");
+    let compared = env.run(["--bench", "stages", "old.rs", "new.rs"]);
+    let compared_text = success_output(&compared);
+    let compared_records = records(&compared_text);
+    let [diagnostic, compared_startup, ..] = &compared_records[..] else {
+        panic!("diagnostic and startup records: {compared_text}");
+    };
+    assert_eq!(diagnostic.integer("records"), 2, "{compared_text}");
+    assert!(compared_startup.integer("bytes") > 0, "{compared_text}");
 }

@@ -1,39 +1,17 @@
 mod common;
 
-use std::{
-    fs,
-    path::Path,
-    process::{Output, Stdio},
-};
+use std::{fs, path::Path, process::Stdio};
 
-use common::{TestEnv, assert_error, error_output, fixture, success_output};
-
-fn run_hdiff(arguments: &[&str]) -> Output {
-    TestEnv::new()
-        .hdiff()
-        .args(arguments)
-        .output()
-        .expect("run hdiff")
-}
+use common::{TestEnv, assert_error, error_output, fixture, run_fixture, success_output};
 
 fn short_commit_hash() -> String {
-    let output = TestEnv::new()
-        .git_in(
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            &["rev-parse", "--short", "HEAD"],
-        )
-        .output()
-        .expect("read source commit hash");
-
-    assert!(
-        output.status.success(),
-        "Git could not read the source commit"
+    let env = TestEnv::new();
+    let mut rev_parse = env.git_in(
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        &["rev-parse", "--short", "HEAD"],
     );
 
-    String::from_utf8(output.stdout)
-        .expect("commit hash is UTF-8")
-        .trim_end()
-        .to_owned()
+    run_fixture(&mut rev_parse).trim_end().to_owned()
 }
 
 fn comparison_tree() -> TestEnv {
@@ -49,19 +27,9 @@ fn comparison_tree() -> TestEnv {
     env
 }
 
-fn compare(env: &TestEnv, arguments: &[&str]) -> String {
-    let output = env
-        .hdiff()
-        .args(arguments)
-        .output()
-        .expect("run comparison");
-
-    success_output(&output)
-}
-
 #[test]
 fn help_describes_the_cli_without_reading_diff_input() {
-    let help = run_hdiff(&["--help"]);
+    let help = TestEnv::new().run(["--help"]);
     let drivers = ["prepare", "stages", "movement"];
 
     let text = success_output(&help);
@@ -84,7 +52,7 @@ fn help_describes_the_cli_without_reading_diff_input() {
 
 #[test]
 fn version_identifies_the_package_and_source_commit() {
-    let version = run_hdiff(&["--version"]);
+    let version = TestEnv::new().run(["--version"]);
     let expected = format!(
         "hdiff {} ({})\n",
         env!("CARGO_PKG_VERSION"),
@@ -101,11 +69,7 @@ fn bench_rejects_install_even_when_that_patch_filename_exists() {
         "--install",
         "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n",
     );
-    let output = env
-        .hdiff()
-        .args(["--bench", "stages", "--install"])
-        .output()
-        .expect("bench with incompatible installation option");
+    let output = env.run(["--bench", "stages", "--install"]);
 
     assert_error(
         &output,
@@ -121,11 +85,7 @@ fn empty_sources_exit_silently() {
     let after = env.write_file("after.txt", "unchanged\n");
 
     for operands in [vec![], vec![&patch], vec![&before, &after]] {
-        let output = env
-            .hdiff()
-            .args(&operands)
-            .output()
-            .expect("run empty viewer input");
+        let output = env.run(&operands);
 
         assert_eq!(success_output(&output), "", "{operands:?}");
     }
@@ -134,7 +94,7 @@ fn empty_sources_exit_silently() {
 #[test]
 fn metadata_only_input_remains_visible() {
     let patch = fixture("git-rename-only.patch");
-    let output = run_hdiff(&[patch.to_str().expect("fixture path is UTF-8")]);
+    let output = TestEnv::new().run([patch]);
 
     assert_eq!(
         success_output(&output),
@@ -149,11 +109,7 @@ fn truncated_patch_is_an_error() {
         "truncated.patch",
         "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n",
     );
-    let output = env
-        .hdiff()
-        .arg(patch)
-        .output()
-        .expect("run hdiff on a truncated patch");
+    let output = env.run([patch]);
 
     assert_error(&output, "line 5: truncated hunk");
 }
@@ -162,11 +118,11 @@ fn truncated_patch_is_an_error() {
 fn directory_comparison_descends_only_with_recursion() {
     let env = comparison_tree();
 
-    let top_level = compare(&env, &["before", "after"]);
+    let top_level = success_output(&env.run(["before", "after"]));
     assert!(top_level.contains("+new top\n"), "{top_level}");
     assert!(!top_level.contains("+new inner\n"), "{top_level}");
 
-    let recursive = compare(&env, &["-r", "before", "after"]);
+    let recursive = success_output(&env.run(["-r", "before", "after"]));
     assert!(recursive.contains("+new top\n"), "{recursive}");
     assert!(recursive.contains("+new inner\n"), "{recursive}");
 }
@@ -191,7 +147,7 @@ fn dash_leading_paths_remain_comparison_operands() {
     let env = comparison_tree();
     env.write_file("-q", "old top\n");
 
-    let text = compare(&env, &["-q", "after/top.txt"]);
+    let text = success_output(&env.run(["-q", "after/top.txt"]));
     assert!(text.contains("-old top\n+new top\n"), "{text}");
 }
 
@@ -217,7 +173,7 @@ fn directory_comparison_renders_added_and_removed_files_as_diffs() {
     env.write_file("before/removed.txt", "gone\n");
     env.write_file("after/added.txt", "fresh\n");
 
-    let text = compare(&env, &["before", "after"]);
+    let text = success_output(&env.run(["before", "after"]));
     assert!(text.contains("-gone\n"), "{text}");
     assert!(text.contains("+fresh\n"), "{text}");
 }
@@ -228,7 +184,7 @@ fn comparison_holding_only_surrounding_text_is_shown() {
     env.write_file("before.bin", b"\0old");
     env.write_file("after.bin", b"\0new");
 
-    let text = compare(&env, &["before.bin", "after.bin"]);
+    let text = success_output(&env.run(["before.bin", "after.bin"]));
     assert!(
         text.contains("before.bin") && text.contains("differ"),
         "{text}"
@@ -239,25 +195,21 @@ fn comparison_holding_only_surrounding_text_is_shown() {
 fn patch_file_holding_only_text_is_an_error() {
     let env = TestEnv::new();
     let patch = env.write_file("notes.patch", "Binary files a and b differ\n");
-    let output = env
-        .hdiff()
-        .arg(patch)
-        .output()
-        .expect("run hdiff on a text-only patch");
+    let output = env.run([patch]);
 
     assert_error(&output, "input contains no diff");
 }
 
 #[test]
 fn usage_errors_name_the_program_on_one_stderr_line() {
-    let output = run_hdiff(&["a", "b", "c"]);
+    let output = TestEnv::new().run(["a", "b", "c"]);
 
     assert_error(&output, "expected zero, one, or two operands");
 }
 
 #[test]
 fn failed_comparisons_report_each_diff_error_line() {
-    let output = run_hdiff(&["missing-before", "missing-after"]);
+    let output = TestEnv::new().run(["missing-before", "missing-after"]);
 
     let stderr = error_output(&output);
     let lines = stderr.lines().collect::<Vec<_>>();
@@ -274,7 +226,7 @@ fn failed_comparisons_report_each_diff_error_line() {
 
 #[test]
 fn unreadable_patch_files_are_named_in_the_error() {
-    let output = run_hdiff(&["missing.patch"]);
+    let output = TestEnv::new().run(["missing.patch"]);
 
     let stderr = error_output(&output);
     assert!(stderr.starts_with("hdiff: missing.patch: "), "{stderr}");
