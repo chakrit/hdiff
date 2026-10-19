@@ -18,21 +18,6 @@ impl Stage {
     /// [`ByStage`], so a stage cannot exist without appearing here.
     pub const ALL: [Self; 8] = ByStage::STAGES.into_array();
 
-    /// The stages grouped under their parents, in report order. A family's parent is its
-    /// first stage's; `chunk_by` yields no empty group, so every group has one.
-    pub fn families() -> impl Iterator<Item = Family> {
-        Self::ALL
-            .chunk_by(|stage, next| stage.parent() == next.parent())
-            .filter_map(|stages| {
-                let (first, _) = stages.split_first()?;
-
-                Some(Family {
-                    parent: first.parent(),
-                    stages,
-                })
-            })
-    }
-
     /// The stage's name in profile reports.
     pub const fn label(self) -> &'static str {
         match self {
@@ -56,12 +41,6 @@ impl Stage {
     }
 }
 
-/// A parent with the stages that partition its duration, in report order.
-pub struct Family {
-    pub parent: Parent,
-    pub stages: &'static [Stage],
-}
-
 /// A measurement partitioned by disjoint child stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Parent {
@@ -72,6 +51,16 @@ pub enum Parent {
 }
 
 impl Parent {
+    /// Every parent, in report order.
+    pub const ALL: [Self; 2] = [Self::Preparation, Self::Syntax];
+
+    /// The stages that partition this parent's duration, in report order.
+    pub fn stages(self) -> impl Iterator<Item = Stage> {
+        Stage::ALL
+            .into_iter()
+            .filter(move |stage| stage.parent() == self)
+    }
+
     /// The parent's name in profile reports.
     pub const fn label(self) -> &'static str {
         match self {
@@ -260,11 +249,12 @@ mod tests {
     }
 
     #[test]
-    fn each_parent_owns_one_contiguous_family() {
-        let parents = Stage::families()
-            .map(|family| family.parent)
+    fn reports_every_stage_once_under_its_parent_in_stage_order() {
+        let reported = Parent::ALL
+            .into_iter()
+            .flat_map(Parent::stages)
             .collect::<Vec<_>>();
 
-        assert_eq!(parents, [Parent::Preparation, Parent::Syntax]);
+        assert_eq!(reported, Stage::ALL);
     }
 }

@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     document::DiffDocument,
     input,
-    measurement::{Family, Observer, Parent, Profile, Stage, Unobserved},
+    measurement::{Observer, Parent, Profile, Stage, Unobserved},
     navigation::{interaction::Command, scroll::Movement},
     preferences::PreferenceChange,
     prepared::PreparedDocument,
@@ -232,17 +232,17 @@ fn preparation_report(
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     push_line(report, format_args!("profile version=1"));
 
-    for Family { parent, stages } in Stage::families() {
+    for parent in Parent::ALL {
         let total = match parent.measured_by() {
             None => preparation,
             Some(stage) => profile.duration(stage),
         };
 
-        let attributed = stages
-            .iter()
-            .map(|&stage| profile.duration(stage))
+        let attributed = parent
+            .stages()
+            .map(|stage| profile.duration(stage))
             .sum::<Duration>();
-        for &stage in stages {
+        for stage in parent.stages() {
             write_stage(report, stage.label(), parent, profile.duration(stage));
         }
 
