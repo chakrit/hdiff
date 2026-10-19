@@ -15,7 +15,7 @@ use super::{
 use crate::{
     line_breaks::LineBreaks,
     screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
-    styling::{Boundary, StyledRow, TextStyle},
+    styling::{Boundary, StyledRow, StyledText, TextStyle},
     tab_stops::TabStops,
     theme::Theme,
 };
@@ -64,9 +64,10 @@ pub(super) fn write_row(
     };
 
     let payload = ExpandedPayload::new(text_row);
-    let payload_clusters = payload
-        .clusters()
-        .map(|(cluster, text_style)| (cluster, segment_style(text_style, theme)));
+    let payload_clusters = payload.clusters().map(|cluster| StyledText {
+        text: cluster.text,
+        style: segment_style(cluster.style, theme),
+    });
     let gutter = gutter(text_row.tone(), &theme.rows);
 
     let cursor = RowCursor {
@@ -101,10 +102,10 @@ pub(super) fn write_row(
 
 fn write_clusters<'c>(
     mut cursor: RowCursor<'_>,
-    clusters: impl Iterator<Item = (&'c str, Style)>,
+    clusters: impl Iterator<Item = StyledText<'c, Style>>,
 ) -> Clip {
-    for (cluster, style) in clusters {
-        if cursor.write(cluster, style).is_break() {
+    for cluster in clusters {
+        if cursor.write(cluster).is_break() {
             break;
         }
     }
@@ -114,21 +115,31 @@ fn write_clusters<'c>(
 /// Writes `gutter`, then the payload clusters that wrapping at `width` places on `line`.
 fn write_wrapped_line<'c>(
     cursor: RowCursor<'_>,
-    gutter: impl IntoIterator<Item = (&'c str, Style)>,
-    payload_clusters: impl Iterator<Item = (&'c str, Style)>,
+    gutter: impl IntoIterator<Item = StyledText<'c, Style>>,
+    payload_clusters: impl Iterator<Item = StyledText<'c, Style>>,
     line: ScreenLines,
     width: NonZeroCells,
 ) -> Clip {
     let line_clusters = payload_clusters
-        .scan(LineBreaks::new(width), |breaks, (cluster, style)| {
-            Some((breaks.place(cluster), cluster, style))
+        .scan(LineBreaks::new(width), |breaks, cluster| {
+            let placed = breaks.place(cluster.text).map(|placed_line| PlacedCluster {
+                line: placed_line,
+                cluster,
+            });
+            Some(placed)
         })
-        .filter_map(|(placed_line, cluster, style)| Some((placed_line?, cluster, style)))
-        .skip_while(|(placed_line, _, _)| *placed_line < line)
-        .take_while(|(placed_line, _, _)| *placed_line == line)
-        .map(|(_, cluster, style)| (cluster, style));
+        .flatten()
+        .skip_while(|placed| placed.line < line)
+        .take_while(|placed| placed.line == line)
+        .map(|placed| placed.cluster);
 
     write_clusters(cursor, gutter.into_iter().chain(line_clusters))
+}
+
+/// A payload cluster with the wrapped line it falls on.
+struct PlacedCluster<'c> {
+    line: ScreenLines,
+    cluster: StyledText<'c, Style>,
 }
 
 /// A row's payload with tabs expanded, segmented into grapheme clusters as a whole so
@@ -144,21 +155,24 @@ impl ExpandedPayload {
         let mut text = String::new();
         let mut boundaries = Vec::new();
 
-        for (segment, style) in row.segments() {
-            tab_stops.expand_into(segment, &mut text);
+        for segment in row.segments() {
+            tab_stops.expand_into(segment.text, &mut text);
             boundaries.push(Boundary {
                 end: text.len(),
-                style,
+                style: segment.style,
             });
         }
         Self { text, boundaries }
     }
 
     /// Each cluster with the style of the segment containing its first byte.
-    fn clusters(&self) -> impl Iterator<Item = (&str, TextStyle)> {
+    fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
         self.text
             .grapheme_indices(true)
-            .map(|(start, cluster)| (cluster, self.style_at(start)))
+            .map(|(start, cluster)| StyledText {
+                text: cluster,
+                style: self.style_at(start),
+            })
     }
 
     /// The style of the segment containing byte `position`: the first segment ending past
@@ -187,7 +201,11 @@ struct RowCursor<'b> {
 }
 
 impl RowCursor<'_> {
-    fn write(&mut self, cluster: &str, style: Style) -> ControlFlow<()> {
+    fn write(&mut self, styled: StyledText<'_, Style>) -> ControlFlow<()> {
+        let StyledText {
+            text: cluster,
+            style,
+        } = styled;
         let width = Cells::of_cluster(cluster);
         if width == Cells::ZERO {
             return ControlFlow::Continue(());
