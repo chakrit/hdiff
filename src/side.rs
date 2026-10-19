@@ -22,6 +22,14 @@ pub struct BySide<T> {
 }
 
 impl<T> BySide<T> {
+    /// Each side's value as `f` computes it from the side, old first.
+    pub fn of(mut f: impl FnMut(Side) -> T) -> Self {
+        BySide {
+            old: f(Side::Old),
+            new: f(Side::New),
+        }
+    }
+
     pub fn get(&self, side: Side) -> &T {
         match side {
             Side::Old => &self.old,

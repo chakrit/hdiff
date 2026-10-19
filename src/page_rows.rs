@@ -476,10 +476,7 @@ impl BlockRows {
                 .map(|line_side| line_side.line)
                 .collect::<Vec<_>>()
         };
-        let columns = BySide {
-            old: column(Side::Old),
-            new: column(Side::New),
-        };
+        let columns = BySide::of(column);
 
         let paired_count = columns.old.len().min(columns.new.len());
         let paired = columns

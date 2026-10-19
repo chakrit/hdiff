@@ -398,13 +398,9 @@ impl RecordKind {
     /// The sides whose file the record is a line of: context is a line of both sides, and
     /// a change a line of the side it changes.
     pub fn sides(self) -> BySide<bool> {
-        match self.changed_side() {
-            Some(side) => BySide::only(side, ()).map(|on_side| on_side.is_some()),
-            None => BySide {
-                old: true,
-                new: true,
-            },
-        }
+        let changed_side = self.changed_side();
+
+        BySide::of(|side| changed_side.is_none_or(|changed| changed == side))
     }
 
     /// Whether the record is a line of `side`'s file.
