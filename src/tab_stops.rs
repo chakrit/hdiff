@@ -28,14 +28,27 @@ impl TabStops {
     /// Visits each tab-free chunk of `text` with the spaces the tab before it expands to;
     /// the first chunk follows no tab.
     fn walk<'t>(&mut self, text: &'t str, mut visit: impl FnMut(Cells, &'t str)) {
-        for (index, chunk) in text.split('\t').enumerate() {
-            let padding = match index {
-                0 => Cells::ZERO,
-                _ => self.advance_to_tab_stop(),
-            };
-            visit(padding, chunk);
-            self.column += Cells::of_text(chunk);
+        let mut chunks = text.split('\t');
+        let Some(first) = chunks.next() else {
+            return;
+        };
+
+        self.visit_chunk(Cells::ZERO, first, &mut visit);
+        for chunk in chunks {
+            let padding = self.advance_to_tab_stop();
+            self.visit_chunk(padding, chunk, &mut visit);
         }
+    }
+
+    /// Visits `chunk` after `padding` cells, then moves past it.
+    fn visit_chunk<'t>(
+        &mut self,
+        padding: Cells,
+        chunk: &'t str,
+        visit: &mut impl FnMut(Cells, &'t str),
+    ) {
+        visit(padding, chunk);
+        self.column += Cells::of_text(chunk);
     }
 
     /// Moves to the next tab stop, returning the cells a tab there covers.

@@ -178,7 +178,7 @@ fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
 /// The lines of a metadata body: its Git header and metadata, then its binary patch when
 /// it has one. A Git section's lines all display as metadata.
 fn metadata_lines(body: &MetadataBody) -> impl Iterator<Item = DisplayLine<'_>> {
-    let binary_patch = body
+    let binary_patch_lines = body
         .binary_patch()
         .into_iter()
         .flat_map(BinaryPatch::lines)
@@ -187,7 +187,7 @@ fn metadata_lines(body: &MetadataBody) -> impl Iterator<Item = DisplayLine<'_>> 
             source,
         });
 
-    git_header_lines(body.git()).chain(binary_patch)
+    git_header_lines(body.git()).chain(binary_patch_lines)
 }
 
 /// The lines of a unified body: its Git header and metadata when it has one, its file
