@@ -120,8 +120,6 @@ impl From<u16> for Cells {
 pub struct NonZeroCells(NonZeroUsize);
 
 impl NonZeroCells {
-    pub const MIN: Self = Self(NonZeroUsize::MIN);
-
     /// `cells`, or `None` when there are none.
     pub const fn new(cells: Cells) -> Option<Self> {
         match NonZeroUsize::new(cells.0) {
