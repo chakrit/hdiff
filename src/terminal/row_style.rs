@@ -5,18 +5,16 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     document::RecordKind,
+    screen::MARKER_GUTTER_CLUSTERS,
     styling::{DetailStyle, RowTone, StyledText, TextStyle},
     theme::{RowPalette, Theme},
 };
-
-/// Clusters of the marker gutter: the marker column, then the payload spacer.
-const GUTTER_CLUSTERS: usize = 2;
 
 /// The marker gutter that precedes a row's payload: a change's marker, then spacing.
 pub(super) fn gutter(
     tone: RowTone,
     palette: &RowPalette,
-) -> [StyledText<'static, Style>; GUTTER_CLUSTERS] {
+) -> [StyledText<'static, Style>; MARKER_GUTTER_CLUSTERS] {
     let spacing = StyledText {
         text: " ",
         style: Style::default(),
@@ -60,6 +58,39 @@ pub(super) fn segment_style(text_style: TextStyle, theme: &Theme) -> Style {
             .remove_modifier(Modifier::DIM),
         TextStyle::Detail(side, DetailStyle::Unchanged) => {
             Style::default().fg(theme.rows.change.get(side).unchanged)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        screen::Cells,
+        side::Side,
+        theme::{ColorDepth, Theme},
+    };
+
+    /// The gutter's cell width is its cluster count, so every cluster it draws covers
+    /// one cell.
+    #[test]
+    fn draws_every_gutter_cluster_in_one_cell() {
+        let palette = &Theme::for_depth(ColorDepth::TrueColor).rows;
+        let tones = Side::BOTH.map(RowTone::Changed).into_iter().chain([
+            RowTone::UnchangedRecord,
+            RowTone::HunkHeader,
+            RowTone::Plain,
+        ]);
+
+        for tone in tones {
+            for cluster in gutter(tone, palette) {
+                assert_eq!(
+                    Cells::of_text(cluster.text),
+                    Cells::ONE,
+                    "gutter cluster {:?}",
+                    cluster.text
+                );
+            }
         }
     }
 }
