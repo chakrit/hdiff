@@ -6,6 +6,7 @@ use crate::{
     screen::{Cells, NonZeroCells},
 };
 
+/// The cells between tab stops.
 const TAB_WIDTH: NonZeroCells = NonZeroCells::new(Cells::new(2)).expect("tab stops are apart");
 
 /// Expands tabs to the next multiple of `TAB_WIDTH` cells from the start of the payload,
@@ -37,6 +38,7 @@ impl TabStops {
         }
     }
 
+    /// Moves to the next tab stop, returning the cells a tab there covers.
     fn advance_to_tab_stop(&mut self) -> Cells {
         let padding = self.column.padding_to_next_multiple_of(TAB_WIDTH);
         self.column += padding;

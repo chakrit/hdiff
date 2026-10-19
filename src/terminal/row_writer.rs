@@ -106,6 +106,8 @@ pub(super) fn write_row(
     }
 }
 
+/// Writes `clusters` from `cursor` until one passes the pane's right edge, returning the
+/// sides they left the pane.
 fn write_clusters<'c>(
     mut cursor: RowCursor<'_>,
     clusters: impl Iterator<Item = StyledText<'c, Style>>,
@@ -156,6 +158,7 @@ struct ExpandedPayload {
 }
 
 impl ExpandedPayload {
+    /// `row`'s styled text with its tabs expanded and its segment ends moved to match.
     fn new(row: StyledRow<'_>) -> Self {
         let mut tab_stops = TabStops::default();
         let mut text = String::new();
@@ -208,6 +211,8 @@ struct RowCursor<'b> {
 }
 
 impl RowCursor<'_> {
+    /// Places one `styled` cluster at the cursor's column, drawing what the pane shows of
+    /// it; breaks when the cluster does not fit before the pane's right edge.
     fn write(&mut self, styled: StyledText<'_, Style>) -> ControlFlow<()> {
         let StyledText {
             text: cluster,
@@ -299,6 +304,7 @@ mod tests {
         clip: Clip,
     }
 
+    /// `diff` parsed and prepared.
     fn prepare(diff: &[u8]) -> PreparedDocument {
         let document = parse_patch(diff).expect("valid diff");
         PreparedDocument::prepare(&document)
@@ -314,11 +320,14 @@ mod tests {
         PaneRow::Text(page.row(page.rows().line_index(line), granularity))
     }
 
+    /// The one-line buffer `row` draws into, `width` cells wide, scrolled right by
+    /// `horizontal_offset`.
     fn scrolled_buffer(row: PaneRow<'_>, width: u16, horizontal_offset: Cells) -> Buffer {
         let placement = RowPlacement::Scrolled { horizontal_offset };
         write_placed(row, width, placement).buffer
     }
 
+    /// `row` written at `placement` into a one-line pane `width` cells wide.
     fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Written {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);

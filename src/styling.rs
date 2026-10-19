@@ -114,6 +114,7 @@ pub enum RowTone {
 }
 
 impl RowTone {
+    /// The tone of a line of `kind`.
     fn of(kind: LineKind) -> Self {
         match kind {
             LineKind::Record {
@@ -141,6 +142,7 @@ impl<'a> StyledRow<'a> {
         self.tone
     }
 
+    /// The row's text as styled segments in order, without empty ones.
     pub fn segments(&self) -> impl Iterator<Item = StyledText<'a, TextStyle>> + use<'a> {
         let text = self.text;
 
@@ -192,6 +194,7 @@ struct RowStyles {
     character: Option<Partition>,
 }
 
+/// `text` split by its record's `syntax` spans; text no span covers is plain.
 fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
     let annotations = syntax
         .iter()
@@ -205,6 +208,8 @@ fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
     Partition::new(text, &annotations, TextStyle::Plain)
 }
 
+/// `text` split by its character `detail`: changed spans, and the unchanged text between
+/// them.
 fn character_partition(text: &str, detail: &ChangedDetail) -> Partition {
     let side = detail.side();
     let annotations = detail
@@ -224,6 +229,8 @@ fn character_partition(text: &str, detail: &ChangedDetail) -> Partition {
     )
 }
 
+/// A style over a span of a payload, ranked against overlapping annotations by its
+/// priority length: the shorter wins.
 struct Annotation {
     span: PayloadSpan,
     priority_length: usize,
@@ -305,6 +312,7 @@ impl Partition {
         Self::Split(boundaries.into_boxed_slice())
     }
 
+    /// Each segment's end and style, in order.
     fn boundaries(&self) -> &[Boundary] {
         match self {
             Self::Uniform(boundary) => std::slice::from_ref(boundary),
