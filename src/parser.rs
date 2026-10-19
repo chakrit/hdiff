@@ -8,7 +8,7 @@ use std::{fmt, iter, mem};
 
 use self::{
     binary_patch::{is_binary_patch_header, parse_binary_patch},
-    hunk::{hunk_counts, parse_hunk, starts_hunk_header},
+    hunk::{hunk_counts, parse_hunk, starts_combined_hunk_header, starts_hunk_header},
 };
 use crate::{
     document::{DiffDocument, DiffFile, FileBody, FileSection, MetadataBody, UnifiedBody},
@@ -173,7 +173,7 @@ fn line_start(text: &str) -> Result<LineStart, Malformed> {
 
 /// Rejects combined-diff headers, and hunk or `+++` headers outside a file section.
 fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
-    if is_combined_diff_header(text) || text.starts_with("@@@") {
+    if is_combined_diff_header(text) || starts_combined_hunk_header(text) {
         return Err(Malformed::CombinedDiff);
     }
     if starts_hunk_header(text) || file_header_field(text, Side::New).is_some() {

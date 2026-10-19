@@ -142,7 +142,12 @@ fn is_excess_record(line: &SourceLine) -> bool {
 /// not a combined diff's `@@@`. Both a section's hunk reader and the check for headers
 /// outside a section ask this, so a malformed header gets one reading wherever it sits.
 pub(super) fn starts_hunk_header(text: &str) -> bool {
-    text.starts_with("@@") && !text.starts_with("@@@")
+    text.starts_with("@@") && !starts_combined_hunk_header(text)
+}
+
+/// Whether `text` starts a combined diff's `@@@` hunk header, which hdiff rejects.
+pub(super) fn starts_combined_hunk_header(text: &str) -> bool {
+    text.starts_with("@@@")
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares. The
