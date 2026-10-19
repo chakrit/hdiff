@@ -108,32 +108,12 @@ impl DiffFile {
     /// the positions it returns can only name records of that hunk.
     pub fn record_map<E>(
         &self,
-        mut entries: impl for<'h> FnMut(
-            &BySide<FileHeader>,
-            HunkRecords<'_, 'h>,
-        ) -> Vec<RecordEntry<'h, E>>,
+        entries: impl for<'h> FnMut(&BySide<FileHeader>, HunkRecords<'_, 'h>) -> Vec<RecordEntry<'h, E>>,
     ) -> RecordMap<Vec<E>> {
-        let FileBody::Unified(body) = &self.body else {
-            return RecordMap::empty();
-        };
-
-        let hunks = body
-            .hunks
-            .iter()
-            .map(|hunk| {
-                hunk.with_records(|records| {
-                    let mut values = iter::repeat_with(Vec::new)
-                        .take(hunk.records.len())
-                        .collect::<Box<[_]>>();
-                    for RecordEntry { position, value } in entries(&body.headers, records) {
-                        values[position.index].push(value);
-                    }
-                    values
-                })
-            })
-            .collect();
-
-        RecordMap { hunks }
+        match &self.body {
+            FileBody::Metadata(_) => RecordMap::empty(),
+            FileBody::Unified(body) => body.record_map(entries),
+        }
     }
 }
 
@@ -206,6 +186,33 @@ impl UnifiedBody {
             .iter()
             .enumerate()
             .map(|(index, hunk)| AddressedHunk { index, hunk })
+    }
+
+    /// The values `entries` gives each record of each hunk; see [`DiffFile::record_map`].
+    fn record_map<E>(
+        &self,
+        mut entries: impl for<'h> FnMut(
+            &BySide<FileHeader>,
+            HunkRecords<'_, 'h>,
+        ) -> Vec<RecordEntry<'h, E>>,
+    ) -> RecordMap<Vec<E>> {
+        let hunks = self
+            .hunks
+            .iter()
+            .map(|hunk| {
+                hunk.with_records(|records| {
+                    let mut values = iter::repeat_with(Vec::new)
+                        .take(hunk.records.len())
+                        .collect::<Box<[_]>>();
+                    for RecordEntry { position, value } in entries(&self.headers, records) {
+                        values[position.index].push(value);
+                    }
+                    values
+                })
+            })
+            .collect();
+
+        RecordMap { hunks }
     }
 }
 
