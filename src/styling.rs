@@ -163,7 +163,7 @@ impl<'a> StyledRow<'a> {
 
 /// A piece of text drawn in one style: a text style while rows are styled, a terminal
 /// style once they are drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StyledText<'a, S> {
     pub text: &'a str,
     pub style: S,
@@ -246,7 +246,7 @@ enum Partition {
 }
 
 /// Where a styled segment of a payload ends, and the style it is drawn in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Boundary {
     pub end: usize,
     pub style: TextStyle,

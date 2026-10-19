@@ -21,7 +21,6 @@ use crate::{
 };
 
 /// Which part of a row a pane line shows.
-#[derive(Clone, Copy)]
 pub(super) enum RowPlacement {
     /// The whole row, from column `horizontal_offset` onward.
     Scrolled { horizontal_offset: Cells },
@@ -33,7 +32,7 @@ pub(super) enum RowPlacement {
 }
 
 /// Whether a written line left cells of its row outside the pane on either side.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Clip {
     pub(super) left: bool,
     pub(super) right: bool,

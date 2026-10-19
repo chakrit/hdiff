@@ -8,7 +8,7 @@ use ratatui::style::{Color, Modifier};
 use crate::{file_identity::FileState, file_tree::StateMarker, side::BySide, syntax::SyntaxClass};
 
 /// The colors a terminal can show, decided once when the session starts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColorDepth {
     Basic,
     Indexed,
