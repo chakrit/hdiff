@@ -109,14 +109,17 @@ fn is_payload_line(text: &str) -> bool {
 
     let groups = encoded.len() / BASE85_GROUP;
     let whole_groups = encoded.len() % BASE85_GROUP == 0;
-    let held = groups * 4;
-    let fits = groups > 0 && whole_groups && stated <= held && stated > held - 4;
+    let held = groups * BASE85_GROUP_BYTES;
+    let fits = groups > 0 && whole_groups && stated <= held && stated > held - BASE85_GROUP_BYTES;
 
     fits && encoded.bytes().all(|byte| BASE85.contains(&byte))
 }
 
 /// The characters in one base-85 group.
 const BASE85_GROUP: usize = 5;
+
+/// The bytes one base-85 group holds.
+const BASE85_GROUP_BYTES: usize = 4;
 
 /// Git's base-85 alphabet.
 const BASE85: &[u8] =
