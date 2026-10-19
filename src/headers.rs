@@ -4,7 +4,10 @@
 
 use std::str::CharIndices;
 
-use crate::{side::Side, source_text::SourceLine};
+use crate::{
+    side::{BySide, Side},
+    source_text::SourceLine,
+};
 
 /// A `diff --git` line and the extended header lines after it.
 #[derive(Debug, PartialEq, Eq)]
@@ -127,14 +130,41 @@ pub fn quoted_or_plain(field: &str) -> Option<Box<str>> {
     }
 
     match unquote(field)? {
-        (path, "") => Some(path),
-        (_, _trailing) => None,
+        Unquoted { text, rest: "" } => Some(text),
+        Unquoted { .. } => None,
     }
 }
 
-/// Decodes Git's C-style quoting at the start of `field`, returning the decoded text
-/// (bytes as lossy UTF-8) and what follows the closing quote.
-pub fn unquote(field: &str) -> Option<(Box<str>, &str)> {
+/// The two names after `diff --git `, as far as Git's quoting separates them.
+pub enum GitNames<'a> {
+    /// A quoted old name ends at its closing quote, so both names are known, decoded.
+    Split(BySide<Box<str>>),
+    /// Unquoted names may hold spaces, so where they divide is not yet known.
+    Unsplit(&'a str),
+}
+
+impl<'a> GitNames<'a> {
+    /// The names in a `diff --git` line's `names` field; quoting that does not decode, or
+    /// a quoted old name not followed by a space and the new name, names none.
+    pub fn of(names: &'a str) -> Option<Self> {
+        if !names.starts_with('"') {
+            return Some(Self::Unsplit(names));
+        }
+
+        let Unquoted { text: old, rest } = unquote(names)?;
+        let new = quoted_or_plain(rest.strip_prefix(' ')?)?;
+        Some(Self::Split(BySide { old, new }))
+    }
+}
+
+/// A quoted field's decoded text and what follows its closing quote.
+struct Unquoted<'a> {
+    text: Box<str>,
+    rest: &'a str,
+}
+
+/// Decodes Git's C-style quoting at the start of `field` (bytes as lossy UTF-8).
+fn unquote(field: &str) -> Option<Unquoted<'_>> {
     let body = field.strip_prefix('"')?;
     let mut bytes = Vec::new();
     let mut characters = body.char_indices();
@@ -142,8 +172,9 @@ pub fn unquote(field: &str) -> Option<(Box<str>, &str)> {
     while let Some((index, character)) = characters.next() {
         match character {
             '"' => {
-                let decoded = String::from_utf8_lossy(&bytes).into();
-                return Some((decoded, &body[index + 1..]));
+                let text = String::from_utf8_lossy(&bytes).into();
+                let rest = &body[index + 1..];
+                return Some(Unquoted { text, rest });
             }
             '\\' => bytes.push(escaped_byte(&mut characters)?),
             _ => bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes()),
