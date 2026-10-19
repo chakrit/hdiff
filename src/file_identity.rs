@@ -141,7 +141,7 @@ fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Op
         None => Some(path.into()),
     };
 
-    match (paths.old, paths.new) {
+    paths.merge(|old, new| match (old, new) {
         (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => None,
         (HeaderPath::DevNull, HeaderPath::DevNull) => None,
         (HeaderPath::DevNull, HeaderPath::Path(new)) => {
@@ -154,7 +154,7 @@ fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Op
             FileState::Modified,
             shared_name(old, new).into(),
         )),
-    }
+    })
 }
 
 /// The change `git`'s extended headers record, the last marking line winning; lines that

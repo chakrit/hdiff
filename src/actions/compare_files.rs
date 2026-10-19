@@ -30,8 +30,7 @@ impl CompareFiles<'_> {
         diff.args(["-u", "-N"])
             .args(recursion)
             .arg("--")
-            .arg(operands.old.argument())
-            .arg(operands.new.argument())
+            .args(operands.iter().map(|operand| operand.argument()))
             .stdin(Stdio::inherit());
 
         let output = child_process::run("diff", &mut diff, |status| {

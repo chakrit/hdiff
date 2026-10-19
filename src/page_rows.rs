@@ -85,10 +85,10 @@ impl<T> SideBySideRow<T> {
     /// The line the row starts with, and the new line when it pairs two.
     pub(crate) fn split_first(self) -> SplitLines<T> {
         match self {
-            Self::Paired(lines) => SplitLines {
-                first: lines.old,
-                second: Some(lines.new),
-            },
+            Self::Paired(lines) => lines.merge(|old, new| SplitLines {
+                first: old,
+                second: Some(new),
+            }),
             Self::Shared(line) | Self::Unmatched { line, .. } => SplitLines {
                 first: line,
                 second: None,
