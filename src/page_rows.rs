@@ -59,8 +59,7 @@ impl<Of> PagePosition<Of> {
 pub enum SideBySideRow<T> {
     Shared(T),
     Paired(BySide<T>),
-    OldOnly(T),
-    NewOnly(T),
+    Unmatched { side: Side, line: T },
 }
 
 impl<T> SideBySideRow<T> {
@@ -69,8 +68,10 @@ impl<T> SideBySideRow<T> {
         match self {
             Self::Shared(line) => SideBySideRow::Shared(f(line)),
             Self::Paired(lines) => SideBySideRow::Paired(lines.map(f)),
-            Self::OldOnly(line) => SideBySideRow::OldOnly(f(line)),
-            Self::NewOnly(line) => SideBySideRow::NewOnly(f(line)),
+            Self::Unmatched { side, line } => SideBySideRow::Unmatched {
+                side,
+                line: f(line),
+            },
         }
     }
 
@@ -88,7 +89,7 @@ impl<T> SideBySideRow<T> {
                 first: lines.old,
                 second: Some(lines.new),
             },
-            Self::Shared(line) | Self::OldOnly(line) | Self::NewOnly(line) => SplitLines {
+            Self::Shared(line) | Self::Unmatched { line, .. } => SplitLines {
                 first: line,
                 second: None,
             },
@@ -103,19 +104,17 @@ impl<T> SideBySideRow<T> {
     /// The changed line each side holds in this row; a shared row changes neither side.
     pub(crate) fn changed_lines(self) -> BySide<Option<T>> {
         match self {
-            Self::Shared(_) => BySide {
-                old: None,
-                new: None,
-            },
+            Self::Shared(_) => BySide::default(),
             Self::Paired(lines) => lines.map(Some),
-            Self::OldOnly(line) => BySide {
-                old: Some(line),
-                new: None,
-            },
-            Self::NewOnly(line) => BySide {
-                old: None,
-                new: Some(line),
-            },
+            Self::Unmatched { side, line } => BySide::only(side, line),
+        }
+    }
+
+    /// The line both panes show, when the row changes neither side.
+    fn shared_line(self) -> Option<T> {
+        match self {
+            Self::Shared(line) => Some(line),
+            Self::Paired(_) | Self::Unmatched { .. } => None,
         }
     }
 }
@@ -363,18 +362,16 @@ fn values_on_lines<T>(
     row: SideBySideRow<LineIndex>,
     values: BySide<Option<T>>,
 ) -> impl Iterator<Item = LineValue<Option<T>>> {
-    let on_line = |line, value| Some(LineValue { line, value });
-    let placed_values = match row {
-        SideBySideRow::Shared(line) => [on_line(line, None), None],
-        SideBySideRow::Paired(lines) => [
-            on_line(lines.old, values.old),
-            on_line(lines.new, values.new),
-        ],
-        SideBySideRow::OldOnly(line) => [on_line(line, values.old), None],
-        SideBySideRow::NewOnly(line) => [on_line(line, values.new), None],
-    };
+    let shared = row
+        .shared_line()
+        .map(|line| LineValue { line, value: None });
+    let changed = row
+        .changed_lines()
+        .zip(values)
+        .into_iter()
+        .filter_map(|(line, value)| line.map(|line| LineValue { line, value }));
 
-    placed_values.into_iter().flatten()
+    shared.into_iter().chain(changed)
 }
 
 /// A page's side-by-side rows and the pair holding each of its lines.
@@ -481,13 +478,15 @@ impl BlockRows {
             .iter()
             .zip(&columns.new)
             .map(|(&old, &new)| SideBySideRow::Paired(BySide { old, new }));
-        let old_only = columns.old[paired_count..]
-            .iter()
-            .map(|&line| SideBySideRow::OldOnly(line));
-        let new_only = columns.new[paired_count..]
-            .iter()
-            .map(|&line| SideBySideRow::NewOnly(line));
-        let pairs = paired.chain(old_only).chain(new_only).collect::<Vec<_>>();
+        let unmatched = columns.as_ref().map_sides(|side, column| {
+            column[paired_count..]
+                .iter()
+                .map(move |&line| SideBySideRow::Unmatched { side, line })
+        });
+        let pairs = paired
+            .chain(unmatched.old)
+            .chain(unmatched.new)
+            .collect::<Vec<_>>();
 
         let mut placed = pairs
             .iter()
@@ -564,7 +563,10 @@ fn is_context_line(line: &RenderedLine) -> bool {
 mod tests {
     use super::{PageRows, RenderedLine, SideBySideRow};
     use crate::{
-        display_lines::LineKind, parser::parse_patch, preferences::ContextRecords, side::BySide,
+        display_lines::LineKind,
+        parser::parse_patch,
+        preferences::ContextRecords,
+        side::{BySide, Side},
     };
 
     /// The rows of `patch`'s first file.
@@ -691,7 +693,10 @@ mod tests {
                     old: "-old first".to_owned(),
                     new: "+new first".to_owned(),
                 }),
-                SideBySideRow::OldOnly("-old second".to_owned()),
+                SideBySideRow::Unmatched {
+                    side: Side::Old,
+                    line: "-old second".to_owned(),
+                },
                 SideBySideRow::Shared(" context".to_owned()),
             ]
         );
