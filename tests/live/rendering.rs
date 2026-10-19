@@ -5,7 +5,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{INDENTED, long_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, cells, right_of_first_separator},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, columns, right_of_first_separator},
 };
 
 matrix!(
@@ -65,7 +65,7 @@ fn continuity_markers(mode: Mode) {
 
     live.press('$');
     assert_eq!(
-        live.find("_end").x + cells("_end"),
+        live.find("_end").x + columns("_end"),
         WIDTH - 1,
         "the widest row ends beside the right frame column"
     );
