@@ -64,8 +64,9 @@ pub(super) fn keymap_closing_keys() -> impl Iterator<Item = Key> {
         .map(|binding| binding.key)
 }
 
-/// A key as the bindings name it: Shift folds into the character it types, and only a
-/// Control chord of a character stays distinct.
+/// A key as the bindings name it: Shift folds into the character it types, a Control
+/// chord of a character stays distinct, and Shift turns Tab into Shift-Tab. Any other
+/// modifier makes a key no binding's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Key {
     Char(char),
@@ -79,14 +80,20 @@ pub(super) enum Key {
 
 impl Key {
     fn of(key: KeyEvent) -> Option<Self> {
+        const NONE: KeyModifiers = KeyModifiers::NONE;
+        const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
+        const CONTROL: KeyModifiers = KeyModifiers::CONTROL;
+
         match (key.code, key.modifiers) {
-            (KeyCode::Char(character), KeyModifiers::CONTROL) => Some(Self::Control(character)),
-            (KeyCode::Char(character), _) => Some(Self::Char(character)),
-            (KeyCode::Tab, KeyModifiers::SHIFT) | (KeyCode::BackTab, _) => Some(Self::ShiftTab),
-            (KeyCode::Tab, _) => Some(Self::Tab),
-            (KeyCode::Esc, _) => Some(Self::Esc),
-            (KeyCode::Down, _) => Some(Self::Down),
-            (KeyCode::Up, _) => Some(Self::Up),
+            (KeyCode::Char(character), NONE | SHIFT) => Some(Self::Char(character)),
+            (KeyCode::Char(character), CONTROL) => Some(Self::Control(character)),
+            (KeyCode::Tab, NONE) => Some(Self::Tab),
+            (KeyCode::Tab | KeyCode::BackTab, SHIFT) | (KeyCode::BackTab, NONE) => {
+                Some(Self::ShiftTab)
+            }
+            (KeyCode::Esc, NONE) => Some(Self::Esc),
+            (KeyCode::Down, NONE) => Some(Self::Down),
+            (KeyCode::Up, NONE) => Some(Self::Up),
             _ => None,
         }
     }
@@ -415,6 +422,31 @@ mod tests {
             key(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(Event::Interrupt)
         );
+    }
+
+    /// Rules: docs/spec/architecture.md#keyboard-bindings: Shift types the character it
+    /// shifts, and a chord the table does not bind does nothing.
+    #[test]
+    fn admits_only_the_modifiers_the_bindings_name() {
+        let alt = KeyModifiers::ALT;
+        let control_alt = KeyModifiers::CONTROL | KeyModifiers::ALT;
+
+        assert_eq!(
+            key(KeyCode::Char('G'), KeyModifiers::SHIFT),
+            command(Command::Movement(Movement::Bottom))
+        );
+        for (code, modifiers) in [
+            (KeyCode::Char('q'), alt),
+            (KeyCode::Char('c'), control_alt),
+            (KeyCode::Char('j'), KeyModifiers::SUPER),
+            (KeyCode::Tab, KeyModifiers::CONTROL),
+            (KeyCode::BackTab, KeyModifiers::SHIFT | alt),
+            (KeyCode::Esc, alt),
+            (KeyCode::Down, KeyModifiers::CONTROL),
+            (KeyCode::Up, alt),
+        ] {
+            assert_eq!(key(code, modifiers), None, "{code:?} with {modifiers:?}");
+        }
     }
 
     /// docs/spec/architecture.md#keyboard-bindings: each key has one binding.
