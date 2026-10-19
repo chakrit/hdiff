@@ -275,31 +275,44 @@ pub struct Record {
 /// Which side or sides of a hunk a record belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordKind {
-    Context,
+    /// A line of both sides, spelled with the marker its producer wrote.
+    Context(ContextMarker),
     Addition,
     Deletion,
-    /// An unmarked line inside a hunk, kept as it was read.
-    Raw,
+    /// The `\ ` line saying the record before it ends without a line ending; a line of
+    /// neither side, its text whatever language the producer wrote it in.
+    NoNewlineMarker,
+}
+
+/// How a context line was spelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextMarker {
+    /// The usual leading space.
+    Space,
+    /// No marker at all: GNU `diff --suppress-blank-empty` writes a blank context line as
+    /// an empty line.
+    Omitted,
 }
 
 impl RecordKind {
     /// The kind a hunk line's leading marker gives, or `None` for an unmarked line.
     pub fn of_marker(marker: char) -> Option<Self> {
         match marker {
-            ' ' => Some(Self::Context),
+            ' ' => Some(Self::Context(ContextMarker::Space)),
             '+' => Some(Self::Addition),
             '-' => Some(Self::Deletion),
             _ => None,
         }
     }
 
-    /// The marker that precedes the payload; a raw line has none.
+    /// The marker that precedes the payload as the source spelled it; an omitted-blank
+    /// context line and a no-newline marker have none.
     pub fn marker(self) -> &'static str {
         match self {
-            Self::Context => " ",
+            Self::Context(ContextMarker::Space) => " ",
+            Self::Context(ContextMarker::Omitted) | Self::NoNewlineMarker => "",
             Self::Addition => "+",
             Self::Deletion => "-",
-            Self::Raw => "",
         }
     }
 
@@ -312,7 +325,8 @@ impl RecordKind {
         }
     }
 
-    /// The side a change removes from or adds to; context and raw lines change neither.
+    /// The side a change removes from or adds to; context and no-newline markers change
+    /// neither.
     pub fn changed_side(self) -> Option<Side> {
         Side::BOTH
             .into_iter()
@@ -320,12 +334,12 @@ impl RecordKind {
     }
 
     /// Whether the record is a line of `side`'s file: context is a line of both sides, a
-    /// change a line of the side it changes, and a raw line a line of neither.
+    /// change a line of the side it changes, and a no-newline marker a line of neither.
     pub fn on_side(self, side: Side) -> bool {
         match self {
-            Self::Context => true,
+            Self::Context(_) => true,
             Self::Addition | Self::Deletion => self.changed_side() == Some(side),
-            Self::Raw => false,
+            Self::NoNewlineMarker => false,
         }
     }
 }

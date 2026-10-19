@@ -2,7 +2,8 @@ use std::{fmt, iter, mem};
 
 use crate::{
     document::{
-        DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind, UnifiedBody,
+        ContextMarker, DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind,
+        UnifiedBody,
     },
     file_identity::FileIdentity,
     headers::{
@@ -52,6 +53,8 @@ pub enum Malformed {
     TruncatedBinaryPatch,
     MissingBinaryPatchPayload,
     MissingBinaryPatchBlock,
+    UnmarkedHunkLine,
+    MisplacedNoNewlineMarker,
 }
 
 impl Malformed {
@@ -71,6 +74,8 @@ impl Malformed {
             Self::TruncatedBinaryPatch => "truncated binary patch",
             Self::MissingBinaryPatchPayload => "missing binary patch payload",
             Self::MissingBinaryPatchBlock => "missing binary patch block",
+            Self::UnmarkedHunkLine => "unmarked line in hunk",
+            Self::MisplacedNoNewlineMarker => "no-newline marker does not follow a record",
         }
     }
 }
@@ -260,10 +265,8 @@ fn parse_unified(
 
 // Hunks
 
-/// The line that follows a record whose source line has no line ending.
-const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file";
-
-/// The records after a hunk `header` that declares `expected` counts.
+/// The records after a hunk `header` that declares `expected` counts, with a no-newline
+/// marker after the last of them.
 fn parse_hunk(
     header: SourceLine,
     expected: BySide<usize>,
@@ -271,11 +274,12 @@ fn parse_hunk(
 ) -> Result<Hunk, Error> {
     let exhausted = BySide::<usize>::default();
     let mut remaining = expected;
-    let mut records = Vec::new();
+    let mut records: Vec<Record> = Vec::new();
     while let Some(line) =
-        lines.next_if(|text| remaining != exhausted || text.starts_with(NO_NEWLINE_MARKER))
+        lines.next_if(|text| remaining != exhausted || is_no_newline_marker(text))
     {
-        let record = lines.at_last_line(parse_record(line))?;
+        let previous = records.last().map(|record| record.kind);
+        let record = lines.at_last_line(parse_record(line, previous))?;
         remaining = lines.at_last_line(count_record(remaining, record.kind))?;
         records.push(record);
     }
@@ -303,20 +307,39 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
     counted.transpose().ok_or(Malformed::ExcessRecords)
 }
 
-/// The record a hunk line holds: marked by its first visible character, or raw when
-/// unmarked; a Git header cannot appear inside a hunk.
-fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
+/// The record a hunk line holds after a record of kind `previous`: a no-newline marker
+/// after a record that is not one, a record marked by its first visible character, or
+/// blank context when the line is empty. Any other line is malformed.
+fn parse_record(line: SourceLine, previous: Option<RecordKind>) -> Result<Record, Malformed> {
+    if is_no_newline_marker(line.sanitized()) {
+        return match previous {
+            None | Some(RecordKind::NoNewlineMarker) => Err(Malformed::MisplacedNoNewlineMarker),
+            Some(_) => Ok(Record {
+                kind: RecordKind::NoNewlineMarker,
+                payload: line,
+            }),
+        };
+    }
     if let Some(record) = marked_record(&line) {
         return Ok(record);
+    }
+    if line.sanitized().is_empty() {
+        return Ok(Record {
+            kind: RecordKind::Context(ContextMarker::Omitted),
+            payload: line,
+        });
     }
 
     match line_start(line.sanitized())? {
         LineStart::GitHeader => Err(Malformed::UnexpectedFileHeaderInHunk),
-        LineStart::Text | LineStart::OldFileHeader(_) => Ok(Record {
-            kind: RecordKind::Raw,
-            payload: line,
-        }),
+        LineStart::Text | LineStart::OldFileHeader(_) => Err(Malformed::UnmarkedHunkLine),
     }
+}
+
+/// Whether `text` is a no-newline marker. Producers translate its wording, so like
+/// `git apply` it is known by its `\ ` prefix alone.
+fn is_no_newline_marker(text: &str) -> bool {
+    text.starts_with("\\ ")
 }
 
 /// The record `line` holds when its first visible character is a record marker.
@@ -456,7 +479,7 @@ impl<'a> SourceLines<'a> {
 mod tests {
     use super::{Error, Malformed, parse_comparison, parse_patch};
     use crate::{
-        document::{DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
+        document::{ContextMarker, DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
         finite_output,
     };
 
@@ -562,6 +585,91 @@ mod tests {
             parse_patch(binary.as_bytes()),
             malformed(3, Malformed::InvalidBinaryPatchHeader)
         );
+    }
+
+    /// docs/spec/architecture.md#input-contract: every line inside a hunk is a marked
+    /// record, an omitted-blank context line, or a no-newline marker.
+    #[test]
+    fn rejects_unmarked_lines_inside_hunks() {
+        let files = "--- a/x\n+++ b/x\n";
+        for (hunk, line) in [
+            ("@@ -1 +1 @@\nhello\n-a\n+b\n", 4),
+            ("@@ -2 +2 @@\n-a\nhello world\n+b\n", 5),
+        ] {
+            let input = format!("{files}{hunk}");
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(line, Malformed::UnmarkedHunkLine),
+                "{hunk}"
+            );
+        }
+    }
+
+    /// docs/spec/architecture.md#input-contract: GNU `diff --suppress-blank-empty`
+    /// writes a blank context line as an empty line.
+    #[test]
+    fn reads_an_empty_line_inside_a_hunk_as_blank_context() {
+        let input = b"--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n";
+
+        let document = parse_patch(input).expect("GNU omitted-blank context");
+        let kinds = first_hunk(&document)
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            [
+                RecordKind::Context(ContextMarker::Space),
+                RecordKind::Context(ContextMarker::Omitted),
+                RecordKind::Deletion,
+                RecordKind::Addition,
+            ]
+        );
+        assert_eq!(finite_output::of_document(&document), input);
+    }
+
+    /// docs/spec/architecture.md#input-contract: the marker is known by its `\ ` prefix,
+    /// since producers translate the rest.
+    #[test]
+    fn keeps_a_translated_no_newline_marker_with_its_hunk() {
+        let input = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n\\ Kein Zeilenumbruch am Dateiende.\n--- a/y\n+++ b/y\n@@ -1 +1 @@\n-c\n+d\n";
+
+        let document = parse_patch(input.as_bytes()).expect("translated marker");
+        let views = document.file_views().collect::<Vec<_>>();
+        let FileBody::Unified(first) = &views[0].file.body else {
+            panic!("first file is unified");
+        };
+        let last_kind = first.hunks[0].records.last().map(|record| record.kind);
+
+        assert_eq!(last_kind, Some(RecordKind::NoNewlineMarker));
+        assert!(
+            views[1].leading.is_empty(),
+            "the marker is not the next file's text: {:?}",
+            views[1].leading
+        );
+    }
+
+    /// docs/spec/architecture.md#input-contract: a no-newline marker follows a record.
+    #[test]
+    fn rejects_a_no_newline_marker_that_follows_no_record() {
+        let files = "--- a/x\n+++ b/x\n";
+        let marker = "\\ No newline at end of file\n";
+        for (hunk, line) in [
+            (format!("@@ -1 +1 @@\n{marker}-a\n+b\n"), 4),
+            (format!("@@ -1 +1 @@\n-a\n{marker}{marker}+b\n"), 6),
+            (format!("@@ -1 +1 @@\n-a\n+b\n{marker}{marker}"), 7),
+        ] {
+            let input = format!("{files}{hunk}");
+
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(line, Malformed::MisplacedNoNewlineMarker),
+                "{hunk}"
+            );
+        }
     }
 
     #[test]

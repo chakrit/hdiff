@@ -408,9 +408,9 @@ mod tests {
     }
 
     #[test]
-    fn preserves_unicode_crlf_and_unmarked_records() {
+    fn preserves_unicode_crlf_blank_context_and_no_newline_markers() {
         let prepared = prepare(
-            "--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-旧\r\n\\ No newline at end of file\r\n\r\n界\r\n+新\r\n\\ No newline at end of file".as_bytes(),
+            "--- a/file\r\n+++ b/file\r\n@@ -1,2 +1,2 @@\r\n\r\n-旧\r\n\\ No newline at end of file\r\n+新\r\n\\ No newline at end of file".as_bytes(),
         );
 
         assert_eq!(
@@ -418,11 +418,10 @@ mod tests {
             [
                 "  --- a/file",
                 "  +++ b/file",
-                "  @@ -1 +1 @@",
+                "  @@ -1,2 +1,2 @@",
+                "",
                 "- 旧",
                 "  \\ No newline at end of file",
-                "",
-                "  界",
                 "+ 新",
                 "  \\ No newline at end of file",
             ]

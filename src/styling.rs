@@ -103,8 +103,8 @@ impl StyledRows {
     }
 }
 
-/// How a row is toned: a change to one side, an unchanged record (context or raw), a hunk
-/// header, or any other line.
+/// How a row is toned: a change to one side, an unchanged record (context or a no-newline
+/// marker), a hunk header, or any other line.
 #[derive(Clone, Copy)]
 pub enum RowTone {
     Changed(Side),
