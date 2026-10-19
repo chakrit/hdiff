@@ -153,16 +153,8 @@ pub enum FileBody {
 /// patch Git writes for a binary change when it has one.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MetadataBody {
-    pub git_line: SourceLine,
-    pub extended_headers: NonEmpty<SourceLine>,
+    pub git: GitHeader<NonEmpty<SourceLine>>,
     pub binary_patch: Option<Box<BinaryPatch>>,
-}
-
-impl MetadataBody {
-    /// The `diff --git` line and every extended header after it, in input order.
-    pub fn git_lines(&self) -> impl Iterator<Item = &SourceLine> {
-        iter::once(&self.git_line).chain(self.extended_headers.iter())
-    }
 }
 
 /// Git's binary patch: the `GIT binary patch` line, then its `literal` and `delta`
@@ -203,7 +195,7 @@ impl BinaryBlock {
 /// A section with `---` / `+++` headers and hunks, after its Git header when it has one.
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnifiedBody {
-    pub git: Option<GitHeader>,
+    pub git: Option<GitHeader<Box<[SourceLine]>>>,
     pub headers: BySide<FileHeader>,
     pub hunks: NonEmpty<Hunk>,
 }

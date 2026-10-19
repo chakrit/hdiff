@@ -103,6 +103,15 @@ impl<T> Index<usize> for NonEmpty<T> {
     }
 }
 
+impl<'a, T> IntoIterator for &'a NonEmpty<T> {
+    type Item = &'a T;
+    type IntoIter = iter::Chain<iter::Once<&'a T>, std::slice::Iter<'a, T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        iter::once(&self.first).chain(self.rest.iter())
+    }
+}
+
 impl<T> IntoIterator for NonEmpty<T> {
     type Item = T;
     type IntoIter = iter::Chain<iter::Once<T>, std::vec::IntoIter<T>>;
