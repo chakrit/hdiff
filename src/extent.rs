@@ -23,15 +23,15 @@ pub struct ExtentSettings {
 
 /// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row `row`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScreenLine<R> {
+pub struct RowLine<R> {
     pub row: R,
     pub wrapped_line: ScreenLines,
 }
 
-impl<R> ScreenLine<R> {
+impl<R> RowLine<R> {
     /// The same screen line of the row `row` becomes.
-    pub fn map<T>(self, row: impl FnOnce(R) -> T) -> ScreenLine<T> {
-        ScreenLine {
+    pub fn map<T>(self, row: impl FnOnce(R) -> T) -> RowLine<T> {
+        RowLine {
             row: row(self.row),
             wrapped_line: self.wrapped_line,
         }
@@ -290,7 +290,7 @@ pub struct Lines<'a, R> {
 }
 
 impl<R: Copy> Iterator for Lines<'_, R> {
-    type Item = ScreenLine<R>;
+    type Item = RowLine<R>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == ScreenLines::ZERO {
@@ -298,7 +298,7 @@ impl<R: Copy> Iterator for Lines<'_, R> {
         }
         let row = *self.rows.get(self.position)?;
 
-        let line = ScreenLine {
+        let line = RowLine {
             row,
             wrapped_line: self.wrapped_line,
         };
@@ -414,7 +414,7 @@ struct LineEnds {
 
 #[cfg(test)]
 mod tests {
-    use super::{DisplayExtent, ExtentSettings, RowAnchor, ScreenLine, ShownLines};
+    use super::{DisplayExtent, ExtentSettings, RowAnchor, RowLine, ShownLines};
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
@@ -464,7 +464,7 @@ mod tests {
         extent: &DisplayExtent,
         offset: usize,
         limit: usize,
-    ) -> Vec<ScreenLine<LineIndex>> {
+    ) -> Vec<RowLine<LineIndex>> {
         let ShownLines::Single(lines) = extent.lines(lines(offset), lines(limit)) else {
             panic!("a single pane shows lines");
         };
@@ -476,7 +476,7 @@ mod tests {
         extent: &DisplayExtent,
         offset: usize,
         limit: usize,
-    ) -> Vec<ScreenLine<PairIndex>> {
+    ) -> Vec<RowLine<PairIndex>> {
         let ShownLines::Split { lines, .. } = extent.lines(lines(offset), lines(limit)) else {
             panic!("split panes show pairs");
         };
@@ -580,11 +580,11 @@ mod tests {
         let unified = extent_of(&document, PaneShape::Single, 3, wrap);
         let vertical = extent_of(&document, VERTICAL, 3, wrap);
         let rows = first_rows(&document);
-        let line = |row, wrapped_line| ScreenLine {
+        let line = |row, wrapped_line| RowLine {
             row: rows.line_index(row),
             wrapped_line: lines(wrapped_line),
         };
-        let pair = |row, wrapped_line| ScreenLine {
+        let pair = |row, wrapped_line| RowLine {
             row: rows.pair_index(row),
             wrapped_line: lines(wrapped_line),
         };
