@@ -331,7 +331,7 @@ fn fill(buffer: &mut Buffer, area: Rect, symbol: &'static str, style: Style) {
 mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
-    use super::{HELP_HINT_INDENT, render_file_column};
+    use super::{HELP_HINT, HELP_HINT_INDENT, render_file_column};
     use crate::{
         parser::parse_patch,
         prepared::{PageIndex, PreparedDocument},
@@ -367,7 +367,8 @@ mod tests {
         let (last, above) = rows.split_last().expect("a drawn screen");
         let last_row = buffer.area.bottom() - 1;
 
-        assert_eq!(last, " ? help");
+        let indent = " ".repeat(usize::from(HELP_HINT_INDENT));
+        assert_eq!(*last, format!("{indent}{HELP_HINT}"));
         assert!(
             above.iter().all(|row| !row.contains("help")),
             "one hint row"

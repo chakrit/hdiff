@@ -10,21 +10,21 @@ pub const INDENTED: &str = "--- a/indent.rs\n+++ b/indent.rs\n@@ -1 +1,3 @@\n-re
 /// `count` one-change files, `file_00.rs` onward, at the top level.
 pub fn many_files(count: usize) -> String {
     (0..count)
-        .map(|file| {
-            let path = file_name(file);
-            format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
-        })
+        .map(|file| one_change_file(&file_name(file)))
         .collect()
 }
 
 /// `count` one-change files, each `file_NN.rs` in its own `dir_NN/` directory.
 pub fn files_in_directories(count: usize) -> String {
     (0..count)
-        .map(|file| {
-            let path = format!("{}/{}", directory_name(file), file_name(file));
-            format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
-        })
+        .map(|file| format!("{}/{}", directory_name(file), file_name(file)))
+        .map(|path| one_change_file(&path))
         .collect()
+}
+
+/// The patch of a file at `path` whose one line changes from `old` to `new`.
+fn one_change_file(path: &str) -> String {
+    format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n")
 }
 
 /// The name of file `index` in [`many_files`] and [`files_in_directories`].
