@@ -1,6 +1,7 @@
 //! Row wrapping and the positions it keeps.
 
 use hdiff::preferences::DiffLayout;
+use ratatui::layout::Size;
 
 use crate::{
     fixtures::long_patch,
@@ -81,7 +82,7 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     let top = diff_pane(&live.rows()[FIRST_CONTENT_LINE]);
     assert!(top.starts_with('x'), "the wide row's second line: {top:?}");
 
-    live.resize(100, 20);
+    live.resize(Size::new(100, 20));
 
     // docs/spec/architecture.md#view-model: resizing keeps the top record on the
     // same line within it.

@@ -1,6 +1,7 @@
 //! Indentation, continuity markers, frames, and the minimum layout.
 
 use hdiff::preferences::DiffLayout;
+use ratatui::layout::Size;
 
 use crate::{
     fixtures::{INDENTED, long_patch},
@@ -90,8 +91,7 @@ fn no_markers_when_content_fits(mode: Mode) {
 fn frame_cells_never_hold_diff_content() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     let rows = live.rows();
-    let row_of = |text: &str| rows.iter().position(|row| row.contains(text));
-    let first_content = row_of("--- a/long.rs").expect("file header");
+    let first_content = usize::from(live.find("--- a/long.rs").y);
     let wide = live.find("wide_");
 
     assert_eq!(
@@ -99,7 +99,7 @@ fn frame_cells_never_hold_diff_content() {
         "the top frame row precedes the content"
     );
     assert!(
-        rows[0].contains('│') && diff_pane(&rows[0]).chars().all(|cell| cell == ' '),
+        rows[0].contains('│') && diff_pane(&rows[0]).chars().all(|symbol| symbol == ' '),
         "the top frame row holds no content: {:?}",
         rows[0]
     );
@@ -121,9 +121,9 @@ fn frame_cells_never_hold_diff_content() {
 fn stacked_panes_need_room_for_one_content_line_each() {
     let mut live = Live::load(INDENTED, Mode::line(DiffLayout::Stacked));
 
-    live.resize(80, 6);
+    live.resize(Size::new(80, 6));
     assert!(live.shows("screen too short"));
-    live.resize(80, 7);
+    live.resize(Size::new(80, 7));
     assert_eq!(live.count('▾'), 2, "each pane shows a line");
     assert!(!live.shows("screen too short"));
 }
