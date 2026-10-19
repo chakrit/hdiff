@@ -1,24 +1,28 @@
-//! Input text decoded once: each line's exact bytes and its sanitized display text, read
-//! through one escape-sequence scanner. Rules:
+//! Input text decoded once: each line's exact bytes, its sanitized display text and its
+//! line ending, read through one escape-sequence scanner. Rules:
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use std::ops::Range;
 
-/// An input line: its exact bytes, including any line ending, and the sanitized text
-/// parsing and display read.
+/// An input line: its exact bytes, including any line ending, the sanitized text parsing
+/// and display read, and the line ending.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SourceLine {
     bytes: Box<[u8]>,
     sanitized: Box<str>,
+    line_ending: LineEnding,
 }
 
 impl SourceLine {
-    /// The line read from `bytes`, which keeps them exactly and decodes its sanitized
-    /// text once.
+    /// The line read from `bytes`, which keeps them exactly and reads its sanitized text
+    /// and line ending through the scanner once.
     pub fn decode(bytes: &[u8]) -> Self {
+        let read = scan(bytes).fold(ReadLine::default(), ReadLine::after);
+
         Self {
             bytes: bytes.into(),
-            sanitized: sanitize(bytes).into_boxed_str(),
+            sanitized: read.sanitized.into_boxed_str(),
+            line_ending: LineEnding::of(bytes, read.ends_in_cr),
         }
     }
 
@@ -32,22 +36,97 @@ impl SourceLine {
         &self.sanitized
     }
 
+    /// The line ending the line ends with, as the scanner reads it: control sequences
+    /// between a CR and the final LF do not break the CRLF.
+    pub fn line_ending(&self) -> LineEnding {
+        self.line_ending
+    }
+
     /// The first visible character and the rest of the line after it, when that character
     /// returns the scanner to plain text, as every record marker does. The rest is then
-    /// read from plain text, so it is the line its own bytes decode to. A first character
-    /// shown inside a sequence, such as a tab after `ESC`, does not split the line.
+    /// read from plain text, so it is the line its own bytes decode to, ending as this
+    /// line ends. A first character shown inside a sequence, such as a tab after `ESC`,
+    /// does not split the line.
     pub fn split_plain_first(&self) -> Option<(char, SourceLine)> {
         let mut characters = visible(&self.bytes);
         let DecodedChar { source, character } = characters.next()?;
-        if !matches!(characters.state, State::Ground) {
+        if !matches!(characters.scan.state, State::Ground) {
             return None;
         }
 
         let rest = Self {
             bytes: self.bytes[source.end..].into(),
             sanitized: self.sanitized[character.len_utf8()..].into(),
+            line_ending: self.line_ending,
         };
         Some((character, rest))
+    }
+}
+
+/// The line ending a source line ends with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineEnding {
+    None,
+    Lf,
+    CrLf,
+}
+
+impl LineEnding {
+    /// The ending of `bytes`, whose text before its final LF ends in a CR read in plain
+    /// text when `ends_in_cr`.
+    fn of(bytes: &[u8], ends_in_cr: bool) -> Self {
+        match (bytes.ends_with(b"\n"), ends_in_cr) {
+            (true, true) => Self::CrLf,
+            (true, false) => Self::Lf,
+            (false, true | false) => Self::None,
+        }
+    }
+
+    /// The ending as written.
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+        }
+    }
+}
+
+/// A line read so far: its visible text, and whether a CR read in plain text has come
+/// after its last visible character.
+#[derive(Default)]
+struct ReadLine {
+    sanitized: String,
+    ends_in_cr: bool,
+}
+
+impl ReadLine {
+    /// The line after reading one more character. Hidden characters other than a plain
+    /// CR, such as the LF itself or the SGR codes Git paints around a CR, leave the CR
+    /// where it was.
+    fn after(mut self, read: Read) -> Self {
+        match read {
+            Read {
+                decoded,
+                step: Step::Shown(_),
+                ..
+            } => {
+                self.sanitized.push(decoded.character);
+                self.ends_in_cr = false;
+            }
+            Read {
+                decoded: DecodedChar {
+                    character: '\r', ..
+                },
+                read_in: State::Ground,
+                step: Step::Hidden(_),
+            } => self.ends_in_cr = true,
+            Read {
+                step: Step::Hidden(_),
+                ..
+            } => {}
+        }
+        self
     }
 }
 
@@ -62,39 +141,66 @@ struct DecodedChar {
     character: char,
 }
 
-/// Each visible character of some input, decoded as lossy UTF-8, with the scanner state
-/// reading has reached. Terminal control sequences and control characters other than tab
-/// are not visible.
-struct Visible<I> {
+/// One character as the scanner read it: the state it was read in, and what reading it
+/// did.
+struct Read {
+    decoded: DecodedChar,
+    read_in: State,
+    step: Step,
+}
+
+/// Each character of some input, decoded as lossy UTF-8, as the scanner reads it, with
+/// the state reading has reached.
+struct Scan<I> {
     decoded: I,
     state: State,
 }
 
-/// The visible characters of `bytes`, read from plain text.
-fn visible(bytes: &[u8]) -> Visible<impl Iterator<Item = DecodedChar>> {
-    Visible {
+/// The characters of `bytes` as the scanner reads them from plain text.
+fn scan(bytes: &[u8]) -> Scan<impl Iterator<Item = DecodedChar>> {
+    Scan {
         decoded: decoded(bytes),
         state: State::Ground,
     }
+}
+
+impl<I: Iterator<Item = DecodedChar>> Iterator for Scan<I> {
+    type Item = Read;
+
+    fn next(&mut self) -> Option<Read> {
+        let decoded = self.decoded.next()?;
+        let read_in = self.state;
+        let step = read_in.read(Class::of(decoded.character));
+
+        self.state = match step {
+            Step::Shown(next) | Step::Hidden(next) => next,
+        };
+        Some(Read {
+            decoded,
+            read_in,
+            step,
+        })
+    }
+}
+
+/// Each visible character of some input: terminal control sequences and control
+/// characters other than tab are not visible.
+struct Visible<I> {
+    scan: Scan<I>,
+}
+
+/// The visible characters of `bytes`, read from plain text.
+fn visible(bytes: &[u8]) -> Visible<impl Iterator<Item = DecodedChar>> {
+    Visible { scan: scan(bytes) }
 }
 
 impl<I: Iterator<Item = DecodedChar>> Iterator for Visible<I> {
     type Item = DecodedChar;
 
     fn next(&mut self) -> Option<DecodedChar> {
-        self.decoded.by_ref().find_map(|decoded| {
-            let step = self.state.read(Class::of(decoded.character));
-
-            match step {
-                Step::Shown(next) => {
-                    self.state = next;
-                    Some(decoded)
-                }
-                Step::Hidden(next) => {
-                    self.state = next;
-                    None
-                }
-            }
+        self.scan.by_ref().find_map(|read| match read.step {
+            Step::Shown(_) => Some(read.decoded),
+            Step::Hidden(_) => None,
         })
     }
 }
@@ -294,7 +400,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceLine, sanitize};
+    use super::{LineEnding, SourceLine, sanitize};
 
     /// The rest after a first character that returns the scanner to plain text is the
     /// line its own bytes decode to.
@@ -338,6 +444,25 @@ mod tests {
         assert_eq!(first, '-');
         assert_eq!(rest.bytes(), b"old\n");
         assert_eq!(rest.sanitized(), "old");
+    }
+
+    /// A CR read in plain text with only hidden characters between it and the final LF
+    /// ends the line in CRLF; one shown after it, or one inside a sequence, does not.
+    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    #[test]
+    fn reads_the_line_ending_through_the_scanner() {
+        for (line, ending) in [
+            (b"a\r\n".as_slice(), LineEnding::CrLf),
+            (b"+\x1b[32mb\x1b[m\x1b[41m\r\x1b[m\n", LineEnding::CrLf),
+            (b" a\x1b[m\x1b[41m\r\x1b[m\n", LineEnding::CrLf),
+            (b"a\rb\n", LineEnding::Lf),
+            (b"a\x1b[3\r1m\n", LineEnding::Lf),
+            (b"a\n", LineEnding::Lf),
+            (b"a", LineEnding::None),
+            (b"a\r", LineEnding::None),
+        ] {
+            assert_eq!(SourceLine::decode(line).line_ending(), ending, "{line:?}");
+        }
     }
 
     #[test]
