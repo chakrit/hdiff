@@ -126,7 +126,7 @@ pub fn of_text<'a>(
 
 /// The lines of `file`: its Git header and metadata, its file headers, then each hunk's
 /// header and records.
-pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
+fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     match &file.body {
         FileBody::Metadata(git) => FileLines::Metadata(git_header_lines(git)),
         FileBody::Unified(body) => FileLines::Unified(unified_lines(body)),
