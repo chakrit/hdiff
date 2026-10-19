@@ -45,7 +45,6 @@ pub(super) fn render_prepared_frame(
     }
 
     let extent = navigation.extent();
-    let page = document.page(extent.page());
     let scroll = interaction.scroll().position();
     let granularity = interaction.preferences().granularity;
     let pane_lines = view.pane_content().height;
@@ -58,29 +57,23 @@ pub(super) fn render_prepared_frame(
         horizontal_offset: scroll.horizontal,
         theme,
     };
-    match extent.lines(scroll.vertical, pane_lines) {
+    match extent.shown(document, granularity, scroll.vertical, pane_lines) {
         ShownLines::Single(lines) => {
-            let lines = lines.map(|screen_line| {
-                screen_line.map(|row| PaneRow::Text(page.row(row, granularity)))
-            });
+            let lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
             let pane = ContinuityFrame::diff_pane(geometry.single_pane());
             pane_drawing.render(frame, pane, lines);
         }
         ShownLines::Split { direction, lines } => {
-            let lines = lines
-                .map(|screen_line| {
-                    screen_line
-                        .map(|pair| page.rows().pair(pair).map(|row| page.row(row, granularity)))
-                })
-                .collect();
-            render_split_rows(frame, lines, geometry.split_panes(direction), &pane_drawing);
+            let split = geometry.split_panes(direction);
+            render_split_rows(frame, lines, split, &pane_drawing);
         }
     }
 
     match geometry.file_column() {
         Some(column) => {
             let tree = document.file_tree();
-            render_file_column(frame, column.list, tree, page.kind(), &theme.chrome);
+            let page_kind = document.page(interaction.page()).kind();
+            render_file_column(frame, column.list, tree, page_kind, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
         None => render_help_box(frame, screen, &theme.chrome),
@@ -145,23 +138,20 @@ impl PaneDrawing<'_> {
 }
 
 /// Draws side-by-side lines in the old and new panes of `split`, with their separator.
-fn render_split_rows(
+fn render_split_rows<'a>(
     frame: &mut Frame,
-    lines: Vec<RowLine<SideBySideRow<StyledRow>>>,
+    lines: impl Iterator<Item = RowLine<SideBySideRow<StyledRow<'a>>>>,
     split: SplitPanes,
     pane_drawing: &PaneDrawing,
 ) {
     let direction = split.direction();
     let separator = split.separator();
     let panes = split.panes().map(ContinuityFrame::diff_pane);
-    let shown = ScreenLines::new(lines.len());
     let (old_lines, new_lines): (Vec<_>, Vec<_>) = lines
-        .into_iter()
-        .map(|line| {
-            let rows = line.row.pane_pair();
-            (line.map(|_| rows.old), line.map(|_| rows.new))
-        })
+        .map(|line| line.map(SideBySideRow::pane_pair).split())
+        .map(|sides| (sides.old, sides.new))
         .unzip();
+    let shown = ScreenLines::new(old_lines.len());
 
     let palette = &pane_drawing.theme.chrome;
     match direction {

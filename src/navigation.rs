@@ -67,9 +67,7 @@ impl Navigation {
             }
             Effect::Keymap(keymap) => self.interaction = interaction.keymap_switched(keymap),
             Effect::TurnPage(page) => {
-                // A page turn keeps the preferences and screen the view derives from.
-                let settings = settings_of(interaction.preferences(), &self.view);
-                self.extent.turn_to(document, page, settings);
+                self.extent.turn_to(document, page);
                 self.interaction = interaction.turned_to(page);
             }
             Effect::Redisplay {
