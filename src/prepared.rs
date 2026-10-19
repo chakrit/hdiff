@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, slice};
+use std::num::NonZeroUsize;
 
 use crate::{
     document::{DiffDocument, DiffFiles},
@@ -54,7 +54,10 @@ impl PreparedDocument {
     pub fn page(&self, index: PageIndex) -> &PreparedPage {
         match self {
             Self::Files { pages, .. } => &pages[index.0].page,
-            Self::Text(page) => &slice::from_ref(page)[index.0],
+            Self::Text(page) => {
+                assert_eq!(index, PageIndex::FIRST, "a text document has one page");
+                page
+            }
         }
     }
 
@@ -73,7 +76,10 @@ impl PreparedDocument {
     }
 
     pub fn record_count(&self) -> usize {
-        self.pages().map(PreparedPage::record_count).sum()
+        match self {
+            Self::Files { pages, .. } => pages.iter().map(|file| file.page.record_count()).sum(),
+            Self::Text(page) => page.record_count(),
+        }
     }
 
     /// The file list with the row of the file `page` shows; a document without files
@@ -89,8 +95,12 @@ impl PreparedDocument {
     }
 
     /// Every page, in page order.
-    fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
-        (0..self.page_count().0.get()).map(|index| self.page(PageIndex(index)))
+    #[cfg(test)]
+    fn pages(&self) -> Vec<&PreparedPage> {
+        match self {
+            Self::Files { pages, .. } => pages.iter().map(|file| &file.page).collect(),
+            Self::Text(page) => vec![page],
+        }
     }
 
     // Preparation
@@ -206,7 +216,7 @@ mod tests {
 
         assert_eq!(prepared.file_count(), 2);
         assert_eq!(prepared.record_count(), 4);
-        for (page, expected) in prepared.pages().zip([
+        for (page, expected) in prepared.pages().into_iter().zip([
             format!("first message\n{patch}"),
             format!("second message\n{patch}trailer\n"),
         ]) {
@@ -246,7 +256,7 @@ mod tests {
             observed.file_selection(PageIndex::FIRST)
         );
         assert_eq!(ordinary.record_count(), observed.record_count());
-        for (ordinary, observed) in ordinary.pages().zip(observed.pages()) {
+        for (ordinary, observed) in ordinary.pages().into_iter().zip(observed.pages()) {
             assert_eq!(ordinary, observed);
         }
     }
