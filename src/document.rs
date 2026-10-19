@@ -334,7 +334,7 @@ impl Record {
     pub fn ended_sides(&self) -> BySide<bool> {
         let marked = self.no_newline.is_some();
 
-        BySide::default().map_sides(|side, _: bool| marked && self.kind.on_side(side))
+        self.kind.sides().map(|on_side| marked && on_side)
     }
 }
 
@@ -395,13 +395,28 @@ impl RecordKind {
             .find(|side| Self::change_of(*side) == self)
     }
 
-    /// Whether the record is a line of `side`'s file: context is a line of both sides,
-    /// and a change a line of the side it changes.
-    pub fn on_side(self, side: Side) -> bool {
+    /// The sides whose file the record is a line of: context is a line of both sides, and
+    /// a change a line of the side it changes.
+    pub fn sides(self) -> BySide<bool> {
         match self {
-            Self::Context(_) => true,
-            Self::Addition | Self::Deletion => self.changed_side() == Some(side),
+            Self::Context(_) => BySide {
+                old: true,
+                new: true,
+            },
+            Self::Addition => BySide {
+                old: false,
+                new: true,
+            },
+            Self::Deletion => BySide {
+                old: true,
+                new: false,
+            },
         }
+    }
+
+    /// Whether the record is a line of `side`'s file.
+    pub fn on_side(self, side: Side) -> bool {
+        *self.sides().get(side)
     }
 }
 
