@@ -11,17 +11,19 @@ use crate::{
     source_text::SourceLine,
 };
 
-/// Sections in input order, with no two text sections adjacent; only the parser builds
-/// one, which keeps that invariant.
+/// File diffs in input order, each with the surrounding text before it, then the text
+/// after the last file. A document without files holds all its text in `trailing`.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
-    sections: Box<[Section]>,
+    files: Box<[FileSection]>,
+    trailing: Box<[SourceLine]>,
 }
 
+/// One file's diff with the surrounding text that leads up to it.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Section {
-    Text(Box<[SourceLine]>),
-    File(DiffFile),
+pub struct FileSection {
+    pub leading: Box<[SourceLine]>,
+    pub file: DiffFile,
 }
 
 #[derive(Clone, Copy)]
@@ -32,57 +34,46 @@ pub struct FileView<'a> {
 }
 
 impl DiffDocument {
-    /// A document of `sections`, which must not hold two adjacent text sections.
-    pub(crate) fn new(sections: Box<[Section]>) -> Self {
-        Self { sections }
+    pub(crate) fn new(files: Box<[FileSection]>, trailing: Box<[SourceLine]>) -> Self {
+        Self { files, trailing }
     }
 
-    pub fn sections(&self) -> &[Section] {
-        &self.sections
+    pub fn file_sections(&self) -> &[FileSection] {
+        &self.files
+    }
+
+    /// The text after the last file, or all the text of a document without files.
+    pub fn trailing(&self) -> &[SourceLine] {
+        &self.trailing
     }
 
     pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
-        self.sections.iter().filter_map(|section| match section {
-            Section::File(file) => Some(file),
-            Section::Text(_) => None,
-        })
+        self.files.iter().map(|section| &section.file)
     }
 
     /// Every surrounding-text line, in input order.
     pub fn text(&self) -> impl Iterator<Item = &SourceLine> {
-        self.sections.iter().flat_map(|section| match section {
-            Section::Text(lines) => lines.as_ref(),
-            Section::File(_) => &[],
-        })
+        self.files
+            .iter()
+            .flat_map(|section| section.leading.iter())
+            .chain(self.trailing.iter())
     }
 
+    /// Each file with the text leading up to it; the last file also carries the
+    /// document's trailing text.
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
-        self.sections
+        let last = self.files.len().checked_sub(1);
+
+        self.files
             .iter()
             .enumerate()
-            .filter_map(|(index, section)| {
-                let Section::File(file) = section else {
-                    return None;
-                };
-                let leading = match index
-                    .checked_sub(1)
-                    .and_then(|previous| self.sections.get(previous))
-                {
-                    Some(Section::Text(lines)) => lines.as_ref(),
-                    _ => &[],
-                };
-                let trailing = match self.sections.get(index + 1) {
-                    Some(Section::Text(lines)) if index + 2 == self.sections.len() => {
-                        lines.as_ref()
-                    }
-                    _ => &[],
-                };
-
-                Some(FileView {
-                    file,
-                    leading,
-                    trailing,
-                })
+            .map(move |(index, section)| FileView {
+                file: &section.file,
+                leading: &section.leading,
+                trailing: match Some(index) == last {
+                    true => &self.trailing,
+                    false => &[],
+                },
             })
     }
 }

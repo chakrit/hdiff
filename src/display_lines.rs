@@ -3,7 +3,7 @@
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind, Section},
+    document::{DiffDocument, DiffFile, FileBody, RecordAddress, RecordKind},
     headers::GitHeader,
     side::Side,
     source_text::SourceLine,
@@ -95,14 +95,11 @@ impl LineEnding {
 
 /// Every line of `document`, in input order.
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
-    document.sections().iter().flat_map(
-        |section| -> Box<dyn Iterator<Item = DisplayLine<'_>> + '_> {
-            match section {
-                Section::File(file) => Box::new(of_file(file)),
-                Section::Text(lines) => Box::new(of_text(lines)),
-            }
-        },
-    )
+    document
+        .file_sections()
+        .iter()
+        .flat_map(|section| of_text(section.leading.iter()).chain(of_file(&section.file)))
+        .chain(of_text(document.trailing()))
 }
 
 /// Surrounding-text lines.
