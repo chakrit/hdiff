@@ -243,7 +243,7 @@ impl TokenRun<'_, '_> {
                     }
                 }
                 None => {
-                    for (side, run) in Side::BOTH.into_iter().zip(*runs) {
+                    for (side, run) in runs.into_sides() {
                         cursor.mark(side, tokens_len(run));
                     }
                 }

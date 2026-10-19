@@ -97,6 +97,11 @@ impl<T> BySide<T> {
     pub fn merge<U>(self, f: impl FnOnce(T, T) -> U) -> U {
         f(self.old, self.new)
     }
+
+    /// Each side with its value, old first.
+    pub fn into_sides(self) -> [(Side, T); 2] {
+        [(Side::Old, self.old), (Side::New, self.new)]
+    }
 }
 
 impl<T: Clone> BySide<T> {

@@ -22,7 +22,7 @@ impl ColorDepth {
         match color_count {
             u16::MAX => Self::TrueColor,
             256.. => Self::Indexed,
-            _ => Self::Basic,
+            ..=255 => Self::Basic,
         }
     }
 }
@@ -287,7 +287,6 @@ mod tests {
     use ratatui::style::Color;
 
     use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
-    use crate::side::Side;
 
     /// How bright a gray text color is, comparable within one color depth.
     fn gray_level(color: Color) -> u16 {
@@ -421,8 +420,7 @@ mod tests {
     fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
         for depth in every_depth() {
             let change = &Theme::of_depth(depth).rows.change;
-            for side in Side::BOTH {
-                let colors = change.get(side);
+            for (side, colors) in change.as_ref().into_sides() {
                 assert!(
                     gray_level(colors.unchanged) < gray_level(colors.body),
                     "{depth:?} {side:?}: {:?} is not dimmer than {:?}",
