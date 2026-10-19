@@ -224,7 +224,7 @@ fn preparation_report(
 }
 
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
-    report.push_str("profile version=1\n");
+    push_line(report, format_args!("profile version=1"));
 
     for Family { parent, stages } in Stage::families() {
         let total = match parent.measured_by() {
