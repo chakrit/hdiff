@@ -6,7 +6,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_error, error_output, fixture};
+use common::{TestEnv, assert_error, error_output, fixture, success_output};
 
 fn run_hdiff(arguments: &[&str]) -> Output {
     TestEnv::new()
@@ -56,8 +56,7 @@ fn compare(env: &TestEnv, arguments: &[&str]) -> String {
         .output()
         .expect("run comparison");
 
-    assert!(output.status.success(), "{arguments:?}: {output:?}");
-    String::from_utf8(output.stdout).expect("comparison output is UTF-8")
+    success_output(&output)
 }
 
 #[test]
@@ -65,9 +64,7 @@ fn help_describes_the_cli_without_reading_diff_input() {
     let help = run_hdiff(&["--help"]);
     let drivers = ["prepare", "stages", "movement"];
 
-    assert!(help.status.success(), "{help:?}");
-    assert!(help.stderr.is_empty(), "{help:?}");
-    let text = String::from_utf8(help.stdout).expect("help is UTF-8");
+    let text = success_output(&help);
     assert!(text.starts_with("Usage: hdiff"), "{text}");
     for named in [
         "[FILE ...]",
@@ -94,12 +91,7 @@ fn version_identifies_the_package_and_source_commit() {
         short_commit_hash()
     );
 
-    assert!(version.status.success(), "{version:?}");
-    assert!(version.stderr.is_empty(), "{version:?}");
-    assert_eq!(
-        String::from_utf8(version.stdout).expect("version is UTF-8"),
-        expected
-    );
+    assert_eq!(success_output(&version), expected);
 }
 
 #[test]
@@ -135,9 +127,7 @@ fn empty_sources_exit_silently() {
             .output()
             .expect("run empty viewer input");
 
-        assert!(output.status.success(), "{operands:?}: {output:?}");
-        assert!(output.stdout.is_empty(), "{operands:?}: {output:?}");
-        assert!(output.stderr.is_empty(), "{operands:?}: {output:?}");
+        assert_eq!(success_output(&output), "", "{operands:?}");
     }
 }
 
@@ -146,11 +136,9 @@ fn metadata_only_input_remains_visible() {
     let patch = fixture("git-rename-only.patch");
     let output = run_hdiff(&[patch.to_str().expect("fixture path is UTF-8")]);
 
-    assert!(output.status.success(), "{output:?}");
-    assert!(output.stderr.is_empty(), "{output:?}");
     assert_eq!(
-        output.stdout,
-        include_bytes!("fixtures/git-rename-only.patch")
+        success_output(&output),
+        include_str!("fixtures/git-rename-only.patch")
     );
 }
 
@@ -194,8 +182,7 @@ fn dash_operand_compares_standard_input() {
         .output()
         .expect("run stdin comparison");
 
-    assert!(output.status.success(), "{output:?}");
-    let text = String::from_utf8(output.stdout).expect("comparison output is UTF-8");
+    let text = success_output(&output);
     assert!(text.contains("-old top\n+new top\n"), "{text}");
 }
 

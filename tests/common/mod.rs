@@ -8,6 +8,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
+    str,
 };
 
 use hdiff::exit_status::DiffStatus;
@@ -104,6 +105,18 @@ impl TestEnv {
             .env("PATH", TEST_PATH)
             .env("TERM", TEST_TERM);
     }
+}
+
+/// The standard output of an hdiff run that succeeded: it exited with status 0, wrote
+/// nothing to standard error, and wrote UTF-8.
+#[allow(dead_code)]
+pub fn success_output(output: &Output) -> String {
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+
+    str::from_utf8(&output.stdout)
+        .unwrap_or_else(|error| panic!("{error}: {output:?}"))
+        .to_owned()
 }
 
 /// The standard error of an hdiff run that failed: it exited with the trouble status
