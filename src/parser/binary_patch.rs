@@ -107,8 +107,8 @@ fn is_payload_line(text: &str) -> bool {
         return false;
     };
 
-    let groups = encoded.len() / BASE85_GROUP;
-    let whole_groups = encoded.len() % BASE85_GROUP == 0;
+    let groups = encoded.len() / BASE85_GROUP_CHARACTERS;
+    let whole_groups = encoded.len() % BASE85_GROUP_CHARACTERS == 0;
     let held = groups * BASE85_GROUP_BYTES;
     let fits = groups > 0 && whole_groups && stated <= held && stated > held - BASE85_GROUP_BYTES;
 
@@ -116,7 +116,7 @@ fn is_payload_line(text: &str) -> bool {
 }
 
 /// The characters in one base-85 group.
-const BASE85_GROUP: usize = 5;
+const BASE85_GROUP_CHARACTERS: usize = 5;
 
 /// The bytes one base-85 group holds.
 const BASE85_GROUP_BYTES: usize = 4;
