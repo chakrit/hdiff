@@ -548,10 +548,15 @@ mod tests {
         side::{BySide, Side},
     };
 
-    /// The rows of `patch`'s first file.
+    /// The rows of `patch`'s only file.
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_patch(patch).expect("valid diff");
-        PageRows::of_file_view(document.file_views().next().expect("first file"))
+        let views = document.file_views().collect::<Vec<_>>();
+        let [view] = views.as_slice() else {
+            panic!("the patch holds one file, not {}", views.len());
+        };
+
+        PageRows::of_file_view(*view)
     }
 
     /// The line as a reader sees it: its record marker, then its payload.

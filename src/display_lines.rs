@@ -245,7 +245,10 @@ mod tests {
     fn classifies_metadata_file_headers_hunks_and_records() {
         let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
         let document = parse_patch(input).expect("valid Git diff with two hunks");
-        let file = document.files().next().expect("first file");
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the fixture holds one file, not {}", files.len());
+        };
         let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };
