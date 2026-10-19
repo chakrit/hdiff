@@ -253,14 +253,14 @@ static BASIC: Theme = Theme {
                 background: Color::Red,
                 body: Color::DarkGray,
                 unchanged: Color::Black,
-                marker: Color::Red,
+                marker: Color::LightRed,
                 body_modifier: Modifier::DIM,
             },
             new: ChangeColors {
                 background: Color::Green,
                 body: Color::White,
                 unchanged: Color::Gray,
-                marker: Color::Green,
+                marker: Color::LightGreen,
                 body_modifier: Modifier::empty(),
             },
         },
@@ -427,6 +427,31 @@ mod tests {
                     colors.unchanged,
                     colors.body
                 );
+            }
+        }
+    }
+
+    /// docs/spec/architecture.md#palette-and-character-detail: markers, changed spans and
+    /// row text are drawn over the change background, so each must differ from it.
+    #[test]
+    fn draws_every_change_row_color_apart_from_its_background() {
+        for depth in every_depth() {
+            let change = &Theme::of_depth(depth).rows.change;
+            for (side, colors) in change.as_ref().into_sides() {
+                let ChangeColors {
+                    background,
+                    body,
+                    unchanged,
+                    marker,
+                    body_modifier: _,
+                } = colors;
+                for (role, color) in [("body", body), ("unchanged", unchanged), ("marker", marker)]
+                {
+                    assert_ne!(
+                        color, background,
+                        "{depth:?} {side:?}: {role} is drawn in its background color"
+                    );
+                }
             }
         }
     }
