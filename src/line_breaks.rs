@@ -52,8 +52,7 @@ pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> 
     let text = payload.text();
     if text.bytes().all(|byte| matches!(byte, b'\t' | b' '..=b'~')) {
         // Every cluster is one cell, so every line but the last is full.
-        let lines = payload.cells().get().div_ceil(width.get().get()).max(1);
-        return ScreenLines::new(lines);
+        return payload.cells().lines_filled_at(width);
     }
 
     let mut expanded = String::new();
