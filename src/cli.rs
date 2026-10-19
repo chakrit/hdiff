@@ -154,8 +154,8 @@ fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
 
 /// The source of any number of operands but two: a second one means more than two.
 fn single_source(operands: Vec<Operand>, depth: Depth) -> Result<Source, Error> {
-    let mut operands = operands.into_iter();
-    match (operands.next(), operands.next(), depth) {
+    let mut remaining = operands.into_iter();
+    match (remaining.next(), remaining.next(), depth) {
         (Some(_) | None, Some(_), Depth::TopLevel | Depth::Recursive) => {
             Err(Error::TooManyOperands)
         }

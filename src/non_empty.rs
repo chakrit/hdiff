@@ -21,10 +21,10 @@ impl<T> NonEmpty<T> {
 
     /// `items` in order, or `None` when there are none.
     pub fn of(items: impl IntoIterator<Item = T>) -> Option<Self> {
-        let mut items = items.into_iter();
-        let first = items.next()?;
+        let mut item_iter = items.into_iter();
+        let first = item_iter.next()?;
 
-        Some(Self::new(first, items))
+        Some(Self::new(first, item_iter))
     }
 
     pub fn first(&self) -> &T {
@@ -75,14 +75,14 @@ impl<T> NonEmpty<T> {
     /// keys in their original order.
     pub fn sorted_by_key<K: Ord>(self, mut key: impl FnMut(&T) -> K) -> Self {
         let Self { first, rest } = self;
-        let mut rest = rest.into_vec();
-        rest.sort_by_key(&mut key);
+        let mut sorted_rest = rest.into_vec();
+        sorted_rest.sort_by_key(&mut key);
 
         // `first` came before every item in `rest`, so it leads the items its key ties.
         let first_key = key(&first);
-        let before_first = rest.partition_point(|item| key(item) < first_key);
-        let behind = rest.split_off(before_first);
-        let mut ahead = rest.into_iter();
+        let before_first = sorted_rest.partition_point(|item| key(item) < first_key);
+        let behind = sorted_rest.split_off(before_first);
+        let mut ahead = sorted_rest.into_iter();
 
         match ahead.next() {
             None => Self::new(first, behind),

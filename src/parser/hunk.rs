@@ -177,7 +177,8 @@ pub(super) fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
         .strip_prefix("@@ -")
         .and_then(|rest| rest.split_once(" @@"))
         .filter(|(_, heading)| heading.is_empty() || heading.starts_with(' '));
-    let Some((old, new)) = ranges.and_then(|(ranges, _)| ranges.split_once(" +")) else {
+    let Some((old, new)) = ranges.and_then(|(range_fields, _)| range_fields.split_once(" +"))
+    else {
         return Err(Malformed::InvalidHunkHeader);
     };
 

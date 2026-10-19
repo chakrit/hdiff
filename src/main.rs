@@ -59,13 +59,15 @@ fn run() -> Result<(), RunError> {
 /// reports zero counts, timing each phase for the driver's report. Rules:
 /// docs/spec/performance.md#benchmark-drivers.
 fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
-    let clock = bench::InputClock::start();
+    let input_clock = bench::InputClock::start();
     let content = source.read().map_err(RunError::Input)?;
-    let clock = clock.input_read(&content);
+    let parse_clock = input_clock.input_read(&content);
     let document = content.parse().map_err(RunError::Parse)?;
-    let clock = clock.parsed();
+    let preparation_clock = parse_clock.parsed();
 
-    let report = driver.run(clock, &document).map_err(RunError::Bench)?;
+    let report = driver
+        .run(preparation_clock, &document)
+        .map_err(RunError::Bench)?;
     write_stdout(report.as_bytes())
 }
 

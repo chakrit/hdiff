@@ -171,10 +171,10 @@ fn install_names_a_config_path_it_cannot_inspect() {
         .env("GIT_CONFIG_GLOBAL", &config_path)
         .output();
     set_mode(&locked, 0o755);
-    let installation = installation.expect("run hdiff installer");
+    let output = installation.expect("run hdiff installer");
 
     assert_error(
-        &installation,
+        &output,
         &format!(
             "--install: checking Git config {}: Permission denied (os error 13)",
             config_path.display()

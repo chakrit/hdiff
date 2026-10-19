@@ -97,8 +97,8 @@ impl InstallPlan {
     /// any path that is not UTF-8 fails it.
     fn of_registered(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config = GlobalConfig::of(environment)?;
-        let executable = utf8(executable, PathRole::Executable)?;
-        let pager_command = shell_words::quote(executable.as_str()).into_owned();
+        let executable_path = utf8(executable, PathRole::Executable)?;
+        let pager_command = shell_words::quote(executable_path.as_str()).into_owned();
 
         let backup = match config {
             GlobalConfig::Existing(path) => Some(backup_of(&path)?),
@@ -220,12 +220,12 @@ impl GlobalConfig {
 
 /// The config file `GIT_CONFIG_GLOBAL` names; `/dev/null` disables the global config.
 fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
-    let path = PathBuf::from(path);
-    if path == Path::new("/dev/null") {
+    let config_path = PathBuf::from(path);
+    if config_path == Path::new("/dev/null") {
         return Err(Error::GlobalConfigDisabled);
     }
 
-    Ok(path)
+    Ok(config_path)
 }
 
 /// Whether `path` exists; failing to tell is an error, not an absence.

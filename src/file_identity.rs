@@ -32,13 +32,13 @@ impl FileIdentity {
         git: Option<&GitHeader<Box<[SourceLine]>>>,
         headers: &BySide<FileHeader>,
     ) -> Self {
-        let git_line = git.map(|git| &git.line);
+        let git_line = git.map(|header| &header.line);
         let paths = headers.as_ref().map(|header| &header.path);
         let change = match git {
-            Some(git) => git_change(git),
+            Some(header) => git_change(header),
             None => Some(GitChange::Unmarked),
         };
-        let located = change.and_then(|change| change.identity(|| read_headers(git_line, paths)));
+        let located = change.and_then(|marked| marked.identity(|| read_headers(git_line, paths)));
 
         let first_line = git_line.unwrap_or(&headers.old.line);
         located.unwrap_or_else(|| Self::unknown(first_line))
