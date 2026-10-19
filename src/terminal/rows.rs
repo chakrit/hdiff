@@ -14,6 +14,8 @@ pub(super) enum PaneRow<'a> {
 }
 
 impl PaneRow<'_> {
+    /// The row's tone: prepared text keeps its own, and an alignment peer takes the tone
+    /// of a change to its side.
     pub(super) fn tone(&self) -> RowTone {
         match self {
             Self::Text(row) => row.tone(),
