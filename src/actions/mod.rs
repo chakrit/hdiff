@@ -34,6 +34,8 @@ pub enum Error {
     NonUtf8Path(PathRole),
     /// `--install` could not tell whether a config file exists.
     InspectConfig { path: PathBuf, source: io::Error },
+    /// `--install` could not resolve the executable to its canonical path.
+    ResolveExecutable { path: PathBuf, source: io::Error },
     /// The global Git config could not be copied to its backup.
     Backup {
         backup: BackupGlobalGitConfig,
@@ -54,7 +56,7 @@ impl fmt::Display for Error {
                 formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
             }
             Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
-            Self::InspectConfig { path, source } => {
+            Self::InspectConfig { path, source } | Self::ResolveExecutable { path, source } => {
                 write!(formatter, "{}: {source}", path.display())
             }
             Self::Backup { backup, source } => write!(
