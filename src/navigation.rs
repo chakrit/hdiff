@@ -183,15 +183,16 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
     }
 }
 
-/// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
-/// The vertical offset always names a line, even when a too-short screen shows no pane.
+/// The limits of `extent` shown in `view`: content scrolls until its end fills the pane,
+/// and only unwrapped rows scroll horizontally. The vertical offset always names a line,
+/// even when a too-short screen shows no pane.
 fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
     let content = view.pane_content();
     let shown_lines = content.height.max(ScreenLines::ONE);
 
     ScrollBounds::new(
         extent.line_count().saturating_sub(shown_lines),
-        extent.width().saturating_sub(content.width),
+        view.wrap().horizontal_range(extent.width(), content.width),
         content.height,
     )
 }
@@ -207,7 +208,7 @@ mod tests {
     };
     use crate::{
         parser::parse_patch,
-        preferences::{PreferenceChange, ViewPreferences},
+        preferences::{PreferenceChange, ViewPreferences, Wrapping},
         prepared::PreparedDocument,
         screen::{Cells, ScreenLines},
     };
@@ -248,5 +249,31 @@ mod tests {
         assert_eq!(unified, start, "three layout changes return to the start");
         assert_eq!(character.page(), start.page());
         assert_eq!(character.scroll(), start.scroll());
+    }
+
+    /// docs/spec/architecture.md#view-model: while wrapping is enabled the maximum
+    /// horizontal offset is zero, even in a pane too narrow for a payload column.
+    #[test]
+    fn never_scrolls_horizontally_while_wrapping_in_a_pane_without_payload_room() {
+        let document = parse_patch(
+            b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-a long deleted line\n+a long added line\n",
+        )
+        .expect("valid diff");
+        let prepared = PreparedDocument::prepare(&document);
+        let preferences = ViewPreferences {
+            wrapping: Wrapping::Enabled,
+            ..ViewPreferences::INITIAL
+        };
+        // The file column leaves the diff one column, all of it frame.
+        let mut navigation = Navigation::start(prepared, preferences, Size::new(28, 3));
+
+        navigation.step(Effect::Scroll(Movement::Right));
+        navigation.step(Effect::Scroll(Movement::FarRight));
+
+        assert_eq!(navigation.view().too_small(), None, "the panes still show");
+        assert_eq!(
+            navigation.interaction().scroll().position().horizontal,
+            Cells::ZERO
+        );
     }
 }
