@@ -94,19 +94,21 @@ impl Tui {
         terminal: &mut Terminal<B>,
         event: TerminalEvent,
     ) -> Result<Step, B::Error> {
-        let keymap = self.navigation.interaction().keymap();
-        let Some(event) = bindings::event_for(event).and_then(|event| event.admitted(keymap))
-        else {
+        let Some(event) = bindings::event_for(event) else {
             return Ok(Step::Continue);
         };
+        let pages = self.document.page_count();
+        let effect = match self.navigation.interaction().respond(event, pages) {
+            Outcome::Exit => return Ok(Step::Exit),
+            Outcome::Ignored => return Ok(Step::Continue),
+            Outcome::Redraw => None,
+            Outcome::Effect(effect) => Some(effect),
+        };
+
         let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(&self.document, screen);
-
-        let pages = self.document.page_count();
-        match self.navigation.interaction().respond(event, pages) {
-            Outcome::Exit => return Ok(Step::Exit),
-            Outcome::Redraw => {}
-            Outcome::Effect(effect) => self.navigation.step(&self.document, effect),
+        if let Some(effect) = effect {
+            self.navigation.step(&self.document, effect);
         }
 
         self.draw(terminal)?;
