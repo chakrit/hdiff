@@ -67,10 +67,10 @@ impl Live {
     }
 
     pub fn enter(&mut self, mode: Mode) {
-        while self.tui.preferences().layout != mode.layout {
+        while self.preferences().layout != mode.layout {
             self.press('v');
         }
-        if self.tui.preferences().granularity != mode.granularity {
+        if self.preferences().granularity != mode.granularity {
             self.press('c');
         }
     }
@@ -177,7 +177,7 @@ impl Live {
 
     /// The marker and name foregrounds of the file row `row`, such as `"~ lib.rs"`; the
     /// name must be drawn in one color.
-    pub fn file_row_colors(&self, row: &str) -> (Color, Color) {
+    pub fn file_row_colors(&self, row: &str) -> FileRowColors {
         let (marker_label, _) = row.split_once(' ').expect("a marker, a space, and a name");
         let start = self.find(row);
         let buffer = self.buffer();
@@ -191,7 +191,10 @@ impl Live {
             name.windows(2).all(|pair| pair[0] == pair[1]),
             "{row:?} draws its name in one color: {name:?}"
         );
-        (marker, name[0])
+        FileRowColors {
+            marker,
+            name: name[0],
+        }
     }
 
     /// Screen rows whose first change label is an `old_N` label: with every diff-pane
@@ -237,6 +240,13 @@ pub fn positions<'a>(buffer: &'a Buffer, text: &'a str) -> impl Iterator<Item = 
 /// Screen columns `text` covers.
 pub fn cells(text: &str) -> u16 {
     Cells::of_text(text).frame_columns()
+}
+
+/// The foregrounds a file row draws its marker and its name in.
+#[derive(Debug, Clone, Copy)]
+pub struct FileRowColors {
+    pub marker: Color,
+    pub name: Color,
 }
 
 #[derive(Debug, Clone, Copy)]

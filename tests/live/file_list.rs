@@ -101,22 +101,22 @@ fn colors_markers_by_state() {
     live.previous_file();
     live.previous_file();
 
-    let (deleted, name) = live.file_row_colors("- README.md");
-    let (modified, lib_name) = live.file_row_colors("~ lib.rs");
-    let (added, new_name) = live.file_row_colors("+ new.rs");
-    let (view_marker, view_name) = live.file_row_colors("~ view.rs");
+    let readme = live.file_row_colors("- README.md");
+    let lib = live.file_row_colors("~ lib.rs");
+    let new = live.file_row_colors("+ new.rs");
+    let view = live.file_row_colors("~ view.rs");
 
-    assert_eq!(view_marker, modified, "one color per state");
-    assert_ne!(deleted, modified, "deleted and modified differ");
-    assert_ne!(deleted, added, "deleted and added differ");
-    assert_ne!(modified, added, "modified and added differ");
+    assert_eq!(view.marker, lib.marker, "one color per state");
+    assert_ne!(readme.marker, lib.marker, "deleted and modified differ");
+    assert_ne!(readme.marker, new.marker, "deleted and added differ");
+    assert_ne!(lib.marker, new.marker, "modified and added differ");
 
     assert_eq!(
-        [lib_name, new_name, view_name],
-        [name; 3],
+        [lib.name, new.name, view.name],
+        [readme.name; 3],
         "every name shares one color"
     );
-    assert_ne!(name, deleted, "names are not colored by state");
+    assert_ne!(readme.name, readme.marker, "names are not colored by state");
 }
 
 /// docs/spec/architecture.md#continuity-markers: the file list marks rows past each edge.
