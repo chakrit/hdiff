@@ -268,55 +268,6 @@ mod tests {
     use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
     use crate::side::Side;
 
-    #[test]
-    fn reads_crossterm_color_counts_as_depths() {
-        assert_eq!(
-            ColorDepth::from_color_count(u16::MAX),
-            ColorDepth::TrueColor
-        );
-        assert_eq!(ColorDepth::from_color_count(256), ColorDepth::Indexed);
-        assert_eq!(ColorDepth::from_color_count(255), ColorDepth::Basic);
-        assert_eq!(ColorDepth::from_color_count(8), ColorDepth::Basic);
-        assert_eq!(ColorDepth::from_color_count(0), ColorDepth::Basic);
-    }
-
-    /// docs/spec/architecture.md#failure-and-safety-posture: the palette falls back by
-    /// capability, so no depth draws a color its terminal cannot show.
-    #[test]
-    fn draws_each_depth_only_with_colors_that_depth_shows() {
-        let shows = |depth, color| match (depth, color) {
-            (ColorDepth::TrueColor, Color::Rgb(..)) => true,
-            (ColorDepth::Indexed, Color::Indexed(_)) => true,
-            (ColorDepth::Basic, Color::Rgb(..) | Color::Indexed(_)) => false,
-            (ColorDepth::Basic, _) => true,
-            (ColorDepth::TrueColor | ColorDepth::Indexed, _) => false,
-        };
-
-        for depth in every_depth() {
-            for color in colors(Theme::for_depth(depth)) {
-                assert!(shows(depth, color), "{depth:?} draws {color:?}");
-            }
-        }
-    }
-
-    /// docs/spec/architecture.md#continuity-markers: unchanged text on rows with detail
-    /// spans is one step dimmer than the row's line-mode text.
-    #[test]
-    fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
-        for depth in every_depth() {
-            let change = &Theme::for_depth(depth).rows.change;
-            for side in Side::BOTH {
-                let colors = change.get(side);
-                assert!(
-                    gray_level(colors.unchanged) < gray_level(colors.body),
-                    "{depth:?} {side:?}: {:?} is not dimmer than {:?}",
-                    colors.unchanged,
-                    colors.body
-                );
-            }
-        }
-    }
-
     /// How bright a gray text color is, comparable within one color depth.
     fn gray_level(color: Color) -> u16 {
         match color {
@@ -413,5 +364,54 @@ mod tests {
             .copied()
             .chain(change.iter().flat_map(change_colors))
             .collect()
+    }
+
+    #[test]
+    fn reads_crossterm_color_counts_as_depths() {
+        assert_eq!(
+            ColorDepth::from_color_count(u16::MAX),
+            ColorDepth::TrueColor
+        );
+        assert_eq!(ColorDepth::from_color_count(256), ColorDepth::Indexed);
+        assert_eq!(ColorDepth::from_color_count(255), ColorDepth::Basic);
+        assert_eq!(ColorDepth::from_color_count(8), ColorDepth::Basic);
+        assert_eq!(ColorDepth::from_color_count(0), ColorDepth::Basic);
+    }
+
+    /// docs/spec/architecture.md#failure-and-safety-posture: the palette falls back by
+    /// capability, so no depth draws a color its terminal cannot show.
+    #[test]
+    fn draws_each_depth_only_with_colors_that_depth_shows() {
+        let shows = |depth, color| match (depth, color) {
+            (ColorDepth::TrueColor, Color::Rgb(..)) => true,
+            (ColorDepth::Indexed, Color::Indexed(_)) => true,
+            (ColorDepth::Basic, Color::Rgb(..) | Color::Indexed(_)) => false,
+            (ColorDepth::Basic, _) => true,
+            (ColorDepth::TrueColor | ColorDepth::Indexed, _) => false,
+        };
+
+        for depth in every_depth() {
+            for color in colors(Theme::for_depth(depth)) {
+                assert!(shows(depth, color), "{depth:?} draws {color:?}");
+            }
+        }
+    }
+
+    /// docs/spec/architecture.md#continuity-markers: unchanged text on rows with detail
+    /// spans is one step dimmer than the row's line-mode text.
+    #[test]
+    fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
+        for depth in every_depth() {
+            let change = &Theme::for_depth(depth).rows.change;
+            for side in Side::BOTH {
+                let colors = change.get(side);
+                assert!(
+                    gray_level(colors.unchanged) < gray_level(colors.body),
+                    "{depth:?} {side:?}: {:?} is not dimmer than {:?}",
+                    colors.unchanged,
+                    colors.body
+                );
+            }
+        }
     }
 }
