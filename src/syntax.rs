@@ -106,7 +106,7 @@ impl SyntaxHighlighter {
             projections
         });
 
-        let passes = match shared_language {
+        let side_spans = match shared_language {
             Some(language) => {
                 let old_highlighted =
                     self.highlight_projection(language, &projections.old, None, observer);
@@ -128,7 +128,7 @@ impl SyntaxHighlighter {
                 }),
         };
 
-        passes.into_iter().flatten().collect()
+        side_spans.into_iter().flatten().collect()
     }
 
     /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A
@@ -143,6 +143,7 @@ impl SyntaxHighlighter {
         if projection.records.is_empty() {
             return Highlighted::unparsed();
         }
+
         let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
 
         let tree = observer.measure(Stage::Parse, |observer| {
@@ -237,7 +238,8 @@ impl Language {
             return None;
         };
 
-        match text.rsplit_once('.')?.1 {
+        let (_, extension) = text.rsplit_once('.')?;
+        match extension {
             "rs" => Some(Self::Rust),
             "js" | "jsx" => Some(Self::JavaScript),
             "py" => Some(Self::Python),
@@ -535,7 +537,7 @@ mod tests {
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{DiffFile, FileBody, HunkRecords, RecordEntry, UnifiedBody},
+        document::{DiffFile, FileBody, HunkRecords, RecordEntry, RecordKind, UnifiedBody},
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
@@ -672,7 +674,11 @@ mod tests {
         let [_, incremental_spans] = highlights_of(patch);
 
         let full_spans = with_first_hunk(patch, |hunk| {
-            let addition = hunk.positioned().nth(1).expect("the added record").position;
+            let addition = hunk
+                .positioned()
+                .find(|entry| entry.value.kind == RecordKind::Addition)
+                .expect("the added record")
+                .position;
             let new_projection =
                 Projection::from_hunk(hunk, Side::New, StyledRecords::ChangesAndContext);
             let full_highlighted = SyntaxHighlighter::default().highlight_projection(
@@ -681,17 +687,15 @@ mod tests {
                 None,
                 &mut Unobserved,
             );
-            assert!(
-                full_highlighted.tree.is_some(),
-                "the new side has styled records, so it is parsed"
-            );
-            full_highlighted
+            let addition_spans = full_highlighted
                 .spans
                 .into_iter()
                 .filter(|entry| entry.position == addition)
                 .map(|entry| entry.value)
-                .collect::<Vec<_>>()
-        });
+                .collect::<Vec<_>>();
+            full_highlighted.tree.map(|_| addition_spans)
+        })
+        .expect("the new side has styled records, so it is parsed");
 
         assert_eq!(incremental_spans, full_spans);
         assert_eq!(first(&incremental_spans).class, SyntaxClass::Keyword);
