@@ -47,9 +47,7 @@ pub(super) fn render_file_column(
         PageKind::File { row } => Some(row),
         PageKind::Text => None,
     };
-    let list_height = FrameEdges::FILE_LIST
-        .around(Size::new(0, MINIMUM_FILE_LIST_HEIGHT))
-        .height;
+    let list_height = FrameEdges::FILE_LIST.rows_around(MINIMUM_FILE_LIST_HEIGHT);
     let hint_height = area
         .height
         .saturating_sub(list_height)

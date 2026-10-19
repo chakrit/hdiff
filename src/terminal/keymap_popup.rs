@@ -43,8 +43,7 @@ enum Columns {
 impl Columns {
     /// Two columns when they fit `width` in their floating box, one otherwise.
     fn of(width: u16) -> Self {
-        let two_columns = Size::new(Self::Two.content_width(), 0);
-        match width >= FloatingBox::EDGES.around(two_columns).width {
+        match width >= FloatingBox::EDGES.columns_around(Self::Two.content_width()) {
             true => Self::Two,
             false => Self::One,
         }
