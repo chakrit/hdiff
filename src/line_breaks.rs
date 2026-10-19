@@ -1,5 +1,5 @@
-//! Breaks interactive row payloads into wrapped lines; see
-//! docs/spec/architecture.md#view-model for the wrapping rules.
+//! Breaks interactive row payloads into wrapped lines. Rules:
+//! docs/spec/architecture.md#view-model.
 
 use unicode_segmentation::UnicodeSegmentation;
 
