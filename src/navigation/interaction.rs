@@ -86,16 +86,14 @@ impl Interaction {
         }
     }
 
-    /// `page` with `preferences` on a `screen`-sized terminal, scrolled to `scroll`.
-    pub(super) fn shown(
+    /// This page with `preferences` on a `screen`-sized terminal, scrolled to `scroll`.
+    pub(super) fn redisplayed(
         self,
-        page: PageIndex,
         preferences: ViewPreferences,
         screen: Size,
         scroll: BoundedScroll,
     ) -> Self {
         Self {
-            page,
             preferences,
             screen,
             scroll,
@@ -103,7 +101,8 @@ impl Interaction {
         }
     }
 
-    pub(super) fn with_keymap(self, keymap: KeymapPopup) -> Self {
+    /// This interaction with the keymap popup `keymap`.
+    pub(super) fn keymap_switched(self, keymap: KeymapPopup) -> Self {
         Self { keymap, ..self }
     }
 }
@@ -370,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn turns_pages_with_wrapping() {
+    fn turns_pages_around_the_ends() {
         let first = interaction(PageIndex::FIRST, DiffLayout::Unified);
         let second = interaction(second_page(), DiffLayout::Unified);
 
@@ -420,7 +419,7 @@ mod tests {
             else {
                 panic!("a keymap command changes the popup");
             };
-            interaction.with_keymap(popup)
+            interaction.keymap_switched(popup)
         };
 
         let open = after(&start, KeymapCommand::Toggle);
