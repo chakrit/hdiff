@@ -8,7 +8,7 @@ use std::{
 
 use common::{TestEnv, assert_trouble};
 
-/// performance.md#benchmark-drivers: the drivers `--bench` accepts.
+/// docs/spec/performance.md#benchmark-drivers: the drivers `--bench` accepts.
 const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
@@ -81,7 +81,7 @@ fn stage_record(line: &str) -> ((&str, &str), u128) {
     ((parent, name), duration)
 }
 
-/// performance.md#stages: every stage under its parent, plus each parent's unattributed
+/// docs/spec/performance.md#stages: every stage under its parent, plus each parent's unattributed
 /// remainder.
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     let preparation =

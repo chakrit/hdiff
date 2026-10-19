@@ -174,7 +174,7 @@ write.
 Zero-byte viewer input exits silently with status 0 before parsing, preparation,
 or terminal acquisition. This applies to stdin, an empty patch file, and identical
 file operands. Measurement modes retain their
-[zero-count reports](performance.md#benchmark-mode).
+[zero-count reports](performance.md#benchmark-drivers).
 
 Preserve text outside file diffs independently of its producer. Retain that text once,
 render it in both split panes and once in unified view, and use the same parsing and

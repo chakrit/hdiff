@@ -1,5 +1,5 @@
 //! Counts and positions retained in 32 bits to keep per-line records small. Rules:
-//! `docs/spec/architecture.md` (Viewport coordinates).
+//! docs/spec/architecture.md#viewport-coordinates.
 
 /// A count, or a position counted from the start, retained as `u32` and used as `usize`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
