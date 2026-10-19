@@ -116,6 +116,7 @@ mod tests {
         }
     }
 
+    /// Bounds with these maximum offsets, for a pane eight lines tall.
     fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: usize) -> ScrollBounds {
         ScrollBounds {
             maximum_vertical_offset: ScreenLines::new(maximum_vertical_offset),

@@ -291,6 +291,8 @@ mod tests {
         }
     }
 
+    /// The effect `event` has on `interaction` in a two-page document; panics when the
+    /// event changes nothing.
     fn effect(interaction: &Interaction, event: Event) -> Effect {
         let Outcome::Effect(effect) = interaction.respond(event, TWO_PAGES) else {
             panic!("{event:?} changes the interaction");
