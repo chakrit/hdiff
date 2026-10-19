@@ -38,20 +38,16 @@ fn all_bindings() -> impl Iterator<Item = Binding> {
 
 /// The first plain character, in table order, bound to `command`.
 pub(crate) fn character_for(command: Command) -> Option<char> {
-    all_bindings().find_map(|binding| match (binding.key, binding.action) {
-        (Key::Char(character), KeyAction::Command(bound)) if bound == command => Some(character),
-        _ => None,
-    })
+    all_bindings()
+        .filter(|binding| binding.action.command() == Some(command))
+        .find_map(|binding| binding.key.character())
 }
 
 /// The keys that close the open keymap popup, in table order: every key whose command the
 /// open popup turns into closing it.
 pub(super) fn keymap_closing_keys() -> impl Iterator<Item = Key> {
     all_bindings()
-        .filter(|binding| match binding.action {
-            KeyAction::Command(command) => KeymapPopup::closes(command),
-            KeyAction::Interrupt => false,
-        })
+        .filter(|binding| binding.action.command().is_some_and(KeymapPopup::closes))
         .map(|binding| binding.key)
 }
 
@@ -89,6 +85,16 @@ impl Key {
         }
     }
 
+    /// The plain character this key types; a chord or a named key types none.
+    fn character(self) -> Option<char> {
+        match self {
+            Self::Char(character) => Some(character),
+            Self::Control(_) | Self::Tab | Self::ShiftTab | Self::Esc | Self::Down | Self::Up => {
+                None
+            }
+        }
+    }
+
     pub(super) fn label(self) -> String {
         match self {
             Self::Char(character) => character.to_string(),
@@ -117,6 +123,14 @@ enum KeyAction {
 }
 
 impl KeyAction {
+    /// The command this action takes; the interrupt is none.
+    const fn command(self) -> Option<Command> {
+        match self {
+            Self::Command(command) => Some(command),
+            Self::Interrupt => None,
+        }
+    }
+
     const fn event(self) -> Event {
         match self {
             Self::Command(command) => Event::Command(command),
@@ -333,19 +347,19 @@ mod tests {
         preferences::PreferenceChange,
     };
 
-    fn key(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
+    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
         event_for(TerminalEvent::Key(KeyEvent::new(code, modifiers)))
     }
 
-    fn command(command: Command) -> Option<Event> {
+    fn command_event(command: Command) -> Option<Event> {
         Some(Event::Command(command))
     }
 
     #[test]
     fn maps_pager_keys_and_resize_events() {
-        let plain = |character| key(KeyCode::Char(character), KeyModifiers::NONE);
+        let plain = |character| key_event(KeyCode::Char(character), KeyModifiers::NONE);
 
-        assert_eq!(plain('j'), command(Command::Movement(Movement::Down)));
+        assert_eq!(plain('j'), command_event(Command::Movement(Movement::Down)));
         for (character, expected) in [
             ('h', Movement::Left),
             ('l', Movement::Right),
@@ -355,33 +369,33 @@ mod tests {
         ] {
             assert_eq!(
                 plain(character),
-                command(Command::Movement(expected)),
+                command_event(Command::Movement(expected)),
                 "{character} horizontal movement"
             );
         }
         assert_eq!(
-            key(KeyCode::Tab, KeyModifiers::NONE),
-            command(Command::Page(PageStep::Next))
+            key_event(KeyCode::Tab, KeyModifiers::NONE),
+            command_event(Command::Page(PageStep::Next))
         );
         assert_eq!(
             plain('v'),
-            command(Command::Preference(PreferenceChange::NextLayout))
+            command_event(Command::Preference(PreferenceChange::NextLayout))
         );
         assert_eq!(
             plain('+'),
-            command(Command::Preference(PreferenceChange::IncreaseContext))
+            command_event(Command::Preference(PreferenceChange::IncreaseContext))
         );
         assert_eq!(
             plain('-'),
-            command(Command::Preference(PreferenceChange::DecreaseContext))
+            command_event(Command::Preference(PreferenceChange::DecreaseContext))
         );
         assert_eq!(
-            key(KeyCode::BackTab, KeyModifiers::SHIFT),
-            command(Command::Page(PageStep::Previous))
+            key_event(KeyCode::BackTab, KeyModifiers::SHIFT),
+            command_event(Command::Page(PageStep::Previous))
         );
         assert_eq!(
-            key(KeyCode::Tab, KeyModifiers::SHIFT),
-            command(Command::Page(PageStep::Previous))
+            key_event(KeyCode::Tab, KeyModifiers::SHIFT),
+            command_event(Command::Page(PageStep::Previous))
         );
         for (code, expected) in [
             (
@@ -391,7 +405,11 @@ mod tests {
             (KeyCode::Char('?'), Command::Keymap(KeymapCommand::Toggle)),
             (KeyCode::Esc, Command::Keymap(KeymapCommand::Close)),
         ] {
-            assert_eq!(key(code, KeyModifiers::NONE), command(expected), "{code:?}");
+            assert_eq!(
+                key_event(code, KeyModifiers::NONE),
+                command_event(expected),
+                "{code:?}"
+            );
         }
         assert_eq!(
             event_for(TerminalEvent::Resize(100, 30)),
@@ -404,7 +422,7 @@ mod tests {
     #[test]
     fn maps_control_c_to_an_interrupt() {
         assert_eq!(
-            key(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            key_event(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(Event::Interrupt)
         );
     }
@@ -414,8 +432,8 @@ mod tests {
     #[test]
     fn binds_only_the_keys_the_table_names() {
         assert_eq!(
-            key(KeyCode::Char('G'), KeyModifiers::SHIFT),
-            command(Command::Movement(Movement::Bottom))
+            key_event(KeyCode::Char('G'), KeyModifiers::SHIFT),
+            command_event(Command::Movement(Movement::Bottom))
         );
         for (code, modifiers) in [
             (KeyCode::Char('{'), KeyModifiers::NONE),
@@ -434,7 +452,11 @@ mod tests {
             (KeyCode::Down, KeyModifiers::CONTROL),
             (KeyCode::Up, KeyModifiers::ALT),
         ] {
-            assert_eq!(key(code, modifiers), None, "{code:?} with {modifiers:?}");
+            assert_eq!(
+                key_event(code, modifiers),
+                None,
+                "{code:?} with {modifiers:?}"
+            );
         }
     }
 
