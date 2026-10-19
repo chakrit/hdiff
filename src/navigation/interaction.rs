@@ -10,9 +10,9 @@ use crate::{
     prepared::{PageCount, PageIndex},
 };
 
-/// The selected page, the view preferences, the screen size, the scroll position within the
-/// bounds of what it shows, and the keymap popup. Only navigation builds one, and it holds
-/// the one it leads.
+/// The selected page, the view preferences, the screen size, the scroll position within
+/// the bounds of what it shows, and the keymap popup. Only navigation builds one, and it
+/// holds the one it leads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Interaction {
     page: PageIndex,
@@ -128,8 +128,8 @@ pub enum KeymapPopup {
 }
 
 impl KeymapPopup {
-    /// The command this popup lets through: while open, only its close keys act, all closing
-    /// it; while closed, there is nothing to close.
+    /// The command this popup lets through: while open, only its close keys act, all
+    /// closing it; while closed, there is nothing to close.
     pub fn admit(self, command: Command) -> Option<Command> {
         match (self, command) {
             (Self::Closed, Command::Keymap(KeymapCommand::Close)) => None,

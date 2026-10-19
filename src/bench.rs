@@ -180,7 +180,8 @@ struct Startup {
 
 // reports
 
-/// The first report line's record name: plain preparation, or preparation under a profile.
+/// The first report line's record name: plain preparation, or preparation under a
+/// profile.
 #[derive(Clone, Copy)]
 enum PreparationRecord {
     Preparation,

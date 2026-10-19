@@ -32,8 +32,8 @@ impl Cells {
         text.graphemes(true).map(Self::of_cluster).sum()
     }
 
-    /// Cells the row writer covers drawing `cluster`, measured with Ratatui's `CellWidth`;
-    /// Ratatui skips control-containing clusters, so they cover none.
+    /// Cells the row writer covers drawing `cluster`, measured with Ratatui's
+    /// `CellWidth`; Ratatui skips control-containing clusters, so they cover none.
     pub fn of_cluster(cluster: &str) -> Self {
         match cluster.contains(char::is_control) {
             true => Self::ZERO,

@@ -148,8 +148,8 @@ pub(super) enum Shortcut {
         down: Binding,
         action: &'static str,
     },
-    /// The keys that close the open keymap popup: `bound`, and the keys bound elsewhere that
-    /// close it while it is open.
+    /// The keys that close the open keymap popup: `bound`, and the keys bound elsewhere
+    /// that close it while it is open.
     ClosesKeymap {
         bound: &'static [Binding],
         action: &'static str,

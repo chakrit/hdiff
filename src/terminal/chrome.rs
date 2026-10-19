@@ -62,8 +62,8 @@ pub(super) fn render_file_column(
     draw_help_hint(frame.buffer_mut(), hint_area, palette);
 }
 
-/// The help hint in a box floating over the bottom-left corner of `area`, while the file list
-/// is hidden.
+/// The help hint in a box floating over the bottom-left corner of `area`, while the file
+/// list is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
     let hint_width = Cells::of_text(HELP_HINT).frame_columns();
     let help_box = FloatingBox::bottom_left_of(area, hint_width, HELP_HINT_HEIGHT);
@@ -73,8 +73,8 @@ pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePal
     frame.render_widget(Paragraph::new(text), content);
 }
 
-/// A bordered box with a padding column inside each side, drawn over the chrome and panes it
-/// floats on, and clipped to the area it floats over.
+/// A bordered box with a padding column inside each side, drawn over the chrome and panes
+/// it floats on, and clipped to the area it floats over.
 pub(super) struct FloatingBox {
     area: Rect,
 }

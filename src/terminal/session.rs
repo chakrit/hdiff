@@ -28,7 +28,8 @@ pub fn open_controlling_terminal() -> io::Result<File> {
         .open(CONTROLLING_TERMINAL)
 }
 
-/// Runs the interactive loop on the controlling terminal, restoring it on every return path.
+/// Runs the interactive loop on the controlling terminal, restoring it on every return
+/// path.
 pub fn run_interactive(
     controlling_terminal: File,
     document: PreparedDocument,
@@ -156,15 +157,16 @@ impl RestoreStep {
     }
 }
 
-/// How far a session got into the terminal modes it enters, each implying the ones before.
+/// How far a session got into the terminal modes it enters, each implying the ones
+/// before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Entered {
     RawMode,
     AlternateScreen,
 }
 
-/// Shows the cursor, leaves the alternate screen when it was entered, then leaves raw mode,
-/// attempting each step whatever failed before it.
+/// Shows the cursor, leaves the alternate screen when it was entered, then leaves raw
+/// mode, attempting each step whatever failed before it.
 fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFailures> {
     let cursor = execute!(terminal, cursor::Show);
     let screen = match entered {
@@ -195,8 +197,8 @@ struct TerminalSession {
 }
 
 impl TerminalSession {
-    /// Enters raw mode, then the alternate screen, leaving raw mode again when the alternate
-    /// screen fails.
+    /// Enters raw mode, then the alternate screen, leaving raw mode again when the
+    /// alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, SessionError> {
         let started = |error| SessionError::Failed {
             stage: SessionStage::Start,
@@ -265,7 +267,8 @@ impl RestoringPanicHook {
     }
 }
 
-/// Best effort on a fresh handle, since the session's terminal is unreachable from a panic.
+/// Best effort on a fresh handle, since the session's terminal is unreachable from a
+/// panic.
 fn restore_after_panic() -> Result<(), SessionError> {
     let mut controlling_terminal = open_controlling_terminal().map_err(SessionError::Reopen)?;
 

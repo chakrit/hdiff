@@ -81,8 +81,8 @@ pub struct DisplayBounds {
 }
 
 impl DisplayBounds {
-    /// Bounds that scroll until `maximum_vertical_offset` and `maximum_horizontal_offset`,
-    /// over panes of `pane_lines` lines.
+    /// Bounds that scroll until `maximum_vertical_offset` and
+    /// `maximum_horizontal_offset`, over panes of `pane_lines` lines.
     pub(super) const fn new(
         maximum_vertical_offset: ScreenLines,
         maximum_horizontal_offset: Cells,

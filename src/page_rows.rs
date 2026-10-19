@@ -206,9 +206,9 @@ impl PageRows {
         LineMap(values.collect())
     }
 
-    /// One value for each line, computed per side-by-side row: each pair's per-side values
-    /// go to the lines it holds, so a changed line takes its side's value and a shared
-    /// line takes none.
+    /// One value for each line, computed per side-by-side row: each pair's per-side
+    /// values go to the lines it holds, so a changed line takes its side's value and a
+    /// shared line takes none.
     pub fn line_values_by_pair<T>(
         &self,
         mut value: impl FnMut(SideBySideRow<LineIndex>) -> BySide<Option<T>>,
@@ -292,7 +292,8 @@ impl PageRows {
     }
 }
 
-/// Each line `row` holds, with the value of the side it shows; a shared line shows no side.
+/// Each line `row` holds, with the value of the side it shows; a shared line shows no
+/// side.
 fn placed_values<T>(
     row: SideBySideRow<LineIndex>,
     values: BySide<Option<T>>,
@@ -310,8 +311,8 @@ fn placed_values<T>(
 }
 
 /// The side-by-side rows of `rendered_lines`, and the pair holding each line. Each run of
-/// unchanged lines is shared; each block of changed lines pairs its old lines with its new
-/// lines in order.
+/// unchanged lines is shared; each block of changed lines pairs its old lines with its
+/// new lines in order.
 fn side_by_side_rows(
     rendered_lines: &[RenderedLine],
 ) -> (Vec<SideBySideRow<LineIndex>>, LineMap<PairIndex>) {

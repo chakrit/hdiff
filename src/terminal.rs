@@ -113,8 +113,8 @@ impl Tui {
         Ok(Step::Continue)
     }
 
-    /// Draws the interaction, first adopting the size of the frame it draws, so bounds and
-    /// drawing always read one screen size.
+    /// Draws the interaction, first adopting the size of the frame it draws, so bounds
+    /// and drawing always read one screen size.
     pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
         let Self {
             document,
@@ -132,8 +132,8 @@ impl Tui {
     }
 }
 
-/// Resizes `terminal` to its backend's current size, which may clear the screen, and returns
-/// the size it draws its next frame at.
+/// Resizes `terminal` to its backend's current size, which may clear the screen, and
+/// returns the size it draws its next frame at.
 fn autoresize_to_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
     terminal.autoresize()?;
     Ok(terminal.get_frame().area().as_size())

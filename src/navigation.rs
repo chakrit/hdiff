@@ -29,8 +29,8 @@ pub struct Navigation {
 }
 
 impl Navigation {
-    /// The first page of `document` with `preferences` on a `screen`-sized terminal, at its
-    /// start.
+    /// The first page of `document` with `preferences` on a `screen`-sized terminal, at
+    /// its start.
     pub fn start(document: &PreparedDocument, preferences: ViewPreferences, screen: Size) -> Self {
         let interaction = Interaction::start(preferences, screen);
         let view = EffectiveView::of(preferences, screen);
@@ -89,8 +89,8 @@ impl Navigation {
         self.redisplay(document, preferences, screen, placement);
     }
 
-    /// Shows the same page with `preferences` on a `screen`-sized terminal, its first line
-    /// placed as `placement` asks.
+    /// Shows the same page with `preferences` on a `screen`-sized terminal, its first
+    /// line placed as `placement` asks.
     fn redisplay(
         &mut self,
         document: &PreparedDocument,
@@ -108,8 +108,8 @@ impl Navigation {
                 current.vertical
             }
             Placement::Anchor(anchor) => {
-                // The row on the anchor line of the view shown now goes to the anchor line
-                // of the new view.
+                // The row on the anchor line of the view shown now goes to the anchor
+                // line of the new view.
                 let source = pane_line(&self.view, anchor);
                 let target = pane_line(&view, anchor);
                 let offset = current.vertical.saturating_add(source);

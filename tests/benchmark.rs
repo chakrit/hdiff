@@ -81,8 +81,8 @@ fn stage_record(line: &str) -> ((&str, &str), u128) {
     ((parent, name), duration)
 }
 
-/// docs/spec/performance.md#stages: every stage under its parent, plus each parent's unattributed
-/// remainder.
+/// docs/spec/performance.md#stages: every stage under its parent, plus each parent's
+/// unattributed remainder.
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     let preparation =
         ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));

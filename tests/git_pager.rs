@@ -15,8 +15,8 @@ const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
 /// registered pager runs only when it is quoted as one shell word.
 const SPECIAL_EXECUTABLE: &str = "it's a $dir/hdiff";
 
-/// docs/spec/architecture.md#input-contract: `--install` backs up the global config and registers
-/// the running executable as `pager.diff`, which Git runs through `sh`.
+/// docs/spec/architecture.md#input-contract: `--install` backs up the global config and
+/// registers the running executable as `pager.diff`, which Git runs through `sh`.
 #[test]
 fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
     let env = TestEnv::new();

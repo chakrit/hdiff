@@ -24,7 +24,8 @@ pub struct ExtentSettings {
     pub wrap: WrapWidth,
 }
 
-/// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row `row`.
+/// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row
+/// `row`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RowLine<R> {
     pub row: R,
@@ -162,15 +163,16 @@ impl ScrollExtent {
         }
     }
 
-    /// Shows this page with `settings`, rebuilding the rows unless they already are those.
+    /// Shows this page with `settings`, rebuilding the rows unless they already are
+    /// those.
     pub fn reshow(&mut self, document: &PreparedDocument, settings: ExtentSettings) {
         if settings != self.settings() {
             *self = Self::of(document, self.page, settings);
         }
     }
 
-    /// Shows this page with `settings`, and returns the screen line that now shows the row
-    /// on screen line `offset`; none when the lines end above `offset`.
+    /// Shows this page with `settings`, and returns the screen line that now shows the
+    /// row on screen line `offset`; none when the lines end above `offset`.
     pub fn reanchor(
         &mut self,
         document: &PreparedDocument,
@@ -198,8 +200,8 @@ impl ScrollExtent {
         }
     }
 
-    /// The screen line `offset`, as a wrapped line of the row that starts with that line, if
-    /// the lines reach that far.
+    /// The screen line `offset`, as a wrapped line of the row that starts with that line,
+    /// if the lines reach that far.
     fn anchor_at(
         &self,
         document: &PreparedDocument,
@@ -313,7 +315,8 @@ impl MeasuredRows {
         }
     }
 
-    /// Position of the row that screen line `offset` belongs to; the row count past the end.
+    /// Position of the row that screen line `offset` belongs to; the row count past the
+    /// end.
     fn position_at(&self, offset: ScreenLines) -> usize {
         self.line_ends.partition_point(|end| end.get() <= offset)
     }
@@ -542,8 +545,8 @@ mod tests {
             .collect()
     }
 
-    /// The screen line that shows wrapped line `wrapped_line` of the row starting with line
-    /// `line`.
+    /// The screen line that shows wrapped line `wrapped_line` of the row starting with
+    /// line `line`.
     fn offset_of(
         document: &PreparedDocument,
         extent: &ScrollExtent,
@@ -684,7 +687,8 @@ mod tests {
             ..narrow
         };
 
-        // Narrow pairs: ---, +++, @@, -old|+new. Wide adds c0, c1, and c2 before the change.
+        // Narrow pairs: ---, +++, @@, -old|+new. Wide adds c0, c1, and c2 before the
+        // change.
         let widened = extent.reanchor(&document, wide, screen_lines(3));
         assert_eq!(extent.settings(), wide, "the extent shows the new settings");
         let narrowed = extent.reanchor(&document, narrow, screen_lines(6));

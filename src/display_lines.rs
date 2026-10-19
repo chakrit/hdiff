@@ -1,5 +1,5 @@
-//! The lines a document displays, in input order: what each line shows, and the safe text it
-//! displays. Finite output writes them directly, and page rows retain them. Rules:
+//! The lines a document displays, in input order: what each line shows, and the safe text
+//! it displays. Finite output writes them directly, and page rows retain them. Rules:
 //! docs/spec/architecture.md#lossless-and-safe-rendering.
 
 use crate::{

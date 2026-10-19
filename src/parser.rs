@@ -79,7 +79,8 @@ pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, ParseError> {
     }
 }
 
-/// Parses `diff` output, which may hold only surrounding text such as `Binary files … differ`.
+/// Parses `diff` output, which may hold only surrounding text such as
+/// `Binary files … differ`.
 pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
     parse_sections(input)
 }
@@ -751,8 +752,8 @@ mod tests {
         assert_eq!(payload.sanitized(), "old");
     }
 
-    /// docs/spec/architecture.md#lossless-and-safe-rendering: parsing uses ANSI-free text,
-    /// so the payload starts after the marker the sanitized text shows.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: parsing uses ANSI-free
+    /// text, so the payload starts after the marker the sanitized text shows.
     #[test]
     fn cuts_record_payloads_after_the_marker_sanitizing_recognizes() {
         for (line, payload) in [

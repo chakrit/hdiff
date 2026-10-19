@@ -66,8 +66,8 @@ impl SyntaxHighlighter {
         file.record_map(|headers, hunk| self.highlight_hunk(headers, hunk, observer))
     }
 
-    /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the record
-    /// it styles.
+    /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the
+    /// record it styles.
     fn highlight_hunk<'h>(
         &mut self,
         headers: &BySide<FileHeader>,

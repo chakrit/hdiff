@@ -188,8 +188,8 @@ impl Live {
         (marker, name[0])
     }
 
-    /// Screen rows whose first change label is an `old_N` label: with every diff-pane line
-    /// of the before pane labeled, the lines that pane shows.
+    /// Screen rows whose first change label is an `old_N` label: with every diff-pane
+    /// line of the before pane labeled, the lines that pane shows.
     pub fn old_label_lines(&self) -> usize {
         self.rows()
             .iter()
@@ -197,8 +197,9 @@ impl Live {
             .count()
     }
 
-    /// The screen row of the diff pane's middle line, where anchored rows stay: the pane's
-    /// first content line plus half the lines the current view gives each diff pane.
+    /// The screen row of the diff pane's middle line, where anchored rows stay: the
+    /// pane's first content line plus half the lines the current view gives each diff
+    /// pane.
     pub fn pane_middle_line(&self) -> usize {
         let screen = self.terminal.backend().buffer().area.as_size();
         let view = EffectiveView::of(self.tui.preferences(), screen);
