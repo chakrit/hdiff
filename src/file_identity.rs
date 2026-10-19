@@ -51,7 +51,7 @@ impl FileIdentity {
 
     fn unknown(first_line: &SourceLine) -> Self {
         Self::Unknown {
-            header: DisplayText(first_line.sanitized().into()),
+            header: DisplayText::of_line(first_line),
         }
     }
 }
@@ -64,6 +64,11 @@ impl DisplayText {
     /// The visible text of a decoded path or header.
     pub fn of_decoded(text: &str) -> Self {
         Self(sanitize(text.as_bytes()).into())
+    }
+
+    /// The visible text of a source line, which its sanitized text already is.
+    pub fn of_line(line: &SourceLine) -> Self {
+        Self(line.sanitized().into())
     }
 
     pub fn as_str(&self) -> &str {

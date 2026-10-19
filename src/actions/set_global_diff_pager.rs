@@ -1,6 +1,9 @@
-use std::{ffi::OsStr, process::Command};
+use std::process::Command;
 
-use super::{Error, child_process, global_git_config::GlobalGitConfigContext};
+use super::{
+    Error, child_process,
+    global_git_config::{EnvironmentVariable, GlobalGitConfigContext},
+};
 use crate::shell_words;
 
 /// Sets `pager.diff` in the global Git config to `command`.
@@ -21,8 +24,8 @@ impl SetGlobalDiffPager<'_> {
     pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
         let mut git = Command::new(GIT);
         git.args(self.arguments());
-        for (name, value) in context.environment.variables() {
-            set_or_remove(&mut git, name, value);
+        for variable in context.environment.variables() {
+            set_or_remove(&mut git, variable);
         }
 
         child_process::run("git config", &mut git, |status| status.success())?;
@@ -36,7 +39,7 @@ impl SetGlobalDiffPager<'_> {
 }
 
 /// Gives Git exactly the environment the config path was resolved from.
-fn set_or_remove(git: &mut Command, name: &str, value: Option<&OsStr>) {
+fn set_or_remove(git: &mut Command, EnvironmentVariable { name, value }: EnvironmentVariable) {
     match value {
         Some(value) => git.env(name, value),
         None => git.env_remove(name),

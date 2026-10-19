@@ -29,11 +29,26 @@ impl GitConfigEnvironment {
     }
 
     /// Every variable by name, so a child process can receive exactly this environment.
-    pub fn variables(&self) -> [(&'static str, Option<&OsStr>); 3] {
+    pub fn variables(&self) -> [EnvironmentVariable<'_>; 3] {
         [
-            (GIT_CONFIG_GLOBAL, self.git_config_global.as_deref()),
-            (HOME, self.home.as_deref()),
-            (XDG_CONFIG_HOME, self.xdg_config_home.as_deref()),
+            EnvironmentVariable::of(GIT_CONFIG_GLOBAL, &self.git_config_global),
+            EnvironmentVariable::of(HOME, &self.home),
+            EnvironmentVariable::of(XDG_CONFIG_HOME, &self.xdg_config_home),
         ]
+    }
+}
+
+/// One environment variable by name, with its value when it is set.
+pub struct EnvironmentVariable<'a> {
+    pub name: &'static str,
+    pub value: Option<&'a OsStr>,
+}
+
+impl<'a> EnvironmentVariable<'a> {
+    fn of(name: &'static str, value: &'a Option<OsString>) -> Self {
+        Self {
+            name,
+            value: value.as_deref(),
+        }
     }
 }
