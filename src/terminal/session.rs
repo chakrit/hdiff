@@ -195,6 +195,7 @@ fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFai
         left_screen.and_then(|result| RestoreFailure::of(RestoreStep::AlternateScreen, result)),
         RestoreFailure::of(RestoreStep::RawMode, raw_mode_left),
     ];
+
     NonEmpty::of(failures.into_iter().flatten())
         .map(RestoreFailures)
         .map_or(Ok(()), Err)

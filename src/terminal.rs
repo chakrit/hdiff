@@ -77,6 +77,7 @@ impl Tui {
                 break;
             }
         }
+
         Ok(())
     }
 
@@ -134,29 +135,30 @@ impl Iterator for TtyEvents {
     type Item = io::Result<TerminalEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let read = self.pending.take().map_or_else(event::read, Ok);
+        let next_event = self.pending.take().map_or_else(event::read, Ok);
 
-        Some(read.and_then(|event| self.coalesce_resize(event)))
+        Some(next_event.and_then(|received| self.coalesce_resize(received)))
     }
 }
 
 impl TtyEvents {
-    /// `event`, or, when it is a resize, the last of the resizes already waiting behind
-    /// it; the first other event waiting is kept for the next read.
-    fn coalesce_resize(&mut self, event: TerminalEvent) -> io::Result<TerminalEvent> {
-        let TerminalEvent::Resize(..) = event else {
-            return Ok(event);
+    /// `received`, or, when it is a resize, the last of the resizes already waiting
+    /// behind it; the first other event waiting is kept for the next read.
+    fn coalesce_resize(&mut self, received: TerminalEvent) -> io::Result<TerminalEvent> {
+        let TerminalEvent::Resize(..) = received else {
+            return Ok(received);
         };
-        let mut latest_resize = event;
+        let mut latest_resize = received;
 
         while event::poll(Duration::ZERO)? {
-            let next_event = event::read()?;
-            if !matches!(next_event, TerminalEvent::Resize(..)) {
-                self.pending = Some(next_event);
+            let waiting = event::read()?;
+            if !matches!(waiting, TerminalEvent::Resize(..)) {
+                self.pending = Some(waiting);
                 break;
             }
-            latest_resize = next_event;
+            latest_resize = waiting;
         }
+
         Ok(latest_resize)
     }
 }
