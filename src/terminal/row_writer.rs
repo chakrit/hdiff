@@ -3,7 +3,7 @@
 //! docs/spec/architecture.md#view-model, and
 //! docs/spec/architecture.md#palette-and-character-detail.
 
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, slice};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
@@ -191,20 +191,39 @@ impl ExpandedPayload {
     /// segment ends both ascend, so one forward walk pairs them; the segments end where
     /// the text ends, so the walk ends with the last cluster.
     fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
-        let mut boundaries = self.boundaries.iter().peekable();
+        let segments = SegmentWalk {
+            rest: self.boundaries.iter(),
+            current: None,
+        };
 
         self.text
             .grapheme_indices(true)
-            .map_while(move |(start, cluster)| {
-                while boundaries
-                    .next_if(|boundary| boundary.end <= start)
-                    .is_some()
-                {}
-                boundaries.peek().map(|boundary| StyledText {
+            .scan(segments, |segments, (start, cluster)| {
+                segments.containing(start).map(|boundary| StyledText {
                     text: cluster,
                     style: boundary.style,
                 })
             })
+    }
+}
+
+/// A forward walk over a payload's segment ends, holding the segment the last asked byte
+/// fell in.
+struct SegmentWalk<'b> {
+    rest: slice::Iter<'b, Boundary>,
+    current: Option<&'b Boundary>,
+}
+
+impl<'b> SegmentWalk<'b> {
+    /// The segment containing byte `start`, which must not precede an earlier ask.
+    fn containing(&mut self, start: usize) -> Option<&'b Boundary> {
+        let ends_after = |boundary: &&Boundary| boundary.end > start;
+        let current_contains = self.current.is_some_and(|boundary| ends_after(&boundary));
+
+        if !current_contains {
+            self.current = self.rest.find(ends_after);
+        }
+        self.current
     }
 }
 
