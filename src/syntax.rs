@@ -561,10 +561,10 @@ mod tests {
         spans.first().expect("the record has a syntax span")
     }
 
-    /// The syntax spans of each record of the first hunk of `patch`'s first file, in
+    /// The syntax spans of each record of the first hunk of `patch`'s only file, in
     /// record order, highlighted under `observer`.
     fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
-        with_first_unified(patch, |file, body| {
+        with_only_unified(patch, |file, body| {
             let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
 
             body.addressed_hunks()
@@ -576,16 +576,19 @@ mod tests {
         })
     }
 
-    /// `test` applied to the records of the first hunk of `patch`'s first file, which
+    /// `test` applied to the records of the first hunk of `patch`'s only file, which
     /// must be unified.
     fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
-        with_first_unified(patch, |_, body| body.hunks.first().with_records(test))
+        with_only_unified(patch, |_, body| body.hunks.first().with_records(test))
     }
 
-    /// `test` applied to `patch`'s first file and its body, which must be unified.
-    fn with_first_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
+    /// `test` applied to `patch`'s only file and its body, which must be unified.
+    fn with_only_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
         let document = parse_patch(patch).expect("valid diff");
-        let file = document.files().next().expect("first file");
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the patch holds one file, not {}", files.len());
+        };
         let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };

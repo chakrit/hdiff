@@ -387,7 +387,11 @@ mod tests {
     fn marks_changed_graphemes_and_the_unchanged_gaps_between_them() {
         let document = parse_patch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-αcall!\n+αcell!\n".as_bytes())
             .expect("valid diff");
-        let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
+        let views = document.file_views().collect::<Vec<_>>();
+        let [view] = views.as_slice() else {
+            panic!("the patch holds one file, not {}", views.len());
+        };
+        let rows = PageRows::of_file_view(*view);
         let details = character_details(&rows);
         let (addition, _) = rows
             .lines()
