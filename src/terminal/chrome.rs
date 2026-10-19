@@ -249,8 +249,8 @@ fn render_file_list(
     // Without a selected row, the list shows from its top.
     let first = selection.map_or(TreeRowIndex::FIRST, |window| window.first);
     let window = LineWindow {
-        first: ScreenLines::new(first.get()),
-        total: ScreenLines::new(tree.rows().len()),
+        first: first.screen_line(),
+        total: tree.line_count(),
     };
 
     let items = tree
