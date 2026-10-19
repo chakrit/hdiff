@@ -59,7 +59,7 @@ pub struct ScrollExtent {
     page: PageIndex,
     context: ContextRecords,
     wrap: WrapWidth,
-    rows: VisibleRows,
+    visible: VisibleRows,
 }
 
 /// Screen lines from an offset, with the page's rows as the pane shape names them.
@@ -116,12 +116,12 @@ impl ScrollExtent {
             page,
             context,
             wrap,
-            rows: visible,
+            visible,
         }
     }
 
     pub fn line_count(&self) -> ScreenLines {
-        match &self.rows {
+        match &self.visible {
             VisibleRows::Single(lines) => lines.line_count(),
             VisibleRows::Split { pairs, .. } => pairs.line_count(),
         }
@@ -129,7 +129,7 @@ impl ScrollExtent {
 
     /// Cells of the widest visible row, including the marker gutter.
     pub fn width(&self) -> Cells {
-        match &self.rows {
+        match &self.visible {
             VisibleRows::Single(lines) => lines.width,
             VisibleRows::Split { pairs, .. } => pairs.width,
         }
@@ -157,7 +157,7 @@ impl ScrollExtent {
     ) -> ShownLines<'a> {
         let page = document.page(self.page);
 
-        match &self.rows {
+        match &self.visible {
             VisibleRows::Single(lines) => ShownLines::Single(PageLines {
                 page,
                 granularity,
@@ -206,7 +206,7 @@ impl ScrollExtent {
     /// What these rows are shown with. The rows' own shape holds the pane shape, so the
     /// split direction has one home.
     fn settings(&self) -> ExtentSettings {
-        let shape = match &self.rows {
+        let shape = match &self.visible {
             VisibleRows::Single(_) => PaneShape::Single,
             VisibleRows::Split { direction, .. } => PaneShape::Split(*direction),
         };
@@ -225,7 +225,7 @@ impl ScrollExtent {
         document: &PreparedDocument,
         offset: ScreenLines,
     ) -> Option<RowLine<LineIndex>> {
-        match &self.rows {
+        match &self.visible {
             VisibleRows::Single(lines) => lines.line_at(offset),
             VisibleRows::Split { pairs, .. } => {
                 let rows = document.page(self.page).rows();
@@ -239,7 +239,7 @@ impl ScrollExtent {
     /// The screen line that shows `anchor`'s wrapped line, clamped to its row's lines; a
     /// row that is not visible maps to the first line of the first visible row after it.
     fn offset_of(&self, document: &PreparedDocument, anchor: RowLine<LineIndex>) -> ScreenLines {
-        match &self.rows {
+        match &self.visible {
             VisibleRows::Single(lines) => lines.offset_of(anchor),
             VisibleRows::Split { pairs, .. } => {
                 let rows = document.page(self.page).rows();
@@ -554,7 +554,7 @@ mod tests {
 
     /// Up to `limit` screen lines of a single-pane extent from line `offset`.
     fn single_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<LineIndex>> {
-        let VisibleRows::Single(lines) = &extent.rows else {
+        let VisibleRows::Single(lines) = &extent.visible else {
             panic!("a single pane shows lines");
         };
         lines
@@ -564,7 +564,7 @@ mod tests {
 
     /// Up to `limit` screen lines of a split-pane extent from line `offset`.
     fn pair_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
-        let VisibleRows::Split { pairs, .. } = &extent.rows else {
+        let VisibleRows::Split { pairs, .. } = &extent.visible else {
             panic!("split panes show pairs");
         };
         pairs
