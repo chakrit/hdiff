@@ -163,9 +163,9 @@ impl Live {
             .collect()
     }
 
-    /// Each screen row left of its first `│`, its trailing blanks trimmed: the file-list
-    /// column, while the file list is shown and draws its separator there.
-    pub fn left_of_first_separator(&self) -> Vec<String> {
+    /// The file-list column: each screen row left of its first `│`, its trailing blanks
+    /// trimmed, while the file list is shown and draws its separator there.
+    pub fn file_column(&self) -> Vec<String> {
         self.rows()
             .iter()
             .map(|row| {

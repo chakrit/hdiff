@@ -9,11 +9,14 @@ use crate::{
     harness::{Live, Mode, THEME},
 };
 
+/// Two files, each with one changed line.
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
 
+/// One file with one changed line.
 const ONE_FILE: &str = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
 
+/// An 80-column screen ten rows tall.
 const TEN_ROWS: Size = Size::new(80, 10);
 
 /// The text of screen row `y` with trailing blanks trimmed.
