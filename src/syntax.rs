@@ -87,9 +87,7 @@ impl SyntaxHighlighter {
         let languages = headers
             .as_ref()
             .map(|header| Language::of_header(&header.path));
-        let shared_language = languages
-            .old
-            .filter(|language| Some(*language) == languages.new);
+        let shared_language = languages.merge(|old, new| old.filter(|_| old == new));
         let styled_records = BySide {
             old: StyledRecords::Changes,
             new: match shared_language {
