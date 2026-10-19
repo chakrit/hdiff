@@ -230,7 +230,7 @@ impl ScrollExtent {
                 let rows = document.page(self.page).rows();
                 pairs
                     .line_at(offset)
-                    .map(|line| line.map(|pair| rows.pair(pair).first()))
+                    .map(|line| line.map(|pair_index| rows.pair(pair_index).first()))
             }
         }
     }
@@ -257,7 +257,7 @@ impl<'a> Iterator for PageLines<'a, LineIndex> {
 
         self.lines
             .next()
-            .map(|line| line.map(|row| page.row(row, granularity)))
+            .map(|line| line.map(|line_index| page.row(line_index, granularity)))
     }
 }
 
@@ -269,7 +269,11 @@ impl<'a> Iterator for PageLines<'a, PairIndex> {
         let granularity = self.granularity;
 
         self.lines.next().map(|line| {
-            line.map(|pair| page.rows().pair(pair).map(|row| page.row(row, granularity)))
+            line.map(|pair_index| {
+                page.rows()
+                    .pair(pair_index)
+                    .map(|line_index| page.row(line_index, granularity))
+            })
         })
     }
 }

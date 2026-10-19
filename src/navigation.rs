@@ -135,8 +135,8 @@ impl Navigation {
     /// line placed as `placement` asks.
     fn redisplay(&mut self, preferences: ViewPreferences, screen: Size, placement: Placement) {
         let current = self.interaction.scroll().position();
-        let view = EffectiveView::of(preferences, screen);
-        let settings = settings_of(preferences, &view);
+        let new_view = EffectiveView::of(preferences, screen);
+        let settings = settings_of(preferences, &new_view);
         let document = &self.document;
 
         let vertical = match placement {
@@ -148,7 +148,7 @@ impl Navigation {
                 // The row on the anchor line of the view shown now goes to the anchor
                 // line of the new view.
                 let source = pane_line(&self.view, anchor);
-                let target = pane_line(&view, anchor);
+                let target = pane_line(&new_view, anchor);
                 let offset = current.vertical.saturating_add(source);
                 // None only for a page without lines, since every in-bounds offset names
                 // a line.
@@ -158,7 +158,7 @@ impl Navigation {
             }
         };
 
-        self.view = view;
+        self.view = new_view;
         let start = ScrollPosition {
             vertical,
             ..current
