@@ -3,21 +3,21 @@ use std::{
     process::{Command, ExitStatus, Output},
 };
 
-/// Runs `command`, named `program` in messages, to completion and returns its output when
-/// `accepts` admits its exit status.
+/// Runs `command` to completion and returns its output when `accepts` admits its exit
+/// status. `name` is the command as messages name it, such as `git config`.
 pub fn run(
-    program: &'static str,
+    name: &'static str,
     command: &mut Command,
     accepts: impl FnOnce(ExitStatus) -> bool,
 ) -> Result<Output, ProcessError> {
     let output = command
         .output()
-        .map_err(|source| ProcessError::Spawn { program, source })?;
+        .map_err(|source| ProcessError::Spawn { name, source })?;
 
     match accepts(output.status) {
         true => Ok(output),
         false => Err(ProcessError::Failed(ProcessFailure::of_output(
-            program, &output,
+            name, &output,
         ))),
     }
 }
@@ -26,7 +26,7 @@ pub fn run(
 #[derive(Debug)]
 pub enum ProcessError {
     Spawn {
-        program: &'static str,
+        name: &'static str,
         source: io::Error,
     },
     Failed(ProcessFailure),
@@ -35,7 +35,7 @@ pub enum ProcessError {
 impl fmt::Display for ProcessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Spawn { program, source } => write!(formatter, "cannot run {program}: {source}"),
+            Self::Spawn { name, source } => write!(formatter, "cannot run {name}: {source}"),
             Self::Failed(failure) => write!(formatter, "{failure}"),
         }
     }
@@ -47,15 +47,16 @@ impl std::error::Error for ProcessError {}
 /// when it wrote one and otherwise by its exit status.
 #[derive(Debug)]
 pub struct ProcessFailure {
-    program: &'static str,
+    /// The command as messages name it.
+    name: &'static str,
     status: ExitStatus,
     stderr: String,
 }
 
 impl ProcessFailure {
-    fn of_output(program: &'static str, output: &Output) -> Self {
+    fn of_output(name: &'static str, output: &Output) -> Self {
         Self {
-            program,
+            name,
             status: output.status,
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         }
@@ -65,7 +66,7 @@ impl ProcessFailure {
 impl fmt::Display for ProcessFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.stderr.trim_end() {
-            "" => write!(formatter, "{} failed: {}", self.program, self.status),
+            "" => write!(formatter, "{} failed: {}", self.name, self.status),
             explanation => formatter.write_str(explanation),
         }
     }
@@ -78,7 +79,7 @@ mod tests {
     use super::run;
 
     #[test]
-    fn a_silent_failure_names_its_program_and_exit_status() {
+    fn a_silent_failure_names_its_command_and_exit_status() {
         let error = run("sh", Command::new("sh").args(["-c", "exit 3"]), |status| {
             status.success()
         })
@@ -100,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_program_names_the_program_it_could_not_run() {
+    fn a_missing_program_is_reported_by_its_command_name() {
         let error = run(
             "hdiff-missing",
             &mut Command::new("hdiff-definitely-missing-program"),
