@@ -237,7 +237,7 @@ impl ScrollExtent {
     }
 
     /// The screen line that shows `anchor`'s wrapped line, clamped to its row's lines; a
-    /// hidden row maps to the first line of the first visible row after it.
+    /// row that is not visible maps to the first line of the first visible row after it.
     fn offset_of(&self, document: &PreparedDocument, anchor: RowLine<LineIndex>) -> ScreenLines {
         match &self.rows {
             VisibleRows::Single(lines) => lines.offset_of(anchor),
@@ -331,7 +331,7 @@ impl<R: Copy + Ord> MeasuredRows<R> {
     }
 
     /// The screen line that shows `anchor`'s wrapped line, clamped to its row's lines; a
-    /// row not shown maps to the first line of the first shown row after it.
+    /// row that is not visible maps to the first line of the first visible row after it.
     fn offset_of(&self, anchor: RowLine<R>) -> ScreenLines {
         match self
             .rows
@@ -457,23 +457,37 @@ fn measured_row<R>(
     second: Option<LineIndex>,
     wrap: WrapWidth,
 ) -> MeasuredRow<R> {
-    let measure = |line| (rows.payload_width(line), line_height(rows, line, wrap));
-    let (first_width, first_height) = measure(first);
-    let (payload_width, height) = match second {
-        None => (first_width, first_height),
-        Some(line) => {
-            let (second_width, second_height) = measure(line);
-            (
-                first_width.max(second_width),
-                first_height.max(second_height),
-            )
-        }
+    let measure = |line| LineSize {
+        payload_width: rows.payload_width(line),
+        height: line_height(rows, line, wrap),
+    };
+    let first_size = measure(first);
+    let size = match second {
+        None => first_size,
+        Some(line) => first_size.max(measure(line)),
     };
 
     MeasuredRow {
         row,
-        width: payload_width + MARKER_GUTTER_WIDTH,
-        height,
+        width: size.payload_width + MARKER_GUTTER_WIDTH,
+        height: size.height,
+    }
+}
+
+/// One line's payload cells and the screen lines it takes.
+#[derive(Clone, Copy)]
+struct LineSize {
+    payload_width: Cells,
+    height: ScreenLines,
+}
+
+impl LineSize {
+    /// As wide as the wider line and as tall as the taller.
+    fn max(self, other: Self) -> Self {
+        Self {
+            payload_width: self.payload_width.max(other.payload_width),
+            height: self.height.max(other.height),
+        }
     }
 }
 
