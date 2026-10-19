@@ -211,7 +211,7 @@ mod tests {
 
     const THEME: &Theme = Theme::of_depth(ColorDepth::TrueColor);
 
-    /// The popup drawn over a `width`-column screen.
+    /// The popup drawn over a screen `width` columns wide and 30 rows tall.
     fn render_popup(width: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, 30)).expect("test terminal");
         terminal

@@ -26,11 +26,14 @@ pub fn files_in_directories(count: usize) -> String {
         .collect()
 }
 
+/// How many `x` graphemes the wide row of [`long_patch`] holds.
+pub const WIDE_ROW_GRAPHEMES: usize = 200;
+
 /// 200 added rows with one row wider than every pane.
 pub fn long_patch() -> String {
     let rows = (0..200)
         .map(|row| match row {
-            1 => format!("+wide_{}_end\n", "x".repeat(200)),
+            1 => format!("+wide_{}_end\n", "x".repeat(WIDE_ROW_GRAPHEMES)),
             _ => format!("+row_{row}\n"),
         })
         .collect::<String>();

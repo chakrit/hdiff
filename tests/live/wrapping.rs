@@ -4,7 +4,7 @@ use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;
 
 use crate::{
-    fixtures::long_patch,
+    fixtures::{WIDE_ROW_GRAPHEMES, long_patch},
     harness::{FIRST_CONTENT_LINE, Live, Mode, right_of_first_separator},
 };
 
@@ -25,7 +25,7 @@ fn wrapping(mode: Mode) {
     live.press('G');
     assert_eq!(
         shown_x - live.count('x'),
-        200,
+        WIDE_ROW_GRAPHEMES,
         "every grapheme of the wide row shows once"
     );
     live.press('g');
@@ -77,12 +77,14 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     live.press('w');
     live.press('g');
-    // Lines: three headers, row_0, then the wide row's first and second lines.
-    for _ in 0..5 {
+    let top_line = |live: &Live| right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
+    // The wide row's first line opens with its marker; its continuation opens with `x`.
+    let reached = (0..10).any(|_| {
         live.press('j');
-    }
-    let top = right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
-    assert!(top.starts_with('x'), "the wide row's second line: {top:?}");
+        top_line(&live).starts_with('x')
+    });
+    let top = top_line(&live);
+    assert!(reached, "scrolls to the wide row's second line: {top:?}");
 
     live.resize(Size::new(100, 20));
 

@@ -13,7 +13,9 @@ use crate::{
     harness::{Live, Mode, THEME, columns, positions},
 };
 
+/// An 80-column screen eight rows tall.
 const EIGHT_ROWS: Size = Size::new(80, 8);
+/// An 80-column screen nine rows tall.
 const NINE_ROWS: Size = Size::new(80, 9);
 
 /// In `layout`, a one-sided source payload takes syntax colors in line mode, its change
