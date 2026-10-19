@@ -61,9 +61,10 @@ enum HunkLine {
 fn next_hunk_line(lines: &mut SourceLines<'_>, open: bool) -> Option<HunkLine> {
     let is_marker = is_no_newline_marker(lines.peek()?.sanitized());
 
-    match is_marker {
-        true => lines.next().map(HunkLine::NoNewlineMarker),
-        false => open.then(|| lines.next()).flatten().map(HunkLine::Record),
+    match (is_marker, open) {
+        (true, _) => lines.next().map(HunkLine::NoNewlineMarker),
+        (false, true) => lines.next().map(HunkLine::Record),
+        (false, false) => None,
     }
 }
 
