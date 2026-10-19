@@ -81,41 +81,48 @@ fn locate_unified(
     git_line: Option<&SourceLine>,
     paths: BySide<&HeaderPath>,
 ) -> Option<FileIdentity> {
+    change.identity(|| read_headers(git_line, paths))
+}
+
+fn locate_metadata(change: GitChange, git_line: &SourceLine) -> Option<FileIdentity> {
+    change.identity(|| Some((FileState::Modified, git_header_path(git_line)?)))
+}
+
+/// The state the `---` / `+++` headers imply and the path they name.
+fn read_headers(
+    git_line: Option<&SourceLine>,
+    paths: BySide<&HeaderPath>,
+) -> Option<(FileState, Box<str>)> {
     // A `/dev/null` side leaves one header path, so Git sections name the file from
     // their `diff --git` line; plain diffs show the path as written.
     let one_sided = |path: &str| match git_line {
         Some(line) => git_header_path(line),
         None => Some(path.into()),
     };
-    let (header_state, named_path) = match (paths.old, paths.new) {
-        (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => return None,
-        (HeaderPath::DevNull, HeaderPath::DevNull) => return None,
-        (HeaderPath::DevNull, HeaderPath::Path(new)) => (FileState::Added, one_sided(new)?),
-        (HeaderPath::Path(old), HeaderPath::DevNull) => (FileState::Deleted, one_sided(old)?),
+
+    match (paths.old, paths.new) {
+        (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => None,
+        (HeaderPath::DevNull, HeaderPath::DevNull) => None,
+        (HeaderPath::DevNull, HeaderPath::Path(new)) => Some((FileState::Added, one_sided(new)?)),
+        (HeaderPath::Path(old), HeaderPath::DevNull) => Some((FileState::Deleted, one_sided(old)?)),
         (HeaderPath::Path(old), HeaderPath::Path(new)) => {
-            (FileState::Modified, shared_name(old, new).into())
+            Some((FileState::Modified, shared_name(old, new).into()))
         }
-    };
-
-    change.identity(header_state, || Some(named_path))
-}
-
-fn locate_metadata(change: GitChange, git_line: &SourceLine) -> Option<FileIdentity> {
-    change.identity(FileState::Modified, || git_header_path(git_line))
+    }
 }
 
 impl GitChange {
-    /// The file this change names: a rename or copy names its destination, any other
-    /// change the path `named` gives, as `unmarked` unless Git marks it added or deleted.
+    /// The file this change names: a rename or copy names its destination without
+    /// consulting `headers`; any other change takes the path `headers` names, in the
+    /// state they imply unless Git marks the file added or deleted.
     fn identity(
         self,
-        unmarked: FileState,
-        named: impl FnOnce() -> Option<Box<str>>,
+        headers: impl FnOnce() -> Option<(FileState, Box<str>)>,
     ) -> Option<FileIdentity> {
         let (state, path) = match self {
-            Self::Unmarked => (unmarked, named()?),
-            Self::Added => (FileState::Added, named()?),
-            Self::Deleted => (FileState::Deleted, named()?),
+            Self::Unmarked => headers()?,
+            Self::Added => (FileState::Added, headers()?.1),
+            Self::Deleted => (FileState::Deleted, headers()?.1),
             Self::Renamed(destination) => (FileState::Renamed, destination),
             Self::Copied(destination) => (FileState::Added, destination),
         };
@@ -336,6 +343,16 @@ mod tests {
         assert_eq!(
             identity("diff --git x x\nold mode 100644\nnew mode 100755\n"),
             path(FileState::Modified, "x")
+        );
+    }
+
+    #[test]
+    fn a_rename_names_its_destination_whatever_its_headers_hold() {
+        assert_eq!(
+            identity(
+                "diff --git a/old b/new\nsimilarity index 90%\nrename from old\nrename to new\n--- \"a/broken\\q\"\n+++ b/new\n@@ -1 +1 @@\n-a\n+b\n"
+            ),
+            path(FileState::Renamed, "new")
         );
     }
 
