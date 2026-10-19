@@ -176,7 +176,7 @@ fn install_names_a_config_path_it_cannot_inspect() {
     assert_error(
         &installation,
         &format!(
-            "--install: {}: Permission denied (os error 13)",
+            "--install: checking Git config {}: Permission denied (os error 13)",
             config_path.display()
         ),
     );
