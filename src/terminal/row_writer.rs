@@ -162,6 +162,7 @@ impl ExpandedPayload {
                 style: segment.style,
             });
         }
+
         Self { text, boundaries }
     }
 

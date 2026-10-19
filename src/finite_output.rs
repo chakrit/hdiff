@@ -6,9 +6,11 @@ use crate::{display_lines, document::DiffDocument};
 /// The document as finite output: every displayed line, in input order.
 pub fn of_document(document: &DiffDocument) -> Vec<u8> {
     let mut output = String::new();
+
     for line in display_lines::of_document(document) {
         line.write_text(&mut output);
     }
+
     output.into_bytes()
 }
 
