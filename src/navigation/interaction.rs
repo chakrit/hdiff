@@ -225,6 +225,7 @@ pub enum Effect {
         preferences: ViewPreferences,
         placement: Placement,
     },
+    /// Opens or closes the keymap popup.
     Keymap(KeymapPopup),
 }
 
