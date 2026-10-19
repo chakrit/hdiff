@@ -14,7 +14,7 @@ pub struct CompareFilesContext;
 
 impl CompareFiles<'_> {
     pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, ProcessError> {
-        let [before, after] = &self.comparison.operands;
+        let operands = &self.comparison.operands;
         let recursion: &[&str] = match self.comparison.depth {
             Depth::TopLevel => &[],
             Depth::Recursive => &["-r"],
@@ -26,8 +26,8 @@ impl CompareFiles<'_> {
         diff.args(["-u", "-N"])
             .args(recursion)
             .arg("--")
-            .arg(before.argument())
-            .arg(after.argument())
+            .arg(operands.old.argument())
+            .arg(operands.new.argument())
             .stdin(Stdio::inherit());
 
         let output = child_process::run("diff", &mut diff, |status| {

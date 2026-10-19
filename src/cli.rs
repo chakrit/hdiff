@@ -10,6 +10,7 @@ use crate::{
     bench::Driver,
     comparison::{Comparison, Depth, Operand},
     input::{Source, StdinState},
+    side::BySide,
 };
 
 pub const HELP: &str = concat!(
@@ -132,7 +133,10 @@ fn select_source(arguments: &[OsString]) -> Result<Source, UsageError> {
         .map(|argument| operand(argument))
         .collect::<Vec<_>>();
     let operands = match <[Operand; 2]>::try_from(operands) {
-        Ok(operands) => return Ok(Source::Comparison(Comparison { operands, depth })),
+        Ok([old, new]) => {
+            let operands = BySide { old, new };
+            return Ok(Source::Comparison(Comparison { operands, depth }));
+        }
         Err(operands) => operands,
     };
 
@@ -160,7 +164,7 @@ mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
     use super::{
-        Comparison, Depth, Driver, Invocation, Operand, Source, StdinState, UsageError,
+        BySide, Comparison, Depth, Driver, Invocation, Operand, Source, StdinState, UsageError,
         select_input, select_invocation,
     };
 
@@ -288,7 +292,10 @@ mod tests {
         assert_eq!(
             select_unpiped(&["-", "after"]).expect("comparison"),
             Source::Comparison(Comparison {
-                operands: [Operand::Stdin, Operand::Path(PathBuf::from("after"))],
+                operands: BySide {
+                    old: Operand::Stdin,
+                    new: Operand::Path(PathBuf::from("after")),
+                },
                 depth: Depth::TopLevel,
             })
         );
@@ -297,10 +304,10 @@ mod tests {
     #[test]
     fn selects_recursive_comparison_wherever_the_flag_appears() {
         let recursive = Source::Comparison(Comparison {
-            operands: [
-                Operand::Path(PathBuf::from("a")),
-                Operand::Path(PathBuf::from("b")),
-            ],
+            operands: BySide {
+                old: Operand::Path(PathBuf::from("a")),
+                new: Operand::Path(PathBuf::from("b")),
+            },
             depth: Depth::Recursive,
         });
 
