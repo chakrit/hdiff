@@ -300,6 +300,7 @@ mod tests {
         effect
     }
 
+    /// The effect `change` has on `interaction`; panics when it changes nothing.
     fn preference_effect(interaction: &Interaction, change: PreferenceChange) -> Effect {
         effect(interaction, Event::Command(Command::Preference(change)))
     }
@@ -419,11 +420,12 @@ mod tests {
         let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
         let open = closed.keymap_switched(KeymapPopup::Open);
         let close = Command::Keymap(KeymapCommand::Close);
-        let respond = |interaction: Interaction, event| interaction.respond(event, TWO_PAGES);
+        let respond_in_two_pages =
+            |interaction: Interaction, event| interaction.respond(event, TWO_PAGES);
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
             assert_eq!(
-                respond(open, Event::Command(closing)),
+                respond_in_two_pages(open, Event::Command(closing)),
                 Outcome::Effect(Effect::Keymap(KeymapPopup::Closed)),
                 "{closing:?}"
             );
@@ -435,13 +437,13 @@ mod tests {
             Command::Preference(PreferenceChange::ToggleFileList),
         ] {
             assert_eq!(
-                respond(open, Event::Command(ignored)),
+                respond_in_two_pages(open, Event::Command(ignored)),
                 Outcome::Redraw,
                 "{ignored:?}"
             );
         }
-        assert_eq!(respond(open, Event::Interrupt), Outcome::Exit);
-        assert_eq!(respond(open, Event::Resize), Outcome::Redraw);
+        assert_eq!(respond_in_two_pages(open, Event::Interrupt), Outcome::Exit);
+        assert_eq!(respond_in_two_pages(open, Event::Resize), Outcome::Redraw);
     }
 
     /// docs/spec/architecture.md#interaction-model: with the keymap popup closed, closing

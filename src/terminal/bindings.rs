@@ -341,7 +341,7 @@ mod tests {
     };
 
     /// The event a press of `code` with `modifiers` is bound to, if any.
-    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
+    fn bound_event(code: KeyCode, modifiers: KeyModifiers) -> Option<Event> {
         event_for(TerminalEvent::Key(KeyEvent::new(code, modifiers)))
     }
 
@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn maps_pager_keys_and_resize_events() {
-        let plain = |character| key_event(KeyCode::Char(character), KeyModifiers::NONE);
+        let plain = |character| bound_event(KeyCode::Char(character), KeyModifiers::NONE);
 
         assert_eq!(plain('j'), bound_to(Command::Movement(Movement::Down)));
         for (character, expected) in [
@@ -369,7 +369,7 @@ mod tests {
             );
         }
         assert_eq!(
-            key_event(KeyCode::Tab, KeyModifiers::NONE),
+            bound_event(KeyCode::Tab, KeyModifiers::NONE),
             bound_to(Command::Page(PageStep::Next))
         );
         assert_eq!(
@@ -385,11 +385,11 @@ mod tests {
             bound_to(Command::Preference(PreferenceChange::DecreaseContext))
         );
         assert_eq!(
-            key_event(KeyCode::BackTab, KeyModifiers::SHIFT),
+            bound_event(KeyCode::BackTab, KeyModifiers::SHIFT),
             bound_to(Command::Page(PageStep::Previous))
         );
         assert_eq!(
-            key_event(KeyCode::Tab, KeyModifiers::SHIFT),
+            bound_event(KeyCode::Tab, KeyModifiers::SHIFT),
             bound_to(Command::Page(PageStep::Previous))
         );
         for (code, expected) in [
@@ -401,7 +401,7 @@ mod tests {
             (KeyCode::Esc, Command::Keymap(KeymapCommand::Close)),
         ] {
             assert_eq!(
-                key_event(code, KeyModifiers::NONE),
+                bound_event(code, KeyModifiers::NONE),
                 bound_to(expected),
                 "{code:?}"
             );
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn maps_control_c_to_an_interrupt() {
         assert_eq!(
-            key_event(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            bound_event(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(Event::Interrupt)
         );
     }
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn binds_only_the_keys_the_table_names() {
         assert_eq!(
-            key_event(KeyCode::Char('G'), KeyModifiers::SHIFT),
+            bound_event(KeyCode::Char('G'), KeyModifiers::SHIFT),
             bound_to(Command::Movement(Movement::Bottom))
         );
         for (code, modifiers) in [
@@ -448,7 +448,7 @@ mod tests {
             (KeyCode::Up, KeyModifiers::ALT),
         ] {
             assert_eq!(
-                key_event(code, modifiers),
+                bound_event(code, modifiers),
                 None,
                 "{code:?} with {modifiers:?}"
             );
