@@ -1,8 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    detail::character_details,
-    document::{DiffDocument, FileView, RecordMap},
+    document::{DiffDocument, FileView},
     file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     page_rows::{LineIndex, PageRows},
@@ -136,25 +135,16 @@ impl PreparedPage {
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
-        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file(&file));
-        let syntax = observer.measure(Stage::Syntax, |observer| {
-            syntax.highlight_file(file.file, observer)
-        });
-        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
-
         Self {
-            rows: StyledRows::new(rows, &syntax, &details),
+            rows: StyledRows::of_file(&file, syntax, observer),
             kind: PageKind::File { row },
         }
     }
 
     /// Surrounding text has no syntax or character detail.
     fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
-        let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(document.text()));
-        let details = rows.map_lines(|_, _| None);
-
         Self {
-            rows: StyledRows::new(rows, &RecordMap::empty(), &details),
+            rows: StyledRows::of_text(document.text(), observer),
             kind: PageKind::Text,
         }
     }

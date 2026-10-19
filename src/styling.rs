@@ -4,14 +4,16 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
-    detail::ChangedDetail,
+    detail::{ChangedDetail, character_details},
     display_lines::LineKind,
-    document::RecordMap,
+    document::{FileView, RecordMap},
+    measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
     side::Side,
+    source_text::SourceLine,
     span::PayloadSpan,
-    syntax::{SyntaxClass, SyntaxSpan},
+    syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
 };
 
 /// A page's rows kept with the styles of each line, so a line can only be styled with
@@ -23,9 +25,38 @@ pub struct StyledRows {
 }
 
 impl StyledRows {
+    /// The rows of one file occurrence, each line styled with the syntax spans of its
+    /// record and its character detail.
+    pub fn of_file(
+        view: &FileView<'_>,
+        highlighter: &mut SyntaxHighlighter,
+        observer: &mut impl Observer,
+    ) -> Self {
+        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file(view));
+        let syntax = observer.measure(Stage::Syntax, |observer| {
+            highlighter.highlight_file(view.file, observer)
+        });
+        let details = observer.measure(Stage::Detail, |_| character_details(&rows));
+
+        Self::styled(rows, &syntax, &details)
+    }
+
+    /// The rows of surrounding text, which has no syntax spans; its shared rows carry no
+    /// character detail.
+    pub fn of_text<'a>(
+        lines: impl IntoIterator<Item = &'a SourceLine>,
+        observer: &mut impl Observer,
+    ) -> Self {
+        let rows = observer.measure(Stage::Layout, |_| PageRows::of_text(lines));
+        let details = character_details(&rows);
+
+        Self::styled(rows, &RecordMap::empty(), &details)
+    }
+
     /// The styles of each line of `rows`: the syntax spans of its record, looked up by
-    /// address, and its character detail when `details` gives it some.
-    pub fn new(
+    /// address, and its character detail when `details` gives it some. Both maps
+    /// must be built from these `rows`, which the constructors above guarantee.
+    fn styled(
         rows: PageRows,
         syntax: &RecordMap<Vec<SyntaxSpan>>,
         details: &LineMap<Option<ChangedDetail>>,
