@@ -13,21 +13,27 @@ use crate::{
     side::BySide,
 };
 
-pub const HELP: &str = concat!(
-    "Usage: hdiff [OPTIONS] [FILE ...]\n",
-    "\n",
-    "Arguments:\n",
-    "  [FILE ...]  Read one patch file, compare two files or directories, or read\n",
-    "              standard input when omitted; - names standard input\n",
-    "\n",
-    "Options:\n",
-    "  -r                Compare directories recursively\n",
-    "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
-    "                    prepare, stages, or movement\n",
-    "  --install         Register hdiff as the user-level Git diff pager\n",
-    "  --help            Print help\n",
-    "  --version         Print version\n",
-);
+/// The `--help` text; its driver list comes from [`Driver::choices`].
+pub fn help() -> String {
+    format!(
+        concat!(
+            "Usage: hdiff [OPTIONS] [FILE ...]\n",
+            "\n",
+            "Arguments:\n",
+            "  [FILE ...]  Read one patch file, compare two files or directories, or read\n",
+            "              standard input when omitted; - names standard input\n",
+            "\n",
+            "Options:\n",
+            "  -r                Compare directories recursively\n",
+            "  --bench <DRIVER>  Prepare the diff and report measurements from DRIVER:\n",
+            "                    {drivers}\n",
+            "  --install         Register hdiff as the user-level Git diff pager\n",
+            "  --help            Print help\n",
+            "  --version         Print version\n",
+        ),
+        drivers = Driver::choices()
+    )
+}
 
 pub const VERSION: &str = concat!(
     "hdiff ",

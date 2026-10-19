@@ -42,7 +42,7 @@ fn run() -> Result<(), RunError> {
     let invocation = cli::select_invocation(&arguments, stdin).map_err(RunError::Usage)?;
 
     match invocation {
-        Invocation::Help => write_stdout(cli::HELP.as_bytes()),
+        Invocation::Help => write_stdout(cli::help().as_bytes()),
         Invocation::Install => install(),
         Invocation::Version => write_stdout(cli::VERSION.as_bytes()),
         Invocation::Bench { driver, source } => bench(driver, source),
