@@ -138,6 +138,9 @@ mod tests {
         assert_eq!(wrap(Wrapping::Enabled, 51), beside_gutter(51));
         assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Off);
         assert_eq!(wrap(Wrapping::Enabled, 78), beside_gutter(78));
-        assert_eq!(wrap(Wrapping::Enabled, 2), WrapWidth::NoPayload);
+        assert_eq!(
+            wrap(Wrapping::Enabled, MARKER_GUTTER_WIDTH.get()),
+            WrapWidth::NoPayload
+        );
     }
 }
