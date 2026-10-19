@@ -1,4 +1,4 @@
-//! The parsed document: surrounding text and file diffs in input order. Rules:
+//! The parsed document: file diffs in input order with their surrounding text. Rules:
 //! docs/spec/architecture.md#core-model.
 
 use std::{iter, marker::PhantomData};
@@ -11,11 +11,20 @@ use crate::{
     source_text::SourceLine,
 };
 
+/// A parsed document: file diffs with their surrounding text, or, when the input holds no
+/// file, its surrounding text alone.
+#[derive(Debug, PartialEq, Eq)]
+pub enum DiffDocument {
+    Files(DiffFiles),
+    Text(Box<[SourceLine]>),
+}
+
 /// File diffs in input order, each with the surrounding text before it, then the text
-/// after the last file. A document without files holds all its text in `trailing`.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct DiffDocument {
-    sections: Box<[FileSection]>,
+/// after the last file.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DiffFiles {
+    earlier: Box<[FileSection]>,
+    last: FileSection,
     trailing: Box<[SourceLine]>,
 }
 
@@ -34,41 +43,52 @@ pub struct FileView<'a> {
 }
 
 impl DiffDocument {
-    pub(crate) fn new(sections: Box<[FileSection]>, trailing: Box<[SourceLine]>) -> Self {
-        Self { sections, trailing }
-    }
-
-    pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
-        self.sections.iter().map(|section| &section.file)
-    }
-
-    /// Every surrounding-text line, in input order.
-    pub fn text(&self) -> impl Iterator<Item = &SourceLine> {
-        self.sections
-            .iter()
-            .flat_map(|section| section.leading.iter())
-            .chain(self.trailing.iter())
-    }
-
-    /// Each file with the text leading up to it; the last file also carries the
-    /// document's trailing text.
-    pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
-        self.sections
-            .split_last()
-            .into_iter()
-            .flat_map(|(last, earlier)| {
-                let earlier = earlier.iter().map(|section| section.view(&[]));
-                earlier.chain(iter::once(last.view(&self.trailing)))
-            })
-    }
-
-    /// The text no file view carries: all the text of a document without files, and
-    /// none otherwise.
-    pub fn unattached_text(&self) -> &[SourceLine] {
-        match self.sections.is_empty() {
-            true => &self.trailing,
-            false => &[],
+    /// The document `sections` and the `trailing` text after them form: their files, or
+    /// the text alone when there are none.
+    pub(crate) fn new(mut sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
+        match sections.pop() {
+            Some(last) => Self::Files(DiffFiles {
+                earlier: sections.into_boxed_slice(),
+                last,
+                trailing,
+            }),
+            None => Self::Text(trailing),
         }
+    }
+
+    /// The document's files in input order; a text document has none.
+    pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
+        self.file_views().map(|view| view.file)
+    }
+
+    /// Each file with its surrounding text; a text document has none.
+    pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
+        let files = match self {
+            Self::Files(files) => Some(files),
+            Self::Text(_) => None,
+        };
+        files.into_iter().flat_map(DiffFiles::views)
+    }
+}
+
+impl DiffFiles {
+    /// Each file with the text leading up to it; the last file also carries the trailing
+    /// text.
+    pub fn views(&self) -> impl Iterator<Item = FileView<'_>> {
+        let (first, rest) = self.split_views();
+        iter::once(first).chain(rest)
+    }
+
+    /// The first file's view, and the views after it.
+    pub fn split_views(&self) -> (FileView<'_>, impl Iterator<Item = FileView<'_>>) {
+        let last = self.last.view(&self.trailing);
+        let (first, middle, last) = match self.earlier.split_first() {
+            Some((first, middle)) => (first.view(&[]), middle, Some(last)),
+            None => (last, [].as_slice(), None),
+        };
+
+        let rest = middle.iter().map(|section| section.view(&[]));
+        (first, rest.chain(last))
     }
 }
 

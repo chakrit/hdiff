@@ -5,7 +5,9 @@
 use std::iter;
 
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind},
+    document::{
+        DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind,
+    },
     headers::GitHeader,
     side::Side,
     source_text::SourceLine,
@@ -76,10 +78,10 @@ enum LineEnding {
 }
 
 impl LineEnding {
-    fn of(text: &[u8]) -> Self {
-        if text.ends_with(b"\r\n") {
+    fn of(bytes: &[u8]) -> Self {
+        if bytes.ends_with(b"\r\n") {
             Self::CrLf
-        } else if text.ends_with(b"\n") {
+        } else if bytes.ends_with(b"\n") {
             Self::Lf
         } else {
             Self::None
@@ -97,10 +99,16 @@ impl LineEnding {
 
 /// Every line of `document`, in input order.
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
-    document
-        .file_views()
+    let (files, text) = match document {
+        DiffDocument::Files(files) => (Some(files), [].as_slice()),
+        DiffDocument::Text(text) => (None, &**text),
+    };
+
+    files
+        .into_iter()
+        .flat_map(DiffFiles::views)
         .flat_map(of_file_view)
-        .chain(of_text(document.unattached_text()))
+        .chain(of_text(text))
 }
 
 /// The lines `view` displays: its leading text, its file, then its trailing text.

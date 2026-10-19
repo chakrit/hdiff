@@ -1,11 +1,12 @@
-use std::num::NonZeroUsize;
+use std::{iter, num::NonZeroUsize};
 
 use crate::{
-    document::DiffDocument,
+    document::{DiffDocument, DiffFiles},
     file_tree::{FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
+    source_text::SourceLine,
     styling::{StyledRow, StyledRows},
     syntax::SyntaxHighlighter,
 };
@@ -38,25 +39,9 @@ impl PreparedDocument {
     }
 
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
-        let ListedTree {
-            tree: file_tree,
-            files,
-        } = observer.measure(Stage::Labels, |_| ListedTree::build(document.file_views()));
-
-        let (first, rest) = match files.as_ref() {
-            [] => (PreparedPage::text(document, observer), Vec::new()),
-            [first, rest @ ..] => {
-                let mut syntax = SyntaxHighlighter::default();
-                let mut prepare =
-                    |listed: &ListedFile| PreparedPage::file(*listed, &mut syntax, observer);
-                (prepare(first), rest.iter().map(prepare).collect())
-            }
-        };
-
-        Self {
-            first,
-            rest: rest.into_boxed_slice(),
-            file_tree,
+        match document {
+            DiffDocument::Files(files) => Self::of_files(files, observer),
+            DiffDocument::Text(text) => Self::of_text(text, observer),
         }
     }
 
@@ -89,7 +74,35 @@ impl PreparedDocument {
     }
 
     fn pages(&self) -> impl Iterator<Item = &PreparedPage> {
-        std::iter::once(&self.first).chain(&self.rest)
+        iter::once(&self.first).chain(&self.rest)
+    }
+
+    // Preparation
+
+    /// One page per listed file, in list order.
+    fn of_files(files: &DiffFiles, observer: &mut impl Observer) -> Self {
+        let ListedTree {
+            tree: file_tree,
+            first,
+            rest,
+        } = observer.measure(Stage::Labels, |_| ListedTree::build(files));
+
+        let mut syntax = SyntaxHighlighter::default();
+        let mut prepare = |listed: &ListedFile| PreparedPage::file(*listed, &mut syntax, observer);
+        Self {
+            first: prepare(&first),
+            rest: rest.iter().map(prepare).collect(),
+            file_tree,
+        }
+    }
+
+    /// One page of all the text, with an empty file list.
+    fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
+        Self {
+            first: PreparedPage::text(text, observer),
+            rest: Box::default(),
+            file_tree: FileTree::default(),
+        }
     }
 }
 
@@ -140,9 +153,9 @@ impl PreparedPage {
     }
 
     /// Surrounding text has no syntax or character detail.
-    fn text(document: &DiffDocument, observer: &mut impl Observer) -> Self {
+    fn text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
-            rows: StyledRows::of_text(document.text(), observer),
+            rows: StyledRows::of_text(text, observer),
             kind: PageKind::Text,
         }
     }
@@ -176,6 +189,8 @@ mod tests {
 
     #[test]
     fn retains_surrounding_text_with_separate_repeated_file_views() {
+        // Each page opens with its message, then the `---`, `+++` and `@@` header lines.
+        const MESSAGE_AND_HEADERS: usize = 4;
         let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
         let input = format!("first message\n{patch}second message\n{patch}trailer\n");
         let document = parse_patch(input.as_bytes()).expect("diffs with messages");
@@ -199,7 +214,8 @@ mod tests {
                     .all(|(_, style)| style == TextStyle::Plain),
                 "message is not source code"
             );
-            assert!(page.rows().line_indices().skip(4).any(|row| {
+            let mut records = page.rows().line_indices().skip(MESSAGE_AND_HEADERS);
+            assert!(records.any(|row| {
                 page.row(row, DiffGranularity::Line)
                     .segments()
                     .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))

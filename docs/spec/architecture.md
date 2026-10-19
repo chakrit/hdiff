@@ -117,15 +117,17 @@ The document is the source of truth and retains enough original content to rende
 but valid diff lines without data loss.
 
 - `DiffDocument`: file diffs in input order, each with the surrounding text before it,
-  then the text after the last file.
+  then the text after the last file; or, when the input holds no file, its surrounding
+  text alone.
 - `FileView`: a borrowed navigation projection of a file and its surrounding text. Leading
   text appears above the following file; final trailing text appears after the last file.
   Repeated paths remain separate file occurrences. Each file occurrence is one navigation
   page; a document that holds no file is one page of its surrounding text, with an empty
   file list.
-- `DiffFile`: file identity, headers, and ordered hunks. Identity (state and path) and
-  decoded header paths are derived when the file is parsed; the file tree and syntax
-  highlighting read them rather than raw header text.
+- `DiffFile`: file identity and a body: Git metadata alone, or file headers and ordered
+  hunks after an optional Git header. Identity (state and path) and decoded header paths
+  are derived when the file is parsed; the file tree and syntax highlighting read them
+  rather than raw header text.
 - File-list paths follow the [file tree](#file-tree) path naming, while rendered diff
   headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
