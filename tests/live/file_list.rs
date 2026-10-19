@@ -1,6 +1,5 @@
 //! The file list: its order, selection, markers, and showing and hiding it.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 
 use crate::{
@@ -15,7 +14,7 @@ fn keeps_a_selection_beyond_the_file_list_height_visible() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
 
     for _ in 0..36 {
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        live.next_file();
     }
     assert!(live.shows("~ file_36.rs"), "the selected file stays listed");
     assert!(
@@ -66,7 +65,7 @@ fn tab_moves_between_files_and_skips_headings() {
         ("new mode 100755", "~ lib.rs"),
         ("readme_gone", "- README.md"),
     ] {
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        live.next_file();
         assert!(live.shows(expected_diff), "Tab shows {expected_diff}");
         assert_ne!(
             live.background(expected_row),
@@ -88,7 +87,7 @@ fn tab_moves_between_files_and_skips_headings() {
         );
     }
 
-    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    live.previous_file();
     assert!(
         live.shows("new mode 100755"),
         "Shift-Tab wraps to the last file"
@@ -99,8 +98,8 @@ fn tab_moves_between_files_and_skips_headings() {
 #[test]
 fn colors_markers_by_state() {
     let mut live = Live::load(TREE_PATCH, Mode::line(DiffLayout::Unified));
-    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    live.previous_file();
+    live.previous_file();
 
     let (deleted, name) = live.file_row_colors("- README.md");
     let (modified, lib_name) = live.file_row_colors("~ lib.rs");
@@ -132,12 +131,12 @@ fn marks_files_beyond_the_file_list() {
     assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
     assert_eq!(markers(&live), (0, 1), "files below the list");
     for _ in 0..36 {
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        live.next_file();
     }
     assert_eq!(markers(&live), (1, 1), "files above and below");
     // Back past the first file, wrapping to the last.
     for _ in 0..37 {
-        live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+        live.previous_file();
     }
     assert!(live.shows("~ file_39.rs"));
     assert_eq!(markers(&live), (1, 0), "the last file ends the list");
@@ -148,7 +147,7 @@ fn keeps_a_selection_below_its_headings_visible() {
     let mut live = Live::load(&files_in_directories(30), Mode::line(DiffLayout::Unified));
 
     for _ in 0..20 {
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        live.next_file();
     }
     let list = live.file_list();
     let selected = list

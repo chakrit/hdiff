@@ -7,6 +7,7 @@ use hdiff::{
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout},
     prepared::PreparedDocument,
+    screen::Cells,
     terminal::{Step, Tui},
     theme::{ColorDepth, Theme},
 };
@@ -17,6 +18,7 @@ use ratatui::{
     layout::{Position, Size},
     style::Color,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 pub const WIDTH: u16 = 120;
 pub const HEIGHT: u16 = 36;
@@ -76,6 +78,14 @@ impl Live {
 
     pub fn send(&mut self, key: KeyEvent) -> Step {
         self.event(Event::Key(key))
+    }
+
+    pub fn next_file(&mut self) -> Step {
+        self.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+    }
+
+    pub fn previous_file(&mut self) -> Step {
+        self.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
     }
 
     pub fn resize(&mut self, width: u16, height: u16) -> Step {
@@ -143,11 +153,12 @@ impl Live {
     /// The marker and name foregrounds of the file row `row`, such as `"~ lib.rs"`; the
     /// name must be drawn in one color.
     pub fn file_row_colors(&self, row: &str) -> (Color, Color) {
+        let (marker_label, _) = row.split_once(' ').expect("a marker, a space, and a name");
         let start = self.find(row);
         let buffer = self.buffer();
         let marker = buffer[(start.x, start.y)].fg;
-        let name = (start.x + 2..)
-            .take(row.chars().count() - 2)
+        let name_start = start.x + cells(marker_label) + cells(" ");
+        let name = (name_start..start.x + cells(row))
             .map(|x| buffer[(x, start.y)].fg)
             .collect::<Vec<_>>();
 
@@ -177,18 +188,29 @@ impl Live {
 
     /// Cell position of the first occurrence of `text`.
     pub fn find(&self, text: &str) -> Position {
-        self.rows()
-            .iter()
-            .enumerate()
-            .find_map(|(y, row)| {
-                let byte = row.find(text)?;
-                let x = row[..byte].chars().count();
-                let column = u16::try_from(x).expect("a screen column fits u16");
-                let row = u16::try_from(y).expect("a screen row fits u16");
-                Some(Position::new(column, row))
-            })
+        positions(&self.buffer(), text)
+            .next()
             .unwrap_or_else(|| panic!("{text:?} is not on screen:\n{}", self.rows().join("\n")))
     }
+}
+
+/// Where `text` is drawn in `buffer`: each position starts a run of cells in one row that
+/// draws `text`'s graphemes in order, a wide grapheme covering its cells.
+pub fn positions<'a>(buffer: &'a Buffer, text: &'a str) -> impl Iterator<Item = Position> + 'a {
+    let graphemes = text.graphemes(true).collect::<Vec<_>>();
+
+    buffer.area.positions().filter(move |start| {
+        let drawn_through = graphemes.iter().try_fold(start.x, |x, grapheme| {
+            let drawn = x < buffer.area.right() && buffer[(x, start.y)].symbol() == *grapheme;
+            drawn.then(|| x + cells(grapheme))
+        });
+        drawn_through.is_some()
+    })
+}
+
+/// Screen columns `text` covers.
+pub fn cells(text: &str) -> u16 {
+    u16::try_from(Cells::of_text(text).get()).expect("a screen width fits u16")
 }
 
 #[derive(Debug, Clone, Copy)]

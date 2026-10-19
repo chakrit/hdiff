@@ -81,14 +81,14 @@ fn file_rotation(mode: Mode) {
         "const char *greeting(void)",
         "pub fn greeting()",
     ] {
-        live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        live.next_file();
         assert!(
             live.shows(expected),
             "Tab selects the file showing {expected}"
         );
     }
 
-    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    live.previous_file();
     assert!(
         live.shows("const char *greeting(void)"),
         "Shift-Tab wraps to the last file"
@@ -159,8 +159,7 @@ fn resize(mode: Mode) {
     let start = live.buffer();
 
     assert_eq!(live.resize(80, 20), Step::Continue);
-    assert_eq!(live.rows().len(), 20);
-    assert!(live.rows().iter().all(|row| row.chars().count() == 80));
+    assert_eq!(live.buffer().area.as_size(), Size::new(80, 20));
     assert!(live.shows("pub fn greeting("));
 
     live.resize(WIDTH, HEIGHT);

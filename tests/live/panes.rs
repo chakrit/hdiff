@@ -1,7 +1,6 @@
 //! Where a frame puts its parts: the file list, separators, diff panes, the help box, and
 //! surrounding text.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 use ratatui::layout::Size;
 
@@ -9,10 +8,6 @@ use crate::harness::{Live, Mode, THEME};
 
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
-
-fn next_file(live: &mut Live) {
-    live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-}
 
 /// The text of screen row `y` with trailing blanks trimmed.
 fn row_text(live: &Live, y: usize) -> String {
@@ -28,7 +23,7 @@ fn renders_compact_file_and_diff_panes_with_one_separator() {
         Mode::line(DiffLayout::Unified),
         Size::new(80, 10),
     );
-    next_file(&mut live);
+    live.next_file();
 
     let rendered = live.buffer();
     let expected_symbols = [
@@ -167,7 +162,7 @@ fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
         assert!(!text(&live).contains("second message"), "{layout:?}");
         assert!(!text(&live).contains("trailer"), "{layout:?}");
 
-        next_file(&mut live);
+        live.next_file();
         assert_eq!(
             text(&live).matches("second message").count(),
             copies,
@@ -188,8 +183,8 @@ fn shows_comparison_output_that_holds_only_text() {
     );
 
     live.press('j');
-    next_file(&mut live);
-    live.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+    live.next_file();
+    live.previous_file();
 
     assert!(live.shows("Binary files a.bin and b.bin differ"));
 }

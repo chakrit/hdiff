@@ -4,7 +4,7 @@ use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::{INDENTED, long_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, diff_pane},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, cells, diff_pane},
 };
 
 matrix!(
@@ -64,7 +64,7 @@ fn continuity_markers(mode: Mode) {
 
     live.press('$');
     assert_eq!(
-        live.find("_end").x + 4,
+        live.find("_end").x + cells("_end"),
         WIDTH - 1,
         "the widest row ends beside the right frame column"
     );
