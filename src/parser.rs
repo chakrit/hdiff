@@ -257,16 +257,21 @@ fn parse_unified(
     })
 }
 
-/// The line number or count a header `field` states. Only ASCII digits are a count:
-/// Rust's integer parsing also admits a leading `+`, which no diff writes. Rules:
-/// docs/spec/architecture.md#input-contract.
+/// The count a header `field` states, when it is a decimal number small enough to hold.
+/// Rules: docs/spec/architecture.md#input-contract.
 fn decimal_count(field: &str) -> Option<usize> {
-    let digits = !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit());
-    if !digits {
+    if !is_decimal(field) {
         return None;
     }
 
     field.parse().ok()
+}
+
+/// Whether a header `field` is a decimal number: one or more ASCII digits. Rust's integer
+/// parsing also admits a leading `+`, which no diff writes. Rules:
+/// docs/spec/architecture.md#input-contract.
+fn is_decimal(field: &str) -> bool {
+    !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 // Reading lines

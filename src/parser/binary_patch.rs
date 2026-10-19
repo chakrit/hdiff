@@ -2,7 +2,7 @@
 //! the base-85 payload lines each block holds. Rules:
 //! docs/spec/architecture.md#input-contract.
 
-use super::{Error, LineStart, Malformed, SourceLines, decimal_count, line_start};
+use super::{Error, LineStart, Malformed, SourceLines, is_decimal, line_start};
 use crate::{
     document::{BinaryBlock, BinaryPatch},
     non_empty::NonEmpty,
@@ -74,7 +74,7 @@ fn binary_block_field(text: &str) -> Option<&str> {
 
 /// Checks that a `literal` or `delta` block header states its size as a count.
 fn check_binary_block_size(header: &str) -> Result<(), Malformed> {
-    let stated = binary_block_field(header).and_then(decimal_count).is_some();
+    let stated = binary_block_field(header).is_some_and(is_decimal);
 
     match stated {
         true => Ok(()),

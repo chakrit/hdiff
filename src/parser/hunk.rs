@@ -2,7 +2,7 @@
 //! counts hold, any of which, the last included, may be followed by one no-newline
 //! marker. Rules: docs/spec/architecture.md#input-contract.
 
-use super::{Error, Malformed, SourceLines, decimal_count, reject_unsupported_header};
+use super::{Error, Malformed, SourceLines, decimal_count, is_decimal, reject_unsupported_header};
 use crate::{
     document::{ContextMarker, Hunk, Record, RecordKind},
     headers::{file_header_field, git_header_names},
@@ -177,11 +177,8 @@ pub(super) fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
 /// without a count states one line.
 fn range_count(range: &str) -> Option<usize> {
     match range.split_once(',') {
-        Some((start, count)) => {
-            decimal_count(start)?;
-            decimal_count(count)
-        }
-        None => decimal_count(range).map(|_| 1),
+        Some((start, count)) => decimal_count(count).filter(|_| is_decimal(start)),
+        None => is_decimal(range).then_some(1),
     }
 }
 
@@ -234,6 +231,25 @@ mod tests {
                 "{header}"
             );
         }
+    }
+
+    /// docs/spec/architecture.md#input-contract: a range's start is any run of ASCII
+    /// digits, and a count too large to hold makes the header invalid.
+    #[test]
+    fn reads_a_start_of_any_length_and_rejects_a_count_too_large_to_hold() {
+        let files = "--- a/file\n+++ b/file\n";
+        let long_start = format!("{files}@@ -{0},1 +{0},1 @@\n-old\n+new\n", "9".repeat(30));
+        let long_count = format!("{files}@@ -1,{} +1 @@\n-old\n+new\n", "9".repeat(30));
+
+        assert!(
+            parse_patch(long_start.as_bytes()).is_ok(),
+            "{long_start:?} has a long start"
+        );
+        assert_eq!(
+            parse_patch(long_count.as_bytes()),
+            malformed(3, Malformed::InvalidHunkHeader),
+            "{long_count:?} has a count too large to hold"
+        );
     }
 
     /// docs/spec/architecture.md#input-contract: every line inside a hunk is a marked
