@@ -16,7 +16,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(2);
 
 /// A count or offset of terminal cells across a row.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Cells(usize);
 
 impl Cells {
@@ -54,7 +54,7 @@ impl Cells {
     }
 
     /// Cells from this column to the next multiple of `interval` after it.
-    pub const fn to_next_multiple_of(self, interval: NonZeroCells) -> Self {
+    pub const fn padding_to_next_multiple_of(self, interval: NonZeroCells) -> Self {
         let interval = interval.0.get();
         Self(interval - self.0 % interval)
     }
@@ -100,7 +100,7 @@ impl From<u16> for Cells {
 }
 
 /// A nonzero count of terminal cells: the width payloads wrap at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonZeroCells(NonZeroUsize);
 
 impl NonZeroCells {
@@ -120,7 +120,7 @@ impl NonZeroCells {
 }
 
 /// A count or offset of screen lines down a pane.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScreenLines(usize);
 
 impl ScreenLines {

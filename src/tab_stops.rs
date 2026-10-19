@@ -38,7 +38,7 @@ impl TabStops {
     }
 
     fn advance_to_tab_stop(&mut self) -> Cells {
-        let padding = self.column.to_next_multiple_of(TAB_WIDTH);
+        let padding = self.column.padding_to_next_multiple_of(TAB_WIDTH);
         self.column += padding;
         padding
     }
