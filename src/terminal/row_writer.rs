@@ -267,6 +267,65 @@ mod tests {
 
     const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
+    /// A written row: the buffer it drew into and the sides where it left the pane.
+    struct Written {
+        buffer: Buffer,
+        clip: Clip,
+    }
+
+    fn prepare(diff: &[u8]) -> PreparedDocument {
+        let document = parse_patch(diff).expect("valid diff");
+        PreparedDocument::prepare(&document)
+    }
+
+    /// The text row at line `line` of `prepared`'s first page.
+    fn first_page_row(
+        prepared: &PreparedDocument,
+        line: usize,
+        granularity: DiffGranularity,
+    ) -> PaneRow<'_> {
+        let page = prepared.page(PageIndex::FIRST);
+        PaneRow::Text(page.row(page.rows().line_index(line), granularity))
+    }
+
+    fn write(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
+        let placement = RowPlacement::Scrolled {
+            horizontal_offset: Cells::new(horizontal_offset),
+        };
+        written(row, width, placement).buffer
+    }
+
+    fn written(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Written {
+        let area = Rect::new(0, 0, width, 1);
+        let mut buffer = Buffer::empty(area);
+        let clip = write_row(&mut buffer, area, row, placement, THEME);
+        Written { buffer, clip }
+    }
+
+    /// Every row of the first page, written in line detail.
+    fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
+        let page = prepared.page(PageIndex::FIRST);
+
+        page.rows()
+            .line_indices()
+            .map(|line| page.row(line, DiffGranularity::Line))
+            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
+            .collect()
+    }
+
+    /// The row's symbols with wide-cluster continuation cells skipped and trailing blanks
+    /// trimmed.
+    fn row_text(buffer: &Buffer) -> String {
+        let mut text = String::new();
+        let mut x = 0;
+        while x < buffer.area.width {
+            let symbol = buffer[(x, 0)].symbol();
+            text.push_str(symbol);
+            x += symbol.cell_width().max(1);
+        }
+        text.trim_end().to_owned()
+    }
+
     /// docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering
     /// preserves source text through styling.
     #[test]
@@ -316,10 +375,9 @@ mod tests {
     #[test]
     fn keeps_a_cluster_whole_when_its_mark_starts_a_style_segment() {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
-        let page = prepared.page(PageIndex::FIRST);
-        let addition = page.row(page.rows().line_index(4), DiffGranularity::Character);
+        let addition = first_page_row(&prepared, 4, DiffGranularity::Character);
 
-        let buffer = write(PaneRow::Text(addition), 8, 0);
+        let buffer = write(addition, 8, 0);
 
         assert_eq!(buffer[(2, 0)].symbol(), "ก่");
     }
@@ -329,10 +387,9 @@ mod tests {
     #[test]
     fn blanks_the_visible_cell_of_a_wide_cluster_cut_by_the_left_edge() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
-        let page = prepared.page(PageIndex::FIRST);
-        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
+        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = write(PaneRow::Text(addition), 8, 3);
+        let buffer = write(addition, 8, 3);
 
         assert_eq!(buffer[(0, 0)].symbol(), " ");
         assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
@@ -342,10 +399,9 @@ mod tests {
     #[test]
     fn leaves_a_wide_cluster_that_does_not_fit_the_right_edge_blank() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
-        let page = prepared.page(PageIndex::FIRST);
-        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
+        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = write(PaneRow::Text(addition), 5, 0);
+        let buffer = write(addition, 5, 0);
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
@@ -355,18 +411,13 @@ mod tests {
     #[test]
     fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
-        let page = prepared.page(PageIndex::FIRST);
-        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
+        let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
         let wrapped_line = |line| {
-            write_placed(
-                PaneRow::Text(addition),
-                6,
-                RowPlacement::Wrapped {
-                    line: ScreenLines::new(line),
-                    width: NonZeroCells::of(4),
-                },
-            )
-            .0
+            let placement = RowPlacement::Wrapped {
+                line: ScreenLines::new(line),
+                width: NonZeroCells::of(4),
+            };
+            written(addition, 6, placement).buffer
         };
 
         let (first, second, past_the_end) = (wrapped_line(0), wrapped_line(1), wrapped_line(2));
@@ -383,15 +434,16 @@ mod tests {
     #[test]
     fn reports_the_sides_where_a_row_leaves_the_pane() {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
-        let page = prepared.page(PageIndex::FIRST);
-        let row = PaneRow::Text(page.row(page.rows().line_index(3), DiffGranularity::Line));
+        let row = first_page_row(&prepared, 3, DiffGranularity::Line);
         let clip = |width, horizontal_offset| {
-            let area = Rect::new(0, 0, width, 1);
-            let mut buffer = Buffer::empty(area);
             let placement = RowPlacement::Scrolled {
                 horizontal_offset: Cells::new(horizontal_offset),
             };
-            write_row(&mut buffer, area, row, placement, THEME)
+            written(row, width, placement).clip
+        };
+        let wrapped = RowPlacement::Wrapped {
+            line: ScreenLines::new(1),
+            width: NonZeroCells::of(1),
         };
         let sides = |left, right| Clip { left, right };
 
@@ -404,15 +456,7 @@ mod tests {
         assert_eq!(clip(4, 1), sides(true, true));
         assert_eq!(clip(6, 1), sides(true, false));
         assert_eq!(
-            write_placed(
-                row,
-                3,
-                RowPlacement::Wrapped {
-                    line: ScreenLines::new(1),
-                    width: NonZeroCells::of(1)
-                }
-            )
-            .1,
+            written(row, 3, wrapped).clip,
             sides(false, false),
             "a wrapped line shows its whole part of the row"
         );
@@ -424,48 +468,5 @@ mod tests {
 
         assert!((0..4).all(|x| buffer[(x, 0)].symbol() == " "));
         assert!(buffer[(3, 0)].modifier.contains(Modifier::DIM));
-    }
-
-    fn prepare(diff: &[u8]) -> PreparedDocument {
-        let document = parse_patch(diff).expect("valid diff");
-        PreparedDocument::prepare(&document)
-    }
-
-    fn write(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
-        let placement = RowPlacement::Scrolled {
-            horizontal_offset: Cells::new(horizontal_offset),
-        };
-        write_placed(row, width, placement).0
-    }
-
-    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> (Buffer, Clip) {
-        let area = Rect::new(0, 0, width, 1);
-        let mut buffer = Buffer::empty(area);
-        let clip = write_row(&mut buffer, area, row, placement, THEME);
-        (buffer, clip)
-    }
-
-    /// Every row of the first page, written in line detail.
-    fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
-        let page = prepared.page(PageIndex::FIRST);
-
-        page.rows()
-            .line_indices()
-            .map(|line| page.row(line, DiffGranularity::Line))
-            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
-            .collect()
-    }
-
-    /// The row's symbols with wide-cluster continuation cells skipped and trailing blanks
-    /// trimmed.
-    fn row_text(buffer: &Buffer) -> String {
-        let mut text = String::new();
-        let mut x = 0;
-        while x < buffer.area.width {
-            let symbol = buffer[(x, 0)].symbol();
-            text.push_str(symbol);
-            x += symbol.cell_width().max(1);
-        }
-        text.trim_end().to_owned()
     }
 }
