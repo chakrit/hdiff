@@ -81,8 +81,22 @@ struct InstallPlan {
 }
 
 impl InstallPlan {
-    /// The plan for `environment` and `executable`; any path that is not UTF-8 fails it.
+    /// The plan for `environment` and `executable`, which registers the executable's
+    /// canonical path so the command still resolves after the directory `executable` was
+    /// reached through is gone.
     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
+        let canonical =
+            fs::canonicalize(executable).map_err(|source| Error::ResolveExecutable {
+                path: executable.to_owned(),
+                source,
+            })?;
+
+        Self::of_canonical(environment, &canonical)
+    }
+
+    /// The plan for `environment` and an already canonical `executable`; any path that is
+    /// not UTF-8 fails it.
+    fn of_canonical(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config = GlobalConfig::of(environment)?;
         let executable = utf8(executable, PathRole::Executable)?;
         let pager_command = shell_words::quote(executable.as_str()).into_owned();
@@ -196,7 +210,7 @@ mod tests {
         fs::write(&config_path, "").expect("write global config");
         let executable = Path::new(OsStr::from_bytes(b"/bin/hdiff-\xff"));
 
-        let plan = InstallPlan::new(&environment_for(&config_path), executable);
+        let plan = InstallPlan::of_canonical(&environment_for(&config_path), executable);
 
         assert!(
             matches!(plan, Err(Error::NonUtf8Path(PathRole::Executable))),
@@ -206,7 +220,7 @@ mod tests {
 
     #[test]
     fn rejects_a_disabled_global_config() {
-        let plan = InstallPlan::new(
+        let plan = InstallPlan::of_canonical(
             &environment_for(Path::new("/dev/null")),
             Path::new("/bin/hdiff"),
         );
@@ -223,10 +237,10 @@ mod tests {
         let config_path = directory.path().join("gitconfig");
         let executable = Path::new("/bin/hdiff");
 
-        let absent = InstallPlan::new(&environment_for(&config_path), executable)
+        let absent = InstallPlan::of_canonical(&environment_for(&config_path), executable)
             .expect("plan without a config");
         fs::write(&config_path, "").expect("write global config");
-        let present = InstallPlan::new(&environment_for(&config_path), executable)
+        let present = InstallPlan::of_canonical(&environment_for(&config_path), executable)
             .expect("plan with a config");
 
         assert!(
@@ -254,10 +268,32 @@ mod tests {
             Some("".into()),
         );
 
-        let plan = InstallPlan::new(&environment, Path::new("/bin/hdiff")).expect("plan");
+        let plan = InstallPlan::of_canonical(&environment, Path::new("/bin/hdiff")).expect("plan");
 
         let backed_up = plan.backup.as_ref().map(|backup| backup.config.as_str());
         assert_eq!(backed_up, xdg_config.to_str(), "{plan:?}");
+    }
+
+    /// docs/spec/architecture.md#initial-cli-surface: the registered command names the
+    /// executable itself, not the directory `--install` was run from.
+    #[test]
+    fn registers_the_executables_canonical_path() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let executable = directory.path().join("hdiff");
+        fs::write(&executable, "").expect("write executable");
+        fs::create_dir(directory.path().join("run")).expect("create run directory");
+        let through_run = directory.path().join("run/../hdiff");
+        let config_path = directory.path().join("gitconfig");
+
+        let plan = InstallPlan::new(&environment_for(&config_path), &through_run)
+            .expect("plan for an existing executable");
+
+        let canonical = fs::canonicalize(&executable).expect("canonical executable");
+        assert_eq!(
+            Some(plan.pager_command.as_str()),
+            canonical.to_str(),
+            "{plan:?}"
+        );
     }
 
     #[test]

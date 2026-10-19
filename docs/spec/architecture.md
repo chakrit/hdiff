@@ -243,8 +243,8 @@ Options describe representations or input policy, not interactive procedures. Ru
 display changes are session-local. An rc file may provide defaults, but hdiff never writes
 those changes back during a session.
 
-`hdiff --install` registers the current executable as the user-level pager for `git diff`.
-Git passes its complete unified diff to hdiff on standard input, preserving the entire
+`hdiff --install` registers the current executable, by its canonical path, as the
+user-level pager for `git diff`. Git passes its complete unified diff to hdiff on standard input, preserving the entire
 file list in one interactive session. `core.pager` remains unchanged. After successful
 writes, `--install` prints a shell-safe `cp` command when it created a backup and the `git
 config --global pager.diff` command it applied.
