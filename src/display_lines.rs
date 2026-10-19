@@ -5,9 +5,7 @@
 use std::iter;
 
 use crate::{
-    document::{
-        DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind,
-    },
+    document::{DiffDocument, DiffFile, DiffFiles, FileBody, FileView, RecordAddress, RecordKind},
     headers::GitHeader,
     side::Side,
     source_text::SourceLine,
