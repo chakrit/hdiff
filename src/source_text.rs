@@ -240,8 +240,8 @@ impl Class {
 impl State {
     /// What reading a character of `class` in this state does, as the DEC parser reads
     /// it. `ESC`, C1 introducers, CAN, SUB, ST and every other C1 control act the same in
-    /// every state. Inside an escape or control sequence a C0 control executes without
-    /// ending the sequence, so a tab shows there and the sequence continues. Strings hold
+    /// every state. Outside a string a C0 control executes in place: a tab shows, other
+    /// controls hide, and plain text or an open sequence continues. Strings hold
     /// every other character; only an OSC string also ends at BEL. A non-ASCII character,
     /// which no escape may hold, ends an escape and shows.
     fn read(self, class: Class) -> Step {
@@ -252,21 +252,18 @@ impl State {
         match (self, class) {
             (
                 Ground,
-                Class::Tab
-                | Class::Intermediate
-                | Class::Parameter
-                | Class::Final(_)
-                | Class::NonAscii,
+                Class::Intermediate | Class::Parameter | Class::Final(_) | Class::NonAscii,
             ) => Step::Shown(Ground),
-            (Ground, Class::Bell | Class::OtherC0 | Class::Delete) => Step::Hidden(Ground),
             (_, Class::Escape) => Step::Hidden(Escape),
             (_, Class::Introducer(sequence)) => Step::Hidden(sequence.state()),
             (_, Class::Cancel | Class::StringTerminator | Class::OtherC1) => Step::Hidden(Ground),
+            (Ground | Escape | EscapeIntermediate | ControlSequence, Class::Tab) => {
+                Step::Shown(self)
+            }
             (
-                Escape | EscapeIntermediate | ControlSequence,
+                Ground | Escape | EscapeIntermediate | ControlSequence,
                 Class::Bell | Class::OtherC0 | Class::Delete,
             ) => Step::Hidden(self),
-            (Escape | EscapeIntermediate | ControlSequence, Class::Tab) => Step::Shown(self),
             (Escape | EscapeIntermediate, Class::NonAscii) => Step::Shown(Ground),
             (Escape | EscapeIntermediate, Class::Intermediate) => Step::Hidden(EscapeIntermediate),
             (Escape, Class::Final(Some(sequence))) => Step::Hidden(sequence.state()),
