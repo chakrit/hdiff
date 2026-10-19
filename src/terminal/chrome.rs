@@ -166,11 +166,14 @@ impl ContinuityFrame {
         clip: Clip,
         palette: &ChromePalette,
     ) {
-        let (area, content) = (self.0.area(), self.0.content());
-        if content.is_empty() {
+        let Some(MarkedFrame {
+            area,
+            content,
+            style,
+        }) = self.marked(palette)
+        else {
             return;
-        }
-        let style = Style::default().fg(palette.dim_separator);
+        };
         let y = content.y + content.height / 2;
 
         if clip.left {
@@ -190,11 +193,14 @@ impl ContinuityFrame {
         window: LineWindow,
         palette: &ChromePalette,
     ) {
-        let (area, content) = (self.0.area(), self.0.content());
-        if content.is_empty() {
+        let Some(MarkedFrame {
+            area,
+            content,
+            style,
+        }) = self.marked(palette)
+        else {
             return;
-        }
-        let style = Style::default().fg(palette.dim_separator);
+        };
         let center = area.x + area.width / 2;
         let shown = ScreenLines::from(content.height);
 
@@ -209,6 +215,28 @@ impl ContinuityFrame {
                 .set_style(style);
         }
     }
+
+    /// The frame's area and content with the style its markers draw in, when it has
+    /// content to mark.
+    fn marked(&self, palette: &ChromePalette) -> Option<MarkedFrame> {
+        let content = self.0.content();
+        if content.is_empty() {
+            return None;
+        }
+
+        Some(MarkedFrame {
+            area: self.0.area(),
+            content,
+            style: Style::default().fg(palette.dim_separator),
+        })
+    }
+}
+
+/// A frame with content to mark: its area, its content, and its markers' style.
+struct MarkedFrame {
+    area: Rect,
+    content: Rect,
+    style: Style,
 }
 
 /// The visible lines of a pane among all the lines of its scroll extent.

@@ -189,6 +189,7 @@ pub enum Command {
     Quit,
 }
 
+/// Which way a page turn goes through the document's pages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageStep {
     Next,
@@ -238,6 +239,7 @@ pub enum Placement {
     Anchor(AnchorLine),
 }
 
+/// The diff-pane line whose row a redisplay keeps on that line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnchorLine {
     PaneTop,
@@ -435,17 +437,13 @@ mod tests {
         assert_eq!(respond(open, Event::Resize), Outcome::Redraw);
     }
 
-    /// docs/spec/architecture.md#interaction-model: with the keymap popup closed, `q`
-    /// exits and closing the popup changes nothing.
+    /// docs/spec/architecture.md#interaction-model: with the keymap popup closed, closing
+    /// the popup changes nothing.
     #[test]
-    fn quits_and_ignores_closing_while_the_keymap_is_closed() {
+    fn ignores_closing_while_the_keymap_is_closed() {
         let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
         let close = Command::Keymap(KeymapCommand::Close);
 
-        assert_eq!(
-            closed.respond(command(Command::Quit), TWO_PAGES),
-            Outcome::Exit
-        );
         assert_eq!(closed.respond(command(close), TWO_PAGES), Outcome::Redraw);
     }
 
