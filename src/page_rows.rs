@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     compact::Count,
-    display_lines::{self, DisplayLine, LineKind, RecordPart},
+    display_lines::{self, DisplayLine, LineKind},
     document::{FileView, RecordAddress, RecordKind},
     preferences::ContextRecords,
     screen::Cells,
@@ -230,15 +230,7 @@ impl PageRows {
     pub fn record_count(&self) -> usize {
         self.lines
             .iter()
-            .filter(|line| {
-                matches!(
-                    line.kind(),
-                    LineKind::Record {
-                        part: RecordPart::Payload,
-                        ..
-                    }
-                )
-            })
+            .filter(|line| line.kind().payload_record().is_some())
             .count()
     }
 

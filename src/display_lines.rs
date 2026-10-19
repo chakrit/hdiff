@@ -67,14 +67,15 @@ impl LineKind {
         )
     }
 
-    /// The record marker that precedes a record payload; other lines have none.
-    pub fn marker(self) -> &'static str {
+    /// The record whose payload the line is; a no-newline marker and a line that is not
+    /// a record's are no record's payload.
+    pub fn payload_record(self) -> Option<PayloadRecord> {
         match self {
             Self::Record {
+                address,
                 kind,
                 part: RecordPart::Payload,
-                ..
-            } => kind.marker(),
+            } => Some(PayloadRecord { address, kind }),
             Self::Record {
                 part: RecordPart::NoNewlineMarker,
                 ..
@@ -82,9 +83,22 @@ impl LineKind {
             | Self::Text
             | Self::Metadata
             | Self::FileHeader
-            | Self::HunkHeader => "",
+            | Self::HunkHeader => None,
         }
     }
+
+    /// The record marker that precedes a record payload; other lines have none.
+    pub fn marker(self) -> &'static str {
+        self.payload_record()
+            .map_or("", |record| record.kind.marker())
+    }
+}
+
+/// The record a payload line shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PayloadRecord {
+    pub address: RecordAddress,
+    pub kind: RecordKind,
 }
 
 /// One source line as a document displays it.

@@ -6,7 +6,7 @@ use std::{cmp::Reverse, collections::BinaryHeap, slice};
 
 use crate::{
     detail::{ChangedDetail, character_details},
-    display_lines::{LineKind, RecordPart},
+    display_lines::LineKind,
     document::{FileView, RecordMap},
     measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
@@ -63,21 +63,10 @@ impl StyledRows {
 
         let styles = rows.map_lines(|index, line| {
             let text = line.payload();
-            let spans: &[SyntaxSpan] = match line.kind() {
-                LineKind::Record {
-                    address,
-                    part: RecordPart::Payload,
-                    ..
-                } => syntax_spans.get(address),
-                LineKind::Record {
-                    part: RecordPart::NoNewlineMarker,
-                    ..
-                }
-                | LineKind::Text
-                | LineKind::Metadata
-                | LineKind::FileHeader
-                | LineKind::HunkHeader => &[],
-            };
+            let spans: &[SyntaxSpan] = line
+                .kind()
+                .payload_record()
+                .map_or(&[], |record| syntax_spans.get(record.address));
             let detail = details.get(index).as_ref();
 
             RowStyles {
@@ -124,21 +113,18 @@ pub enum RowTone {
 impl RowTone {
     /// The tone of a line of `kind`.
     fn of(kind: LineKind) -> Self {
-        match kind {
-            LineKind::Record {
-                kind: record_kind,
-                part: RecordPart::Payload,
-                ..
-            } => record_kind
-                .changed_side()
-                .map_or(Self::UnchangedRecord, Self::Changed),
-            LineKind::Record {
-                part: RecordPart::NoNewlineMarker,
-                ..
-            } => Self::UnchangedRecord,
-            LineKind::HunkHeader => Self::HunkHeader,
-            LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
-        }
+        let Some(record) = kind.payload_record() else {
+            return match kind {
+                LineKind::Record { .. } => Self::UnchangedRecord,
+                LineKind::HunkHeader => Self::HunkHeader,
+                LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
+            };
+        };
+
+        record
+            .kind
+            .changed_side()
+            .map_or(Self::UnchangedRecord, Self::Changed)
     }
 }
 
