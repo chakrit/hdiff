@@ -54,45 +54,6 @@ pub struct ScreenGeometry {
     diff: Rect,
 }
 
-/// The file list and the full-height separator beside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FileColumn {
-    pub list: Rect,
-    pub separator: Rect,
-}
-
-/// The old and new panes of a split in one direction, frames included, and the separator
-/// between them.
-#[derive(Clone, Copy, Debug)]
-pub struct SplitPanes {
-    direction: SplitDirection,
-    panes: BySide<Rect>,
-    separator: Rect,
-}
-
-/// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
-/// lines every pane shows.
-#[derive(Clone, Copy, Debug)]
-pub struct PaneContent {
-    pub width: Cells,
-    pub height: ScreenLines,
-}
-/// The rows a frame takes on each of its top and bottom edges, and the columns it takes
-/// on each of its side edges.
-/// each of its side edges.
-#[derive(Clone, Copy, Debug)]
-pub struct FrameEdges {
-    pub rows: u16,
-    pub columns: u16,
-}
-
-/// An area with a continuity-marker frame, and the content inside the frame.
-#[derive(Clone, Copy, Debug)]
-pub struct FramedArea {
-    area: Rect,
-    content: Rect,
-}
-
 impl ScreenGeometry {
     /// The areas of a screen of `size` at the origin.
     pub fn of(size: Size, file_list: FileList) -> Self {
@@ -146,75 +107,11 @@ impl ScreenGeometry {
     }
 }
 
-impl FrameEdges {
-    /// A diff pane's continuity-marker frame: a row above and below and a column on
-    /// either side.
-    pub const DIFF_PANE: Self = Self {
-        rows: 1,
-        columns: 1,
-    };
-    /// The file list's continuity-marker frame: a row above and below, and no columns.
-    pub const FILE_LIST: Self = Self {
-        rows: 1,
-        columns: 0,
-    };
-
-    /// The size of a frame around `content`.
-    pub const fn around(self, content: Size) -> Size {
-        Size::new(
-            content.width + 2 * self.columns,
-            content.height + 2 * self.rows,
-        )
-    }
-
-    /// The content inside a frame over `area`.
-    pub fn inside(self, area: Rect) -> Rect {
-        Rect::new(
-            area.x + self.columns,
-            area.y + self.rows,
-            area.width.saturating_sub(2 * self.columns),
-            area.height.saturating_sub(2 * self.rows),
-        )
-    }
-}
-
-impl FramedArea {
-    /// A diff pane in `area`, inside its continuity-marker frame.
-    pub fn diff_pane(area: Rect) -> Self {
-        Self::of(area, FrameEdges::DIFF_PANE)
-    }
-
-    /// The file list in `area`, inside its continuity-marker frame.
-    pub fn file_list(area: Rect) -> Self {
-        Self::of(area, FrameEdges::FILE_LIST)
-    }
-
-    fn of(area: Rect, edges: FrameEdges) -> Self {
-        Self {
-            area,
-            content: edges.inside(area),
-        }
-    }
-
-    pub fn area(&self) -> Rect {
-        self.area
-    }
-
-    pub fn content(&self) -> Rect {
-        self.content
-    }
-}
-
-impl PaneContent {
-    /// The content inside `pane`'s frame.
-    fn inside(pane: Rect) -> Self {
-        let interior = FramedArea::diff_pane(pane).content();
-
-        Self {
-            width: Cells::from(interior.width),
-            height: ScreenLines::from(interior.height),
-        }
-    }
+/// The file list and the full-height separator beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileColumn {
+    pub list: Rect,
+    pub separator: Rect,
 }
 
 impl FileColumn {
@@ -229,6 +126,15 @@ impl FileColumn {
 
         Self { list, separator }
     }
+}
+
+/// The old and new panes of a split in one direction, frames included, and the separator
+/// between them.
+#[derive(Clone, Copy, Debug)]
+pub struct SplitPanes {
+    direction: SplitDirection,
+    panes: BySide<Rect>,
+    separator: Rect,
 }
 
 impl SplitPanes {
@@ -279,6 +185,110 @@ impl SplitPanes {
             width: contents.old.width.min(contents.new.width),
             height: contents.old.height.min(contents.new.height),
         }
+    }
+}
+
+/// The content of each diff pane, inside its frame: the narrowest pane's columns, and the
+/// lines every pane shows.
+#[derive(Clone, Copy, Debug)]
+pub struct PaneContent {
+    pub width: Cells,
+    pub height: ScreenLines,
+}
+
+impl PaneContent {
+    /// The content inside `pane`'s frame.
+    fn inside(pane: Rect) -> Self {
+        let interior = FramedArea::diff_pane(pane).content();
+
+        Self {
+            width: Cells::from(interior.width),
+            height: ScreenLines::from(interior.height),
+        }
+    }
+}
+
+/// The rows a frame takes on each of its top and bottom edges, and the columns it takes
+/// on each of its side edges.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameEdges {
+    pub rows: u16,
+    pub columns: u16,
+}
+
+impl FrameEdges {
+    /// A diff pane's continuity-marker frame: a row above and below and a column on
+    /// either side.
+    pub const DIFF_PANE: Self = Self {
+        rows: 1,
+        columns: 1,
+    };
+    /// The file list's continuity-marker frame: a row above and below, and no columns.
+    pub const FILE_LIST: Self = Self {
+        rows: 1,
+        columns: 0,
+    };
+
+    /// The size of a frame around `content`.
+    pub const fn around(self, content: Size) -> Size {
+        Size::new(
+            self.columns_around(content.width),
+            self.rows_around(content.height),
+        )
+    }
+
+    /// The rows of a frame around `height` rows of content.
+    pub const fn rows_around(self, height: u16) -> u16 {
+        height + 2 * self.rows
+    }
+
+    /// The columns of a frame around `width` columns of content.
+    pub const fn columns_around(self, width: u16) -> u16 {
+        width + 2 * self.columns
+    }
+
+    /// The content inside a frame over `area`.
+    pub fn inside(self, area: Rect) -> Rect {
+        Rect::new(
+            area.x + self.columns,
+            area.y + self.rows,
+            area.width.saturating_sub(2 * self.columns),
+            area.height.saturating_sub(2 * self.rows),
+        )
+    }
+}
+
+/// An area with a continuity-marker frame, and the content inside the frame.
+#[derive(Clone, Copy, Debug)]
+pub struct FramedArea {
+    area: Rect,
+    content: Rect,
+}
+
+impl FramedArea {
+    /// A diff pane in `area`, inside its continuity-marker frame.
+    pub fn diff_pane(area: Rect) -> Self {
+        Self::of(area, FrameEdges::DIFF_PANE)
+    }
+
+    /// The file list in `area`, inside its continuity-marker frame.
+    pub fn file_list(area: Rect) -> Self {
+        Self::of(area, FrameEdges::FILE_LIST)
+    }
+
+    fn of(area: Rect, edges: FrameEdges) -> Self {
+        Self {
+            area,
+            content: edges.inside(area),
+        }
+    }
+
+    pub fn area(&self) -> Rect {
+        self.area
+    }
+
+    pub fn content(&self) -> Rect {
+        self.content
     }
 }
 
