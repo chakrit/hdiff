@@ -372,16 +372,42 @@ impl FramedArea {
     }
 }
 
-/// A run of cells along one axis, named so its start and its length cannot swap.
+/// A run of cells along one axis of a rectangle, taken whole so its start and its length
+/// cannot swap or come from different axes.
 #[derive(Debug, Clone, Copy)]
 pub struct AxisSpan {
     /// The first cell.
-    pub start: u16,
+    start: u16,
     /// Cells in the run.
-    pub length: u16,
+    length: u16,
 }
 
 impl AxisSpan {
+    /// The run of columns `area` covers.
+    pub const fn columns_of(area: Rect) -> Self {
+        Self {
+            start: area.x,
+            length: area.width,
+        }
+    }
+
+    /// The run of rows `area` covers.
+    pub const fn rows_of(area: Rect) -> Self {
+        Self {
+            start: area.y,
+            length: area.height,
+        }
+    }
+
+    /// The run left at this run's start once `taken` cells are set aside from its
+    /// length; none are left when `taken` covers the whole run.
+    pub const fn less(self, taken: u16) -> Self {
+        Self {
+            start: self.start,
+            length: self.length.saturating_sub(taken),
+        }
+    }
+
     /// The cell halfway along the run, rounding toward its start.
     pub const fn halfway(self) -> u16 {
         self.start + self.length / 2
