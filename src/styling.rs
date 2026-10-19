@@ -163,7 +163,7 @@ impl<'a> StyledRow<'a> {
 
 /// A piece of text drawn in one style: a text style while rows are styled, a terminal
 /// style once they are drawn.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StyledText<'a, S> {
     pub text: &'a str,
     pub style: S,

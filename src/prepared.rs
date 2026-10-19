@@ -31,7 +31,7 @@ pub struct FilePage {
 
 /// What one selection shows: a file occurrence with its surrounding text, or all the
 /// text of a document that holds no file.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PreparedPage {
     rows: StyledRows,
 }

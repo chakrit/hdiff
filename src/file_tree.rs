@@ -66,7 +66,7 @@ impl TreeRowIndex {
 }
 
 /// A window of file-list rows that shows one selected row.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RowWindow {
     pub first: TreeRowIndex,
     /// Rows from `first` down to the selected row.
@@ -87,7 +87,7 @@ pub struct FileTree {
 }
 
 /// A file list with the row of the file a page shows.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FileSelection<'a> {
     pub tree: &'a FileTree,
     pub selected: TreeRowIndex,

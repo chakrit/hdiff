@@ -2,7 +2,7 @@ use std::process::ExitStatus;
 
 /// `diff`'s exit status convention, which hdiff's own errors follow. Rules:
 /// docs/spec/architecture.md#error-output.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffStatus {
     Same,
     Different,

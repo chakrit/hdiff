@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 /// A timed part of preparation, whose duration the profile accumulates.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Labels,
     Layout,
@@ -58,7 +58,7 @@ pub struct Family {
 }
 
 /// A measurement partitioned by disjoint child stages.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Parent {
     /// The whole preparation, timed outside the profile.
     Preparation,

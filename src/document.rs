@@ -14,7 +14,7 @@ use crate::{
 
 /// A parsed document: file diffs with their surrounding text, or, when the input holds no
 /// file, its surrounding text alone.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DiffDocument {
     Files(DiffFiles),
     Text(Box<[SourceLine]>),

@@ -47,7 +47,7 @@ impl SyntaxClass {
 
 /// One syntax class over part of a record's payload, with the length of the capture it
 /// came from.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxSpan {
     /// The payload bytes the class covers.
     pub bytes: PayloadSpan,

@@ -45,7 +45,7 @@ pub const VERSION: &str = concat!(
 );
 
 /// What the command line asks hdiff to do.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Invocation {
     Help,
     Install,
@@ -55,7 +55,7 @@ pub enum Invocation {
 }
 
 /// Why the command line was rejected.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     InstallWithOperands,
     MissingBenchDriver,

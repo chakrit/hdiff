@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Why input was rejected.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     /// Nonempty viewer input holds no file diff.
     NoDiff,
