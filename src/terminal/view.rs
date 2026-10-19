@@ -119,17 +119,12 @@ impl PaneDrawing<'_> {
 
     fn placement(&self, wrapped_line: ScreenLines) -> RowPlacement {
         match self.wrap {
-            // An unbounded row is one line, which only the horizontal offset places.
-            WrapWidth::Unbounded => RowPlacement::Scrolled {
+            WrapWidth::Off | WrapWidth::NoPayload => RowPlacement::Scrolled {
                 horizontal_offset: self.horizontal_offset,
             },
             WrapWidth::At(width) => RowPlacement::Wrapped {
                 line: wrapped_line,
                 width,
-            },
-            // A pane without a payload column shows each row's start, never scrolled.
-            WrapWidth::NoPayload => RowPlacement::Scrolled {
-                horizontal_offset: Cells::ZERO,
             },
         }
     }

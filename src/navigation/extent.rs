@@ -140,6 +140,12 @@ impl ScrollExtent {
         self.wrap
     }
 
+    /// How far these rows scroll horizontally in panes `content_width` cells wide, at the
+    /// wrap width they were measured at.
+    pub fn horizontal_range(&self, content_width: Cells) -> Cells {
+        self.wrap.horizontal_range(self.width(), content_width)
+    }
+
     /// Up to `limit` screen lines from line `offset`, with their rows from this extent's
     /// page of `document` in `granularity`'s styles.
     pub(super) fn shown<'a>(
@@ -574,7 +580,7 @@ mod tests {
             b"--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n far0\n far1\n",
         );
         let shown = |context| {
-            let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Unbounded);
+            let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
             let lines = single_lines(&extent, 0, usize::MAX)
                 .into_iter()
                 .map(|line| line.row);
@@ -602,8 +608,7 @@ mod tests {
                 .as_bytes(),
         );
 
-        let width =
-            |shape, context| extent_of(&document, shape, context, WrapWidth::Unbounded).width();
+        let width = |shape, context| extent_of(&document, shape, context, WrapWidth::Off).width();
 
         assert_eq!(width(PaneShape::Single, 1), Cells::new(24));
         assert_eq!(width(VERTICAL, 1), Cells::new(24));
@@ -614,7 +619,7 @@ mod tests {
     fn maps_a_row_to_its_visible_offset_or_the_next_visible_row() {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
-        let extent = extent_of(&document, PaneShape::Single, 1, WrapWidth::Unbounded);
+        let extent = extent_of(&document, PaneShape::Single, 1, WrapWidth::Off);
         let offset = |line| anchor_offset(&document, &extent, line, 0);
 
         // Visible rows: 0 (---), 1 (+++), 2 (@@), 5 (c2), 6 (-old), 7 (+new), 8 (c3).
@@ -680,7 +685,7 @@ mod tests {
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
-        let mut extent = extent_of(&document, VERTICAL, 0, WrapWidth::Unbounded);
+        let mut extent = extent_of(&document, VERTICAL, 0, WrapWidth::Off);
         let narrow = extent.settings();
         let wide = ExtentSettings {
             context: ContextRecords::new(3),

@@ -202,7 +202,7 @@ fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
 
     ScrollBounds::new(
         extent.line_count().saturating_sub(shown_lines),
-        view.wrap().horizontal_range(extent.width(), content.width),
+        extent.horizontal_range(content.width),
         content.height,
     )
 }
