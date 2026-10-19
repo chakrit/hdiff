@@ -1,6 +1,5 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
 
-use crossterm::event::Event;
 use hdiff::{
     navigation::Step,
     parser::parse_patch,
@@ -284,7 +283,7 @@ fn stale_resize_event(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     live.resize(RESIZED);
     live.press('G');
-    live.event(Event::Resize(SCREEN.width, SCREEN.height));
+    live.resize_event_only(SCREEN);
     assert_eq!(
         live.buffer(),
         expected,

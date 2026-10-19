@@ -12,6 +12,8 @@ use crate::{
 const TWO_FILES: &str = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
                          --- a/second\n+++ b/second\n@@ -1 +1 @@\n-before\n+after\n";
 
+const ONE_FILE: &str = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
+
 const TEN_ROWS: Size = Size::new(80, 10);
 
 /// The text of screen row `y` with trailing blanks trimmed.
@@ -50,11 +52,7 @@ fn renders_compact_file_and_diff_panes_with_one_separator() {
 
 #[test]
 fn collapses_the_file_list_before_the_diff_pane() {
-    let live = Live::sized(
-        "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n",
-        Mode::line(DiffLayout::Unified),
-        Size::new(23, 8),
-    );
+    let live = Live::sized(ONE_FILE, Mode::line(DiffLayout::Unified), Size::new(23, 8));
 
     let rendered = live.buffer();
     assert_eq!(rendered[(1, 4)].symbol(), "-");
@@ -141,8 +139,7 @@ fn floats_a_help_box_while_the_file_list_is_hidden() {
 /// per pane, and the final text follows the last file.
 #[test]
 fn renders_surrounding_text_once_per_pane_for_each_file_occurrence() {
-    let patch = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
-    let input = format!("first message\n{patch}second message\n{patch}trailer\n");
+    let input = format!("first message\n{ONE_FILE}second message\n{ONE_FILE}trailer\n");
 
     for (layout, copies) in [
         (DiffLayout::Unified, 1),
