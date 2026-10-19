@@ -57,19 +57,19 @@ impl Interaction {
     /// What `event` asks of the session among `pages` pages, once the keymap popup has
     /// filtered its command.
     pub fn respond(&self, event: Event, pages: PageCount) -> Outcome {
-        let command = match event {
+        let requested = match event {
             Event::Interrupt => return Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
             // before it responds and every frame adopts as it draws.
             Event::Resize => return Outcome::Redraw,
-            Event::Command(command) => command,
+            Event::Command(requested) => requested,
         };
         // A command the popup filters out changes nothing, so the step only draws again.
-        let Some(command) = self.keymap.admit(command) else {
+        let Some(admitted) = self.keymap.admit(requested) else {
             return Outcome::Redraw;
         };
 
-        let effect = match command {
+        let effect = match admitted {
             Command::Quit => return Outcome::Exit,
             Command::Movement(movement) => Effect::Scroll(movement),
             Command::Page(step) => Effect::TurnPage(step.applied(self.page, pages)),
@@ -156,9 +156,9 @@ impl KeymapPopup {
     }
 
     const fn after(self, command: KeymapCommand) -> Self {
-        match (command, self) {
-            (KeymapCommand::Toggle, Self::Closed) => Self::Open,
-            (KeymapCommand::Toggle, Self::Open) | (KeymapCommand::Close, _) => Self::Closed,
+        match (self, command) {
+            (Self::Closed, KeymapCommand::Toggle) => Self::Open,
+            (Self::Open, KeymapCommand::Toggle) | (_, KeymapCommand::Close) => Self::Closed,
         }
     }
 }
@@ -205,8 +205,8 @@ impl PageStep {
     }
 }
 
-/// What an event asks of the session: to end it, to draw it again at the terminal's size,
-/// or to change the interaction.
+/// What an event asks of the session: to end it, to go on and draw the unchanged
+/// interaction, or to change the interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Exit,
