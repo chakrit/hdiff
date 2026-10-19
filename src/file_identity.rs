@@ -38,7 +38,10 @@ impl FileIdentity {
     /// A Git section without `---` / `+++` headers.
     pub fn of_metadata(git: &GitHeader) -> Self {
         let located = git_change(&git.metadata).and_then(|change| {
-            change.identity(|| Some((FileState::Modified, git_header_path(&git.line)?)))
+            change.identity(|| {
+                let path = git_header_path(&git.line)?;
+                Some(Located::new(FileState::Modified, path))
+            })
         });
 
         located.unwrap_or_else(|| Self::unknown(&git.line))
@@ -77,11 +80,44 @@ enum GitChange {
     Copied(Box<str>),
 }
 
+impl GitChange {
+    /// The file this change names: a rename or copy names its destination without
+    /// consulting `headers`; any other change takes the path `headers` names, in the
+    /// state they imply unless Git marks the file added or deleted.
+    fn identity(self, headers: impl FnOnce() -> Option<Located>) -> Option<FileIdentity> {
+        let located = match self {
+            Self::Unmarked => headers()?,
+            Self::Added => headers()?.in_state(FileState::Added),
+            Self::Deleted => headers()?.in_state(FileState::Deleted),
+            Self::Renamed(path) => Located::new(FileState::Renamed, path),
+            Self::Copied(path) => Located::new(FileState::Added, path),
+        };
+
+        Some(FileIdentity::Path {
+            state: located.state,
+            path: DisplayText::of_decoded(&located.path),
+        })
+    }
+}
+
+/// A file's state and decoded path, before the path is made safe to draw.
+struct Located {
+    state: FileState,
+    path: Box<str>,
+}
+
+impl Located {
+    fn new(state: FileState, path: Box<str>) -> Self {
+        Self { state, path }
+    }
+
+    fn in_state(self, state: FileState) -> Self {
+        Self { state, ..self }
+    }
+}
+
 /// The state the `---` / `+++` headers imply and the path they name.
-fn read_headers(
-    git_line: Option<&SourceLine>,
-    paths: BySide<&HeaderPath>,
-) -> Option<(FileState, Box<str>)> {
+fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Option<Located> {
     // A `/dev/null` side leaves one header path, so Git sections name the file from
     // their `diff --git` line; plain diffs show the path as written.
     let one_sided = |path: &str| match git_line {
@@ -92,34 +128,16 @@ fn read_headers(
     match (paths.old, paths.new) {
         (HeaderPath::Undecodable, _) | (_, HeaderPath::Undecodable) => None,
         (HeaderPath::DevNull, HeaderPath::DevNull) => None,
-        (HeaderPath::DevNull, HeaderPath::Path(new)) => Some((FileState::Added, one_sided(new)?)),
-        (HeaderPath::Path(old), HeaderPath::DevNull) => Some((FileState::Deleted, one_sided(old)?)),
-        (HeaderPath::Path(old), HeaderPath::Path(new)) => {
-            Some((FileState::Modified, shared_name(old, new).into()))
+        (HeaderPath::DevNull, HeaderPath::Path(new)) => {
+            Some(Located::new(FileState::Added, one_sided(new)?))
         }
-    }
-}
-
-impl GitChange {
-    /// The file this change names: a rename or copy names its destination without
-    /// consulting `headers`; any other change takes the path `headers` names, in the
-    /// state they imply unless Git marks the file added or deleted.
-    fn identity(
-        self,
-        headers: impl FnOnce() -> Option<(FileState, Box<str>)>,
-    ) -> Option<FileIdentity> {
-        let (state, path) = match self {
-            Self::Unmarked => headers()?,
-            Self::Added => (FileState::Added, headers()?.1),
-            Self::Deleted => (FileState::Deleted, headers()?.1),
-            Self::Renamed(destination) => (FileState::Renamed, destination),
-            Self::Copied(destination) => (FileState::Added, destination),
-        };
-
-        Some(FileIdentity::Path {
-            state,
-            path: DisplayText::of_decoded(&path),
-        })
+        (HeaderPath::Path(old), HeaderPath::DevNull) => {
+            Some(Located::new(FileState::Deleted, one_sided(old)?))
+        }
+        (HeaderPath::Path(old), HeaderPath::Path(new)) => Some(Located::new(
+            FileState::Modified,
+            shared_name(old, new).into(),
+        )),
     }
 }
 
