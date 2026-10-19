@@ -16,7 +16,10 @@ use self::{
     scroll::{ScrollBounds, ScrollPosition},
 };
 use crate::{
-    effective_view::EffectiveView, preferences::ViewPreferences, prepared::PreparedDocument,
+    effective_view::EffectiveView,
+    file_tree::FileTree,
+    preferences::ViewPreferences,
+    prepared::{PreparedDocument, PreparedPage},
     screen::ScreenLines,
 };
 
@@ -55,8 +58,13 @@ impl Navigation {
         }
     }
 
-    pub fn document(&self) -> &PreparedDocument {
-        &self.document
+    /// The page the interaction is at.
+    pub fn page(&self) -> &PreparedPage {
+        self.document.page(self.interaction.page())
+    }
+
+    pub fn file_tree(&self) -> &FileTree {
+        self.document.file_tree()
     }
 
     pub fn interaction(&self) -> &Interaction {
@@ -89,14 +97,26 @@ impl Navigation {
             Outcome::Exit => Step::Exit,
             Outcome::Redraw => Step::Continue,
             Outcome::Effect(effect) => {
-                self.step(effect);
+                self.apply(effect);
                 Step::Continue
             }
         }
     }
 
+    /// Shows the interaction on a `screen`-sized terminal when it shows another size,
+    /// keeping the row on the diff pane's top line there.
+    pub fn adopt_screen(&mut self, screen: Size) {
+        if screen == self.interaction.screen() {
+            return;
+        }
+
+        let preferences = self.interaction.preferences();
+        let placement = Placement::Anchor(AnchorLine::PaneTop);
+        self.redisplay(preferences, screen, placement);
+    }
+
     /// Leads the interaction where `effect` asks; the view and extent then show it.
-    fn step(&mut self, effect: Effect) {
+    fn apply(&mut self, effect: Effect) {
         let interaction = self.interaction;
 
         match effect {
@@ -115,18 +135,6 @@ impl Navigation {
                 placement,
             } => self.redisplay(preferences, interaction.screen(), placement),
         }
-    }
-
-    /// Shows the interaction on a `screen`-sized terminal when it shows another size,
-    /// keeping the row on the diff pane's top line there.
-    pub fn adopt_screen(&mut self, screen: Size) {
-        if screen == self.interaction.screen() {
-            return;
-        }
-
-        let preferences = self.interaction.preferences();
-        let placement = Placement::Anchor(AnchorLine::PaneTop);
-        self.redisplay(preferences, screen, placement);
     }
 
     /// Shows the same page with `preferences` on a `screen`-sized terminal, its first
@@ -222,14 +230,14 @@ mod tests {
         let prepared = PreparedDocument::prepare(&document);
         let mut navigation =
             Navigation::start(prepared, ViewPreferences::INITIAL, Size::new(80, 4));
-        navigation.step(Effect::Scroll(Movement::Down));
+        navigation.apply(Effect::Scroll(Movement::Down));
         let start = *navigation.interaction();
         let mut redisplayed = |change| {
             let effect = Effect::Redisplay {
                 preferences: navigation.interaction().preferences().after(change),
                 placement: Placement::Keep,
             };
-            navigation.step(effect);
+            navigation.apply(effect);
             *navigation.interaction()
         };
 
@@ -267,8 +275,8 @@ mod tests {
         // The file column leaves the diff one column, all of it frame.
         let mut navigation = Navigation::start(prepared, preferences, Size::new(28, 3));
 
-        navigation.step(Effect::Scroll(Movement::Right));
-        navigation.step(Effect::Scroll(Movement::FarRight));
+        navigation.apply(Effect::Scroll(Movement::Right));
+        navigation.apply(Effect::Scroll(Movement::FarRight));
 
         assert_eq!(navigation.view().too_small(), None, "the panes still show");
         assert_eq!(
