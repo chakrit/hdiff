@@ -70,8 +70,6 @@ pub enum SessionError {
     },
     /// The loop finished, but the terminal was not fully restored.
     Restore(RestoreFailures),
-    /// A panic's restore could not reopen the controlling terminal.
-    Reopen(io::Error),
 }
 
 impl fmt::Display for SessionError {
@@ -92,10 +90,6 @@ impl fmt::Display for SessionError {
                 restored,
             } => write!(formatter, "{error}{}", CleanupSuffix(restored)),
             Self::Restore(failures) => write!(formatter, "cleanup failed: {failures}"),
-            Self::Reopen(error) => write!(
-                formatter,
-                "cannot reopen {CONTROLLING_TERMINAL} to restore the terminal: {error}"
-            ),
         }
     }
 }
@@ -269,8 +263,31 @@ impl RestoringPanicHook {
 
 /// Best effort on a fresh handle, since the session's terminal is unreachable from a
 /// panic.
-fn restore_after_panic() -> Result<(), SessionError> {
-    let mut controlling_terminal = open_controlling_terminal().map_err(SessionError::Reopen)?;
+fn restore_after_panic() -> Result<(), PanicRestoreFailure> {
+    let mut controlling_terminal =
+        open_controlling_terminal().map_err(PanicRestoreFailure::Reopen)?;
 
-    restore(&mut controlling_terminal, Entered::AlternateScreen).map_err(SessionError::Restore)
+    restore(&mut controlling_terminal, Entered::AlternateScreen)
+        .map_err(PanicRestoreFailure::Restore)
+}
+
+/// Why a panic's restore left the terminal as the panic found it, in part or whole.
+#[derive(Debug)]
+enum PanicRestoreFailure {
+    /// The controlling terminal could not be reopened.
+    Reopen(io::Error),
+    /// Restore steps failed on the reopened terminal.
+    Restore(RestoreFailures),
+}
+
+impl fmt::Display for PanicRestoreFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Reopen(error) => write!(
+                formatter,
+                "cannot reopen {CONTROLLING_TERMINAL} to restore the terminal: {error}"
+            ),
+            Self::Restore(failures) => write!(formatter, "cleanup failed: {failures}"),
+        }
+    }
 }
