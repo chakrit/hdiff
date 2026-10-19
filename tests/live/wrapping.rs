@@ -5,7 +5,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{WIDE_ROW_GRAPHEMES, long_patch},
-    harness::{FIRST_CONTENT_LINE, Live, Mode, right_of_first_separator},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, WIDTH, right_of_first_separator},
 };
 
 matrix!(wrapping);
@@ -52,7 +52,7 @@ fn wrapping_starts_disabled() {
 fn wrapping_pads_the_shorter_side_of_a_pair() {
     let patch = format!(
         "--- a/pair.rs\n+++ b/pair.rs\n@@ -1 +1 @@\n-short\n+long_{}_end\n",
-        "y".repeat(121)
+        "y".repeat(usize::from(WIDTH) + 1)
     );
     let mut live = Live::load(&patch, Mode::line(DiffLayout::Vertical));
 
@@ -79,16 +79,23 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     live.press('g');
     let top_line = |live: &Live| right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
     // The wide row's first line opens with its marker; its continuation opens with `x`.
-    let reached = (0..10).any(|_| {
+    // The wide row is the page's second record, so its continuation starts on the first
+    // screen, fewer presses away than the screen has rows.
+    let screen_rows = live.rows().len();
+    let mut presses = 0;
+    while !top_line(&live).starts_with('x') {
+        assert!(
+            presses < screen_rows,
+            "scrolls to the wide row's second line within a screen: {:?}",
+            top_line(&live)
+        );
         live.press('j');
-        top_line(&live).starts_with('x')
-    });
-    let top = top_line(&live);
-    assert!(reached, "scrolls to the wide row's second line: {top:?}");
+        presses += 1;
+    }
 
     live.resize(Size::new(100, 20));
 
-    let top = right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
+    let top = top_line(&live);
     assert!(top.starts_with('x'), "still the second line: {top:?}");
     assert!(!top.contains("wide_") && !top.starts_with('+'));
 }

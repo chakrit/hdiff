@@ -362,7 +362,7 @@ fn preferences_start_in_unified_line_mode() {
 fn far_right_reaches_the_end_of_a_very_wide_row() {
     let patch = format!(
         "--- a/wide.min.js\n+++ b/wide.min.js\n@@ -0,0 +1 @@\n+start_{}_end\n",
-        "x".repeat(70_000)
+        "x".repeat(usize::from(u16::MAX) + 1)
     );
     let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
 

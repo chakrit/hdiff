@@ -18,8 +18,12 @@ matrix!(
 fn leading_spaces(mode: Mode) {
     let live = Live::load(INDENTED, mode);
     let flush = live.find("added_flush").x;
+    let indent = INDENTED
+        .lines()
+        .find_map(|line| line.strip_prefix('+')?.strip_suffix("added_spaces"))
+        .expect("the fixture indents added_spaces");
 
-    assert_eq!(live.find("added_spaces").x, flush + 4);
+    assert_eq!(live.find("added_spaces").x, flush + columns(indent));
 }
 
 fn leading_tabs(mode: Mode) {
