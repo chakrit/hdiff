@@ -347,13 +347,15 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let row = |y| {
-            (0..24)
+            (buffer.area.left()..buffer.area.right())
                 .map(|x| buffer[(x, y)].symbol())
                 .collect::<String>()
                 .trim_end()
                 .to_owned()
         };
-        let rows = (0..18).map(row).collect::<Vec<_>>();
+        let rows = (buffer.area.top()..buffer.area.bottom())
+            .map(row)
+            .collect::<Vec<_>>();
 
         assert_eq!(rows[17], " ? help");
         assert!(

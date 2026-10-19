@@ -8,7 +8,13 @@ use ratatui::{
     style::{Color, Modifier},
 };
 
-use crate::harness::{Live, Mode, THEME, cells, positions};
+use crate::{
+    fixtures::{EXTRA_DELETION, ONE_LETTER_CHANGE},
+    harness::{Live, Mode, THEME, cells, positions},
+};
+
+const EIGHT_ROWS: Size = Size::new(80, 8);
+const NINE_ROWS: Size = Size::new(80, 9);
 
 /// In `layout`, a one-sided source payload takes syntax colors in line mode, its change
 /// color undimmed in character mode, and line mode again restores the frame.
@@ -23,14 +29,14 @@ fn assert_unmatched_payload_toggle(layout: DiffLayout) {
         ("fn removed() {}", THEME.rows.change.old.marker),
         ("fn added() {}", THEME.rows.change.new.marker),
     ];
-    for (payload, _) in payloads {
-        let cells = unique_payload_cells(&line_rendered, payload);
-        assert_eq!(cells[0].fg, THEME.syntax.keyword, "Rust keyword");
+    for payload in payloads.map(|(payload, _)| payload) {
+        let payload_cells = unique_payload_cells(&line_rendered, payload);
+        assert_eq!(payload_cells[0].fg, THEME.syntax.keyword, "Rust keyword");
     }
 
     live.press('c');
+    let character = live.buffer();
     for (payload, color) in payloads {
-        let character = live.buffer();
         for cell in unique_payload_cells(&character, payload) {
             assert_eq!(cell.fg, color, "{layout:?}: {payload}");
             assert!(!cell.modifier.contains(Modifier::DIM), "{payload}");
@@ -58,7 +64,7 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
         .map(|row| format!("+row_{row}\n"))
         .collect::<String>();
     let patch = format!("--- a/file\n+++ b/file\n@@ -0,0 +1,20 @@\n{rows}");
-    let live = Live::sized(&patch, Mode::line(DiffLayout::Unified), Size::new(80, 8));
+    let live = Live::sized(&patch, Mode::line(DiffLayout::Unified), EIGHT_ROWS);
 
     let rendered = live.buffer();
     let marker = rendered
@@ -73,16 +79,12 @@ fn draws_continuity_markers_in_the_dimmed_separator_tone() {
 /// and only a deletion's dimming.
 #[test]
 fn renders_vertical_alignment_peers_with_their_change_background() {
-    let addition_peer = Live::sized(
-        "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
-        Mode::line(DiffLayout::Vertical),
-        Size::new(80, 9),
-    )
-    .buffer();
+    let addition_peer =
+        Live::sized(EXTRA_DELETION, Mode::line(DiffLayout::Vertical), NINE_ROWS).buffer();
     let deletion_peer = Live::sized(
         "--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
         Mode::line(DiffLayout::Vertical),
-        Size::new(80, 8),
+        EIGHT_ROWS,
     )
     .buffer();
 
@@ -114,13 +116,13 @@ fn renders_vertical_alignment_peers_with_their_change_background() {
 #[test]
 fn renders_stacked_alignment_peers_as_markerless_rows() {
     let live = Live::sized(
-        "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+        EXTRA_DELETION,
         Mode::line(DiffLayout::Stacked),
         Size::new(80, 20),
     );
 
     let rendered = live.buffer();
-    let context_row = (0..20)
+    let context_row = (rendered.area.top()..rendered.area.bottom())
         .rev()
         .find(|row| rendered[(30, *row)].symbol() == "c")
         .expect("after context row");
@@ -153,7 +155,7 @@ fn renders_syntax_and_low_contrast_record_styles() {
     let live = Live::sized(
         "--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
         Mode::line(DiffLayout::Unified),
-        Size::new(80, 9),
+        NINE_ROWS,
     );
 
     let rendered = live.buffer();
@@ -237,9 +239,9 @@ fn renders_syntax_and_low_contrast_record_styles() {
 #[test]
 fn highlights_the_selected_file_row_as_one() {
     let live = Live::sized(
-        "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n",
+        ONE_LETTER_CHANGE,
         Mode::line(DiffLayout::Unified),
-        Size::new(80, 8),
+        EIGHT_ROWS,
     );
 
     let rendered = live.buffer();
@@ -261,9 +263,9 @@ fn highlights_the_selected_file_row_as_one() {
 #[test]
 fn renders_character_detail_with_bright_changes_over_muted_text() {
     let live = Live::sized(
-        "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n",
+        ONE_LETTER_CHANGE,
         Mode::character(DiffLayout::Unified),
-        Size::new(80, 8),
+        EIGHT_ROWS,
     );
 
     let rendered = live.buffer();
@@ -310,7 +312,7 @@ fn renders_hunk_headers_as_muted_cyan_blue() {
     let live = Live::sized(
         "--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
         Mode::line(DiffLayout::Unified),
-        Size::new(80, 9),
+        NINE_ROWS,
     );
 
     let rendered = live.buffer();

@@ -13,7 +13,7 @@ use ratatui::layout::Size;
 
 use crate::{
     fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
-    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, SCREEN, WIDTH, change_label},
+    harness::{FIRST_CONTENT_LINE, Live, Mode, SCREEN, WIDTH, change_label},
 };
 
 /// The screen the resize scenarios shrink the terminal to.
@@ -284,7 +284,7 @@ fn stale_resize_event(mode: Mode) {
     let mut live = Live::load(&long_patch(), mode);
     live.resize(RESIZED);
     live.press('G');
-    live.event(Event::Resize(WIDTH, HEIGHT));
+    live.event(Event::Resize(SCREEN.width, SCREEN.height));
     assert_eq!(
         live.buffer(),
         expected,
