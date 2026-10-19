@@ -107,8 +107,16 @@ enum State {
     EscapeIntermediate,
     ControlSequence,
     StringSequence,
-    StringEscape,
 }
+
+/// CAN: abandons the sequence it interrupts.
+const CANCEL: char = '\u{18}';
+/// SUB: abandons the sequence it interrupts, like CAN.
+const SUBSTITUTE: char = '\u{1a}';
+/// BEL: ends a string sequence, as xterm reads it.
+const BELL: char = '\u{7}';
+/// ST in its C1 spelling: ends a string sequence.
+const STRING_TERMINATOR: char = '\u{9c}';
 
 impl State {
     /// Whether `character`, read in this state, is visible: only text outside a control
@@ -119,18 +127,19 @@ impl State {
             Self::Escape
             | Self::EscapeIntermediate
             | Self::ControlSequence
-            | Self::StringSequence
-            | Self::StringEscape => false,
+            | Self::StringSequence => false,
         }
     }
 
     /// The state after `character`. Each introducer has a 7-bit spelling (`ESC` and a
     /// letter) and a single-character C1 spelling, and both open the same sequence. An
-    /// escape may carry intermediate bytes before its final byte, and an introducer read
-    /// inside an unfinished escape or control sequence starts a new sequence.
+    /// escape may carry intermediate bytes before its final byte. An introducer read
+    /// inside any unfinished sequence starts a new sequence, so `ESC \` ends a string as
+    /// an escape whose final byte is `\`; CAN or SUB abandons any sequence.
     fn after(self, character: char) -> Self {
         match (self, character) {
             (Self::Text, _) => Self::opened_by(character).unwrap_or(Self::Text),
+            (_, CANCEL | SUBSTITUTE) => Self::Text,
             (Self::Escape, '[') => Self::ControlSequence,
             (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => Self::StringSequence,
             (Self::Escape | Self::EscapeIntermediate, '\u{20}'..='\u{2f}') => {
@@ -143,12 +152,8 @@ impl State {
             (Self::ControlSequence, _) => {
                 Self::opened_by(character).unwrap_or(Self::ControlSequence)
             }
-            (Self::StringSequence, '\u{7}' | '\u{9c}') => Self::Text,
-            (Self::StringSequence, '\u{1b}') => Self::StringEscape,
-            (Self::StringSequence, _) => Self::StringSequence,
-            (Self::StringEscape, '\\') => Self::Text,
-            (Self::StringEscape, '\u{1b}') => Self::StringEscape,
-            (Self::StringEscape, _) => Self::StringSequence,
+            (Self::StringSequence, BELL | STRING_TERMINATOR) => Self::Text,
+            (Self::StringSequence, _) => Self::opened_by(character).unwrap_or(Self::StringSequence),
         }
     }
 
@@ -247,6 +252,26 @@ mod tests {
             (b"\x1b$)Bkanji", "kanji"),
         ] {
             assert_eq!(sanitize(line), shown, "{line:?}");
+        }
+    }
+
+    /// An introducer inside a string sequence ends the string and opens its own
+    /// sequence, and CAN or SUB abandons any sequence, as a terminal reads them; the text
+    /// after shows, so the line loses no visible source text.
+    ///
+    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    #[test]
+    fn ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub() {
+        for line in [
+            b"\x1b]0;title\x1b[31mred".as_slice(),
+            b"\x1b]0;title\xc2\x9b31mred",
+            b"\x1bPq#0\x1b[0mred",
+            b"\x1b[31\x18red",
+            b"\x1b[31\x1ared",
+            b"\x1b]0;t\x18red",
+            b"\x1b(\x1ared",
+        ] {
+            assert_eq!(sanitize(line), "red", "{line:?}");
         }
     }
 }
