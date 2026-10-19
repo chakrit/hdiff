@@ -267,8 +267,8 @@ mod tests {
 
     const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
-    /// docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering preserves
-    /// source text through styling.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering
+    /// preserves source text through styling.
     #[test]
     fn syntax_highlighting_preserves_source_text() {
         let prepared = prepare(
@@ -311,13 +311,13 @@ mod tests {
         );
     }
 
-    /// docs/spec/architecture.md#lossless-and-safe-rendering: style boundaries never split
-    /// or drop a grapheme cluster.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: style boundaries never
+    /// split or drop a grapheme cluster.
     #[test]
     fn keeps_a_cluster_whole_when_its_mark_starts_a_style_segment() {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
-        let file = prepared.page(PageIndex::FIRST);
-        let addition = file.row(file.rows().line_index(4), DiffGranularity::Character);
+        let page = prepared.page(PageIndex::FIRST);
+        let addition = page.row(page.rows().line_index(4), DiffGranularity::Character);
 
         let buffer = write(PaneRow::Text(addition), 8, 0);
 
@@ -329,8 +329,8 @@ mod tests {
     #[test]
     fn blanks_the_visible_cell_of_a_wide_cluster_cut_by_the_left_edge() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
-        let file = prepared.page(PageIndex::FIRST);
-        let addition = file.row(file.rows().line_index(3), DiffGranularity::Line);
+        let page = prepared.page(PageIndex::FIRST);
+        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
 
         let buffer = write(PaneRow::Text(addition), 8, 3);
 
@@ -342,8 +342,8 @@ mod tests {
     #[test]
     fn leaves_a_wide_cluster_that_does_not_fit_the_right_edge_blank() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
-        let file = prepared.page(PageIndex::FIRST);
-        let addition = file.row(file.rows().line_index(3), DiffGranularity::Line);
+        let page = prepared.page(PageIndex::FIRST);
+        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
 
         let buffer = write(PaneRow::Text(addition), 5, 0);
 
@@ -355,9 +355,9 @@ mod tests {
     #[test]
     fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
-        let file = prepared.page(PageIndex::FIRST);
-        let addition = file.row(file.rows().line_index(3), DiffGranularity::Line);
-        let line = |line| {
+        let page = prepared.page(PageIndex::FIRST);
+        let addition = page.row(page.rows().line_index(3), DiffGranularity::Line);
+        let wrapped_line = |line| {
             write_placed(
                 PaneRow::Text(addition),
                 6,
@@ -369,7 +369,7 @@ mod tests {
             .0
         };
 
-        let (first, second, past_the_end) = (line(0), line(1), line(2));
+        let (first, second, past_the_end) = (wrapped_line(0), wrapped_line(1), wrapped_line(2));
 
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
@@ -378,13 +378,13 @@ mod tests {
         assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.change.new.background);
     }
 
-    /// docs/spec/architecture.md#continuity-markers: the row has cells left of the offset,
-    /// or continues past the right edge.
+    /// docs/spec/architecture.md#continuity-markers: the row has cells left of the
+    /// offset, or continues past the right edge.
     #[test]
     fn reports_the_sides_where_a_row_leaves_the_pane() {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
-        let file = prepared.page(PageIndex::FIRST);
-        let row = PaneRow::Text(file.row(file.rows().line_index(3), DiffGranularity::Line));
+        let page = prepared.page(PageIndex::FIRST);
+        let row = PaneRow::Text(page.row(page.rows().line_index(3), DiffGranularity::Line));
         let clip = |width, horizontal_offset| {
             let area = Rect::new(0, 0, width, 1);
             let mut buffer = Buffer::empty(area);
@@ -451,10 +451,10 @@ mod tests {
             context: ContextRecords::new(3),
             wrap: WrapWidth::Unbounded,
         };
-        let shown = ScrollExtent::of(prepared, PageIndex::FIRST, settings);
+        let extent = ScrollExtent::of(prepared, PageIndex::FIRST, settings);
         let all = ScreenLines::new(usize::MAX);
         let ShownLines::Single(lines) =
-            shown.shown(prepared, DiffGranularity::Line, ScreenLines::ZERO, all)
+            extent.shown(prepared, DiffGranularity::Line, ScreenLines::ZERO, all)
         else {
             panic!("a single pane shows lines");
         };
