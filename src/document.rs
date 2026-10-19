@@ -1,7 +1,7 @@
 //! The parsed document: surrounding text and file diffs in input order. Rules:
 //! docs/spec/architecture.md#core-model.
 
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use crate::{
     compact::Count,
@@ -15,15 +15,15 @@ use crate::{
 /// after the last file. A document without files holds all its text in `trailing`.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct DiffDocument {
-    files: Box<[FileSection]>,
+    sections: Box<[FileSection]>,
     trailing: Box<[SourceLine]>,
 }
 
 /// One file's diff with the surrounding text that leads up to it.
 #[derive(Debug, PartialEq, Eq)]
-pub struct FileSection {
-    pub leading: Box<[SourceLine]>,
-    pub file: DiffFile,
+pub(crate) struct FileSection {
+    pub(crate) leading: Box<[SourceLine]>,
+    pub(crate) file: DiffFile,
 }
 
 #[derive(Clone, Copy)]
@@ -34,26 +34,17 @@ pub struct FileView<'a> {
 }
 
 impl DiffDocument {
-    pub(crate) fn new(files: Box<[FileSection]>, trailing: Box<[SourceLine]>) -> Self {
-        Self { files, trailing }
-    }
-
-    pub fn file_sections(&self) -> &[FileSection] {
-        &self.files
-    }
-
-    /// The text after the last file, or all the text of a document without files.
-    pub fn trailing(&self) -> &[SourceLine] {
-        &self.trailing
+    pub(crate) fn new(sections: Box<[FileSection]>, trailing: Box<[SourceLine]>) -> Self {
+        Self { sections, trailing }
     }
 
     pub fn files(&self) -> impl Iterator<Item = &DiffFile> {
-        self.files.iter().map(|section| &section.file)
+        self.sections.iter().map(|section| &section.file)
     }
 
     /// Every surrounding-text line, in input order.
     pub fn text(&self) -> impl Iterator<Item = &SourceLine> {
-        self.files
+        self.sections
             .iter()
             .flat_map(|section| section.leading.iter())
             .chain(self.trailing.iter())
@@ -62,19 +53,32 @@ impl DiffDocument {
     /// Each file with the text leading up to it; the last file also carries the
     /// document's trailing text.
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
-        let last = self.files.len().checked_sub(1);
-
-        self.files
-            .iter()
-            .enumerate()
-            .map(move |(index, section)| FileView {
-                file: &section.file,
-                leading: &section.leading,
-                trailing: match Some(index) == last {
-                    true => &self.trailing,
-                    false => &[],
-                },
+        self.sections
+            .split_last()
+            .into_iter()
+            .flat_map(|(last, earlier)| {
+                let earlier = earlier.iter().map(|section| section.view(&[]));
+                earlier.chain(iter::once(last.view(&self.trailing)))
             })
+    }
+
+    /// The text no file view carries: all the text of a document without files, and
+    /// none otherwise.
+    pub fn unattached_text(&self) -> &[SourceLine] {
+        match self.sections.is_empty() {
+            true => &self.trailing,
+            false => &[],
+        }
+    }
+}
+
+impl FileSection {
+    fn view<'a>(&'a self, trailing: &'a [SourceLine]) -> FileView<'a> {
+        FileView {
+            file: &self.file,
+            leading: &self.leading,
+            trailing,
+        }
     }
 }
 

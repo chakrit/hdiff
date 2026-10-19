@@ -98,10 +98,13 @@ impl LineEnding {
 /// Every line of `document`, in input order.
 pub fn of_document(document: &DiffDocument) -> impl Iterator<Item = DisplayLine<'_>> {
     document
-        .file_sections()
-        .iter()
-        .flat_map(|section| of_text(section.leading.iter()).chain(of_file(&section.file)))
-        .chain(of_text(document.trailing()))
+        .file_views()
+        .flat_map(|view| {
+            of_text(view.leading)
+                .chain(of_file(view.file))
+                .chain(of_text(view.trailing))
+        })
+        .chain(of_text(document.unattached_text()))
 }
 
 /// Surrounding-text lines.
