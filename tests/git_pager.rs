@@ -23,29 +23,41 @@ fn copied_hdiff(env: &TestEnv, name: &str) -> PathBuf {
     executable
 }
 
+/// An `--install` run: the global config it wrote, and the installer's output.
+struct Installation {
+    config_path: PathBuf,
+    output: Output,
+}
+
 /// Runs `executable --install` against a fresh global config holding
-/// [`ORIGINAL_CONFIG`], returning the config's path and the installer's output.
-fn install(env: &TestEnv, executable: &Path) -> (PathBuf, Output) {
+/// [`ORIGINAL_CONFIG`].
+fn install(env: &TestEnv, executable: &Path) -> Installation {
     let config_path = env.write_file("gitconfig", ORIGINAL_CONFIG);
 
-    let installation = env
+    let output = env
         .program(executable)
         .arg("--install")
         .env("GIT_CONFIG_GLOBAL", &config_path)
         .output()
         .expect("run hdiff installer");
 
-    (config_path, installation)
+    Installation {
+        config_path,
+        output,
+    }
 }
 
+/// What the sandbox's hdiff prints for `--version`.
 fn hdiff_version(env: &TestEnv) -> String {
     success_output(&env.run(["--version"]))
 }
 
+/// Sets `path`'s permission bits to `mode`.
 fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).expect("set permissions");
 }
 
+/// A sandbox holding a Git repository with two commits that each change `file.txt`.
 fn setup_commit_history() -> TestEnv {
     let env = TestEnv::new();
     run_fixture(&mut env.git(&["init", "--quiet"]));
@@ -59,6 +71,8 @@ fn setup_commit_history() -> TestEnv {
     env
 }
 
+/// hdiff's output for the standard output of `git <arguments>` piped to it, after
+/// checking that Git succeeded.
 fn pipe_git_to_hdiff(env: &TestEnv, arguments: &[&str]) -> Output {
     let mut git = env.git(arguments);
     let mut producer = git
@@ -90,7 +104,10 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
     let env = TestEnv::new();
     let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
 
-    let (config_path, installation) = install(&env, &executable);
+    let Installation {
+        config_path,
+        output: installation,
+    } = install(&env, &executable);
 
     success_output(&installation);
     assert_eq!(
@@ -111,7 +128,10 @@ fn install_backs_up_and_registers_a_pager_that_runs_hdiff() {
 fn install_prints_the_commands_it_applied() {
     let env = TestEnv::new();
     let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
-    let (config_path, installation) = install(&env, &executable);
+    let Installation {
+        config_path,
+        output: installation,
+    } = install(&env, &executable);
 
     let printed = success_output(&installation);
     let [copy_command, config_command] = printed.lines().collect::<Vec<_>>()[..] else {

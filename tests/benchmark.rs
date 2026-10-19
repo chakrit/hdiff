@@ -13,6 +13,7 @@ const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
+/// hdiff's output for `--bench driver` over a patch file holding `patch`.
 fn run_bench(driver: &str, patch: &str) -> Output {
     let env = TestEnv::new();
     env.write_file("input.patch", patch);
@@ -20,10 +21,12 @@ fn run_bench(driver: &str, patch: &str) -> Output {
     env.run(["--bench", driver, "input.patch"])
 }
 
+/// Every line of a benchmark `report`, parsed as a record.
 fn records(report: &str) -> Vec<Record<'_>> {
     report.lines().map(Record::parse).collect()
 }
 
+/// The size of [`PATCH`] in bytes, as reports state sizes.
 fn patch_bytes() -> u128 {
     u128::try_from(PATCH.len()).expect("patch length fits u128")
 }
@@ -47,6 +50,7 @@ struct Record<'a> {
 }
 
 impl<'a> Record<'a> {
+    /// `line` split into its kind and fields; a field without `=` fails the test.
     fn parse(line: &'a str) -> Self {
         let mut words = line.split_whitespace();
         let kind = words
@@ -63,10 +67,12 @@ impl<'a> Record<'a> {
         Self { line, kind, fields }
     }
 
+    /// The record's field names.
     fn keys(&self) -> BTreeSet<&'a str> {
         self.fields.keys().copied().collect()
     }
 
+    /// The value of field `key`; a missing field fails the test.
     fn text(&self, key: &str) -> &'a str {
         self.fields
             .get(key)
@@ -74,12 +80,14 @@ impl<'a> Record<'a> {
             .unwrap_or_else(|| panic!("{key} in {:?}", self.line))
     }
 
+    /// Field `key` as an integer; a missing or non-integer field fails the test.
     fn integer(&self, key: &str) -> u128 {
         self.text(key)
             .parse()
             .unwrap_or_else(|_| panic!("integer {key} in {:?}", self.line))
     }
 
+    /// Whether field `key` holds an integer; a missing field fails the test.
     fn is_integer(&self, key: &str) -> bool {
         self.text(key).parse::<u128>().is_ok()
     }
