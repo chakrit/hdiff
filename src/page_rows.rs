@@ -185,6 +185,8 @@ impl PageRows {
         Self::new(display_lines::of_text(lines))
     }
 
+    /// The rows of `lines`, with their side-by-side layout and each line's visibility
+    /// derived once.
     fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
         let lines = lines.map(RenderedLine::new).collect::<Vec<_>>();
         let SideBySideLayout {
@@ -408,9 +410,9 @@ impl BlockRows {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
-            .map(|line| {
-                line.side.map(|side| LineSide {
-                    line: line.line,
+            .map(|line_side| {
+                line_side.side.map(|side| LineSide {
+                    line: line_side.line,
                     side,
                 })
             })
@@ -420,7 +422,7 @@ impl BlockRows {
             None => Self {
                 rows: block
                     .iter()
-                    .map(|line| SideBySideRow::Shared(line.line))
+                    .map(|line_side| SideBySideRow::Shared(line_side.line))
                     .collect(),
                 pair_of_line: (0..block.len()).map(|row| first_pair.offset(row)).collect(),
             },
@@ -433,8 +435,8 @@ impl BlockRows {
         let side_lines = |side| {
             block
                 .iter()
-                .filter(move |line| line.side == side)
-                .map(|line| Some(line.line))
+                .filter(move |line_side| line_side.side == side)
+                .map(|line_side| Some(line_side.line))
                 .chain(iter::repeat(None))
         };
         let rows = side_lines(Side::Old)
@@ -453,9 +455,9 @@ impl BlockRows {
         };
         let pair_of_line = block
             .iter()
-            .scan(starts, |next_pair, line| {
-                let pair = *next_pair.get(line.side);
-                *next_pair.get_mut(line.side) = pair.offset(1);
+            .scan(starts, |next_pair, line_side| {
+                let pair = *next_pair.get(line_side.side);
+                *next_pair.get_mut(line_side.side) = pair.offset(1);
                 Some(pair)
             })
             .collect();
