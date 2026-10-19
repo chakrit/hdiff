@@ -16,6 +16,7 @@ use crate::{
     comparison::{Comparison, Operand},
     document::DiffDocument,
     parser::{self, ParseError},
+    side::Side,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -30,7 +31,9 @@ impl Source {
         match self {
             Self::Stdin => true,
             Self::PatchFile(_) => false,
-            Self::Comparison(comparison) => comparison.operands.contains(&Operand::Stdin),
+            Self::Comparison(comparison) => Side::BOTH
+                .into_iter()
+                .any(|side| *comparison.operands.get(side) == Operand::Stdin),
         }
     }
 

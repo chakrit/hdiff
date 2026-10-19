@@ -1,9 +1,11 @@
 use std::{ffi::OsStr, path::PathBuf};
 
+use crate::side::BySide;
+
 /// Two operands for `diff -u`. Rules: docs/spec/architecture.md#input-contract.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Comparison {
-    pub operands: [Operand; 2],
+    pub operands: BySide<Operand>,
     pub depth: Depth,
 }
 
