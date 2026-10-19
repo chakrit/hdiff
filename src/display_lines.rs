@@ -215,31 +215,11 @@ fn record_lines(
 
 #[cfg(test)]
 mod tests {
-    use super::{LineKind, RecordPart, of_document, of_file};
+    use super::{LineKind, RecordPart, of_file};
     use crate::{
         document::{FileBody, RecordKind},
         parser::parse_patch,
     };
-
-    /// The text every line of `input`'s document writes.
-    fn written(input: &[u8]) -> String {
-        let document = parse_patch(input).expect("valid diff");
-        let mut text = String::new();
-        of_document(&document).for_each(|line| line.write_text(&mut text));
-        text
-    }
-
-    /// docs/spec/architecture.md#lossless-and-safe-rendering: Git's colored output of a
-    /// CRLF file paints an added line's CR as a whitespace error, inside SGR codes; the
-    /// text still ends in the source's CRLF, exactly as the plain output of the same
-    /// change does.
-    #[test]
-    fn writes_the_crlf_ending_git_colors_as_a_whitespace_error() {
-        let plain = b"--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,3 +1,3 @@\n a\r\n \r\n-b\r\n+c\r\n";
-        let colored = b"\x1b[1m--- a/crlf.txt\x1b[m\n\x1b[1m+++ b/crlf.txt\x1b[m\n\x1b[36m@@ -1,3 +1,3 @@\x1b[m\n a\x1b[m\r\n \x1b[m\r\n\x1b[31m-b\x1b[m\r\n\x1b[32m+\x1b[m\x1b[32mc\x1b[m\x1b[41m\r\x1b[m\n";
-
-        assert_eq!(written(colored), written(plain));
-    }
 
     #[test]
     fn classifies_metadata_file_headers_hunks_and_records() {

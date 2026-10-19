@@ -52,6 +52,22 @@ mod tests {
         assert_eq!(rendered, input);
     }
 
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: Git's colored output of a
+    /// CRLF file paints an added line's CR as a whitespace error, inside SGR codes; the
+    /// output still ends each line in the source's CRLF, exactly as the plain output of
+    /// the same change does.
+    #[test]
+    fn writes_the_crlf_ending_git_colors_as_a_whitespace_error() {
+        let plain = b"--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,3 +1,3 @@\n a\r\n \r\n-b\r\n+c\r\n";
+        let colored = b"\x1b[1m--- a/crlf.txt\x1b[m\n\x1b[1m+++ b/crlf.txt\x1b[m\n\x1b[36m@@ -1,3 +1,3 @@\x1b[m\n a\x1b[m\r\n \x1b[m\r\n\x1b[31m-b\x1b[m\r\n\x1b[32m+\x1b[m\x1b[32mc\x1b[m\x1b[41m\r\x1b[m\n";
+        let colored = parse_patch(colored).expect("colored diff");
+        let plain = parse_patch(plain).expect("plain diff");
+
+        let rendered = of_document(&colored);
+
+        assert_eq!(rendered, of_document(&plain));
+    }
+
     #[test]
     fn renders_metadata_only_git_fixture_in_original_order() {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
