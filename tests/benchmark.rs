@@ -200,7 +200,7 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
 #[test]
 fn unsupported_language_has_no_syntax_parser_work() {
     let output = run("stages", &PATCH.replace("a.rs", "a.txt"));
-    assert!(output.status.success());
+    assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let work = fields(text.lines().last().expect("work counters"));
     assert_eq!(work["hunks"], 1);
@@ -218,7 +218,7 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
         .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
         .output()
         .expect("stdin benchmark");
-    assert!(stdin.status.success());
+    assert!(stdin.status.success(), "{stdin:?}");
     let text = String::from_utf8(stdin.stdout).expect("report");
     assert_eq!(
         fields(text.lines().nth(1).expect("startup"))["bytes"],
