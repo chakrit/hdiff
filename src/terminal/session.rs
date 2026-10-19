@@ -5,7 +5,6 @@ use std::{
     fmt,
     fs::File,
     io::{self, Write},
-    iter,
     panic::{self, PanicHookInfo},
     sync::Arc,
 };
@@ -17,7 +16,7 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use super::{TtyEvents, Tui};
-use crate::{prepared::PreparedDocument, theme::ColorDepth};
+use crate::{non_empty::NonEmpty, prepared::PreparedDocument, theme::ColorDepth};
 
 const CONTROLLING_TERMINAL: &str = "/dev/tty";
 
@@ -98,7 +97,7 @@ impl fmt::Display for SessionError {
 impl std::error::Error for SessionError {}
 
 /// The part of a session that failed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum SessionStage {
     /// The terminal could not be set up: its size, raw mode, or the alternate screen.
     Start,
@@ -121,28 +120,13 @@ impl fmt::Display for CleanupSuffix<'_> {
 /// The restore steps that failed, at least one, in the order they were attempted. Shown
 /// as `cleanup failed: ` and each failed step with its error.
 #[derive(Debug)]
-pub struct RestoreFailures {
-    first: RestoreFailure,
-    rest: Vec<RestoreFailure>,
-}
-
-impl RestoreFailures {
-    /// `failures` in their order, or `None` when there are none.
-    fn of(failures: impl IntoIterator<Item = RestoreFailure>) -> Option<Self> {
-        let mut failures = failures.into_iter();
-        let first = failures.next()?;
-
-        Some(Self {
-            first,
-            rest: failures.collect(),
-        })
-    }
-}
+pub struct RestoreFailures(NonEmpty<RestoreFailure>);
 
 impl fmt::Display for RestoreFailures {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let failures = iter::once(&self.first)
-            .chain(&self.rest)
+        let failures = self
+            .0
+            .iter()
             .map(|failure| format!("{}: {}", failure.step.label(), failure.error))
             .collect::<Vec<_>>();
 
@@ -165,8 +149,8 @@ impl RestoreFailure {
 }
 
 /// One step that returns the terminal to how the session found it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RestoreStep {
+#[derive(Debug, Clone, Copy)]
+enum RestoreStep {
     Cursor,
     AlternateScreen,
     RawMode,
@@ -184,7 +168,7 @@ impl RestoreStep {
 
 /// How far a session got into the terminal modes it enters, each implying the ones
 /// before.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 enum Entered {
     RawMode,
     AlternateScreen,
@@ -205,9 +189,9 @@ fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFai
         screen.and_then(|screen| RestoreFailure::of(RestoreStep::AlternateScreen, screen)),
         RestoreFailure::of(RestoreStep::RawMode, raw_mode),
     ];
-    match RestoreFailures::of(failures.into_iter().flatten()) {
+    match NonEmpty::of(failures.into_iter().flatten()) {
         None => Ok(()),
-        Some(failures) => Err(failures),
+        Some(failures) => Err(RestoreFailures(failures)),
     }
 }
 
@@ -219,8 +203,8 @@ struct TerminalSession {
 }
 
 impl TerminalSession {
-    /// Enters raw mode, then the alternate screen, leaving raw mode again when the
-    /// alternate screen fails.
+    /// Sets up the terminal at its size, enters raw mode, then the alternate screen,
+    /// leaving raw mode again when the alternate screen fails.
     fn start(controlling_terminal: File) -> Result<Self, SessionError> {
         let started = |error| SessionError::Failed {
             stage: SessionStage::Start,

@@ -19,6 +19,14 @@ impl<T> NonEmpty<T> {
         }
     }
 
+    /// `items` in order, or `None` when there are none.
+    pub fn of(items: impl IntoIterator<Item = T>) -> Option<Self> {
+        let mut items = items.into_iter();
+        let first = items.next()?;
+
+        Some(Self::new(first, items))
+    }
+
     pub fn first(&self) -> &T {
         &self.first
     }
@@ -83,6 +91,15 @@ mod tests {
 
         assert_eq!(alone.iter().collect::<Vec<_>>(), [&2]);
         assert_eq!(several.iter().collect::<Vec<_>>(), [&1, &2, &4]);
+    }
+
+    #[test]
+    fn holds_collected_items_only_when_there_is_one() {
+        let none = NonEmpty::<u8>::of([]);
+        let some = NonEmpty::of([1, 2]).expect("two items");
+
+        assert!(none.is_none(), "{none:?}");
+        assert_eq!(some.iter().collect::<Vec<_>>(), [&1, &2]);
     }
 
     #[test]
