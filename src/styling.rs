@@ -232,6 +232,9 @@ struct Boundary {
 impl Partition {
     /// Splits `text` at annotation edges, which are spans of `text`; text no annotation
     /// covers takes `uncovered`.
+    ///
+    /// docs/spec/architecture.md#technology-direction: where annotations overlap, the
+    /// shortest capture wins and later encounters break ties.
     fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self::Uniform(Boundary {
@@ -267,8 +270,6 @@ impl Partition {
             {
                 active.pop();
             }
-            // docs/spec/architecture.md#technology-direction: shortest capture wins;
-            // later encounters break ties.
             let style = active
                 .peek()
                 .map_or(uncovered, |(_, index)| annotations[*index].style);
@@ -294,6 +295,8 @@ impl Partition {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
+
     use super::{
         DetailStyle, Partition, RowTone, StyledRow, TextStyle, character_partition,
         syntax_partition,
@@ -316,32 +319,26 @@ mod tests {
         row.segments().collect()
     }
 
-    fn syntax(
-        text: &str,
-        start: usize,
-        end: usize,
-        length: usize,
-        class: SyntaxClass,
-    ) -> SyntaxSpan {
+    fn syntax(text: &str, bytes: Range<usize>, length: usize, class: SyntaxClass) -> SyntaxSpan {
         SyntaxSpan {
-            span: PayloadSpan::within(text, start, end),
+            span: PayloadSpan::within(text, bytes),
             capture_length: length,
             class,
         }
     }
 
+    /// docs/spec/architecture.md#technology-direction: overlap precedence applies styles
+    /// without changing source text.
     #[test]
     fn chooses_specific_captures_and_later_ties_without_losing_outer_styles() {
         let text = "αcall!";
         let spans = [
-            syntax(text, 0, 7, 7, SyntaxClass::String),
-            syntax(text, 2, 6, 4, SyntaxClass::Property),
-            syntax(text, 2, 6, 4, SyntaxClass::Function),
+            syntax(text, 0..7, 7, SyntaxClass::String),
+            syntax(text, 2..6, 4, SyntaxClass::Property),
+            syntax(text, 2..6, 4, SyntaxClass::Function),
         ];
         let partition = syntax_partition(text, &spans);
 
-        // docs/spec/architecture.md#technology-direction: overlap precedence applies
-        // styles without changing source text.
         assert_eq!(
             segments(text, &partition),
             [
@@ -367,13 +364,13 @@ mod tests {
 
         let partition = character_partition(text, detail);
 
-        let detail = |style| TextStyle::Detail(Side::New, style);
+        let changed = |style| TextStyle::Detail(Side::New, style);
         assert_eq!(
             segments(text, &partition),
             [
-                ("αc", detail(DetailStyle::Unchanged)),
-                ("e", detail(DetailStyle::Changed)),
-                ("ll!", detail(DetailStyle::Unchanged)),
+                ("αc", changed(DetailStyle::Unchanged)),
+                ("e", changed(DetailStyle::Changed)),
+                ("ll!", changed(DetailStyle::Unchanged)),
             ]
         );
     }
@@ -382,8 +379,8 @@ mod tests {
     fn capture_precedence_retains_specificity_after_multiline_clipping() {
         let text = "word";
         let spans = [
-            syntax(text, 0, 4, 4, SyntaxClass::Keyword),
-            syntax(text, 0, 4, 20, SyntaxClass::Comment),
+            syntax(text, 0..4, 4, SyntaxClass::Keyword),
+            syntax(text, 0..4, 20, SyntaxClass::Comment),
         ];
         let partition = syntax_partition(text, &spans);
 

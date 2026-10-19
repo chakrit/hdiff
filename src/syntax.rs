@@ -68,6 +68,9 @@ impl SyntaxHighlighter {
 
     /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the
     /// record it styles.
+    ///
+    /// docs/spec/architecture.md#technology-direction: context stays textual when the
+    /// paths select different languages.
     fn highlight_hunk<'h>(
         &mut self,
         headers: &BySide<FileHeader>,
@@ -78,44 +81,52 @@ impl SyntaxHighlighter {
         let languages = headers
             .as_ref()
             .map(|header| Language::for_header(&header.path));
-        // docs/spec/architecture.md#technology-direction: context stays textual when the
-        // paths select different languages.
         let shared_language = languages
             .old
             .filter(|language| Some(*language) == languages.new);
-        let new_styles = match shared_language {
-            Some(_) => Styles::ChangesAndContext,
-            None => Styles::Changes,
+        let styles = BySide {
+            old: Styles::Changes,
+            new: match shared_language {
+                Some(_) => Styles::ChangesAndContext,
+                None => Styles::Changes,
+            },
         };
-        let (old, new) = observer.measure(Stage::Projection, |observer| {
-            let old = Projection::from_hunk(hunk, Side::Old, Styles::Changes);
-            let new = Projection::from_hunk(hunk, Side::New, new_styles);
-            for projection in [&old, &new] {
+        let projections = observer.measure(Stage::Projection, |observer| {
+            let projections =
+                styles.map_sides(|side, styles| Projection::from_hunk(hunk, side, styles));
+            for projection in [&projections.old, &projections.new] {
                 observer.count(Work::ProjectedBytes(projection.source.len()));
             }
-            (old, new)
+            projections
         });
 
         let passes = match shared_language {
             Some(language) => {
-                let old_pass = self.highlight_projection(language, &old, None, observer);
+                let old_pass =
+                    self.highlight_projection(language, &projections.old, None, observer);
                 let (old_spans, base) = match old_pass {
-                    Some(pass) => (pass.spans, Some((&old, pass.tree))),
+                    Some(pass) => (pass.spans, Some((&projections.old, pass.tree))),
                     None => (Vec::new(), None),
                 };
-                let new_pass = self.highlight_projection(language, &new, base, observer);
-                [old_spans, new_pass.map_or_else(Vec::new, |pass| pass.spans)]
+                let new_pass =
+                    self.highlight_projection(language, &projections.new, base, observer);
+                BySide {
+                    old: old_spans,
+                    new: new_pass.map_or_else(Vec::new, |pass| pass.spans),
+                }
             }
-            None => [(languages.old, &old), (languages.new, &new)].map(|(language, projection)| {
-                language
-                    .and_then(|language| {
-                        self.highlight_projection(language, projection, None, observer)
-                    })
-                    .map_or_else(Vec::new, |pass| pass.spans)
-            }),
+            None => languages
+                .zip(projections.as_ref())
+                .map(|(language, projection)| {
+                    language
+                        .and_then(|language| {
+                            self.highlight_projection(language, projection, None, observer)
+                        })
+                        .map_or_else(Vec::new, |pass| pass.spans)
+                }),
         };
 
-        passes.into_iter().flatten().collect()
+        passes.old.into_iter().chain(passes.new).collect()
     }
 
     /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A
@@ -294,8 +305,8 @@ impl LanguageHighlighter {
         while let Some((query_match, index)) = captures.next() {
             observer.count(Work::Capture);
             let capture = query_match.captures()[*index];
-            let name = usize::try_from(capture.index).expect("capture indexes fit in usize");
-            let Some(class) = SyntaxClass::from_capture_name(capture_names[name]) else {
+            let name_index = usize::try_from(capture.index).expect("capture indexes fit in usize");
+            let Some(class) = SyntaxClass::from_capture_name(capture_names[name_index]) else {
                 continue;
             };
             let node = capture.node;
@@ -364,23 +375,30 @@ impl<'h> Projection<'h> {
         source: Range<usize>,
         class: SyntaxClass,
     ) -> impl Iterator<Item = (RecordPosition<'h>, SyntaxSpan)> + '_ {
-        let Range { start, end } = source;
-        let first_record = self.first_overlapping_record(start);
+        let first_record = self.first_overlapping_record(source.start);
+        let capture_end = source.end;
+        let capture_length = source.len();
 
         self.records
             .iter()
             .skip(first_record)
-            .take_while(move |record| record.source.start < end)
+            .take_while(move |record| record.source.start < capture_end)
             .filter_map(move |record| {
-                let mapped_start = start.max(record.source.start) - record.source.start;
-                let mapped_end = end.min(record.source.end) - record.source.start;
+                let offset = record.source.start;
+                let clipped_start = source.start.max(offset) - offset;
+                let clipped_end = source.end.min(record.source.end) - offset;
+                let clipped = clipped_start..clipped_end;
+                if clipped.is_empty() {
+                    return None;
+                }
+
                 let payload = &self.source[record.source.clone()];
                 let span = SyntaxSpan {
-                    span: PayloadSpan::within(payload, mapped_start, mapped_end),
-                    capture_length: end - start,
+                    span: PayloadSpan::within(payload, clipped),
+                    capture_length,
                     class,
                 };
-                (mapped_start < mapped_end).then_some((record.record, span))
+                Some((record.record, span))
             })
     }
 
@@ -420,13 +438,13 @@ impl<'h> Projection<'h> {
     }
 }
 
-fn point_at(source: &[u8], byte: usize) -> Point {
-    let prefix = &source[..byte];
-    let row = prefix.iter().filter(|byte| **byte == b'\n').count();
+fn point_at(source: &[u8], offset: usize) -> Point {
+    let prefix = &source[..offset];
+    let row = prefix.iter().filter(|&&b| b == b'\n').count();
     let column = prefix
         .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(byte, |newline| byte - newline - 1);
+        .rposition(|&b| b == b'\n')
+        .map_or(offset, |newline| offset - newline - 1);
 
     Point::new(row, column)
 }
@@ -438,7 +456,7 @@ mod tests {
         SyntaxHighlighter, SyntaxSpan,
     };
     use crate::{
-        document::{FileBody, HunkRecords},
+        document::{DiffFile, FileBody, HunkRecords, UnifiedBody},
         measurement::{Observer, Profile, Unobserved},
         parser::parse_patch,
         side::Side,
@@ -479,14 +497,14 @@ mod tests {
         assert_eq!(highlights[1][0].span.end(), 2);
     }
 
+    /// docs/spec/architecture.md#technology-direction: matching languages use the new
+    /// projection for context styling.
     #[test]
     fn context_uses_new_projection_syntax_when_old_context_is_a_comment() {
         let highlights = highlights_of(
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         );
 
-        // docs/spec/architecture.md#technology-direction: matching languages use the new
-        // projection for context styling.
         assert!(
             highlights[2]
                 .iter()
@@ -548,12 +566,12 @@ mod tests {
             projection
                 .map_span(2..12, SyntaxClass::Keyword)
                 .map(|(position, span)| {
-                    let record = projection
+                    let projected_index = projection
                         .records
                         .iter()
-                        .position(|record| record.record == position)
+                        .position(|projected| projected.record == position)
                         .expect("a mapped span names a projected record");
-                    (record, span.span.start(), span.span.end())
+                    (projected_index, span.span.start(), span.span.end())
                 })
                 .collect::<Vec<_>>()
         });
@@ -568,14 +586,14 @@ mod tests {
         });
     }
 
+    /// docs/spec/architecture.md#technology-direction: context remains textual when the
+    /// paths select different languages.
     #[test]
     fn context_stays_textual_when_the_paths_select_different_languages() {
         let highlights = highlights_of(
             b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
         );
 
-        // docs/spec/architecture.md#technology-direction: context remains textual when
-        // the paths select different languages.
         assert!(highlights[0].is_empty());
         assert!(
             highlights[1]
@@ -613,32 +631,35 @@ mod tests {
     }
 
     fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
-        let document = parse_patch(patch).expect("valid diff");
-        let file = document.files().next().expect("first file");
-        let FileBody::Unified(body) = &file.body else {
-            panic!("fixture should contain a unified file");
-        };
+        with_first_unified(patch, |file, body| {
+            let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
 
-        let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
-
-        body.addressed_hunks()
-            .next()
-            .expect("first hunk")
-            .records()
-            .map(|(address, _)| highlights.get(address).clone())
-            .collect()
+            body.addressed_hunks()
+                .next()
+                .expect("first hunk")
+                .records()
+                .map(|(address, _)| highlights.get(address).clone())
+                .collect()
+        })
     }
 
     /// `test` applied to the records of the first hunk of `patch`'s first file, which
     /// must be unified.
     fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+        with_first_unified(patch, |_, body| {
+            body.hunks.first().expect("first hunk").with_records(test)
+        })
+    }
+
+    /// `test` applied to `patch`'s first file and its body, which must be unified.
+    fn with_first_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
         let document = parse_patch(patch).expect("valid diff");
         let file = document.files().next().expect("first file");
         let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };
 
-        body.hunks.first().expect("first hunk").with_records(test)
+        test(file, body)
     }
 
     /// `test` applied to the new-side projection of a hunk adding `lines`.

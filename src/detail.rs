@@ -68,31 +68,31 @@ impl ChangedDetail {
 /// The spans that differ between a changed pair's payloads, found by diffing their
 /// tokens.
 fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
-    let tokens = payloads.map(tokens);
-    let mut changes = diff_slices(Algorithm::Myers, &tokens.old, &tokens.new)
+    let token_lists = payloads.map(tokens);
+    let mut changes = diff_slices(Algorithm::Myers, &token_lists.old, &token_lists.new)
         .into_iter()
         .peekable();
     let mut cursor = PairCursor::new(payloads);
 
-    while let Some((tag, tokens)) = changes.next() {
+    while let Some((tag, run)) = changes.next() {
         let replacement = match tag {
             ChangeTag::Equal => {
-                cursor.take(tag, tokens_width(tokens));
+                cursor.take(tag, tokens_len(run));
                 continue;
             }
             ChangeTag::Delete => match changes.next_if(|(next, _)| *next == ChangeTag::Insert) {
                 Some((_, inserted)) => Replacement::Replaced {
-                    deleted: tokens,
+                    deleted: run,
                     inserted,
                 },
-                None => Replacement::Deleted(tokens),
+                None => Replacement::Deleted(run),
             },
             ChangeTag::Insert => match changes.next_if(|(next, _)| *next == ChangeTag::Delete) {
                 Some((_, deleted)) => Replacement::Replaced {
                     deleted,
-                    inserted: tokens,
+                    inserted: run,
                 },
-                None => Replacement::Inserted(tokens),
+                None => Replacement::Inserted(run),
             },
         };
         replacement.mark(&mut cursor);
@@ -120,25 +120,25 @@ impl<'a> PairCursor<'a> {
         }
     }
 
-    /// Takes the next `width` bytes `tag` names: equal text passes on both sides, deleted
+    /// Takes the next `bytes` bytes `tag` names: equal text passes on both sides, deleted
     /// text is marked on the old side, and inserted text on the new side.
-    fn take(&mut self, tag: ChangeTag, width: usize) {
+    fn take(&mut self, tag: ChangeTag, bytes: usize) {
         match tag {
             ChangeTag::Equal => {
-                self.offsets.old += width;
-                self.offsets.new += width;
+                self.offsets.old += bytes;
+                self.offsets.new += bytes;
             }
-            ChangeTag::Delete => self.mark(Side::Old, width),
-            ChangeTag::Insert => self.mark(Side::New, width),
+            ChangeTag::Delete => self.mark(Side::Old, bytes),
+            ChangeTag::Insert => self.mark(Side::New, bytes),
         }
     }
 
-    /// Marks the next `width` bytes of `side` changed.
-    fn mark(&mut self, side: Side, width: usize) {
+    /// Marks the next `bytes` bytes of `side` changed.
+    fn mark(&mut self, side: Side, bytes: usize) {
         let start = *self.offsets.get(side);
-        let end = start + width;
+        let end = start + bytes;
 
-        let span = PayloadSpan::within(self.payloads.get(side), start, end);
+        let span = PayloadSpan::within(self.payloads.get(side), start..end);
         self.spans.get_mut(side).push(span);
         *self.offsets.get_mut(side) = end;
     }
@@ -190,14 +190,14 @@ fn tokens(text: &str) -> Vec<Token<'_>> {
 /// Whether `current` starts a new token after `previous`: the token kind changes, or an
 /// uppercase letter follows a lowercase one inside a word.
 fn starts_token(previous: char, current: char) -> bool {
-    let kind = token_kind(previous);
-    let next_kind = token_kind(current);
-    let camel_case_boundary = kind == TokenKind::Word
-        && next_kind == TokenKind::Word
+    let previous_kind = token_kind(previous);
+    let current_kind = token_kind(current);
+    let camel_case_boundary = previous_kind == TokenKind::Word
+        && current_kind == TokenKind::Word
         && previous.is_lowercase()
         && current.is_uppercase();
 
-    kind != next_kind || camel_case_boundary
+    previous_kind != current_kind || camel_case_boundary
 }
 
 fn token_kind(character: char) -> TokenKind {
@@ -207,7 +207,7 @@ fn token_kind(character: char) -> TokenKind {
     }
 }
 
-fn tokens_width(tokens: &[Token<'_>]) -> usize {
+fn tokens_len(tokens: &[Token<'_>]) -> usize {
     tokens.iter().map(|token| token.text.len()).sum()
 }
 
@@ -228,24 +228,24 @@ impl Replacement<'_, '_> {
     /// graphemes that differ; any other change is marked whole.
     fn mark(&self, cursor: &mut PairCursor<'_>) {
         match self {
-            Self::Deleted(deleted) => cursor.mark(Side::Old, tokens_width(deleted)),
-            Self::Inserted(inserted) => cursor.mark(Side::New, tokens_width(inserted)),
+            Self::Deleted(deleted) => cursor.mark(Side::Old, tokens_len(deleted)),
+            Self::Inserted(inserted) => cursor.mark(Side::New, tokens_len(inserted)),
             Self::Replaced { deleted, inserted } => match similar_word_changes(deleted, inserted) {
                 Some(changes) => {
-                    for (tag, width) in changes {
-                        cursor.take(tag, width);
+                    for (tag, bytes) in changes {
+                        cursor.take(tag, bytes);
                     }
                 }
                 None => {
-                    cursor.mark(Side::Old, tokens_width(deleted));
-                    cursor.mark(Side::New, tokens_width(inserted));
+                    cursor.mark(Side::Old, tokens_len(deleted));
+                    cursor.mark(Side::New, tokens_len(inserted));
                 }
             },
         }
     }
 }
 
-/// The grapheme changes, as tags and byte widths, when one word replaces one similar
+/// The grapheme changes, as tags and byte lengths, when one word replaces one similar
 /// word: one sharing at least half of the shorter word's graphemes. Any other replacement
 /// has none.
 fn similar_word_changes(
@@ -272,11 +272,11 @@ fn similar_word_changes(
         return None;
     }
 
-    let widths = changes.into_iter().map(|(tag, graphemes)| {
-        let width = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-        (tag, width)
+    let lengths = changes.into_iter().map(|(tag, graphemes)| {
+        let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
+        (tag, bytes)
     });
-    Some(widths.collect())
+    Some(lengths.collect())
 }
 
 // Spans
@@ -308,34 +308,27 @@ mod tests {
         changed_pair_spans(BySide { old, new })
     }
 
-    fn spans(text: &str, ranges: &[(usize, usize)]) -> Vec<PayloadSpan> {
-        ranges
-            .iter()
-            .map(|(start, end)| PayloadSpan::within(text, *start, *end))
-            .collect()
-    }
-
     #[test]
     fn unmatched_payloads_are_fully_changed_in_character_mode() {
         for (hunk, records, expected) in [
-            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", 0, 5)]),
-            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", 0, 5)]),
+            ("-0,0 +1,2", "+café\r\n+\r\n", vec![("+café", 0..5)]),
+            ("-1,2 +0,0", "-café\r\n-\r\n", vec![("-café", 0..5)]),
             (
                 "-1 +1,2",
                 "-let café = old;\n+let café = new;\n+café\n",
                 vec![
-                    ("-let café = old;", 12, 15),
-                    ("+let café = new;", 12, 15),
-                    ("+café", 0, 5),
+                    ("-let café = old;", 12..15),
+                    ("+let café = new;", 12..15),
+                    ("+café", 0..5),
                 ],
             ),
             (
                 "-1,2 +1",
                 "-let café = old;\n-café\n+let café = new;\n",
                 vec![
-                    ("-let café = old;", 12, 15),
-                    ("-café", 0, 5),
-                    ("+let café = new;", 12, 15),
+                    ("-let café = old;", 12..15),
+                    ("-café", 0..5),
+                    ("+let café = new;", 12..15),
                 ],
             ),
         ] {
@@ -344,19 +337,16 @@ mod tests {
             let page_rows = PageRows::of_file(&document.file_views().next().expect("first file"));
             let details = character_details(&page_rows);
 
-            for (row, line) in page_rows.lines() {
+            for (index, line) in page_rows.lines() {
                 let found = details
-                    .get(row)
+                    .get(index)
                     .as_ref()
                     .map_or(&[][..], |detail| detail.spans());
                 let shown = format!("{}{}", line.kind().marker(), line.payload());
-                let wanted = expected.iter().find(|(text, _, _)| *text == shown);
-                let wanted = wanted.map(|(_, start, end)| (*start, *end));
-                assert_eq!(
-                    found,
-                    spans(line.payload(), wanted.as_slice()),
-                    "{hunk}: {shown:?}"
-                );
+                let wanted = expected.iter().find(|(text, _)| *text == shown);
+                let wanted_span =
+                    wanted.map(|(_, bytes)| PayloadSpan::within(line.payload(), bytes.clone()));
+                assert_eq!(found, wanted_span.as_slice(), "{hunk}: {shown:?}");
             }
         }
     }
@@ -368,8 +358,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: spans(old, &[(12, 15)]),
-                new: spans(new, &[(12, 15)]),
+                old: vec![PayloadSpan::within(old, 12..15)],
+                new: vec![PayloadSpan::within(new, 12..15)],
             }
         );
     }
@@ -381,8 +371,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: spans(old, &[(0, 10)]),
-                new: spans(new, &[(0, 15)]),
+                old: vec![PayloadSpan::within(old, 0..10)],
+                new: vec![PayloadSpan::within(new, 0..15)],
             }
         );
     }
@@ -394,8 +384,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: spans(old, &[(6, 10)]),
-                new: spans(new, &[(6, 10)]),
+                old: vec![PayloadSpan::within(old, 6..10)],
+                new: vec![PayloadSpan::within(new, 6..10)],
             }
         );
     }
@@ -407,8 +397,8 @@ mod tests {
         assert_eq!(
             spans_of(old, new),
             BySide {
-                old: spans(old, &[(0, 12)]),
-                new: spans(new, &[(0, 14)]),
+                old: vec![PayloadSpan::within(old, 0..12)],
+                new: vec![PayloadSpan::within(new, 0..14)],
             }
         );
     }
