@@ -110,7 +110,7 @@ pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, Error> {
     let document = parse_comparison(input)?;
 
     match (&document, input.is_empty()) {
-        (DiffDocument::Files(_), _) | (DiffDocument::Text(_), true) => Ok(document),
+        (DiffDocument::Files(_), true | false) | (DiffDocument::Text(_), true) => Ok(document),
         (DiffDocument::Text(_), false) => Err(Error::NoDiff),
     }
 }

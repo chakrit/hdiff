@@ -126,7 +126,7 @@ fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Err
 
     match (stdin, source.reads_stdin()) {
         (StdinState::Piped, false) => Err(Error::PipedStdinIgnored),
-        (StdinState::Piped, true) | (StdinState::Unpiped, _) => Ok(source),
+        (StdinState::Piped, true) | (StdinState::Unpiped, true | false) => Ok(source),
     }
 }
 
@@ -156,8 +156,10 @@ fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
 fn single_source(operands: Vec<Operand>, depth: Depth) -> Result<Source, Error> {
     let mut operands = operands.into_iter();
     match (operands.next(), operands.next(), depth) {
-        (_, Some(_), _) => Err(Error::TooManyOperands),
-        (_, None, Depth::Recursive) => Err(Error::RecursionWithoutComparison),
+        (Some(_) | None, Some(_), Depth::TopLevel | Depth::Recursive) => {
+            Err(Error::TooManyOperands)
+        }
+        (Some(_) | None, None, Depth::Recursive) => Err(Error::RecursionWithoutComparison),
         (None | Some(Operand::Stdin), None, Depth::TopLevel) => Ok(Source::Stdin),
         (Some(Operand::Path(path)), None, Depth::TopLevel) => Ok(Source::PatchFile(path)),
     }
