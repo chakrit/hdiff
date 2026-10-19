@@ -376,8 +376,9 @@ mod tests {
         assert_eq!(plan.pager_command, expected, "{plan:?}");
     }
 
-    /// A `..` after a linked directory leaves the link's target, so removing it by
-    /// spelling alone would name a different file; that executable is not registered.
+    /// docs/spec/architecture.md#initial-cli-surface: a `..` after a linked directory
+    /// leaves the link's target, so removing it by spelling alone would name a different
+    /// file, and `--install` refuses.
     #[test]
     fn rejects_an_executable_whose_dot_dot_leaves_a_linked_directory() {
         let directory = tempfile::tempdir().expect("temporary directory");

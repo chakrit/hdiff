@@ -252,6 +252,11 @@ file list in one interactive session. `core.pager` remains unchanged. After succ
 writes, `--install` prints a shell-safe `cp` command when it created a backup and the
 `git config --global pager.diff` command it applied.
 
+`--install` writes nothing and refuses when `GIT_CONFIG_GLOBAL` is `/dev/null`, when
+neither `GIT_CONFIG_GLOBAL` nor `HOME` locates the global config, when the global config,
+its backup, or the executable path is not valid UTF-8, or when removing a `..` step that
+follows a linked directory makes the executable path name a different file or none.
+
 `hdiff --help` prints the command usage, operands, and options without reading diff input.
 `hdiff --version` prints the Cargo package version followed by the short source commit
 hash in parentheses. Both commands exit successfully after printing their output.
