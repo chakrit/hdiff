@@ -370,7 +370,7 @@ mod tests {
         let indent = " ".repeat(usize::from(HELP_HINT_INDENT));
         assert_eq!(*last, format!("{indent}{HELP_HINT}"));
         assert!(
-            above.iter().all(|row| !row.contains("help")),
+            above.iter().all(|row| !row.contains(HELP_HINT)),
             "one hint row"
         );
         assert_eq!(
