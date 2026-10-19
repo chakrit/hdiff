@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     document::DiffDocument,
     input,
-    measurement::{Observer, Parent, Profile, Stage, Unobserved},
+    measurement::{Family, Observer, Parent, Profile, Stage, Unobserved},
     navigation::{interaction::Command, scroll::Movement},
     preferences::PreferenceChange,
     prepared::PreparedDocument,
@@ -62,7 +62,7 @@ impl Driver {
     pub fn run(self, clock: PreparationClock, document: &DiffDocument) -> io::Result<String> {
         match self {
             Self::Prepare => {
-                let (startup, prepared) = clock.prepare(document, &mut Unobserved);
+                let Ready { startup, prepared } = clock.prepare(document, &mut Unobserved);
 
                 Ok(preparation_report(
                     PreparationRecord::Preparation,
@@ -72,7 +72,7 @@ impl Driver {
             }
             Self::Stages => {
                 let mut profile = Profile::default();
-                let (startup, prepared) = clock.prepare(document, &mut profile);
+                let Ready { startup, prepared } = clock.prepare(document, &mut profile);
 
                 let mut report =
                     preparation_report(PreparationRecord::Diagnostic, &startup, &prepared);
@@ -80,7 +80,7 @@ impl Driver {
                 Ok(report)
             }
             Self::Movement => {
-                let (_, prepared) = clock.prepare(document, &mut Unobserved);
+                let Ready { prepared, .. } = clock.prepare(document, &mut Unobserved);
                 movement(prepared)
             }
         }
@@ -140,11 +140,7 @@ impl ParseClock {
 }
 
 impl PreparationClock {
-    fn prepare(
-        self,
-        document: &DiffDocument,
-        observer: &mut impl Observer,
-    ) -> (Startup, PreparedDocument) {
+    fn prepare(self, document: &DiffDocument, observer: &mut impl Observer) -> Ready {
         let prepared = PreparedDocument::prepare_observed(document, observer);
         let ready = Instant::now();
 
@@ -155,8 +151,14 @@ impl PreparationClock {
             ready: ready.duration_since(self.started),
             bytes: self.bytes,
         };
-        (startup, prepared)
+        Ready { startup, prepared }
     }
+}
+
+/// A prepared document with the startup timing that led to it.
+struct Ready {
+    startup: Startup,
+    prepared: PreparedDocument,
 }
 
 /// Durations from the start of the run until the prepared document is ready, and the
@@ -182,7 +184,7 @@ enum PreparationRecord {
 impl PreparationRecord {
     fn label(self) -> &'static str {
         match self {
-            Self::Preparation => "preparation",
+            Self::Preparation => Parent::Preparation.label(),
             Self::Diagnostic => "diagnostic",
         }
     }
@@ -222,17 +224,17 @@ fn preparation_report(
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     report.push_str("profile version=1\n");
 
-    for (parent, children) in Stage::families() {
+    for Family { parent, stages } in Stage::families() {
         let total = match parent.measured_by() {
             None => preparation,
             Some(stage) => profile.duration(stage),
         };
 
-        let attributed = children
+        let attributed = stages
             .iter()
             .map(|&stage| profile.duration(stage))
             .sum::<Duration>();
-        for &stage in children {
+        for &stage in stages {
             write_stage(report, stage.label(), parent, profile.duration(stage));
         }
 

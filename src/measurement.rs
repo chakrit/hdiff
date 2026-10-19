@@ -18,10 +18,13 @@ impl Stage {
     pub const ALL: [Self; 8] = ByStage::STAGES.into_array();
 
     /// The stages grouped under their parents, in report order.
-    pub fn families() -> impl Iterator<Item = (Parent, &'static [Stage])> {
+    pub fn families() -> impl Iterator<Item = Family> {
         Self::ALL
             .chunk_by(|stage, next| stage.parent() == next.parent())
-            .map(|stages| (stages[0].parent(), stages))
+            .map(|stages| Family {
+                parent: stages[0].parent(),
+                stages,
+            })
     }
 
     pub const fn label(self) -> &'static str {
@@ -44,6 +47,12 @@ impl Stage {
             Self::Language | Self::Projection | Self::Parse | Self::Query => Parent::Syntax,
         }
     }
+}
+
+/// A parent with the stages that partition its duration, in report order.
+pub struct Family {
+    pub parent: Parent,
+    pub stages: &'static [Stage],
 }
 
 /// A measurement partitioned by disjoint child stages.
@@ -238,7 +247,7 @@ mod tests {
     #[test]
     fn each_parent_owns_one_contiguous_family() {
         let parents = Stage::families()
-            .map(|(parent, _)| parent)
+            .map(|family| family.parent)
             .collect::<Vec<_>>();
 
         assert_eq!(parents, [Parent::Preparation, Parent::Syntax]);
