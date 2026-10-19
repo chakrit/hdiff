@@ -9,13 +9,13 @@ use ratatui::{
     layout::{Constraint, Layout, Rect, Size},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, List, ListItem, ListState, Padding, Paragraph},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
 };
 
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileTree, TreeRow, TreeRowIndex},
-    geometry::{FramedArea, SplitDirection},
+    geometry::{FrameEdges, FramedArea, SplitDirection},
     prepared::PageKind,
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
@@ -47,7 +47,9 @@ pub(super) fn render_file_column(
         PageKind::File { row } => Some(row),
         PageKind::Text => None,
     };
-    let list_height = FramedArea::file_list_height(MINIMUM_FILE_LIST_HEIGHT);
+    let list_height = FrameEdges::FILE_LIST
+        .around(Size::new(0, MINIMUM_FILE_LIST_HEIGHT))
+        .height;
     let hint_height = area
         .height
         .saturating_sub(list_height)
@@ -80,14 +82,15 @@ pub(super) struct FloatingBox {
 }
 
 impl FloatingBox {
-    /// Columns the border and padding take across a box.
-    pub(super) const FRAME_WIDTH: u16 = 2 * (FLOATING_BOX_BORDER + FLOATING_BOX_PADDING);
-    /// Rows the border takes down a box.
-    const FRAME_HEIGHT: u16 = 2 * FLOATING_BOX_BORDER;
+    /// The border on every side, and a padding column inside each side border.
+    pub(super) const EDGES: FrameEdges = FrameEdges {
+        rows: FLOATING_BOX_BORDER,
+        columns: FLOATING_BOX_BORDER + FLOATING_BOX_PADDING,
+    };
 
     /// A box around `content` in the bottom-left corner of `area`.
     fn bottom_left_of(area: Rect, content: Size) -> Self {
-        let Size { width, height } = Self::framed(content);
+        let Size { width, height } = Self::EDGES.around(content);
         let box_area = Rect::new(area.x, area.bottom().saturating_sub(height), width, height);
 
         Self {
@@ -97,7 +100,7 @@ impl FloatingBox {
 
     /// A box around `content` centered over `area`.
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
-        let Size { width, height } = Self::framed(content);
+        let Size { width, height } = Self::EDGES.around(content);
         let box_area = Rect::new(
             area.x + area.width.saturating_sub(width) / 2,
             area.y + area.height.saturating_sub(height) / 2,
@@ -110,25 +113,14 @@ impl FloatingBox {
         }
     }
 
-    /// The size of a box around `content`, with its border and padding.
-    const fn framed(content: Size) -> Size {
-        Size::new(
-            content.width + Self::FRAME_WIDTH,
-            content.height + Self::FRAME_HEIGHT,
-        )
-    }
-
     /// Clears the box and draws its border, returning the content area inside the border
     /// and padding.
     pub(super) fn render(self, frame: &mut Frame, palette: &ChromePalette) -> Rect {
-        let border = Block::bordered()
-            .border_style(Style::default().fg(palette.separator))
-            .padding(Padding::horizontal(FLOATING_BOX_PADDING));
-        let content = border.inner(self.area);
+        let border = Block::bordered().border_style(Style::default().fg(palette.separator));
 
         frame.render_widget(Clear, self.area);
         frame.render_widget(border, self.area);
-        content
+        Self::EDGES.inside(self.area)
     }
 }
 
