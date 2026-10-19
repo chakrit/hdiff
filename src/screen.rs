@@ -6,6 +6,7 @@
 
 use std::{
     iter::Sum,
+    marker::PhantomData,
     num::NonZeroUsize,
     ops::{Add, AddAssign},
 };
@@ -22,18 +23,67 @@ pub const MARKER_GUTTER_CLUSTERS: usize = 2;
 /// Cells of the marker gutter: one per gutter cluster.
 pub const MARKER_GUTTER_WIDTH: Cells = Cells::new(MARKER_GUTTER_CLUSTERS);
 
+/// A count or offset in the terminal unit space `Unit`. The unit keeps a cell count from
+/// mixing with a line count while both share their arithmetic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Measure<Unit>(usize, PhantomData<Unit>);
+
+/// The unit space of cell columns across a row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CellUnit {}
+
+/// The unit space of screen lines down a pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LineUnit {}
+
 /// A count or offset of terminal cells across a row.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Cells(usize);
+pub type Cells = Measure<CellUnit>;
 
-impl Cells {
-    pub const ZERO: Self = Self(0);
-    pub const ONE: Self = Self(1);
+/// A count or offset of screen lines down a pane.
+pub type ScreenLines = Measure<LineUnit>;
 
-    pub const fn new(cells: usize) -> Self {
-        Self(cells)
+impl<Unit> Measure<Unit> {
+    pub const ZERO: Self = Self::new(0);
+    pub const ONE: Self = Self::new(1);
+
+    pub const fn new(count: usize) -> Self {
+        Self(count, PhantomData)
     }
 
+    pub const fn get(self) -> usize {
+        self.0
+    }
+
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self::new(self.0.saturating_add(other.0))
+    }
+
+    pub const fn saturating_sub(self, other: Self) -> Self {
+        Self::new(self.0.saturating_sub(other.0))
+    }
+}
+
+impl<Unit> Add for Measure<Unit> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self::new(self.0 + other.0)
+    }
+}
+
+impl<Unit> AddAssign for Measure<Unit> {
+    fn add_assign(&mut self, other: Self) {
+        self.0 += other.0;
+    }
+}
+
+impl<Unit> From<u16> for Measure<Unit> {
+    fn from(count: u16) -> Self {
+        Self::new(usize::from(count))
+    }
+}
+
+impl Cells {
     /// Cells the row writer covers drawing `text`.
     pub fn of_text(text: &str) -> Self {
         text.graphemes(true).map(Self::of_cluster).sum()
@@ -44,12 +94,8 @@ impl Cells {
     pub fn of_cluster(cluster: &str) -> Self {
         match cluster.contains(char::is_control) {
             true => Self::ZERO,
-            false => Self(usize::from(cluster.cell_width())),
+            false => Self::new(usize::from(cluster.cell_width())),
         }
-    }
-
-    pub const fn get(self) -> usize {
-        self.0
     }
 
     /// These cells in the compact form a retained record keeps.
@@ -59,21 +105,13 @@ impl Cells {
 
     /// Cells a retained record kept in compact form.
     pub fn of_retained(retained: Count) -> Self {
-        Self(retained.get())
-    }
-
-    pub const fn saturating_add(self, other: Self) -> Self {
-        Self(self.0.saturating_add(other.0))
-    }
-
-    pub const fn saturating_sub(self, other: Self) -> Self {
-        Self(self.0.saturating_sub(other.0))
+        Self::new(retained.get())
     }
 
     /// These cells less `other`, or `None` when `other` is more.
     pub const fn checked_sub(self, other: Self) -> Option<Self> {
         match self.0.checked_sub(other.0) {
-            Some(cells) => Some(Self(cells)),
+            Some(cells) => Some(Self::new(cells)),
             None => None,
         }
     }
@@ -81,7 +119,7 @@ impl Cells {
     /// Cells from this column to the next multiple of `interval` after it.
     pub const fn padding_to_next_multiple_of(self, interval: NonZeroCells) -> Self {
         let interval = interval.0.get();
-        Self(interval - self.0 % interval)
+        Self::new(interval - self.0 % interval)
     }
 
     /// Lines these cells fill at `width` when every line but the last is full; none still
@@ -89,13 +127,13 @@ impl Cells {
     pub const fn lines_filled_at(self, width: NonZeroCells) -> ScreenLines {
         match self.0.div_ceil(width.0.get()) {
             0 => ScreenLines::ONE,
-            lines => ScreenLines(lines),
+            lines => ScreenLines::new(lines),
         }
     }
 
     /// Each cell column from this one up to, but not including, `end`.
     pub fn columns_until(self, end: Self) -> impl Iterator<Item = Self> {
-        (self.0..end.0).map(Self)
+        (self.0..end.0).map(Self::new)
     }
 
     /// These cells as a frame's `u16` columns: the one narrowing where a frame is drawn.
@@ -106,29 +144,15 @@ impl Cells {
     }
 }
 
-impl Add for Cells {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0)
-    }
-}
-
-impl AddAssign for Cells {
-    fn add_assign(&mut self, other: Self) {
-        self.0 += other.0;
+impl Default for Cells {
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 
 impl Sum for Cells {
     fn sum<I: Iterator<Item = Self>>(cells: I) -> Self {
         cells.fold(Self::ZERO, Add::add)
-    }
-}
-
-impl From<u16> for Cells {
-    fn from(cells: u16) -> Self {
-        Self(usize::from(cells))
     }
 }
 
@@ -146,43 +170,20 @@ impl NonZeroCells {
     }
 
     pub const fn get(self) -> Cells {
-        Cells(self.0.get())
+        Cells::new(self.0.get())
     }
 
     /// A test's width of `cells`; panics on zero.
     #[cfg(test)]
     pub const fn of(cells: usize) -> Self {
-        Self::new(Cells(cells)).expect("a nonzero test width")
+        Self::new(Cells::new(cells)).expect("a nonzero test width")
     }
 }
 
-/// A count or offset of screen lines down a pane.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ScreenLines(usize);
-
 impl ScreenLines {
-    pub const ZERO: Self = Self(0);
-    pub const ONE: Self = Self(1);
-
-    pub const fn new(lines: usize) -> Self {
-        Self(lines)
-    }
-
-    pub const fn get(self) -> usize {
-        self.0
-    }
-
-    pub const fn saturating_add(self, other: Self) -> Self {
-        Self(self.0.saturating_add(other.0))
-    }
-
-    pub const fn saturating_sub(self, other: Self) -> Self {
-        Self(self.0.saturating_sub(other.0))
-    }
-
     /// Half of these lines, rounded down.
     pub const fn half(self) -> Self {
-        Self(self.0 / 2)
+        Self::new(self.0 / 2)
     }
 
     /// These lines as a frame's `u16` rows: the one narrowing where a frame is drawn.
@@ -190,25 +191,5 @@ impl ScreenLines {
     /// Panics when they do not fit a frame.
     pub fn frame_rows(self) -> u16 {
         u16::try_from(self.0).expect("lines drawn on a frame fit u16")
-    }
-}
-
-impl Add for ScreenLines {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0)
-    }
-}
-
-impl AddAssign for ScreenLines {
-    fn add_assign(&mut self, other: Self) {
-        self.0 += other.0;
-    }
-}
-
-impl From<u16> for ScreenLines {
-    fn from(lines: u16) -> Self {
-        Self(usize::from(lines))
     }
 }
