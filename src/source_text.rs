@@ -60,14 +60,20 @@ struct DecodedChar {
 /// Each visible character of `bytes`, decoded as lossy UTF-8. Terminal control
 /// sequences and control characters other than tab are not visible.
 fn visible(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
-    let mut state = State::Text;
+    let mut state = State::Ground;
 
-    decoded(bytes).filter(move |decoded| {
-        let shown = state.shows(decoded.character);
-        state = state.after(decoded.character);
-
-        shown
-    })
+    decoded(bytes).filter(
+        move |decoded| match state.read(Class::of(decoded.character)) {
+            Step::Shown => {
+                state = State::Ground;
+                true
+            }
+            Step::Hidden(next) => {
+                state = next;
+                false
+            }
+        },
+    )
 }
 
 /// Lossy UTF-8 decoding of `bytes`; an invalid sequence decodes to one replacement
@@ -99,71 +105,167 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
     })
 }
 
-/// Where the scanner is within terminal control sequences.
+/// Where the scanner is within terminal control sequences: the states of the DEC
+/// terminal parser that differ in what they show, as
+/// docs/vendor/terminal-control-parser.md records them.
 #[derive(Clone, Copy)]
 enum State {
-    Text,
+    /// Plain text.
+    Ground,
+    /// After `ESC`, before its next byte.
     Escape,
+    /// After an escape's intermediate bytes, before its final byte.
     EscapeIntermediate,
+    /// Inside a control sequence (CSI), before its final byte.
     ControlSequence,
-    StringSequence,
+    /// Inside a command string (OSC, DCS, SOS, PM or APC), before its terminator.
+    CommandString,
 }
 
-/// CAN: abandons the sequence it interrupts.
-const CANCEL: char = '\u{18}';
-/// SUB: abandons the sequence it interrupts, like CAN.
-const SUBSTITUTE: char = '\u{1a}';
-/// BEL: ends a string sequence, as xterm reads it.
-const BELL: char = '\u{7}';
-/// ST in its C1 spelling: ends a string sequence.
-const STRING_TERMINATOR: char = '\u{9c}';
+/// What reading one character does: shows it, which leaves the scanner in plain text,
+/// or hides it and moves the scanner to a state.
+enum Step {
+    Shown,
+    Hidden(State),
+}
+
+/// The sequence an introducer opens.
+#[derive(Clone, Copy)]
+enum Sequence {
+    Control,
+    CommandString,
+}
+
+impl Sequence {
+    fn state(self) -> State {
+        match self {
+            Self::Control => State::ControlSequence,
+            Self::CommandString => State::CommandString,
+        }
+    }
+}
+
+/// What one character is to the scanner, decided once per character.
+#[derive(Clone, Copy)]
+enum Class {
+    /// CAN or SUB: abandons any sequence.
+    Cancel,
+    /// `ESC`: opens an escape anywhere.
+    Escape,
+    /// BEL: ends a command string, as xterm reads it.
+    Bell,
+    /// Tab: the one visible control character.
+    Tab,
+    /// Any other C0 control character.
+    OtherC0,
+    /// DEL.
+    Delete,
+    /// 0x20–0x2F: an escape's or control sequence's intermediate byte.
+    Intermediate,
+    /// 0x30–0x3F: a control sequence's parameter byte, or an escape's final byte.
+    Parameter,
+    /// 0x40–0x7E: a final byte, and after `ESC` the sequence it opens, if any.
+    Final(Option<Sequence>),
+    /// A C1 introducer: opens its sequence anywhere.
+    Introducer(Sequence),
+    /// ST: ends a command string, and any other sequence.
+    StringTerminator,
+    /// Any other C1 control: ends any sequence.
+    OtherC1,
+    /// Printable text beyond ASCII.
+    Printable,
+}
+
+impl Class {
+    fn of(character: char) -> Self {
+        match character {
+            '\u{18}' | '\u{1a}' => Self::Cancel,
+            '\u{1b}' => Self::Escape,
+            '\u{7}' => Self::Bell,
+            '\t' => Self::Tab,
+            '\u{0}'..='\u{1f}' => Self::OtherC0,
+            '\u{7f}' => Self::Delete,
+            '\u{20}'..='\u{2f}' => Self::Intermediate,
+            '\u{30}'..='\u{3f}' => Self::Parameter,
+            '[' => Self::Final(Some(Sequence::Control)),
+            ']' | 'P' | 'X' | '^' | '_' => Self::Final(Some(Sequence::CommandString)),
+            '\u{40}'..='\u{7e}' => Self::Final(None),
+            '\u{9b}' => Self::Introducer(Sequence::Control),
+            '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}' => {
+                Self::Introducer(Sequence::CommandString)
+            }
+            '\u{9c}' => Self::StringTerminator,
+            '\u{80}'..='\u{9f}' => Self::OtherC1,
+            '\u{a0}'..='\u{10ffff}' => Self::Printable,
+        }
+    }
+}
 
 impl State {
-    /// Whether `character`, read in this state, is visible: only text outside a control
-    /// sequence is, and among control characters only tab.
-    fn shows(self, character: char) -> bool {
-        match self {
-            Self::Text => character == '\t' || !character.is_control(),
-            Self::Escape
-            | Self::EscapeIntermediate
-            | Self::ControlSequence
-            | Self::StringSequence => false,
-        }
-    }
+    /// What reading a character of `class` in this state does. `ESC`, C1 introducers,
+    /// CAN, SUB, ST and every other C1 control act the same in every sequence; C0
+    /// controls and DEL execute inside an escape or control sequence without ending it.
+    /// A tab or printable character ends an escape and shows, since no escape may hold
+    /// it; inside a control sequence a printable character stays part of the sequence.
+    fn read(self, class: Class) -> Step {
+        use State::{CommandString, ControlSequence, EscapeIntermediate, Ground};
 
-    /// The state after `character`. Each introducer has a 7-bit spelling (`ESC` and a
-    /// letter) and a single-character C1 spelling, and both open the same sequence. An
-    /// escape may carry intermediate bytes before its final byte. An introducer read
-    /// inside any unfinished sequence starts a new sequence, so `ESC \` ends a string as
-    /// an escape whose final byte is `\`; CAN or SUB abandons any sequence.
-    fn after(self, character: char) -> Self {
-        match (self, character) {
-            (Self::Text, _) => Self::opened_by(character).unwrap_or(Self::Text),
-            (_, CANCEL | SUBSTITUTE) => Self::Text,
-            (Self::Escape, '[') => Self::ControlSequence,
-            (Self::Escape, ']' | 'P' | 'X' | '^' | '_') => Self::StringSequence,
-            (Self::Escape | Self::EscapeIntermediate, '\u{20}'..='\u{2f}') => {
-                Self::EscapeIntermediate
+        match (self, class) {
+            (Ground, Class::Tab | Class::Intermediate | Class::Parameter) => Step::Shown,
+            (Ground, Class::Final(_) | Class::Printable) => Step::Shown,
+            (
+                Ground,
+                Class::Cancel
+                | Class::Bell
+                | Class::OtherC0
+                | Class::Delete
+                | Class::StringTerminator
+                | Class::OtherC1,
+            ) => Step::Hidden(Ground),
+            (
+                Ground | Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
+                Class::Escape,
+            ) => Step::Hidden(Self::Escape),
+            (
+                Ground | Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
+                Class::Introducer(sequence),
+            ) => Step::Hidden(sequence.state()),
+            (
+                Self::Escape | EscapeIntermediate | ControlSequence | CommandString,
+                Class::Cancel | Class::StringTerminator | Class::OtherC1,
+            ) => Step::Hidden(Ground),
+            (Self::Escape | EscapeIntermediate, Class::Bell | Class::OtherC0 | Class::Delete) => {
+                Step::Hidden(self)
             }
-            (Self::Escape | Self::EscapeIntermediate, _) => {
-                Self::opened_by(character).unwrap_or(Self::Text)
+            (Self::Escape | EscapeIntermediate, Class::Tab | Class::Printable) => Step::Shown,
+            (Self::Escape | EscapeIntermediate, Class::Intermediate) => {
+                Step::Hidden(EscapeIntermediate)
             }
-            (Self::ControlSequence, '@'..='~') => Self::Text,
-            (Self::ControlSequence, _) => {
-                Self::opened_by(character).unwrap_or(Self::ControlSequence)
-            }
-            (Self::StringSequence, BELL | STRING_TERMINATOR) => Self::Text,
-            (Self::StringSequence, _) => Self::opened_by(character).unwrap_or(Self::StringSequence),
-        }
-    }
-
-    /// The sequence `character` introduces, if it is an introducer.
-    fn opened_by(character: char) -> Option<Self> {
-        match character {
-            '\u{1b}' => Some(Self::Escape),
-            '\u{9b}' => Some(Self::ControlSequence),
-            '\u{90}' | '\u{98}' | '\u{9d}' | '\u{9e}' | '\u{9f}' => Some(Self::StringSequence),
-            _ => None,
+            (Self::Escape, Class::Final(Some(sequence))) => Step::Hidden(sequence.state()),
+            (Self::Escape, Class::Parameter | Class::Final(None)) => Step::Hidden(Ground),
+            (EscapeIntermediate, Class::Parameter | Class::Final(_)) => Step::Hidden(Ground),
+            (
+                ControlSequence,
+                Class::Bell
+                | Class::Tab
+                | Class::OtherC0
+                | Class::Delete
+                | Class::Intermediate
+                | Class::Parameter
+                | Class::Printable,
+            ) => Step::Hidden(ControlSequence),
+            (ControlSequence, Class::Final(_)) => Step::Hidden(Ground),
+            (CommandString, Class::Bell) => Step::Hidden(Ground),
+            (
+                CommandString,
+                Class::Tab
+                | Class::OtherC0
+                | Class::Delete
+                | Class::Intermediate
+                | Class::Parameter
+                | Class::Final(_)
+                | Class::Printable,
+            ) => Step::Hidden(CommandString),
         }
     }
 }
@@ -180,6 +282,8 @@ mod tests {
             b"\x1b[31m-\x1b[0mred\n",
             b"\x1b]x\x1b\x07a\x1b\\ context\n",
             b"\xff\xfe-after invalid",
+            b"\x1b\xc3\xa9-after a broken escape",
+            b"\x1b\t-after a broken escape",
         ] {
             let (_, rest) = SourceLine::decode(line)
                 .split_first()
@@ -272,6 +376,26 @@ mod tests {
             b"\x1b(\x1ared",
         ] {
             assert_eq!(sanitize(line), "red", "{line:?}");
+        }
+    }
+
+    /// A control character a terminal executes inside a sequence leaves the sequence
+    /// open, any other C1 control ends it, and a visible character that no escape may
+    /// hold ends the escape and shows, so the line loses no visible source text.
+    ///
+    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    #[test]
+    fn executes_controls_inside_sequences_and_shows_what_breaks_an_escape() {
+        for (line, shown) in [
+            (b"\x1b\xc3\xa9-old".as_slice(), "\u{e9}-old"),
+            (b"\x1b\t-old", "\t-old"),
+            (b"\x1b\x07[31mred", "red"),
+            (b"\x1b(\x7fBred", "red"),
+            (b"\x1b[31\xc2\x9cred", "red"),
+            (b"\x1b[31\xc2\x85red", "red"),
+            (b"\x1b]0;t\xc2\x85red", "red"),
+        ] {
+            assert_eq!(sanitize(line), shown, "{line:?}");
         }
     }
 }
