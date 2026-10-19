@@ -153,21 +153,17 @@ fn render_split_rows<'a>(
     let direction = split.direction();
     let separator = split.separator();
     let panes = split.panes().map(ContinuityFrame::diff_pane);
-    let side_lines = lines
-        .map(|line| line.map(SideBySideRow::pane_pair).split())
-        .fold(BySide::<Vec<_>>::default(), |collected, line| {
-            collected.zip(line).map(|(mut pane_lines, pane_line)| {
-                pane_lines.push(pane_line);
-                pane_lines
-            })
-        });
-    let shown = ScreenLines::new(side_lines.old.len());
+    let pair_lines = lines
+        .map(|line| line.map(SideBySideRow::pane_pair))
+        .collect::<Vec<_>>();
+    let shown = ScreenLines::new(pair_lines.len());
 
     let palette = &pane_drawing.theme.chrome;
     match direction {
-        // The separator runs beside the shown lines only.
+        // The separator runs beside the shown lines only, across the rows both panes'
+        // content spans.
         SplitDirection::Vertical => {
-            let content = panes.old.content();
+            let content = BySide::of(|side| panes.get(side).content()).merge(Rect::union);
             let height = shown_rows(content.height, shown);
             let shown_separator = Rect::new(separator.x, content.y, separator.width, height);
             draw_inner_separator(frame.buffer_mut(), shown_separator, direction, palette);
@@ -176,6 +172,12 @@ fn render_split_rows<'a>(
             draw_inner_separator(frame.buffer_mut(), separator, direction, palette);
         }
     }
+    let side_lines = BySide::of(|side| {
+        pair_lines.iter().map(move |line| RowLine {
+            row: *line.row.get(side),
+            wrapped_line: line.wrapped_line,
+        })
+    });
     for (pane, pane_lines) in panes.zip(side_lines) {
         pane_drawing.render(frame, pane, pane_lines);
     }
