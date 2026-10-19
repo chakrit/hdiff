@@ -157,6 +157,19 @@ mod tests {
         )
     }
 
+    /// docs/spec/architecture.md#input-contract: structural parsing is strict, so a
+    /// block size is ASCII digits and nothing else.
+    #[test]
+    fn rejects_a_signed_block_size() {
+        let binary =
+            "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral +12\npayload\n\n";
+
+        assert_eq!(
+            parse_patch(binary.as_bytes()),
+            malformed(4, Malformed::InvalidBinaryPatchHeader)
+        );
+    }
+
     #[test]
     fn keeps_binary_payload_and_surrounding_text_in_order() {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
