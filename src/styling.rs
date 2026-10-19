@@ -233,7 +233,8 @@ pub struct Boundary {
 impl Partition {
     /// Splits `text` at annotation edges, which are spans of `text`; text no annotation
     /// covers takes `uncovered`. Where annotations overlap, the shortest capture wins and
-    /// later encounters break ties. Rules: docs/spec/architecture.md#technology-direction.
+    /// later encounters break ties.
+    /// Rules: docs/spec/architecture.md#technology-direction.
     fn new(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
         if annotations.is_empty() {
             return Self::Uniform(Boundary {
