@@ -94,10 +94,13 @@ mod tests {
         let rendered = of_document(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
 
-        assert!(text.contains("tab\t e\u{301} \u{754c} red link"));
-        assert!(!text.contains('\u{1b}'));
-        assert!(!text.contains('\u{1}'));
-        assert!(!text.contains("https://bad"));
+        assert!(
+            text.contains("tab\t e\u{301} \u{754c} red link"),
+            "{text:?}"
+        );
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(!text.contains('\u{1}'), "{text:?}");
+        assert!(!text.contains("https://bad"), "{text:?}");
     }
 
     #[test]
@@ -108,7 +111,7 @@ mod tests {
         let rendered = of_document(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
 
-        assert!(text.contains("+\u{fffd}new\n"));
+        assert!(text.contains("+\u{fffd}new\n"), "{text:?}");
     }
 
     #[test]

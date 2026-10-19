@@ -452,7 +452,7 @@ fn is_context_line(line: &RenderedLine) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PageRows, RenderedLine, SideBySideRow};
-    use crate::{display_lines::LineKind, parser::parse_patch};
+    use crate::{display_lines::LineKind, parser::parse_patch, side::BySide};
 
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_patch(patch).expect("valid diff");
@@ -526,9 +526,13 @@ mod tests {
         let patch = include_str!("../tests/fixtures/git-rename-only.patch");
         let rows = rows_of(patch.as_bytes());
 
+        let kinds = rows
+            .lines()
+            .map(|(_, line)| line.kind())
+            .collect::<Vec<_>>();
         assert!(
-            rows.lines()
-                .all(|(_, line)| matches!(line.kind(), LineKind::Metadata))
+            kinds.iter().all(|kind| *kind == LineKind::Metadata),
+            "{kinds:?}"
         );
         assert_eq!(shown_lines(&rows), patch.lines().collect::<Vec<_>>());
     }
@@ -541,19 +545,18 @@ mod tests {
         let text = |line| shown(rows.line(line));
         let pairs = rows
             .pair_indices()
-            .map(|index| rows.pair(index))
+            .map(|index| rows.pair(index).map(text))
             .collect::<Vec<_>>();
 
         assert_eq!(pairs.len(), 6);
         assert_eq!(rows.lines().count(), 7);
-        assert!(matches!(
+        assert_eq!(
             pairs[3],
-            SideBySideRow::Paired(lines)
-                if text(lines.old) == "-old first" && text(lines.new) == "+new first"
-        ));
-        assert!(matches!(
-            pairs[4],
-            SideBySideRow::OldOnly(old) if text(old) == "-old second"
-        ));
+            SideBySideRow::Paired(BySide {
+                old: "-old first".to_owned(),
+                new: "+new first".to_owned(),
+            })
+        );
+        assert_eq!(pairs[4], SideBySideRow::OldOnly("-old second".to_owned()));
     }
 }
