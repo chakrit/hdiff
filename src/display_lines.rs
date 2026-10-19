@@ -131,7 +131,7 @@ pub fn of_text<'a>(
 /// header and records.
 fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     match &file.body {
-        FileBody::Metadata(git) => OneOf::First(git_header_lines(git)),
+        FileBody::Metadata(body) => OneOf::First(git_header_lines(body.git())),
         FileBody::Unified(body) => OneOf::Second(unified_lines(body)),
     }
 }

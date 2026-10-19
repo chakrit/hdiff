@@ -144,8 +144,27 @@ impl DiffFile {
 pub enum FileBody {
     /// A Git section without unified headers, such as a rename, mode change, or binary
     /// change.
-    Metadata(GitHeader),
+    Metadata(MetadataBody),
     Unified(Box<UnifiedBody>),
+}
+
+/// A Git section's `diff --git` line with at least one extended header after it, which
+/// Git writes for every change it reports without `---` / `+++` headers.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MetadataBody(GitHeader);
+
+impl MetadataBody {
+    /// `git` when it holds an extended header; otherwise none.
+    pub fn of(git: GitHeader) -> Option<Self> {
+        match git.metadata.is_empty() {
+            true => None,
+            false => Some(Self(git)),
+        }
+    }
+
+    pub fn git(&self) -> &GitHeader {
+        &self.0
+    }
 }
 
 /// A section with `---` / `+++` headers and hunks, after its Git header when it has one.
