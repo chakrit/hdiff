@@ -34,3 +34,4 @@ pub mod syntax;
 pub mod tab_stops;
 pub mod terminal;
 pub mod theme;
+pub mod utf8_path;

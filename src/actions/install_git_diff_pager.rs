@@ -10,7 +10,7 @@ use super::{
     global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
     set_global_diff_pager::SetGlobalDiffPager,
 };
-use crate::shell_words;
+use crate::{shell_words, utf8_path::Utf8Path};
 
 pub struct InstallGitDiffPager {
     pub executable: PathBuf,
@@ -76,8 +76,8 @@ struct InstallPlan {
 impl InstallPlan {
     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
         let config_path = global_config_path(environment)?;
-        let pager_command =
-            shell_words::quote(utf8(executable, PathRole::Executable)?).into_owned();
+        let executable = utf8(executable, PathRole::Executable)?;
+        let pager_command = shell_words::quote(executable.as_str()).into_owned();
 
         let backup = match exists(&config_path)? {
             true => Some(backup_of(&config_path)?),
@@ -96,8 +96,8 @@ fn backup_of(config: &Path) -> Result<BackupGlobalGitConfig, Error> {
     let copy = backup_path(config);
 
     Ok(BackupGlobalGitConfig {
-        config: utf8(config, PathRole::Config)?.to_owned(),
-        copy: utf8(&copy, PathRole::Backup)?.to_owned(),
+        config: utf8(config, PathRole::Config)?,
+        copy: utf8(&copy, PathRole::Backup)?,
     })
 }
 
@@ -153,8 +153,8 @@ fn backup_path(config_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn utf8(path: &Path, role: PathRole) -> Result<&str, Error> {
-    path.to_str().ok_or(Error::NonUtf8Path(role))
+fn utf8(path: &Path, role: PathRole) -> Result<Utf8Path, Error> {
+    Utf8Path::of(path).ok_or(Error::NonUtf8Path(role))
 }
 
 #[cfg(test)]

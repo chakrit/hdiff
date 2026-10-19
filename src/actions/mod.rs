@@ -59,7 +59,8 @@ impl fmt::Display for Error {
             Self::Backup { backup, source } => write!(
                 formatter,
                 "backing up {} to {}: {source}",
-                backup.config, backup.copy
+                backup.config.as_str(),
+                backup.copy.as_str()
             ),
         }
     }
