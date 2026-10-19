@@ -183,17 +183,17 @@ enum Entered {
 /// Shows the cursor, leaves the alternate screen when it was entered, then leaves raw
 /// mode, attempting each step whatever failed before it.
 fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFailures> {
-    let cursor = execute!(terminal, cursor::Show);
+    let cursor_shown = execute!(terminal, cursor::Show);
     let left_screen = match entered {
         Entered::AlternateScreen => Some(execute!(terminal, LeaveAlternateScreen)),
         Entered::RawMode => None,
     };
-    let raw_mode = terminal::disable_raw_mode();
+    let raw_mode_left = terminal::disable_raw_mode();
 
     let failures = [
-        RestoreFailure::of(RestoreStep::Cursor, cursor),
+        RestoreFailure::of(RestoreStep::Cursor, cursor_shown),
         left_screen.and_then(|result| RestoreFailure::of(RestoreStep::AlternateScreen, result)),
-        RestoreFailure::of(RestoreStep::RawMode, raw_mode),
+        RestoreFailure::of(RestoreStep::RawMode, raw_mode_left),
     ];
     match NonEmpty::of(failures.into_iter().flatten()) {
         None => Ok(()),

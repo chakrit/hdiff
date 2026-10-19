@@ -122,20 +122,20 @@ impl PopupStyles {
         }
     }
 
-    /// Keys padded to the keys column's cells, with the row indent.
-    fn keys_span(&self, keys: String) -> Span<'static> {
+    /// Key `labels` padded to the keys column's cells, with the row indent.
+    fn keys_span(&self, labels: String) -> Span<'static> {
         let indent = blank(Cells::from(KEYS_INDENT));
-        let padding = blank(Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys)));
+        let padding = blank(Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&labels)));
         let gap = blank(Cells::from(KEYS_ACTION_GAP));
 
-        Span::styled(format!("{indent}{keys}{padding}{gap}"), self.keys)
+        Span::styled(format!("{indent}{labels}{padding}{gap}"), self.keys)
     }
 
-    /// A shortcut's line: its keys span, then its action.
-    fn shortcut_line(&self, keys: String, action: &'static str) -> Line<'static> {
+    /// A shortcut's line: its key `labels` span, then its `action_text`.
+    fn shortcut_line(&self, labels: String, action_text: &'static str) -> Line<'static> {
         Line::from(vec![
-            self.keys_span(keys),
-            Span::styled(action, self.action),
+            self.keys_span(labels),
+            Span::styled(action_text, self.action),
         ])
     }
 }
