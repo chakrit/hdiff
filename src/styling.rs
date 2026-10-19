@@ -387,7 +387,10 @@ mod tests {
             .expect("valid diff");
         let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
         let details = character_details(&rows);
-        let addition = rows.line_index(4);
+        let (addition, _) = rows
+            .lines()
+            .find(|(_, line)| line.kind().changed_side() == Some(Side::New))
+            .expect("the patch adds a line");
         let detail = details
             .get(addition)
             .as_ref()
@@ -396,13 +399,13 @@ mod tests {
 
         let partition = character_partition(text, detail);
 
-        let changed = |style| TextStyle::Detail(Side::New, style);
+        let new_detail = |style| TextStyle::Detail(Side::New, style);
         assert_eq!(
             segments(text, &partition),
             [
-                styled("αc", changed(DetailStyle::Unchanged)),
-                styled("e", changed(DetailStyle::Changed)),
-                styled("ll!", changed(DetailStyle::Unchanged)),
+                styled("αc", new_detail(DetailStyle::Unchanged)),
+                styled("e", new_detail(DetailStyle::Changed)),
+                styled("ll!", new_detail(DetailStyle::Unchanged)),
             ]
         );
     }
