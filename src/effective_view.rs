@@ -86,12 +86,12 @@ impl WrapWidth {
     /// `content_width` wide: both side-by-side panes wrap at the narrower pane's payload
     /// width. A pane with no room for payload wraps one cell per line.
     fn for_panes(wrapping: Wrapping, content_width: Cells) -> Self {
-        let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
-        let wrap_width = NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN);
-
         match wrapping {
             Wrapping::Disabled => Self::Unbounded,
-            Wrapping::Enabled => Self::At(wrap_width),
+            Wrapping::Enabled => {
+                let payload_width = content_width.saturating_sub(MARKER_GUTTER_WIDTH);
+                Self::At(NonZeroCells::new(payload_width).unwrap_or(NonZeroCells::MIN))
+            }
         }
     }
 
@@ -110,7 +110,8 @@ mod tests {
 
     use super::{EffectiveView, TooSmall, WrapWidth};
     use crate::{
-        preferences::{DiffLayout, ViewPreferences, Wrapping},
+        geometry::SplitDirection,
+        preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
         screen::{Cells, NonZeroCells},
     };
 
@@ -163,12 +164,33 @@ mod tests {
         }
     }
 
+    fn wrap_at(cells: usize) -> WrapWidth {
+        WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
+    }
+
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
-        let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
-        let wrap_at = |cells| {
-            WrapWidth::At(NonZeroCells::new(Cells::new(cells)).expect("a nonzero test wrap width"))
+        let preferences = ViewPreferences {
+            layout: DiffLayout::Vertical,
+            wrapping: Wrapping::Enabled,
+            file_list: FileList::Hidden,
+            ..ViewPreferences::INITIAL
         };
+        let view = EffectiveView::of(preferences, Size::new(80, 10));
+        let panes = view
+            .geometry()
+            .split_panes(SplitDirection::Vertical)
+            .panes();
+
+        // 79 columns beside the separator split into a 39-column and a 40-column pane,
+        // whose frames leave 37 content columns, two of them the marker gutter.
+        assert_eq!((panes.old.width, panes.new.width), (39, 40));
+        assert_eq!(view.wrap(), wrap_at(35));
+    }
+
+    #[test]
+    fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
+        let wrap = |wrapping, width| WrapWidth::for_panes(wrapping, Cells::new(width));
 
         assert_eq!(wrap(Wrapping::Enabled, 24), wrap_at(22));
         assert_eq!(wrap(Wrapping::Enabled, 51), wrap_at(49));
