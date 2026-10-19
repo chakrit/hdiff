@@ -637,13 +637,13 @@ mod tests {
                 .as_bytes(),
         );
 
-        let width = |shape, count| {
+        let widest = |shape, count| {
             extent_of(&document, shape, ContextRecords::new(count), WrapWidth::Off).width()
         };
 
-        assert_eq!(width(PaneShape::Single, 1), Cells::new(24));
-        assert_eq!(width(VERTICAL, 1), Cells::new(24));
-        assert_eq!(width(PaneShape::Single, 2), Cells::new(40));
+        assert_eq!(widest(PaneShape::Single, 1), Cells::new(24));
+        assert_eq!(widest(VERTICAL, 1), Cells::new(24));
+        assert_eq!(widest(PaneShape::Single, 2), Cells::new(40));
     }
 
     #[test]

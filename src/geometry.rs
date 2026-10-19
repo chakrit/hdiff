@@ -466,7 +466,7 @@ mod tests {
         for (width, height, layout, expected) in cases {
             let screen = geometry(width, height, layout);
             let shown = match (screen.too_small(), screen.file_column()) {
-                (Some(too_small), _) => Shown::Message(too_small),
+                (Some(too_small), Some(_) | None) => Shown::Message(too_small),
                 (None, None) => Shown::DiffOnly,
                 (None, Some(_)) => Shown::WithFileList,
             };
