@@ -11,7 +11,10 @@ use hdiff::{
 use ratatui::layout::Size;
 
 use crate::{
-    fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
+    fixtures::{
+        LONG_PATCH_ROWS, MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch,
+        paired_patch,
+    },
     harness::{FIRST_CONTENT_LINE, Live, Mode, SCREEN, WIDTH, change_label},
 };
 
@@ -45,7 +48,8 @@ fn vertical_movement(mode: Mode) {
     assert_eq!(live.buffer(), top, "k scrolls back");
 
     live.press('G');
-    assert!(live.shows("row_199"), "G reaches the end");
+    let last_row = format!("row_{}", LONG_PATCH_ROWS - 1);
+    assert!(live.shows(&last_row), "G reaches the end");
     live.press('g');
     assert_eq!(live.buffer(), top, "g returns to the top");
 }

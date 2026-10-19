@@ -167,7 +167,8 @@ impl KeymapPopup {
     const fn after(self, command: KeymapCommand) -> Self {
         match (self, command) {
             (Self::Closed, KeymapCommand::Toggle) => Self::Open,
-            (Self::Open, KeymapCommand::Toggle) | (_, KeymapCommand::Close) => Self::Closed,
+            (Self::Open, KeymapCommand::Toggle)
+            | (Self::Open | Self::Closed, KeymapCommand::Close) => Self::Closed,
         }
     }
 }

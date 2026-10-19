@@ -40,15 +40,22 @@ pub fn directory_name(index: usize) -> String {
 /// How many `x` graphemes the wide row of [`long_patch`] holds.
 pub const WIDE_ROW_GRAPHEMES: usize = 200;
 
-/// 200 added rows with one row wider than every pane.
+/// How many added rows [`long_patch`] holds.
+pub const LONG_PATCH_ROWS: usize = 200;
+
+/// The index of [`long_patch`]'s one row wider than every pane.
+pub const WIDE_ROW_INDEX: usize = 1;
+
+/// [`LONG_PATCH_ROWS`] added rows named `row_{index}`, except the wide row at
+/// [`WIDE_ROW_INDEX`], which is wider than every pane.
 pub fn long_patch() -> String {
-    let rows = (0..200)
+    let rows = (0..LONG_PATCH_ROWS)
         .map(|row| match row {
-            1 => format!("+wide_{}_end\n", "x".repeat(WIDE_ROW_GRAPHEMES)),
+            WIDE_ROW_INDEX => format!("+wide_{}_end\n", "x".repeat(WIDE_ROW_GRAPHEMES)),
             _ => format!("+row_{row}\n"),
         })
         .collect::<String>();
-    format!("--- a/long.rs\n+++ b/long.rs\n@@ -0,0 +1,200 @@\n{rows}")
+    format!("--- a/long.rs\n+++ b/long.rs\n@@ -0,0 +1,{LONG_PATCH_ROWS} @@\n{rows}")
 }
 
 /// One change followed by six context records.
