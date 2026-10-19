@@ -119,6 +119,7 @@ impl ScrollExtent {
         }
     }
 
+    /// Screen lines the visible rows take.
     pub fn line_count(&self) -> ScreenLines {
         match &self.visible {
             VisibleRows::Single(lines) => lines.line_count(),
@@ -127,7 +128,7 @@ impl ScrollExtent {
     }
 
     /// Cells of the widest visible row, including the marker gutter.
-    pub fn width(&self) -> Cells {
+    fn width(&self) -> Cells {
         match &self.visible {
             VisibleRows::Single(lines) => lines.width,
             VisibleRows::Split { pairs, .. } => pairs.width,
@@ -296,6 +297,7 @@ struct PlacedRow<R> {
 }
 
 impl<R: Copy + Ord> MeasuredRows<R> {
+    /// Screen lines the rows take.
     fn line_count(&self) -> ScreenLines {
         self.rows
             .last()
@@ -349,6 +351,7 @@ impl<R: Copy + Ord> MeasuredRows<R> {
             .partition_point(|placed| placed.line_end.get() <= offset)
     }
 
+    /// The first screen line of the row at `position`.
     fn line_start(&self, position: usize) -> ScreenLines {
         match position {
             0 => ScreenLines::ZERO,
@@ -514,10 +517,13 @@ mod tests {
 
     const VERTICAL: PaneShape = PaneShape::Split(SplitDirection::Vertical);
 
+    /// `patch` parsed and prepared.
     fn prepared(patch: &[u8]) -> PreparedDocument {
         PreparedDocument::prepare(&parse_patch(patch).expect("valid diff"))
     }
 
+    /// The first page's extent in `shape` at `context` records of context, wrapped at
+    /// `wrap`.
     fn extent_of(
         document: &PreparedDocument,
         shape: PaneShape,
@@ -533,6 +539,7 @@ mod tests {
         ScrollExtent::of(document, PageIndex::FIRST, settings)
     }
 
+    /// The rows of the document's first page.
     fn first_rows(document: &PreparedDocument) -> &PageRows {
         document.page(PageIndex::FIRST).rows()
     }
