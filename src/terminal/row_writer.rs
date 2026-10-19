@@ -308,14 +308,14 @@ mod tests {
         PaneRow::Text(page.row(page.rows().line_index(line), granularity))
     }
 
-    fn write(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
+    fn scrolled_buffer(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
         let placement = RowPlacement::Scrolled {
             horizontal_offset: Cells::new(horizontal_offset),
         };
-        written(row, width, placement).buffer
+        write_placed(row, width, placement).buffer
     }
 
-    fn written(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Written {
+    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Written {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
         let clip = write_row(&mut buffer, area, row, placement, THEME);
@@ -329,7 +329,7 @@ mod tests {
         page.rows()
             .line_indices()
             .map(|line| page.row(line, DiffGranularity::Line))
-            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
+            .map(|row| row_text(&scrolled_buffer(PaneRow::Text(row), width, 0)))
             .collect()
     }
 
@@ -397,7 +397,7 @@ mod tests {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
         let addition = first_page_row(&prepared, 4, DiffGranularity::Character);
 
-        let buffer = write(addition, 8, 0);
+        let buffer = scrolled_buffer(addition, 8, 0);
 
         assert_eq!(buffer[(2, 0)].symbol(), "ก่");
     }
@@ -409,7 +409,7 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
         let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = write(addition, 8, 3);
+        let buffer = scrolled_buffer(addition, 8, 3);
 
         assert_eq!(buffer[(0, 0)].symbol(), " ");
         assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
@@ -421,7 +421,7 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
         let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = write(addition, 5, 0);
+        let buffer = scrolled_buffer(addition, 5, 0);
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
@@ -437,7 +437,7 @@ mod tests {
                 line: ScreenLines::new(line),
                 width: NonZeroCells::of(4),
             };
-            written(addition, 6, placement).buffer
+            write_placed(addition, 6, placement).buffer
         };
 
         let (first, second, past_the_end) = (wrapped_line(0), wrapped_line(1), wrapped_line(2));
@@ -459,7 +459,7 @@ mod tests {
             let placement = RowPlacement::Scrolled {
                 horizontal_offset: Cells::new(horizontal_offset),
             };
-            written(row, width, placement).clip
+            write_placed(row, width, placement).clip
         };
         let wrapped = RowPlacement::Wrapped {
             line: ScreenLines::new(1),
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(clip(4, 1), sides(true, true));
         assert_eq!(clip(6, 1), sides(true, false));
         assert_eq!(
-            written(row, 3, wrapped).clip,
+            write_placed(row, 3, wrapped).clip,
             sides(false, false),
             "a wrapped line shows its whole part of the row"
         );
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn fills_an_alignment_peer_with_its_change_style_only() {
-        let buffer = write(PaneRow::AlignmentPeer(Side::Old), 4, 0);
+        let buffer = scrolled_buffer(PaneRow::AlignmentPeer(Side::Old), 4, 0);
 
         assert_eq!(row_text(&buffer), "", "an alignment peer writes no text");
         let modifier = buffer[(3, 0)].modifier;
