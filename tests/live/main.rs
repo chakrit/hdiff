@@ -6,36 +6,36 @@
 macro_rules! matrix {
     ($($scenario:ident),* $(,)?) => {$(
         mod $scenario {
-            use super::{DiffLayout::*, Mode};
+            use super::{DiffLayout, Mode};
 
             #[test]
             fn unified_line() {
-                super::$scenario(Mode::line(Unified));
+                super::$scenario(Mode::line(DiffLayout::Unified));
             }
 
             #[test]
             fn unified_character() {
-                super::$scenario(Mode::character(Unified));
+                super::$scenario(Mode::character(DiffLayout::Unified));
             }
 
             #[test]
             fn vertical_line() {
-                super::$scenario(Mode::line(Vertical));
+                super::$scenario(Mode::line(DiffLayout::Vertical));
             }
 
             #[test]
             fn vertical_character() {
-                super::$scenario(Mode::character(Vertical));
+                super::$scenario(Mode::character(DiffLayout::Vertical));
             }
 
             #[test]
             fn stacked_line() {
-                super::$scenario(Mode::line(Stacked));
+                super::$scenario(Mode::line(DiffLayout::Stacked));
             }
 
             #[test]
             fn stacked_character() {
-                super::$scenario(Mode::character(Stacked));
+                super::$scenario(Mode::character(DiffLayout::Stacked));
             }
         }
     )*};
