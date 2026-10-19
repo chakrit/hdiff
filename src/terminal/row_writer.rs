@@ -32,7 +32,7 @@ pub(super) enum RowPlacement {
 }
 
 /// Whether a written line left cells of its row outside the pane on either side.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct Clip {
     pub(super) left: bool,
     pub(super) right: bool,
@@ -279,7 +279,7 @@ impl RowCursor<'_> {
 #[cfg(test)]
 mod tests {
     use ratatui::{
-        buffer::{Buffer, CellWidth},
+        buffer::{Buffer, Cell, CellWidth},
         layout::Rect,
         style::Modifier,
     };
@@ -289,7 +289,7 @@ mod tests {
         parser::parse_patch,
         preferences::DiffGranularity,
         prepared::{PageIndex, PreparedDocument},
-        screen::{Cells, NonZeroCells, ScreenLines},
+        screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
         side::Side,
         terminal::rows::PaneRow,
         theme::{ColorDepth, Theme},
@@ -332,6 +332,25 @@ mod tests {
         let mut buffer = Buffer::empty(area);
         let clip = write_row(&mut buffer, area, row, placement, THEME);
         Written { buffer, clip }
+    }
+
+    /// The cell of a one-line `buffer` that shows payload column `column` of a row
+    /// scrolled right by `horizontal_offset`: past the marker gutter, less the offset.
+    fn payload_cell(buffer: &Buffer, column: Cells, horizontal_offset: Cells) -> &Cell {
+        let row_column = (MARKER_GUTTER_WIDTH + column)
+            .checked_sub(horizontal_offset)
+            .expect("the payload column is not scrolled out of the pane");
+        &buffer[(row_column.frame_columns(), 0)]
+    }
+
+    /// The first cell of a one-line `buffer`.
+    fn first_cell(buffer: &Buffer) -> &Cell {
+        &buffer[(0, 0)]
+    }
+
+    /// The last cell of a one-line `buffer`.
+    fn last_cell(buffer: &Buffer) -> &Cell {
+        &buffer[(buffer.area.width - 1, 0)]
     }
 
     /// Every row of the first page, written in line detail.
@@ -411,7 +430,10 @@ mod tests {
 
         let buffer = scrolled_buffer(addition, 8, Cells::ZERO);
 
-        assert_eq!(buffer[(2, 0)].symbol(), "ก่");
+        assert_eq!(
+            payload_cell(&buffer, Cells::ZERO, Cells::ZERO).symbol(),
+            "ก่"
+        );
     }
 
     /// docs/spec/architecture.md#lossless-and-safe-rendering: a wide grapheme cut by the
@@ -421,11 +443,13 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
         let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = scrolled_buffer(addition, 8, Cells::new(3));
+        let offset = Cells::new(3);
+        let buffer = scrolled_buffer(addition, 8, offset);
+        let wide_second_cell = payload_cell(&buffer, Cells::ONE, offset);
 
-        assert_eq!(buffer[(0, 0)].symbol(), " ");
-        assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
-        assert_eq!(buffer[(1, 0)].symbol(), "x");
+        assert_eq!(wide_second_cell.symbol(), " ");
+        assert_eq!(wide_second_cell.bg, THEME.rows.change.new.background);
+        assert_eq!(payload_cell(&buffer, Cells::new(2), offset).symbol(), "x");
     }
 
     #[test]
@@ -435,9 +459,11 @@ mod tests {
 
         let buffer = scrolled_buffer(addition, 5, Cells::ZERO);
 
-        assert_eq!(buffer[(3, 0)].symbol(), "b");
-        assert_eq!(buffer[(4, 0)].symbol(), " ");
-        assert_eq!(buffer[(4, 0)].bg, THEME.rows.change.new.background);
+        let wide_start = payload_cell(&buffer, Cells::new(2), Cells::ZERO);
+
+        assert_eq!(payload_cell(&buffer, Cells::ONE, Cells::ZERO).symbol(), "b");
+        assert_eq!(wide_start.symbol(), " ");
+        assert_eq!(wide_start.bg, THEME.rows.change.new.background);
     }
 
     #[test]
@@ -457,8 +483,11 @@ mod tests {
         assert_eq!(row_text(&first), "+ abcd");
         assert_eq!(row_text(&second), "  e界f");
         assert_eq!(row_text(&past_the_end), "");
-        assert_eq!(second[(0, 0)].bg, THEME.rows.change.new.background);
-        assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.change.new.background);
+        assert_eq!(first_cell(&second).bg, THEME.rows.change.new.background);
+        assert_eq!(
+            last_cell(&past_the_end).bg,
+            THEME.rows.change.new.background
+        );
     }
 
     /// docs/spec/architecture.md#continuity-markers: the row has cells left of the
@@ -497,7 +526,7 @@ mod tests {
         let buffer = scrolled_buffer(PaneRow::AlignmentPeer(Side::Old), 4, Cells::ZERO);
 
         assert_eq!(row_text(&buffer), "", "an alignment peer writes no text");
-        let modifier = buffer[(3, 0)].modifier;
+        let modifier = last_cell(&buffer).modifier;
         assert!(modifier.contains(Modifier::DIM), "{modifier:?}");
     }
 }
