@@ -1,7 +1,6 @@
 //! How rows look: change backgrounds and dimming, alignment peers, syntax and character
 //! detail colors, hunk headers, and continuity markers.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use hdiff::preferences::DiffLayout;
 use ratatui::{
     buffer::{Buffer, Cell},
@@ -9,7 +8,7 @@ use ratatui::{
     style::{Color, Modifier},
 };
 
-use crate::harness::{Live, Mode, THEME};
+use crate::harness::{Live, Mode, THEME, cells, positions};
 
 /// architecture.md (Continuity markers): markers take the dimmed separator tone.
 #[test]
@@ -254,7 +253,7 @@ fn assert_unmatched_payload_toggle(layout: DiffLayout) {
                  --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
                  @@ -2,0 +2 @@\n+fn added() {}\n";
     let mut live = Live::sized(patch, Mode::line(layout), Size::new(160, 30));
-    live.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    live.next_file();
     let line_rendered = live.buffer();
     let payloads = [
         ("fn removed() {}", THEME.rows.change.old.marker),
@@ -279,16 +278,12 @@ fn assert_unmatched_payload_toggle(layout: DiffLayout) {
 }
 
 fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
-    let mut occurrences = buffer.content.windows(payload.len()).filter(|cells| {
-        cells
-            .iter()
-            .map(Cell::symbol)
-            .eq(payload.split("").filter(|symbol| !symbol.is_empty()))
-    });
-    let cells = occurrences.next().expect("full source payload is visible");
+    let mut occurrences = positions(buffer, payload);
+    let start = occurrences.next().expect("full source payload is visible");
 
     assert!(occurrences.next().is_none(), "source payload appears once");
-    cells
+    let first = buffer.index_of(start.x, start.y);
+    &buffer.content[first..first + usize::from(cells(payload))]
 }
 
 /// architecture.md (View model): hunk headers are muted cyan-blue; file headers stay

@@ -20,10 +20,10 @@ fn wrapping(mode: Mode) {
         live.shows("wide_") && live.shows("_end"),
         "w wraps the wide row"
     );
-    let shown_x = x_count(&live);
+    let shown_x = live.count('x');
     live.press('G');
     assert_eq!(
-        shown_x - x_count(&live),
+        shown_x - live.count('x'),
         200,
         "every grapheme of the wide row shows once"
     );
@@ -38,11 +38,6 @@ fn wrapping(mode: Mode) {
 
     live.press('w');
     assert_eq!(live.buffer(), start, "w restores unwrapped rows");
-}
-
-/// Count of `x` on screen.
-fn x_count(live: &Live) -> usize {
-    live.rows().iter().map(|row| row.matches('x').count()).sum()
 }
 
 #[test]
