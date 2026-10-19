@@ -7,8 +7,7 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    navigation::Navigation,
-    navigation::interaction::Outcome,
+    navigation::{Navigation, interaction::Outcome},
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},

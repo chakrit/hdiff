@@ -127,7 +127,7 @@ impl RestoreStep {
 }
 
 /// Success when every step succeeded; otherwise the failed steps.
-fn restored(
+fn restore_outcome(
     steps: impl IntoIterator<Item = (RestoreStep, io::Result<()>)>,
 ) -> Result<(), RestoreFailures> {
     let failures = steps
@@ -162,7 +162,7 @@ impl TerminalSession {
         let panic_hook = RestoringPanicHook::install();
 
         if let Err(error) = execute!(terminal.backend_mut(), EnterAlternateScreen) {
-            let restored = restored([
+            let restored = restore_outcome([
                 (RestoreStep::Cursor, terminal.show_cursor()),
                 (RestoreStep::RawMode, terminal::disable_raw_mode()),
             ]);
@@ -188,7 +188,7 @@ impl TerminalSession {
         let raw_mode = terminal::disable_raw_mode();
         self.panic_hook.uninstall();
 
-        restored([
+        restore_outcome([
             (RestoreStep::Cursor, cursor),
             (RestoreStep::AlternateScreen, screen),
             (RestoreStep::RawMode, raw_mode),
@@ -229,7 +229,7 @@ impl RestoringPanicHook {
 fn restore_after_panic() -> Result<(), PanicRestoreError> {
     let mut controlling_terminal = open_controlling_terminal().map_err(PanicRestoreError::Open)?;
 
-    let restored = restored([
+    let restored = restore_outcome([
         (
             RestoreStep::Cursor,
             execute!(controlling_terminal, crossterm::cursor::Show),
