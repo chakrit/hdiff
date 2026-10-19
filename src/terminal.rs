@@ -93,18 +93,14 @@ impl Tui {
         let Some(event) = bindings::event_for(event) else {
             return Ok(Step::Continue);
         };
-        let pages = self.navigation.document().page_count();
-        let effect = match self.navigation.interaction().respond(event, pages) {
-            Outcome::Exit => return Ok(Step::Exit),
-            Outcome::Ignored => return Ok(Step::Continue),
-            Outcome::Redraw => None,
-            Outcome::Effect(effect) => Some(effect),
-        };
-
         let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(screen);
-        if let Some(effect) = effect {
-            self.navigation.step(effect);
+
+        let pages = self.navigation.document().page_count();
+        match self.navigation.interaction().respond(event, pages) {
+            Outcome::Exit => return Ok(Step::Exit),
+            Outcome::Redraw => {}
+            Outcome::Effect(effect) => self.navigation.step(effect),
         }
 
         self.draw(terminal)?;
