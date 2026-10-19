@@ -151,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn holds_collected_items_only_when_there_is_one() {
+    fn holds_collected_items_only_when_there_is_at_least_one() {
         let none = NonEmpty::<u8>::of([]);
         let some = NonEmpty::of([1, 2]).expect("two items");
 
