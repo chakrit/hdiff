@@ -175,28 +175,24 @@ impl ExpandedPayload {
         Self { text, boundaries }
     }
 
-    /// Each cluster with the style of the segment containing its first byte.
+    /// Each cluster with the style of the segment containing its first byte. Clusters and
+    /// segment ends both ascend, so one forward walk pairs them; the segments end where
+    /// the text ends, so the walk ends with the last cluster.
     fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
+        let mut boundaries = self.boundaries.iter().peekable();
+
         self.text
             .grapheme_indices(true)
-            .map(|(start, cluster)| StyledText {
-                text: cluster,
-                style: self.style_at(start),
+            .map_while(move |(start, cluster)| {
+                while boundaries
+                    .next_if(|boundary| boundary.end <= start)
+                    .is_some()
+                {}
+                boundaries.peek().map(|boundary| StyledText {
+                    text: cluster,
+                    style: boundary.style,
+                })
             })
-    }
-
-    /// The style of the segment containing byte `position`: the first segment ending past
-    /// it, since segment ends ascend.
-    fn style_at(&self, position: usize) -> TextStyle {
-        let containing = self
-            .boundaries
-            .partition_point(|boundary| boundary.end <= position);
-        let boundary = self
-            .boundaries
-            .get(containing)
-            .expect("every cluster starts inside a segment");
-
-        boundary.style
     }
 }
 
@@ -435,7 +431,7 @@ mod tests {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
         let addition = first_added_row(&prepared, DiffGranularity::Character);
 
-        let buffer = scrolled_buffer(addition, 8, Cells::ZERO);
+        let buffer = scrolled_buffer(addition, pane_width(Cells::of_text("ก่")), Cells::ZERO);
 
         assert_eq!(
             payload_cell(&buffer, Cells::ZERO, Cells::ZERO).symbol(),
@@ -452,12 +448,15 @@ mod tests {
 
         // Scrolled past the gutter and the wide cluster's first cell.
         let offset = MARKER_GUTTER_WIDTH + Cells::ONE;
-        let buffer = scrolled_buffer(addition, 8, offset);
+        let buffer = scrolled_buffer(addition, pane_width(Cells::of_text("界x")), offset);
         let wide_second_cell = payload_cell(&buffer, Cells::ONE, offset);
 
         assert_eq!(wide_second_cell.symbol(), " ");
         assert_eq!(wide_second_cell.bg, THEME.rows.change.new.background);
-        assert_eq!(payload_cell(&buffer, Cells::new(2), offset).symbol(), "x");
+        assert_eq!(
+            payload_cell(&buffer, Cells::of_text("界"), offset).symbol(),
+            "x"
+        );
     }
 
     #[test]
@@ -468,9 +467,12 @@ mod tests {
         let one_cell_short_of_the_wide_cluster = pane_width(Cells::of_text("ab") + Cells::ONE);
         let buffer = scrolled_buffer(addition, one_cell_short_of_the_wide_cluster, Cells::ZERO);
 
-        let wide_start = payload_cell(&buffer, Cells::new(2), Cells::ZERO);
+        let wide_start = payload_cell(&buffer, Cells::of_text("ab"), Cells::ZERO);
 
-        assert_eq!(payload_cell(&buffer, Cells::ONE, Cells::ZERO).symbol(), "b");
+        assert_eq!(
+            payload_cell(&buffer, Cells::of_text("a"), Cells::ZERO).symbol(),
+            "b"
+        );
         assert_eq!(wide_start.symbol(), " ");
         assert_eq!(wide_start.bg, THEME.rows.change.new.background);
     }
