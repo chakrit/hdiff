@@ -6,7 +6,7 @@ use std::{cmp::Reverse, collections::BinaryHeap, slice};
 
 use crate::{
     detail::{ChangedDetail, character_details},
-    display_lines::LineKind,
+    display_lines::{LineKind, RecordPart},
     document::{FileView, RecordMap},
     measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
@@ -111,20 +111,24 @@ pub enum RowTone {
 }
 
 impl RowTone {
-    /// The tone of a line of `kind`.
+    /// The tone of a line of `kind`: a record payload's change, if any; a no-newline
+    /// marker is unchanged whatever its record changed.
     fn of(kind: LineKind) -> Self {
-        let Some(record) = kind.payload_record() else {
-            return match kind {
-                LineKind::Record { .. } => Self::UnchangedRecord,
-                LineKind::HunkHeader => Self::HunkHeader,
-                LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
-            };
-        };
-
-        record
-            .kind
-            .changed_side()
-            .map_or(Self::UnchangedRecord, Self::Changed)
+        match kind {
+            LineKind::Record {
+                kind,
+                part: RecordPart::Payload,
+                ..
+            } => kind
+                .changed_side()
+                .map_or(Self::UnchangedRecord, Self::Changed),
+            LineKind::Record {
+                part: RecordPart::NoNewlineMarker,
+                ..
+            } => Self::UnchangedRecord,
+            LineKind::HunkHeader => Self::HunkHeader,
+            LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
+        }
     }
 }
 

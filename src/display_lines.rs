@@ -56,17 +56,6 @@ impl LineKind {
         self.record_kind()?.changed_side()
     }
 
-    /// Whether the line is the no-newline marker after a record.
-    pub fn is_no_newline_marker(self) -> bool {
-        matches!(
-            self,
-            Self::Record {
-                part: RecordPart::NoNewlineMarker,
-                ..
-            }
-        )
-    }
-
     /// The record whose payload the line is; a no-newline marker and a line that is not
     /// a record's are no record's payload.
     pub fn payload_record(self) -> Option<PayloadRecord> {

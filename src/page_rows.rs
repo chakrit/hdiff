@@ -553,7 +553,7 @@ fn is_context_line(line: &RenderedLine) -> bool {
 mod tests {
     use super::{PageRows, RenderedLine, SideBySideRow};
     use crate::{
-        display_lines::LineKind,
+        display_lines::{LineKind, RecordPart},
         parser::parse_patch,
         preferences::ContextRecords,
         side::{BySide, Side},
@@ -764,7 +764,15 @@ mod tests {
         let (marker, marker_kind) = rows
             .lines()
             .map(|(index, line)| (index, line.kind()))
-            .find(|(_, kind)| kind.is_no_newline_marker())
+            .find(|(_, kind)| {
+                matches!(
+                    kind,
+                    LineKind::Record {
+                        part: RecordPart::NoNewlineMarker,
+                        ..
+                    }
+                )
+            })
             .expect("the hunk ends with a no-newline marker");
         let record = rows
             .lines()
