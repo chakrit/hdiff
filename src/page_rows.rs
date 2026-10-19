@@ -266,18 +266,12 @@ impl PageRows {
         &self,
         mut values_of_pair: impl FnMut(SideBySideRow<LineIndex>) -> BySide<Option<T>>,
     ) -> LineMap<Option<T>> {
-        let mut placed_values = self
+        let placed_values = self
             .pairs
             .iter()
-            .flat_map(|row| values_on_lines(*row, values_of_pair(*row)))
-            .collect::<Vec<_>>();
-        // A changed block lists its old lines before its new lines, so pair order is not
-        // line order.
-        placed_values.sort_by_key(|line_value| line_value.line);
+            .flat_map(|row| values_on_lines(*row, values_of_pair(*row)));
 
-        let values = placed_values.into_iter().map(|line_value| line_value.value);
-
-        LineMap(values.collect())
+        LineMap(in_line_order(placed_values))
     }
 
     /// The side-by-side row `index`.
@@ -372,6 +366,18 @@ fn values_on_lines<T>(
         .filter_map(|(line, value)| line.map(|line| LineValue { line, value }));
 
     shared.into_iter().chain(changed)
+}
+
+/// The values of `placed`, one per line, in line order. Rows list a changed block's old
+/// lines before its new lines, so values placed row by row are not in line order.
+fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Box<[T]> {
+    let mut placed = placed.into_iter().collect::<Vec<_>>();
+    placed.sort_by_key(|line_value| line_value.line);
+
+    placed
+        .into_iter()
+        .map(|line_value| line_value.value)
+        .collect()
 }
 
 /// A page's side-by-side rows and the pair holding each of its lines.
@@ -488,21 +494,13 @@ impl BlockRows {
             .chain(unmatched.new)
             .collect::<Vec<_>>();
 
-        let mut placed = pairs
-            .iter()
-            .enumerate()
-            .flat_map(|(offset, row)| {
-                row.lines().map(move |line| LineValue {
-                    line,
-                    value: first_pair.offset(offset),
-                })
+        let placed_pairs = pairs.iter().enumerate().flat_map(|(offset, row)| {
+            row.lines().map(move |line| LineValue {
+                line,
+                value: first_pair.offset(offset),
             })
-            .collect::<Vec<_>>();
-        placed.sort_by_key(|placed_line| placed_line.line);
-        let pair_of_line = placed
-            .into_iter()
-            .map(|placed_line| placed_line.value)
-            .collect();
+        });
+        let pair_of_line = in_line_order(placed_pairs).into_vec();
 
         Self {
             pairs,
