@@ -81,6 +81,32 @@ impl<'a> GitMetadata<'a> {
     }
 }
 
+/// Whether `text` is the `GIT binary patch` line that opens a binary patch's blocks.
+pub fn is_binary_patch_header(text: &str) -> bool {
+    text == "GIT binary patch"
+}
+
+/// The size field after a `literal ` or `delta ` binary block header's prefix; any other
+/// line has none.
+pub fn binary_block_field(text: &str) -> Option<&str> {
+    let literal = text.strip_prefix("literal ");
+    let delta = text.strip_prefix("delta ");
+
+    literal.or(delta)
+}
+
+/// The line number or count a header `field` states. Only ASCII digits are a count:
+/// Rust's integer parsing also admits a leading `+`, which no diff writes. Rules:
+/// docs/spec/architecture.md#input-contract.
+pub fn decimal_count(field: &str) -> Option<usize> {
+    let digits = !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit());
+    if !digits {
+        return None;
+    }
+
+    field.parse().ok()
+}
+
 /// A `---` or `+++` line and the path it names.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileHeader {
