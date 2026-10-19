@@ -6,18 +6,31 @@ use crate::{
     fixtures::{
         TREE_PATCH, directory_name, file_name, files_in_directories, many_files, paired_patch,
     },
-    harness::{FIRST_CONTENT_LINE, Live, Mode, change_label},
+    harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, change_label},
 };
 
 /// Lines the file-list toggle scrolls first, so a labeled change row sits on the middle
 /// line, away from the block's start.
 const LINES_INTO_THE_BLOCK: usize = 20;
 
+/// More files than the default screen has rows, so the file list cannot show them all
+/// and files remain below any selection the tests make.
+const MORE_FILES_THAN_ROWS: usize = 2 * HEIGHT as usize;
+
 /// How many continuity markers the file list shows above and below its rows.
 #[derive(Debug, PartialEq, Eq)]
 struct EdgeMarkers {
     above: usize,
     below: usize,
+}
+
+/// How many files the file list shows: selecting the file at this index, the first
+/// one past them, scrolls the list.
+fn listed_files(live: &Live) -> usize {
+    live.file_column()
+        .iter()
+        .filter(|row| row.starts_with("~ "))
+        .count()
 }
 
 matrix!(file_list_toggle);
@@ -60,9 +73,9 @@ fn opens_the_keymap_popup_over_the_diff_not_the_file_list() {
 
 #[test]
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
-    let file_count = 40;
-    let selected = 36;
-    let mut live = Live::load(&many_files(file_count), Mode::line(DiffLayout::Unified));
+    let patch = many_files(MORE_FILES_THAN_ROWS);
+    let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
+    let selected = listed_files(&live);
 
     for _ in 0..selected {
         live.next_file();
@@ -179,9 +192,9 @@ fn colors_markers_by_state() {
 /// docs/spec/architecture.md#continuity-markers: the file list marks rows past each edge.
 #[test]
 fn marks_files_beyond_the_file_list() {
-    let file_count = 40;
-    let selected = 36;
+    let file_count = MORE_FILES_THAN_ROWS;
     let mut live = Live::load(&many_files(file_count), Mode::line(DiffLayout::Unified));
+    let selected = listed_files(&live);
     let markers = |live: &Live| {
         let list = live.file_column().join("");
         EdgeMarkers {
@@ -221,12 +234,11 @@ fn marks_files_beyond_the_file_list() {
 
 #[test]
 fn keeps_a_selection_below_its_headings_visible() {
-    let file_count = 30;
-    let selected = 20;
     let mut live = Live::load(
-        &files_in_directories(file_count),
+        &files_in_directories(MORE_FILES_THAN_ROWS),
         Mode::line(DiffLayout::Unified),
     );
+    let selected = listed_files(&live);
 
     for _ in 0..selected {
         live.next_file();
