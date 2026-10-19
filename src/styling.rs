@@ -6,7 +6,7 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use crate::{
     detail::{ChangedDetail, character_details},
-    display_lines::LineKind,
+    display_lines::{LineKind, RecordPart},
     document::{FileView, RecordMap},
     measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
@@ -64,8 +64,16 @@ impl StyledRows {
         let styles = rows.map_lines(|index, line| {
             let text = line.payload();
             let spans: &[SyntaxSpan] = match line.kind() {
-                LineKind::Record { address, .. } => syntax_spans.get(address),
-                LineKind::Text
+                LineKind::Record {
+                    address,
+                    part: RecordPart::Payload,
+                    ..
+                } => syntax_spans.get(address),
+                LineKind::Record {
+                    part: RecordPart::NoNewlineMarker,
+                    ..
+                }
+                | LineKind::Text
                 | LineKind::Metadata
                 | LineKind::FileHeader
                 | LineKind::HunkHeader => &[],
@@ -118,10 +126,16 @@ impl RowTone {
     fn of(kind: LineKind) -> Self {
         match kind {
             LineKind::Record {
-                kind: record_kind, ..
+                kind: record_kind,
+                part: RecordPart::Payload,
+                ..
             } => record_kind
                 .changed_side()
                 .map_or(Self::UnchangedRecord, Self::Changed),
+            LineKind::Record {
+                part: RecordPart::NoNewlineMarker,
+                ..
+            } => Self::UnchangedRecord,
             LineKind::HunkHeader => Self::HunkHeader,
             LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
         }

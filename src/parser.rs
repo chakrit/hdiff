@@ -288,8 +288,8 @@ fn parse_unified(
 
 // Hunks
 
-/// The records after a hunk `header` that declares `expected` counts, with a no-newline
-/// marker after the last of them.
+/// The records after a hunk `header` that declares `expected` counts, each with the
+/// no-newline marker that follows it, which may follow the last of them.
 fn parse_hunk(
     header: SourceLine,
     expected: BySide<usize>,
@@ -301,10 +301,14 @@ fn parse_hunk(
     while let Some(line) =
         lines.next_if(|text| remaining != exhausted || is_no_newline_marker(text))
     {
-        let previous = records.last().map(|record| record.kind);
-        let record = lines.at_last_line(parse_record(line, previous))?;
-        remaining = lines.at_last_line(count_record(remaining, record.kind))?;
-        records.push(record);
+        match is_no_newline_marker(line.sanitized()) {
+            true => lines.at_last_line(mark_no_newline(&mut records, line))?,
+            false => {
+                let record = lines.at_last_line(parse_record(line))?;
+                remaining = lines.at_last_line(count_record(remaining, record.kind))?;
+                records.push(record);
+            }
+        }
     }
 
     if remaining != exhausted {
@@ -330,32 +334,40 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
     counted.transpose().ok_or(Malformed::ExcessRecords)
 }
 
-/// The record a hunk line holds after a record of kind `previous`: a no-newline marker
-/// after a record that is not one, a record marked by its first visible character, or
-/// blank context when the line is empty. Any other line is malformed.
-fn parse_record(line: SourceLine, previous: Option<RecordKind>) -> Result<Record, Malformed> {
-    if is_no_newline_marker(line.sanitized()) {
-        return match previous {
-            None | Some(RecordKind::NoNewlineMarker) => Err(Malformed::MisplacedNoNewlineMarker),
-            Some(_) => Ok(Record {
-                kind: RecordKind::NoNewlineMarker,
-                payload: line,
-            }),
-        };
-    }
+/// Gives the last of `records` the no-newline `marker` after it; a marker that follows no
+/// record, or a record that already has one, is misplaced.
+fn mark_no_newline(records: &mut [Record], marker: SourceLine) -> Result<(), Malformed> {
+    let unmarked = records
+        .last_mut()
+        .filter(|record| record.no_newline.is_none());
+    let Some(record) = unmarked else {
+        return Err(Malformed::MisplacedNoNewlineMarker);
+    };
+
+    record.no_newline = Some(marker);
+    Ok(())
+}
+
+/// The record a hunk line holds: a record marked by its first visible character, or blank
+/// context when the line is empty. A diff header there is unexpected, and any other line
+/// is unmarked.
+fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
     if let Some(record) = marked_record(&line) {
         return Ok(record);
     }
     if line.sanitized().is_empty() {
         return Ok(Record {
-            kind: RecordKind::Context(ContextMarker::Omitted),
+            kind: RecordKind::Context(ContextMarker::Blank),
             payload: line,
+            no_newline: None,
         });
     }
 
-    match line_start(line.sanitized())? {
-        LineStart::GitHeader => Err(Malformed::UnexpectedFileHeaderInHunk),
-        LineStart::Text | LineStart::OldFileHeader(_) => Err(Malformed::UnmarkedHunkLine),
+    let text = line.sanitized();
+    reject_unsupported_header(text)?;
+    match git_header_names(text) {
+        Some(_) => Err(Malformed::UnexpectedFileHeaderInHunk),
+        None => Err(Malformed::UnmarkedHunkLine),
     }
 }
 
@@ -370,7 +382,11 @@ fn marked_record(line: &SourceLine) -> Option<Record> {
     let (marker, payload) = line.split_first()?;
     let kind = RecordKind::of_marker(marker)?;
 
-    Some(Record { kind, payload })
+    Some(Record {
+        kind,
+        payload,
+        no_newline: None,
+    })
 }
 
 /// A marked record after a hunk's declared counts are complete; a `---` line starts the
@@ -622,7 +638,7 @@ mod tests {
     }
 
     /// docs/spec/architecture.md#input-contract: every line inside a hunk is a marked
-    /// record, an omitted-blank context line, or a no-newline marker.
+    /// record, a blank context line, or a no-newline marker.
     #[test]
     fn rejects_unmarked_lines_inside_hunks() {
         let files = "--- a/x\n+++ b/x\n";
@@ -646,7 +662,7 @@ mod tests {
     fn reads_an_empty_line_inside_a_hunk_as_blank_context() {
         let input = b"--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n";
 
-        let document = parse_patch(input).expect("GNU omitted-blank context");
+        let document = parse_patch(input).expect("GNU blank context");
         let kinds = first_hunk(&document)
             .records
             .iter()
@@ -657,7 +673,7 @@ mod tests {
             kinds,
             [
                 RecordKind::Context(ContextMarker::Space),
-                RecordKind::Context(ContextMarker::Omitted),
+                RecordKind::Context(ContextMarker::Blank),
                 RecordKind::Deletion,
                 RecordKind::Addition,
             ]
@@ -673,16 +689,23 @@ mod tests {
 
         let document = parse_patch(input.as_bytes()).expect("translated marker");
         let views = document.file_views().collect::<Vec<_>>();
-        let FileBody::Unified(first) = &views[0].file.body else {
+        let [first, second] = views.as_slice() else {
+            panic!("the patch holds two files: {} views", views.len());
+        };
+        let FileBody::Unified(first) = &first.file.body else {
             panic!("first file is unified");
         };
-        let last_kind = first.hunks[0].records.last().map(|record| record.kind);
+        let marker = first.hunks[0]
+            .records
+            .last()
+            .and_then(|record| record.no_newline.as_ref())
+            .map(|marker| marker.sanitized());
 
-        assert_eq!(last_kind, Some(RecordKind::NoNewlineMarker));
+        assert_eq!(marker, Some("\\ Kein Zeilenumbruch am Dateiende."));
         assert!(
-            views[1].leading.is_empty(),
+            second.leading.is_empty(),
             "the marker is not the next file's text: {:?}",
-            views[1].leading
+            second.leading
         );
     }
 

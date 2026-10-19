@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     compact::Count,
-    display_lines::{self, DisplayLine, LineKind},
+    display_lines::{self, DisplayLine, LineKind, RecordPart},
     document::{FileView, RecordAddress, RecordKind},
     preferences::ContextRecords,
     screen::Cells,
@@ -208,11 +208,19 @@ impl PageRows {
         self.line_indices().zip(&self.lines)
     }
 
-    /// Lines that show a record.
+    /// Lines that show a record's payload; a no-newline marker is part of its record.
     pub fn record_count(&self) -> usize {
         self.lines
             .iter()
-            .filter(|line| line.kind().record_kind().is_some())
+            .filter(|line| {
+                matches!(
+                    line.kind(),
+                    LineKind::Record {
+                        part: RecordPart::Payload,
+                        ..
+                    }
+                )
+            })
             .count()
     }
 
@@ -365,7 +373,7 @@ impl SideBySideLayout {
             .enumerate()
             .map(|(position, line)| LineSide {
                 line: LineIndex::at(position),
-                side: line.kind().changed_side(),
+                side: ChangedSide::of(line.kind()),
             })
             .collect::<Vec<_>>();
         let blocks = sides
@@ -390,8 +398,8 @@ impl SideBySideLayout {
     }
 }
 
-/// A line with the side it changes: `Option<Side>` before a block is known to be changed,
-/// `Side` within a changed block.
+/// A line with the side it changes: `Option<ChangedSide>` before a block is known to be
+/// changed, `ChangedSide` within a changed block.
 struct LineSide<S> {
     line: LineIndex,
     side: S,
@@ -406,7 +414,7 @@ struct BlockRows {
 
 impl BlockRows {
     /// The rows of `block`, the first of which is the page's pair `first_pair`.
-    fn of(block: &[LineSide<Option<Side>>], first_pair: PairIndex) -> Self {
+    fn of(block: &[LineSide<Option<ChangedSide>>], first_pair: PairIndex) -> Self {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
@@ -432,42 +440,83 @@ impl BlockRows {
         }
     }
 
-    /// A changed block pairs its *i*th old line with its *i*th new line in row *i*.
-    fn changed(block: &[LineSide<Side>], first_pair: PairIndex) -> Self {
-        let side_lines = |side| {
+    /// A changed block pairs its *i*th old record with its *i*th new record in row *i*.
+    /// The no-newline markers after each side's last record share one row after them, so
+    /// each marker sits right after its record in its own side's column.
+    fn changed(block: &[LineSide<ChangedSide>], first_pair: PairIndex) -> Self {
+        let lines_of = |side, part| {
             block
                 .iter()
-                .filter(move |line_side| line_side.side == side)
-                .map(|line_side| Some(line_side.line))
-                .chain(iter::repeat(None))
+                .filter(move |line_side| line_side.side == ChangedSide { side, part })
+                .map(|line_side| line_side.line)
         };
-        let pairs = side_lines(Side::Old)
-            .zip(side_lines(Side::New))
-            .map_while(|lines| match lines {
-                (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
-                (Some(old), None) => Some(SideBySideRow::OldOnly(old)),
-                (None, Some(new)) => Some(SideBySideRow::NewOnly(new)),
-                (None, None) => None,
-            })
-            .collect();
+        let records = BySide {
+            old: lines_of(Side::Old, RecordPart::Payload).collect::<Vec<_>>(),
+            new: lines_of(Side::New, RecordPart::Payload).collect::<Vec<_>>(),
+        };
+        let markers = BySide {
+            old: lines_of(Side::Old, RecordPart::NoNewlineMarker).next(),
+            new: lines_of(Side::New, RecordPart::NoNewlineMarker).next(),
+        };
 
-        let starts = BySide {
-            old: first_pair,
-            new: first_pair,
-        };
-        let pair_of_line = block
+        let record_rows = (0..records.old.len().max(records.new.len())).map(|row| BySide {
+            old: records.old.get(row).copied(),
+            new: records.new.get(row).copied(),
+        });
+        let pairs = record_rows
+            .chain(iter::once(markers))
+            .filter_map(changed_row)
+            .collect::<Vec<_>>();
+
+        let mut placed = pairs
             .iter()
-            .scan(starts, |next_pair, line_side| {
-                let pair = *next_pair.get(line_side.side);
-                *next_pair.get_mut(line_side.side) = pair.offset(1);
-                Some(pair)
+            .enumerate()
+            .flat_map(|(offset, row)| {
+                row.lines().map(move |line| LineValue {
+                    line,
+                    value: first_pair.offset(offset),
+                })
             })
+            .collect::<Vec<_>>();
+        placed.sort_by_key(|placed_line| placed_line.line);
+        let pair_of_line = placed
+            .into_iter()
+            .map(|placed_line| placed_line.value)
             .collect();
 
         Self {
             pairs,
             pair_of_line,
         }
+    }
+}
+
+/// The row holding a changed block's old and new `lines` at one position; a position
+/// neither side reaches holds no row.
+fn changed_row(lines: BySide<Option<LineIndex>>) -> Option<SideBySideRow<LineIndex>> {
+    match (lines.old, lines.new) {
+        (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
+        (Some(old), None) => Some(SideBySideRow::OldOnly(old)),
+        (None, Some(new)) => Some(SideBySideRow::NewOnly(new)),
+        (None, None) => None,
+    }
+}
+
+/// The side a changed line changes, and which of its record's lines it is.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ChangedSide {
+    side: Side,
+    part: RecordPart,
+}
+
+impl ChangedSide {
+    /// The changed side of a line of `kind`; a line that changes no side has none.
+    fn of(kind: LineKind) -> Option<Self> {
+        let LineKind::Record { kind, part, .. } = kind else {
+            return None;
+        };
+
+        kind.changed_side().map(|side| Self { side, part })
     }
 }
 
@@ -502,7 +551,7 @@ fn distances_from_previous_change<'a>(
 ) -> Vec<Option<Count>> {
     lines
         .scan(None, |last_change: &mut Option<RecordAddress>, line| {
-            let LineKind::Record { address, kind } = line.kind() else {
+            let LineKind::Record { address, kind, .. } = line.kind() else {
                 return Some(None);
             };
             if kind.changed_side().is_some() {
@@ -522,7 +571,9 @@ fn is_context_line(line: &RenderedLine) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PageRows, RenderedLine, SideBySideRow};
-    use crate::{display_lines::LineKind, parser::parse_patch, side::BySide};
+    use crate::{
+        display_lines::LineKind, parser::parse_patch, preferences::ContextRecords, side::BySide,
+    };
 
     /// The rows of `patch`'s first file.
     fn rows_of(patch: &[u8]) -> PageRows {
@@ -643,5 +694,63 @@ mod tests {
                 SideBySideRow::Shared(" context".to_owned()),
             ]
         );
+    }
+
+    /// docs/spec/architecture.md#view-model: a changed block renders as aligned
+    /// before/after pairs; a no-newline marker belongs to the record it follows, so it
+    /// stays in its record's block and on its record's side.
+    #[test]
+    fn pairs_an_end_of_file_edit_with_each_side_s_no_newline_marker() {
+        let marker = "\\ No newline at end of file";
+        let rows = rows_of(
+            format!("--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n{marker}\n+new\n{marker}\n")
+                .as_bytes(),
+        );
+        let text = |line| shown(rows.line(line));
+        let changed_pairs = rows
+            .pair_indices()
+            .skip(3)
+            .map(|index| rows.pair(index).map(text))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            changed_pairs,
+            [
+                SideBySideRow::Paired(BySide {
+                    old: "-old".to_owned(),
+                    new: "+new".to_owned(),
+                }),
+                SideBySideRow::Paired(BySide {
+                    old: marker.to_owned(),
+                    new: marker.to_owned(),
+                }),
+            ]
+        );
+    }
+
+    /// docs/spec/architecture.md#view-model: context records show within the
+    /// context-record count of a change; a no-newline marker shows exactly when the
+    /// record it follows does.
+    #[test]
+    fn hides_a_no_newline_marker_with_the_context_record_it_follows() {
+        let rows = rows_of(
+            b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-a\n+b\n last\n\\ No newline at end of file\n",
+        );
+        let marker = rows
+            .lines()
+            .find(|(_, line)| line.payload().starts_with("\\ "))
+            .map(|(index, _)| index)
+            .expect("the hunk ends with a no-newline marker");
+
+        for records in [0, 1] {
+            let context = ContextRecords::new(records);
+            let record_shown = rows.shows_line(rows.line_index(marker.get() - 1), context);
+
+            assert_eq!(
+                rows.shows_line(marker, context),
+                record_shown,
+                "context {records}"
+            );
+        }
     }
 }

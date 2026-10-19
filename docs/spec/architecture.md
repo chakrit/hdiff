@@ -131,7 +131,9 @@ but valid diff lines without data loss.
 - File-list paths follow the [file tree](#file-tree) path naming, while rendered diff
   headers preserve their original protocol text.
 - `Hunk`: header text containing the old/new ranges, and ordered records.
-- `Record`: context, addition, deletion, or no-newline marker, with original payload.
+- `Record`: context, addition, or deletion, with original payload, and the no-newline
+  marker after it when its line ends its file without a line ending. A marker shows on
+  its record's side, right after its record, and only while its record shows.
 - `PageIndex`: the selected page in file-list order; the viewport offset is the reader's
   current cursor location and moves without a separate editing cursor.
 - `ViewPreferences`: layout, granularity, wrapping, context-record count, file-list

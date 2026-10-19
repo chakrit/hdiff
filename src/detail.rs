@@ -18,23 +18,29 @@ const MAX_EQUAL_ISLAND_GRAPHEMES: usize = 3;
 
 /// The character-detail spans of each `rows` line that has changed spans: a paired
 /// row marks the spans that differ from its peer, and an unmatched row is changed as a
-/// whole. Each changed line takes its side's detail from the pair holding it.
+/// whole. Each changed line takes its side's detail from the pair holding it. A
+/// no-newline marker's row says something about its record, not a change, so it has
+/// none.
 pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
     let payload = |line: LineIndex| rows.line(line).payload();
     let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
+    let marks_no_newline = |row: SideBySideRow<LineIndex>| {
+        row.lines()
+            .all(|line| rows.line(line).kind().is_no_newline_marker())
+    };
 
-    rows.line_values_by_pair(|row| match row {
-        SideBySideRow::Paired(lines) => changed_pair_spans(lines.map(payload))
+    rows.line_values_by_pair(|row| match (row, marks_no_newline(row)) {
+        (_, true) | (SideBySideRow::Shared(_), false) => BySide::default(),
+        (SideBySideRow::Paired(lines), false) => changed_pair_spans(lines.map(payload))
             .map_sides(|side, spans| ChangedDetail::of(side, spans.into_boxed_slice())),
-        SideBySideRow::OldOnly(line) => BySide {
+        (SideBySideRow::OldOnly(line), false) => BySide {
             old: ChangedDetail::of(Side::Old, whole(line)),
             new: None,
         },
-        SideBySideRow::NewOnly(line) => BySide {
+        (SideBySideRow::NewOnly(line), false) => BySide {
             old: None,
             new: ChangedDetail::of(Side::New, whole(line)),
         },
-        SideBySideRow::Shared(_) => BySide::default(),
     })
 }
 
@@ -362,6 +368,15 @@ mod tests {
             (
                 "-1,2 +1",
                 "-let café = old;\n-café\n+let café = new;\n",
+                vec![
+                    ("-let café = old;", 12..15),
+                    ("-café", 0..5),
+                    ("+let café = new;", 12..15),
+                ],
+            ),
+            (
+                "-1,2 +1",
+                "-let café = old;\n-café\n\\ No newline at end of file\n+let café = new;\n",
                 vec![
                     ("-let café = old;", 12..15),
                     ("-café", 0..5),
