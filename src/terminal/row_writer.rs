@@ -308,13 +308,22 @@ mod tests {
 
     /// The text row of the first added line on `prepared`'s first page.
     fn first_added_row(prepared: &PreparedDocument, granularity: DiffGranularity) -> PaneRow<'_> {
+        first_changed_row(prepared, Side::New, granularity)
+    }
+
+    /// The text row of the first line `prepared`'s first page changes on `side`.
+    fn first_changed_row(
+        prepared: &PreparedDocument,
+        side: Side,
+        granularity: DiffGranularity,
+    ) -> PaneRow<'_> {
         let page = prepared.page(PageIndex::FIRST);
-        let (addition, _) = page
+        let (changed, _) = page
             .rows()
             .lines()
-            .find(|(_, line)| line.kind().changed_side() == Some(Side::New))
-            .expect("the patch adds a line");
-        PaneRow::Text(page.row(addition, granularity))
+            .find(|(_, line)| line.kind().changed_side() == Some(side))
+            .expect("the patch changes a line on the side");
+        PaneRow::Text(page.row(changed, granularity))
     }
 
     /// The one-line buffer `row` draws into, `width` cells wide, scrolled right by
@@ -502,6 +511,39 @@ mod tests {
             last_cell(&past_the_end).bg,
             THEME.rows.change.new.background
         );
+    }
+
+    /// docs/spec/architecture.md#palette-and-character-detail: the row-wide dim covers
+    /// deletion text and syntax spans; the change marker keeps its undimmed color, the
+    /// one changed spans reuse.
+    #[test]
+    fn draws_each_change_marker_undimmed_in_its_marker_color() {
+        let prepared = prepare(b"--- a/m\n+++ b/m\n@@ -1 +1 @@\n-old\n+new\n");
+        let depths = [
+            ColorDepth::TrueColor,
+            ColorDepth::Indexed,
+            ColorDepth::Basic,
+        ];
+
+        for depth in depths {
+            let theme = Theme::of_depth(depth);
+            for side in Side::BOTH {
+                let row = first_changed_row(&prepared, side, DiffGranularity::Line);
+                let area = Rect::new(0, 0, pane_width(Cells::of_text("old")), 1);
+                let mut buffer = Buffer::empty(area);
+                let placement = RowPlacement::Scrolled {
+                    horizontal_offset: Cells::ZERO,
+                };
+                write_row(&mut buffer, area, row, placement, theme);
+
+                let marker = first_cell(&buffer);
+                assert_eq!(
+                    (marker.fg, marker.modifier.contains(Modifier::DIM)),
+                    (theme.rows.change.get(side).marker, false),
+                    "{depth:?} {side:?}: {marker:?}"
+                );
+            }
+        }
     }
 
     /// docs/spec/architecture.md#continuity-markers: the row has cells left of the
