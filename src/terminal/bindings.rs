@@ -200,6 +200,14 @@ const fn binds(key: Key, command: Command) -> Binding {
     }
 }
 
+/// `key` bound to the interrupt.
+const fn interrupts(key: Key) -> Binding {
+    Binding {
+        key,
+        action: KeyAction::Interrupt,
+    }
+}
+
 /// `key` bound to the scroll `motion`.
 const fn movement(key: Key, motion: Movement) -> Binding {
     binds(key, Command::Movement(motion))
@@ -316,10 +324,7 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
             Shortcut::Keys {
                 bindings: &[
                     binds(Key::Char('q'), Command::Quit),
-                    Binding {
-                        key: Key::Control('c'),
-                        action: KeyAction::Interrupt,
-                    },
+                    interrupts(Key::Control('c')),
                 ],
                 action: "exit",
             },

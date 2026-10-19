@@ -95,16 +95,8 @@ impl FloatingBox {
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
         Self::placed(area, content, |size| {
             Position::new(
-                AxisSpan {
-                    start: area.x,
-                    length: area.width.saturating_sub(size.width),
-                }
-                .halfway(),
-                AxisSpan {
-                    start: area.y,
-                    length: area.height.saturating_sub(size.height),
-                }
-                .halfway(),
+                AxisSpan::columns_of(area).less(size.width).halfway(),
+                AxisSpan::rows_of(area).less(size.height).halfway(),
             )
         })
     }
@@ -186,11 +178,7 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let y = AxisSpan {
-            start: content.y,
-            length: content.height,
-        }
-        .halfway();
+        let y = AxisSpan::rows_of(content).halfway();
 
         if clip.left {
             buffer[(area.left(), y)].set_symbol("◂").set_style(style);
@@ -217,11 +205,7 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let center = AxisSpan {
-            start: area.x,
-            length: area.width,
-        }
-        .halfway();
+        let center = AxisSpan::columns_of(area).halfway();
         let shown = ScreenLines::from(content.height);
 
         if window.first > ScreenLines::ZERO {
