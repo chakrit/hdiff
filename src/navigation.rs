@@ -192,11 +192,11 @@ fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
     let content = view.geometry().pane_content();
     let shown_lines = content.height.max(ScreenLines::ONE);
 
-    ScrollBounds::new(
-        extent.line_count().saturating_sub(shown_lines),
-        extent.horizontal_range(content.width),
-        content.height,
-    )
+    ScrollBounds {
+        maximum_vertical_offset: extent.line_count().saturating_sub(shown_lines),
+        maximum_horizontal_offset: extent.horizontal_range(content.width),
+        pane_lines: content.height,
+    }
 }
 
 #[cfg(test)]

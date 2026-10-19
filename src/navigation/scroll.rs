@@ -75,26 +75,15 @@ pub enum Movement {
 /// The limits of a scroll position, and the lines one pane shows.
 #[derive(Clone, Copy)]
 pub(super) struct ScrollBounds {
-    maximum_vertical_offset: ScreenLines,
-    maximum_horizontal_offset: Cells,
-    pane_lines: ScreenLines,
+    /// The furthest line the top of the pane may scroll to.
+    pub(super) maximum_vertical_offset: ScreenLines,
+    /// The furthest column the left of the pane may scroll to.
+    pub(super) maximum_horizontal_offset: Cells,
+    /// The lines one pane shows, which half-page movement halves.
+    pub(super) pane_lines: ScreenLines,
 }
 
 impl ScrollBounds {
-    /// Bounds that scroll until `maximum_vertical_offset` and
-    /// `maximum_horizontal_offset`, over panes of `pane_lines` lines.
-    pub(super) const fn new(
-        maximum_vertical_offset: ScreenLines,
-        maximum_horizontal_offset: Cells,
-        pane_lines: ScreenLines,
-    ) -> Self {
-        Self {
-            maximum_vertical_offset,
-            maximum_horizontal_offset,
-            pane_lines,
-        }
-    }
-
     /// `scroll` brought within these bounds.
     pub(super) fn clamp(self, scroll: ScrollPosition) -> BoundedScroll {
         BoundedScroll(ScrollPosition {
