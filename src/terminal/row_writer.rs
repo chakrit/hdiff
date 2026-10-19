@@ -452,7 +452,6 @@ mod tests {
     }
 
     fn rendered_rows(prepared: &PreparedDocument, width: u16) -> Vec<String> {
-        let file = prepared.page(PageIndex::FIRST);
         let settings = ExtentSettings {
             shape: PaneShape::Single,
             context: ContextRecords::new(3),
@@ -460,13 +459,14 @@ mod tests {
         };
         let shown = ScrollExtent::of(prepared, PageIndex::FIRST, settings);
         let all = ScreenLines::new(usize::MAX);
-        let ShownLines::Single(lines) = shown.lines(ScreenLines::ZERO, all) else {
+        let ShownLines::Single(lines) =
+            shown.shown(prepared, DiffGranularity::Line, ScreenLines::ZERO, all)
+        else {
             panic!("a single pane shows lines");
         };
 
         lines
-            .map(|line| file.row(line.row, DiffGranularity::Line))
-            .map(|row| row_text(&write(PaneRow::Text(row), width, 0)))
+            .map(|line| row_text(&write(PaneRow::Text(line.row), width, 0)))
             .collect()
     }
 
