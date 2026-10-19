@@ -6,6 +6,7 @@ use ratatui::style::{Modifier, Style};
 use crate::{
     document::RecordKind,
     screen::MARKER_GUTTER_CLUSTERS,
+    side::Side,
     styling::{DetailStyle, RowTone, StyledText, TextStyle},
     theme::{RowPalette, Theme},
 };
@@ -24,7 +25,7 @@ pub(super) fn gutter(
         RowTone::Changed(side) => {
             let marker = StyledText {
                 text: RecordKind::change_of(side).marker(),
-                style: Style::default().fg(palette.change.get(side).marker),
+                style: change_marker(side, palette),
             };
             [marker, spacing]
         }
@@ -53,13 +54,19 @@ pub(super) fn segment_style(text_style: TextStyle, theme: &Theme) -> Style {
     match text_style {
         TextStyle::Plain => Style::default(),
         TextStyle::Syntax(class) => Style::default().fg(theme.syntax.color(class)),
-        TextStyle::Detail(side, DetailStyle::Changed) => Style::default()
-            .fg(theme.rows.change.get(side).marker)
-            .remove_modifier(Modifier::DIM),
+        TextStyle::Detail(side, DetailStyle::Changed) => change_marker(side, &theme.rows),
         TextStyle::Detail(side, DetailStyle::Unchanged) => {
             Style::default().fg(theme.rows.change.get(side).unchanged)
         }
     }
+}
+
+/// The change marker's style on a `side` change row: its marker color, undimmed over the
+/// row's dim. The gutter marker and character detail's changed spans share it.
+fn change_marker(side: Side, palette: &RowPalette) -> Style {
+    Style::default()
+        .fg(palette.change.get(side).marker)
+        .remove_modifier(Modifier::DIM)
 }
 
 #[cfg(test)]
