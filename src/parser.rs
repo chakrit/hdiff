@@ -1,7 +1,9 @@
-use std::fmt;
+use std::{fmt, iter, mem};
 
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, Hunk, Record, RecordKind, Section, UnifiedBody},
+    document::{
+        DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind, UnifiedBody,
+    },
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader, HeaderPath},
     side::{BySide, Side},
@@ -85,25 +87,34 @@ pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, ParseError> {
 /// Parses any diff output into its surrounding text and file sections.
 fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
     let mut lines = SourceLines::new(input);
-    let mut sections = Vec::new();
+    let mut files = Vec::new();
+    let mut text = Vec::new();
 
     while let Some(line) = lines.next() {
-        let start = lines.at_last_line(line_start(line.sanitized()))?;
-        let section = match start {
-            LineStart::Text => Section::Text(parse_text(line, &mut lines)),
+        let file = match lines.at_last_line(line_start(line.sanitized()))? {
+            LineStart::Text => {
+                text.push(line);
+                continue;
+            }
             LineStart::GitHeader => parse_git_section(line, &mut lines)?,
             LineStart::OldFileHeader(field) => {
                 let old = FileHeader {
                     path: HeaderPath::of_field(field),
                     line,
                 };
-                Section::File(parse_unified(None, old, &mut lines)?)
+                parse_unified(None, old, &mut lines)?
             }
         };
-        sections.push(section);
+        files.push(FileSection {
+            leading: mem::take(&mut text).into_boxed_slice(),
+            file,
+        });
     }
 
-    Ok(DiffDocument::new(sections.into_boxed_slice()))
+    Ok(DiffDocument::new(
+        files.into_boxed_slice(),
+        text.into_boxed_slice(),
+    ))
 }
 
 // Sections
@@ -151,18 +162,12 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
     Ok(())
 }
 
-fn parse_text(first: SourceLine, lines: &mut SourceLines<'_>) -> Box<[SourceLine]> {
-    let rest = std::iter::from_fn(|| lines.next_if(|text| line_start(text) == Ok(LineStart::Text)));
-
-    std::iter::once(first).chain(rest).collect()
-}
-
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata.
 fn parse_git_section(
     header: SourceLine,
     lines: &mut SourceLines<'_>,
-) -> Result<Section, ParseError> {
-    let mut metadata = std::iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
+) -> Result<DiffFile, ParseError> {
+    let mut metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(binary_patch) = lines.next_if(|text| text == "GIT binary patch") {
         metadata.push(binary_patch);
         metadata.extend(parse_binary_patch(lines)?);
@@ -179,7 +184,7 @@ fn parse_git_section(
             body: FileBody::Metadata(git),
         },
     };
-    Ok(Section::File(file))
+    Ok(file)
 }
 
 fn is_git_metadata(text: &str) -> bool {
