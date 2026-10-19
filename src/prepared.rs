@@ -204,14 +204,14 @@ mod tests {
             assert!(
                 page.row(page.rows().line_index(0), DiffGranularity::Line)
                     .segments()
-                    .all(|(_, style)| style == TextStyle::Plain),
+                    .all(|segment| segment.style == TextStyle::Plain),
                 "message is not source code"
             );
             let mut records = page.rows().line_indices().skip(MESSAGE_AND_HEADERS);
             assert!(records.any(|row| {
                 page.row(row, DiffGranularity::Line)
                     .segments()
-                    .any(|(_, style)| matches!(style, TextStyle::Syntax(_)))
+                    .any(|segment| matches!(segment.style, TextStyle::Syntax(_)))
             }));
         }
     }
@@ -256,7 +256,7 @@ mod tests {
         assert!(page.rows().line_indices().any(|row| {
             page.row(row, DiffGranularity::Character)
                 .segments()
-                .any(|(_, style)| matches!(style, TextStyle::Detail(_, DetailStyle::Changed)))
+                .any(|segment| matches!(segment.style, TextStyle::Detail(_, DetailStyle::Changed)))
         }));
     }
 }

@@ -137,7 +137,7 @@ impl<'a> StyledRow<'a> {
         self.tone
     }
 
-    pub fn segments(&self) -> impl Iterator<Item = (&'a str, TextStyle)> + use<'a> {
+    pub fn segments(&self) -> impl Iterator<Item = StyledText<'a, TextStyle>> + use<'a> {
         let text = self.text;
 
         self.partition
@@ -146,10 +146,21 @@ impl<'a> StyledRow<'a> {
             .scan(0, move |start, boundary| {
                 let segment = &text[*start..boundary.end];
                 *start = boundary.end;
-                Some((segment, boundary.style))
+                Some(StyledText {
+                    text: segment,
+                    style: boundary.style,
+                })
             })
-            .filter(|(segment, _)| !segment.is_empty())
+            .filter(|segment| !segment.text.is_empty())
     }
+}
+
+/// A piece of text drawn in one style: a text style while rows are styled, a terminal
+/// style once they are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StyledText<'a, S> {
+    pub text: &'a str,
+    pub style: S,
 }
 
 /// How a payload segment is drawn: as plain text, as a syntax class, or as character
@@ -303,7 +314,7 @@ mod tests {
     use std::ops::Range;
 
     use super::{
-        DetailStyle, Partition, RowTone, StyledRow, TextStyle, character_partition,
+        DetailStyle, Partition, RowTone, StyledRow, StyledText, TextStyle, character_partition,
         syntax_partition,
     };
     use crate::{
@@ -315,13 +326,17 @@ mod tests {
         syntax::{SyntaxClass, SyntaxSpan},
     };
 
-    fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<(&'a str, TextStyle)> {
+    fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<StyledText<'a, TextStyle>> {
         let row = StyledRow {
             tone: RowTone::Plain,
             text,
             partition,
         };
         row.segments().collect()
+    }
+
+    fn styled(text: &str, style: TextStyle) -> StyledText<'_, TextStyle> {
+        StyledText { text, style }
     }
 
     fn syntax(text: &str, bytes: Range<usize>, length: usize, class: SyntaxClass) -> SyntaxSpan {
@@ -347,9 +362,9 @@ mod tests {
         assert_eq!(
             segments(text, &partition),
             [
-                ("α", TextStyle::Syntax(SyntaxClass::String)),
-                ("call", TextStyle::Syntax(SyntaxClass::Function)),
-                ("!", TextStyle::Syntax(SyntaxClass::String)),
+                styled("α", TextStyle::Syntax(SyntaxClass::String)),
+                styled("call", TextStyle::Syntax(SyntaxClass::Function)),
+                styled("!", TextStyle::Syntax(SyntaxClass::String)),
             ]
         );
     }
@@ -373,9 +388,9 @@ mod tests {
         assert_eq!(
             segments(text, &partition),
             [
-                ("αc", changed(DetailStyle::Unchanged)),
-                ("e", changed(DetailStyle::Changed)),
-                ("ll!", changed(DetailStyle::Unchanged)),
+                styled("αc", changed(DetailStyle::Unchanged)),
+                styled("e", changed(DetailStyle::Changed)),
+                styled("ll!", changed(DetailStyle::Unchanged)),
             ]
         );
     }
@@ -391,7 +406,7 @@ mod tests {
 
         assert_eq!(
             segments(text, &partition),
-            [("word", TextStyle::Syntax(SyntaxClass::Keyword))]
+            [styled("word", TextStyle::Syntax(SyntaxClass::Keyword))]
         );
     }
 
@@ -399,6 +414,9 @@ mod tests {
     fn text_without_annotations_takes_the_uncovered_style() {
         let partition = syntax_partition("same", &[]);
 
-        assert_eq!(segments("same", &partition), [("same", TextStyle::Plain)]);
+        assert_eq!(
+            segments("same", &partition),
+            [styled("same", TextStyle::Plain)]
+        );
     }
 }

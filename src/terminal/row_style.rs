@@ -5,22 +5,30 @@ use ratatui::style::{Modifier, Style};
 
 use crate::{
     document::RecordKind,
-    screen::MARKER_GUTTER_WIDTH,
-    styling::{DetailStyle, RowTone, TextStyle},
+    styling::{DetailStyle, RowTone, StyledText, TextStyle},
     theme::{RowPalette, Theme},
 };
+
+/// Clusters of the marker gutter: the marker column, then the payload spacer.
+const GUTTER_CLUSTERS: usize = 2;
 
 /// The marker gutter that precedes a row's payload: a change's marker, then spacing.
 pub(super) fn gutter(
     tone: RowTone,
     palette: &RowPalette,
-) -> [(&'static str, Style); MARKER_GUTTER_WIDTH.get()] {
-    let spacing = (" ", Style::default());
+) -> [StyledText<'static, Style>; GUTTER_CLUSTERS] {
+    let spacing = StyledText {
+        text: " ",
+        style: Style::default(),
+    };
 
     match tone {
         RowTone::Changed(side) => {
-            let marker = Style::default().fg(palette.change.get(side).marker);
-            [(RecordKind::change_of(side).marker(), marker), spacing]
+            let marker = StyledText {
+                text: RecordKind::change_of(side).marker(),
+                style: Style::default().fg(palette.change.get(side).marker),
+            };
+            [marker, spacing]
         }
         RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
     }
