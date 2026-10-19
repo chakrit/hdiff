@@ -41,7 +41,7 @@ fn patch_bytes() -> u128 {
 #[test]
 fn benchmark_accounts_for_input_and_parsing_before_preparation() {
     let output = run("prepare", PATCH);
-    assert!(output.status.success(), "{:?}", output);
+    assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty());
 
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
@@ -95,7 +95,7 @@ fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
 #[test]
 fn stages_partitions_parent_costs_and_counts_real_work() {
     let output = run("stages", PATCH);
-    assert!(output.status.success(), "{:?}", output);
+    assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).expect("UTF-8 report");
     let lines = text.lines().collect::<Vec<_>>();
 
@@ -144,9 +144,9 @@ fn malformed_input_never_emits_success_measurements() {
 
 #[test]
 fn empty_input_still_emits_zero_count_measurements() {
-    for mode in ["prepare", "stages"] {
-        let output = run(mode, "");
-        assert!(output.status.success(), "{mode}: {output:?}");
+    for driver in ["prepare", "stages"] {
+        let output = run(driver, "");
+        assert!(output.status.success(), "{driver}: {output:?}");
         assert!(output.stderr.is_empty());
         let text = String::from_utf8(output.stdout).expect("UTF-8 report");
         let lines = text.lines().collect::<Vec<_>>();
@@ -157,7 +157,7 @@ fn empty_input_still_emits_zero_count_measurements() {
         assert_eq!(preparation["records"], 0);
         assert_eq!(startup["bytes"], 0);
         assert_eq!(startup["version"], 1);
-        if mode == "stages" {
+        if driver == "stages" {
             assert_eq!(lines[2], "profile version=1");
             let work = fields(lines.last().expect("work counters"));
             assert!(work.values().all(|count| *count == 0));
@@ -234,7 +234,7 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
         .arg(new)
         .output()
         .expect("operand profile");
-    assert!(comparison.status.success(), "{:?}", comparison);
+    assert!(comparison.status.success(), "{comparison:?}");
     let text = String::from_utf8(comparison.stdout).expect("report");
     assert_eq!(
         fields(text.lines().next().expect("diagnostic"))["records"],
