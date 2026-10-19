@@ -123,20 +123,6 @@ impl DisplayExtent {
         self.page
     }
 
-    /// What these rows are shown with.
-    pub fn settings(&self) -> ExtentSettings {
-        let shape = match &self.rows {
-            PaneRows::Single(_) => PaneShape::Single,
-            PaneRows::Split { direction, .. } => PaneShape::Split(*direction),
-        };
-
-        ExtentSettings {
-            shape,
-            context_lines: self.context_lines,
-            wrap: self.wrap,
-        }
-    }
-
     pub fn line_count(&self) -> ScreenLines {
         self.line_ends
             .last()
@@ -193,6 +179,20 @@ impl DisplayExtent {
 
         self.reshow(document, settings);
         anchor.map(|anchor| self.offset_of(document, anchor))
+    }
+
+    /// What these rows are shown with.
+    fn settings(&self) -> ExtentSettings {
+        let shape = match &self.rows {
+            PaneRows::Single(_) => PaneShape::Single,
+            PaneRows::Split { direction, .. } => PaneShape::Split(*direction),
+        };
+
+        ExtentSettings {
+            shape,
+            context_lines: self.context_lines,
+            wrap: self.wrap,
+        }
     }
 
     /// The row on screen line `offset`, if the lines reach that far.
