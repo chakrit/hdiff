@@ -36,7 +36,7 @@ impl SourceLine {
     /// returns the scanner to plain text, as every record marker does. The rest is then
     /// read from plain text, so it is the line its own bytes decode to. A first character
     /// shown inside a sequence, such as a tab after `ESC`, does not split the line.
-    pub fn split_first(&self) -> Option<(char, SourceLine)> {
+    pub fn split_plain_first(&self) -> Option<(char, SourceLine)> {
         let mut characters = visible(&self.bytes);
         let DecodedChar { source, character } = characters.next()?;
         if !matches!(characters.state, State::Ground) {
@@ -129,9 +129,9 @@ fn decoded(bytes: &[u8]) -> impl Iterator<Item = DecodedChar> {
 }
 
 /// Where the scanner is within terminal control sequences. The DEC terminal parser
-/// (docs/vendor/terminal-control-parser.md) has fourteen states; its actions (collect,
-/// param, dispatch, put) never change what shows, so its states that differ only in
-/// actions fold into one state here, as each variant names.
+/// (docs/vendor/terminal-control-parser.md) has fourteen states; of its actions only
+/// print and execute decide what shows, so its states that differ only in other actions
+/// fold into one state here, as each variant names.
 #[derive(Clone, Copy)]
 enum State {
     /// Plain text: the reference's ground.
@@ -193,11 +193,14 @@ enum Class {
     OtherC0,
     /// DEL.
     Delete,
-    /// 0x20–0x2F: an escape's or control sequence's intermediate byte.
+    /// 0x20–0x2F: plain text in ground, such as a space or `-`, or an escape's or control
+    /// sequence's intermediate byte.
     Intermediate,
-    /// 0x30–0x3F: a control sequence's parameter byte, or an escape's final byte.
+    /// 0x30–0x3F: plain text in ground, a control sequence's parameter byte, or an
+    /// escape's final byte.
     Parameter,
-    /// 0x40–0x7E: a final byte, and after `ESC` the sequence it opens, if any.
+    /// 0x40–0x7E: plain text in ground, or a final byte, and after `ESC` the sequence it
+    /// opens, if any.
     Final(Option<Sequence>),
     /// A C1 introducer: opens its sequence anywhere.
     Introducer(Sequence),
@@ -205,8 +208,8 @@ enum Class {
     StringTerminator,
     /// Any other C1 control: ends any sequence.
     OtherC1,
-    /// Printable text beyond ASCII.
-    Printable,
+    /// A character beyond ASCII, printable unless a sequence holds it.
+    NonAscii,
 }
 
 impl Class {
@@ -229,7 +232,7 @@ impl Class {
             '\u{90}' | '\u{98}' | '\u{9e}' | '\u{9f}' => Self::Introducer(Sequence::CommandString),
             '\u{9c}' => Self::StringTerminator,
             '\u{80}'..='\u{9f}' => Self::OtherC1,
-            '\u{a0}'..='\u{10ffff}' => Self::Printable,
+            '\u{a0}'..='\u{10ffff}' => Self::NonAscii,
         }
     }
 }
@@ -253,34 +256,23 @@ impl State {
                 | Class::Intermediate
                 | Class::Parameter
                 | Class::Final(_)
-                | Class::Printable,
+                | Class::NonAscii,
             ) => Step::Shown(Ground),
-            (
-                Ground,
-                Class::Cancel
-                | Class::Bell
-                | Class::OtherC0
-                | Class::Delete
-                | Class::StringTerminator
-                | Class::OtherC1,
-            ) => Step::Hidden(Ground),
+            (Ground, Class::Bell | Class::OtherC0 | Class::Delete) => Step::Hidden(Ground),
             (_, Class::Escape) => Step::Hidden(Escape),
             (_, Class::Introducer(sequence)) => Step::Hidden(sequence.state()),
-            (
-                Escape | EscapeIntermediate | ControlSequence | OscString | CommandString,
-                Class::Cancel | Class::StringTerminator | Class::OtherC1,
-            ) => Step::Hidden(Ground),
+            (_, Class::Cancel | Class::StringTerminator | Class::OtherC1) => Step::Hidden(Ground),
             (
                 Escape | EscapeIntermediate | ControlSequence,
                 Class::Bell | Class::OtherC0 | Class::Delete,
             ) => Step::Hidden(self),
             (Escape | EscapeIntermediate | ControlSequence, Class::Tab) => Step::Shown(self),
-            (Escape | EscapeIntermediate, Class::Printable) => Step::Shown(Ground),
+            (Escape | EscapeIntermediate, Class::NonAscii) => Step::Shown(Ground),
             (Escape | EscapeIntermediate, Class::Intermediate) => Step::Hidden(EscapeIntermediate),
             (Escape, Class::Final(Some(sequence))) => Step::Hidden(sequence.state()),
             (Escape, Class::Parameter | Class::Final(None)) => Step::Hidden(Ground),
             (EscapeIntermediate, Class::Parameter | Class::Final(_)) => Step::Hidden(Ground),
-            (ControlSequence, Class::Intermediate | Class::Parameter | Class::Printable) => {
+            (ControlSequence, Class::Intermediate | Class::Parameter | Class::NonAscii) => {
                 Step::Hidden(ControlSequence)
             }
             (ControlSequence, Class::Final(_)) => Step::Hidden(Ground),
@@ -294,7 +286,7 @@ impl State {
                 | Class::Intermediate
                 | Class::Parameter
                 | Class::Final(_)
-                | Class::Printable,
+                | Class::NonAscii,
             ) => Step::Hidden(self),
         }
     }
@@ -317,7 +309,7 @@ mod tests {
             b"\x1b\xc3\xa9-after a broken escape",
         ] {
             let (_, rest) = SourceLine::decode(line)
-                .split_first()
+                .split_plain_first()
                 .expect("visible text");
 
             assert_eq!(rest, SourceLine::decode(rest.bytes()), "{line:?}");
@@ -329,7 +321,11 @@ mod tests {
     #[test]
     fn does_not_split_after_a_character_shown_inside_a_sequence() {
         for line in [b"\x1b\t-old".as_slice(), b"\x1b[3\t1mred"] {
-            assert_eq!(SourceLine::decode(line).split_first(), None, "{line:?}");
+            assert_eq!(
+                SourceLine::decode(line).split_plain_first(),
+                None,
+                "{line:?}"
+            );
         }
     }
 
@@ -337,7 +333,7 @@ mod tests {
     fn splits_after_the_first_visible_character() {
         let line = SourceLine::decode(b"\xc2\x85\x1b[1m-old\n");
 
-        let (first, rest) = line.split_first().expect("visible text");
+        let (first, rest) = line.split_plain_first().expect("visible text");
 
         assert_eq!(first, '-');
         assert_eq!(rest.bytes(), b"old\n");
@@ -347,7 +343,11 @@ mod tests {
     #[test]
     fn lines_without_visible_text_do_not_split() {
         for line in [b"".as_slice(), b"\n", b"\x1b]8;;https://x\x07\r\n"] {
-            assert_eq!(SourceLine::decode(line).split_first(), None, "{line:?}");
+            assert_eq!(
+                SourceLine::decode(line).split_plain_first(),
+                None,
+                "{line:?}"
+            );
         }
     }
 

@@ -124,7 +124,7 @@ fn is_no_newline_marker(text: &str) -> bool {
 
 /// The record `line` holds when its first visible character is a record marker.
 fn marked_record(line: &SourceLine) -> Option<Record> {
-    let (marker, payload) = line.split_first()?;
+    let (marker, payload) = line.split_plain_first()?;
     let kind = RecordKind::of_marker(marker)?;
 
     Some(Record {
