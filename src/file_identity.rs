@@ -28,8 +28,8 @@ impl FileIdentity {
         let git_line = git.map(|git| &git.line);
         let metadata = git.map_or(&[][..], |git| &git.metadata);
         let paths = headers.as_ref().map(|header| &header.path);
-        let located =
-            git_change(metadata).and_then(|change| locate_unified(change, git_line, paths));
+        let located = git_change(metadata)
+            .and_then(|change| change.identity(|| read_headers(git_line, paths)));
 
         let first_line = git_line.unwrap_or(&headers.old.line);
         located.unwrap_or_else(|| Self::unknown(first_line))
@@ -37,8 +37,9 @@ impl FileIdentity {
 
     /// A Git section without `---` / `+++` headers.
     pub fn of_metadata(git: &GitHeader) -> Self {
-        let located =
-            git_change(&git.metadata).and_then(|change| locate_metadata(change, &git.line));
+        let located = git_change(&git.metadata).and_then(|change| {
+            change.identity(|| Some((FileState::Modified, git_header_path(&git.line)?)))
+        });
 
         located.unwrap_or_else(|| Self::unknown(&git.line))
     }
@@ -74,18 +75,6 @@ enum GitChange {
     Deleted,
     Renamed(Box<str>),
     Copied(Box<str>),
-}
-
-fn locate_unified(
-    change: GitChange,
-    git_line: Option<&SourceLine>,
-    paths: BySide<&HeaderPath>,
-) -> Option<FileIdentity> {
-    change.identity(|| read_headers(git_line, paths))
-}
-
-fn locate_metadata(change: GitChange, git_line: &SourceLine) -> Option<FileIdentity> {
-    change.identity(|| Some((FileState::Modified, git_header_path(git_line)?)))
 }
 
 /// The state the `---` / `+++` headers imply and the path they name.
