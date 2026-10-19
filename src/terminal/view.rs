@@ -37,6 +37,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
     let view = navigation.view();
     let geometry = view.geometry();
     let screen = geometry.screen();
+
     if let Some(too_small) = view.too_small() {
         frame.render_widget(Paragraph::new(too_small_message(too_small)), screen);
         return;
@@ -53,6 +54,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
         horizontal_offset: scroll.horizontal,
         theme,
     };
+
     match navigation.shown() {
         ShownLines::Single(lines) => {
             let pane_lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
@@ -118,6 +120,7 @@ impl PaneDrawing<'_> {
             );
             clipped = clipped.union(clip);
         }
+
         pane.draw_side_markers(buffer, clipped, &self.theme.chrome);
         pane.draw_window_markers(buffer, self.window, &self.theme.chrome);
     }
