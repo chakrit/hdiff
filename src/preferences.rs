@@ -1,6 +1,7 @@
 use crate::compact::Count;
 
-/// The session-local display choices: layout, detail, wrapping, context and file list.
+/// The session-local display choices: layout, granularity, wrapping, context and file
+/// list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewPreferences {
     pub layout: DiffLayout,

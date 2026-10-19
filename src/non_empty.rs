@@ -41,7 +41,7 @@ impl<T> NonEmpty<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        iter::once(&self.first).chain(&self.rest)
+        self.into_iter()
     }
 
     /// Each item mapped by `convert`, in order.

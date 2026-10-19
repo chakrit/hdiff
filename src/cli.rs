@@ -132,14 +132,14 @@ fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Err
 
 /// The input operands and `-r` flags name: two operands compare, fewer read a patch.
 fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
-    let (recursion_flags, operand_arguments): (Vec<_>, Vec<_>) =
-        arguments.iter().partition(|argument| *argument == "-r");
-    let depth = match recursion_flags.is_empty() {
-        true => Depth::TopLevel,
-        false => Depth::Recursive,
+    let is_recursion_flag = |argument: &OsString| argument == "-r";
+    let depth = match arguments.iter().any(is_recursion_flag) {
+        true => Depth::Recursive,
+        false => Depth::TopLevel,
     };
-    let operand_list = operand_arguments
-        .into_iter()
+    let operand_list = arguments
+        .iter()
+        .filter(|argument| !is_recursion_flag(argument))
         .map(|argument| operand(argument))
         .collect::<Vec<_>>();
 
