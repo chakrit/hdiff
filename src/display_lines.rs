@@ -229,10 +229,10 @@ mod tests {
         text
     }
 
-    /// Git's colored output of a CRLF file paints an added line's CR as a whitespace
-    /// error, inside SGR codes; the text still ends in the source's CRLF, exactly as the
-    /// plain output of the same change does.
-    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: Git's colored output of a
+    /// CRLF file paints an added line's CR as a whitespace error, inside SGR codes; the
+    /// text still ends in the source's CRLF, exactly as the plain output of the same
+    /// change does.
     #[test]
     fn writes_the_crlf_ending_git_colors_as_a_whitespace_error() {
         let plain = b"--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,3 +1,3 @@\n a\r\n \r\n-b\r\n+c\r\n";

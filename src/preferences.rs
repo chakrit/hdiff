@@ -194,7 +194,7 @@ mod tests {
 
     use super::DiffLayout;
 
-    /// Rules: docs/spec/architecture.md#keyboard-bindings: `v` cycles unified, vertical
+    /// docs/spec/architecture.md#keyboard-bindings: `v` cycles unified, vertical
     /// and stacked layouts.
     #[test]
     fn cycles_through_every_layout_in_order_and_back() {

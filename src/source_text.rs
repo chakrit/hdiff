@@ -470,9 +470,9 @@ mod tests {
         assert_eq!(rest.sanitized(), "old");
     }
 
-    /// A CR read in plain text with only hidden characters between it and the final LF
-    /// ends the line in CRLF; one shown after it, or one inside a sequence, does not.
-    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: a CR read in plain text
+    /// with only hidden characters between it and the final LF ends the line in CRLF;
+    /// one shown after it, or one inside a sequence, does not.
     #[test]
     fn reads_the_line_ending_through_the_scanner() {
         for (line, ending) in [
@@ -548,11 +548,10 @@ mod tests {
         }
     }
 
-    /// An introducer inside a string sequence ends the string and opens its own
-    /// sequence, and CAN or SUB abandons any sequence, as a terminal reads them; the text
-    /// after shows, so the line loses no visible source text.
-    ///
-    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: an introducer inside a
+    /// string sequence ends the string and opens its own sequence, and CAN or SUB
+    /// abandons any sequence, as a terminal reads them; the text after shows, so the
+    /// line loses no visible source text.
     #[test]
     fn ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub() {
         for line in [
@@ -568,11 +567,9 @@ mod tests {
         }
     }
 
-    /// A tab a terminal executes inside an escape or control sequence shows and leaves
-    /// the sequence open, and only an OSC string ends at BEL, so the line shows exactly
-    /// what a terminal shows.
-    ///
-    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: a tab a terminal executes
+    /// inside an escape or control sequence shows and leaves the sequence open, and only
+    /// an OSC string ends at BEL, so the line shows exactly what a terminal shows.
     #[test]
     fn shows_a_tab_inside_a_sequence_and_ends_only_osc_strings_at_bel() {
         for (line, shown) in [
@@ -589,12 +586,10 @@ mod tests {
         }
     }
 
-    /// A control character a terminal executes inside a sequence leaves the sequence
-    /// open, any other C1 control ends it, and a non-ASCII character after `ESC`, which
-    /// no escape may hold, ends the escape and shows, so the line loses no visible
-    /// source text.
-    ///
-    /// Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: a control character a
+    /// terminal executes inside a sequence leaves the sequence open, any other C1 control
+    /// ends it, and a non-ASCII character after `ESC`, which no escape may hold, ends the
+    /// escape and shows, so the line loses no visible source text.
     #[test]
     fn executes_controls_inside_sequences_and_shows_what_breaks_an_escape() {
         for (line, shown) in [
