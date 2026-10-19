@@ -89,7 +89,7 @@ impl fmt::Display for SessionError {
                 error,
                 restored,
             } => write!(formatter, "{error}{}", CleanupSuffix(restored)),
-            Self::Restore(failures) => write!(formatter, "cleanup failed: {failures}"),
+            Self::Restore(failures) => write!(formatter, "{failures}"),
         }
     }
 }
@@ -112,12 +112,13 @@ impl fmt::Display for CleanupSuffix<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             Ok(()) => Ok(()),
-            Err(failures) => write!(formatter, "; cleanup failed: {failures}"),
+            Err(failures) => write!(formatter, "; {failures}"),
         }
     }
 }
 
-/// The restore steps that failed, at least one, in the order they were attempted.
+/// The restore steps that failed, at least one, in the order they were attempted. Shown
+/// as `cleanup failed: ` and each failed step with its error.
 #[derive(Debug)]
 pub struct RestoreFailures(Vec<(RestoreStep, io::Error)>);
 
@@ -129,7 +130,7 @@ impl fmt::Display for RestoreFailures {
             .map(|(step, error)| format!("{}: {error}", step.label()))
             .collect::<Vec<_>>();
 
-        write!(formatter, "{}", failures.join("; "))
+        write!(formatter, "cleanup failed: {}", failures.join("; "))
     }
 }
 
@@ -287,7 +288,7 @@ impl fmt::Display for PanicRestoreFailure {
                 formatter,
                 "cannot reopen {CONTROLLING_TERMINAL} to restore the terminal: {error}"
             ),
-            Self::Restore(failures) => write!(formatter, "cleanup failed: {failures}"),
+            Self::Restore(failures) => write!(formatter, "{failures}"),
         }
     }
 }
