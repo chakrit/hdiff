@@ -512,10 +512,17 @@ mod tests {
         parser::parse_patch,
         preferences::ContextRecords,
         prepared::{PageIndex, PreparedDocument},
-        screen::{Cells, ScreenLines},
+        screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
     };
 
     const VERTICAL: PaneShape = PaneShape::Split(SplitDirection::Vertical);
+
+    /// A deletion that wraps to three lines at 20 cells, the addition it pairs with, and
+    /// a context record.
+    const WRAPPED_DELETION_PATCH: &[u8] = b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n";
+
+    /// The deletion in [`WRAPPED_DELETION_PATCH`], as its line reads.
+    const WRAPPED_DELETION: &str = "-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi";
 
     /// `patch` parsed and prepared.
     fn prepared(patch: &[u8]) -> PreparedDocument {
@@ -640,9 +647,14 @@ mod tests {
             extent_of(&document, shape, ContextRecords::new(count), WrapWidth::Off).width()
         };
 
-        assert_eq!(widest(PaneShape::Single, 1), Cells::new(24));
-        assert_eq!(widest(VERTICAL, 1), Cells::new(24));
-        assert_eq!(widest(PaneShape::Single, 2), Cells::new(40));
+        // The addition's payload is a two-cell tab and ten two-cell characters; the far
+        // context line's is 38 cells. Each row also spans the marker gutter.
+        let addition = MARKER_GUTTER_WIDTH + Cells::new(22);
+        let far_context = MARKER_GUTTER_WIDTH + Cells::new(38);
+
+        assert_eq!(widest(PaneShape::Single, 1), addition);
+        assert_eq!(widest(VERTICAL, 1), addition);
+        assert_eq!(widest(PaneShape::Single, 2), far_context);
     }
 
     #[test]
@@ -665,13 +677,6 @@ mod tests {
             "hidden c0 maps to the next visible row"
         );
     }
-
-    /// A deletion that wraps to three lines at 20 cells, the addition it pairs with, and
-    /// a context record.
-    const WRAPPED_DELETION_PATCH: &[u8] = b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n";
-
-    /// The deletion in [`WRAPPED_DELETION_PATCH`], as its line reads.
-    const WRAPPED_DELETION: &str = "-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi";
 
     #[test]
     fn counts_and_shows_the_wrapped_lines_of_each_visible_row() {
@@ -742,22 +747,29 @@ mod tests {
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
         let document =
             prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
-        let context = ContextRecords::new(0);
-        let mut extent = extent_of(&document, VERTICAL, context, WrapWidth::Off);
+        let change_offset = |context| {
+            let change = line_at(&document, "-old", ScreenLines::ZERO);
+            extent_of(&document, VERTICAL, context, WrapWidth::Off).offset_of(&document, change)
+        };
+        let [narrow_context, wide_context] = [0, 3].map(ContextRecords::new);
+        let [narrow_offset, wide_offset] = [narrow_context, wide_context].map(change_offset);
+        let mut extent = extent_of(&document, VERTICAL, narrow_context, WrapWidth::Off);
         let narrow = extent.settings();
         let wide = ExtentSettings {
-            context: ContextRecords::new(3),
+            context: wide_context,
             ..narrow
         };
 
-        // Narrow pairs: ---, +++, @@, -old|+new. Wide adds c0, c1, and c2 before the
-        // change.
-        let widened = extent.reanchor(&document, wide, ScreenLines::new(3));
+        let widened = extent.reanchor(&document, wide, narrow_offset);
         let widened_settings = extent.settings();
-        let narrowed = extent.reanchor(&document, narrow, ScreenLines::new(6));
+        let narrowed = extent.reanchor(&document, narrow, wide_offset);
 
+        assert_ne!(
+            narrow_offset, wide_offset,
+            "wide context shows rows before the change"
+        );
         assert_eq!(widened_settings, wide, "the extent shows the new settings");
-        assert_eq!(widened, Some(ScreenLines::new(6)));
-        assert_eq!(narrowed, Some(ScreenLines::new(3)));
+        assert_eq!(widened, Some(wide_offset));
+        assert_eq!(narrowed, Some(narrow_offset));
     }
 }
