@@ -78,6 +78,21 @@ impl<T> BySide<T> {
             new: (self.new, other.new),
         }
     }
+
+    /// The one value `f` makes of the old and the new side's values.
+    pub fn merge<U>(self, f: impl FnOnce(T, T) -> U) -> U {
+        f(self.old, self.new)
+    }
+}
+
+impl<T: Clone> BySide<T> {
+    /// `value` held on each side.
+    pub fn both(value: T) -> Self {
+        BySide {
+            old: value.clone(),
+            new: value,
+        }
+    }
 }
 
 impl<T> BySide<Option<T>> {

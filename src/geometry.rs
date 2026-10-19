@@ -247,12 +247,9 @@ impl SplitPanes {
 
     /// The narrowest pane's content columns and the shortest pane's content lines.
     fn content(self) -> PaneContent {
-        let contents = self.panes.map(PaneContent::inside);
-
-        PaneContent {
-            width: contents.old.width.min(contents.new.width),
-            height: contents.old.height.min(contents.new.height),
-        }
+        self.panes
+            .map(PaneContent::inside)
+            .merge(PaneContent::narrowest)
     }
 }
 
@@ -272,6 +269,14 @@ impl PaneContent {
         Self {
             width: Cells::from(interior.width),
             height: ScreenLines::from(interior.height),
+        }
+    }
+
+    /// The narrower width and the shorter height of `self` and `other`.
+    fn narrowest(self, other: Self) -> Self {
+        Self {
+            width: self.width.min(other.width),
+            height: self.height.min(other.height),
         }
     }
 

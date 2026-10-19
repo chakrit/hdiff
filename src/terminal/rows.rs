@@ -29,7 +29,7 @@ impl<'a> SideBySideRow<StyledRow<'a>> {
     /// peer toned as a change to the other side.
     pub(super) fn pane_pair(self) -> BySide<PaneRow<'a>> {
         match self {
-            Self::Shared(row) => BySide::of(|_| PaneRow::Text(row)),
+            Self::Shared(row) => BySide::both(PaneRow::Text(row)),
             Self::Paired(rows) => rows.map(PaneRow::Text),
             Self::Unmatched { side, line } => BySide::only(side, line)
                 .map_sides(|pane, row| row.map_or(PaneRow::AlignmentPeer(pane), PaneRow::Text)),
