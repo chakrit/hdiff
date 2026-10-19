@@ -123,6 +123,7 @@ pub enum FileBody {
     /// A Git section without unified headers, such as a rename, mode change, or binary
     /// change.
     Metadata(MetadataBody),
+    /// A section with `---` / `+++` headers and hunks.
     Unified(Box<UnifiedBody>),
 }
 

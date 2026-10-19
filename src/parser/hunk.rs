@@ -194,7 +194,8 @@ pub(super) fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
 /// without a count states one line.
 fn range_count(range: &str) -> Option<usize> {
     match range.split_once(',') {
-        Some((start, count)) => is_decimal(start).then(|| decimal_count(count)).flatten(),
+        Some((start, _)) if !is_decimal(start) => None,
+        Some((_, count)) => decimal_count(count),
         None => is_decimal(range).then_some(1),
     }
 }

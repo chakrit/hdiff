@@ -116,19 +116,12 @@ impl InstallPlan {
 /// keeping every link. The result must still name the same file: a `..` after a linked
 /// directory leaves the link's target, which spelling alone cannot follow.
 fn registered_path(executable: &Path) -> Result<PathBuf, Error> {
-    let resolve_failed = |source| Error::ResolveExecutable {
-        path: executable.to_owned(),
-        source,
-    };
-    let absolute = path::absolute(executable).map_err(resolve_failed)?;
+    let absolute = path::absolute(executable).map_err(resolving(executable))?;
 
     let registered = without_dot_segments(&absolute);
 
-    let reached = fs::metadata(executable).map_err(resolve_failed)?;
-    let reaches = names_file(&registered, &reached).map_err(|source| Error::ResolveExecutable {
-        path: registered.clone(),
-        source,
-    })?;
+    let reached = fs::metadata(executable).map_err(resolving(executable))?;
+    let reaches = names_file(&registered, &reached).map_err(resolving(&registered))?;
 
     match reaches {
         true => Ok(registered),
@@ -226,6 +219,12 @@ fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
     }
 
     Ok(config_path)
+}
+
+/// How a failure to resolve the executable at `path` is reported.
+fn resolving(path: &Path) -> impl FnOnce(io::Error) -> Error {
+    let path = path.to_owned();
+    |source| Error::ResolveExecutable { path, source }
 }
 
 /// Whether `path` exists; failing to tell is an error, not an absence.
