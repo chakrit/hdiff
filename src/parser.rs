@@ -211,12 +211,13 @@ fn is_git_metadata(text: &str) -> bool {
 fn parse_binary_patch(lines: &mut SourceLines<'_>) -> Result<Vec<SourceLine>, ParseError> {
     let mut patch = Vec::new();
 
-    while let Some((header, valid_size)) =
-        lines.next_if_map(|text| binary_block_size(text).map(|size| size.parse::<usize>().is_ok()))
-    {
-        if !valid_size {
-            return Err(lines.last_line_error(Malformed::InvalidBinaryPatchHeader));
-        }
+    while let Some((header, size)) = lines.next_if_map(|text| {
+        binary_block_size(text).map(|size| {
+            size.parse::<usize>()
+                .map_err(|_| Malformed::InvalidBinaryPatchHeader)
+        })
+    }) {
+        lines.at_last_line(size)?;
         patch.push(header);
 
         let payload_start = patch.len();
@@ -342,15 +343,13 @@ fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
         return Ok(record);
     }
 
-    let text = line.sanitized();
-    reject_unsupported_header(text)?;
-    if text.starts_with("diff --git ") {
-        return Err(Malformed::UnexpectedFileHeaderInHunk);
+    match line_start(line.sanitized())? {
+        LineStart::GitHeader => Err(Malformed::UnexpectedFileHeaderInHunk),
+        LineStart::Text | LineStart::OldFileHeader(_) => Ok(Record {
+            kind: RecordKind::Raw,
+            payload: line,
+        }),
     }
-    Ok(Record {
-        kind: RecordKind::Raw,
-        payload: line,
-    })
 }
 
 /// A marked record after a hunk's declared counts are complete; a `---` line starts the
@@ -362,7 +361,7 @@ fn is_excess_record(text: &str) -> bool {
         .and_then(RecordKind::of_marker)
         .is_some();
 
-    marked && !text.starts_with("--- ")
+    marked && header_field(text, Side::Old).is_none()
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
