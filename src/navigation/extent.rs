@@ -508,7 +508,7 @@ mod tests {
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
-        page_rows::{LineIndex, PageRows, PairIndex},
+        page_rows::{LineIndex, PageRows, PairIndex, RenderedLine},
         parser::parse_patch,
         preferences::ContextRecords,
         prepared::{PageIndex, PreparedDocument},
@@ -551,13 +551,17 @@ mod tests {
         document.page(PageIndex::FIRST).rows()
     }
 
-    /// Each line as a reader sees it: its record marker, its payload, then a newline.
+    /// A line as a reader sees it: its record marker, then its payload.
+    fn reading(line: &RenderedLine) -> String {
+        format!("{}{}", line.kind().marker(), line.payload())
+    }
+
+    /// Each line as a reader sees it, then a newline.
     fn texts(document: &PreparedDocument, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
         let rows = first_rows(document);
 
         lines
-            .map(|index| rows.line(index))
-            .map(|line| format!("{}{}\n", line.kind().marker(), line.payload()))
+            .map(|index| reading(rows.line(index)) + "\n")
             .collect()
     }
 
@@ -585,11 +589,11 @@ mod tests {
         pairs.lines_from(offset, limit).collect()
     }
 
-    /// The first page's line that reads as `text`: its record marker, then its payload.
+    /// The first page's line that reads as `text`.
     fn line_reading(document: &PreparedDocument, text: &str) -> LineIndex {
         first_rows(document)
             .lines()
-            .find(|(_, line)| format!("{}{}", line.kind().marker(), line.payload()) == text)
+            .find(|(_, line)| reading(line) == text)
             .map(|(index, _)| index)
             .unwrap_or_else(|| panic!("a line reads {text:?}"))
     }
@@ -692,6 +696,8 @@ mod tests {
             wrapped_line,
         };
         let [first, second, third] = [0, 1, 2].map(ScreenLines::new);
+        let unified_from = unified.offset_of(&document, line(WRAPPED_DELETION, second));
+        let vertical_from = vertical.offset_of(&document, line(WRAPPED_DELETION, third));
 
         assert_eq!(
             unified.line_count(),
@@ -699,7 +705,7 @@ mod tests {
             "the 45-cell deletion takes three lines"
         );
         assert_eq!(
-            single_lines(&unified, ScreenLines::new(4), ScreenLines::new(3)),
+            single_lines(&unified, unified_from, ScreenLines::new(3)),
             [
                 line(WRAPPED_DELETION, second),
                 line(WRAPPED_DELETION, third),
@@ -712,7 +718,7 @@ mod tests {
             "the paired row takes its taller side's three lines"
         );
         assert_eq!(
-            pair_lines(&vertical, ScreenLines::new(5), ScreenLines::new(2)),
+            pair_lines(&vertical, vertical_from, ScreenLines::new(2)),
             [pair(WRAPPED_DELETION, third), pair(" context", first)]
         );
     }
