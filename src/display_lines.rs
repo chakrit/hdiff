@@ -22,14 +22,27 @@ pub enum LineKind {
     Metadata,
     FileHeader,
     HunkHeader,
+    /// A line of the record at `address`: its payload, or the no-newline marker after it.
     Record {
         address: RecordAddress,
         kind: RecordKind,
+        part: RecordPart,
     },
 }
 
+/// Which of a record's lines a displayed line is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordPart {
+    Payload,
+    /// The `\ ` line saying the record's line ends its file without a line ending. It
+    /// keeps its record's side and visibility, and its text is never syntax or
+    /// character detail.
+    NoNewlineMarker,
+}
+
 impl LineKind {
-    /// The record's kind; a line that is not a record has none.
+    /// The kind of the record the line belongs to; a line that is not a record's has
+    /// none.
     pub fn record_kind(self) -> Option<RecordKind> {
         match self {
             Self::Record { kind, .. } => Some(kind),
@@ -37,14 +50,40 @@ impl LineKind {
         }
     }
 
-    /// The side a changed record removes from or adds to; other lines change neither.
+    /// The side a changed record removes from or adds to, for its payload and its
+    /// no-newline marker alike; other lines change neither.
     pub fn changed_side(self) -> Option<Side> {
         self.record_kind()?.changed_side()
     }
 
-    /// The record marker that precedes the line's payload; other lines have none.
+    /// Whether the line is the no-newline marker after a record.
+    pub fn is_no_newline_marker(self) -> bool {
+        matches!(
+            self,
+            Self::Record {
+                part: RecordPart::NoNewlineMarker,
+                ..
+            }
+        )
+    }
+
+    /// The record marker that precedes a record payload; other lines have none.
     pub fn marker(self) -> &'static str {
-        self.record_kind().map_or("", RecordKind::marker)
+        match self {
+            Self::Record {
+                kind,
+                part: RecordPart::Payload,
+                ..
+            } => kind.marker(),
+            Self::Record {
+                part: RecordPart::NoNewlineMarker,
+                ..
+            }
+            | Self::Text
+            | Self::Metadata
+            | Self::FileHeader
+            | Self::HunkHeader => "",
+        }
     }
 }
 
@@ -149,20 +188,32 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
             kind: LineKind::HunkHeader,
             source: hunk.header(),
         };
-        let records = hunk.records().map(|AddressedRecord { address, record }| {
-            let line_kind = LineKind::Record {
-                address,
-                kind: record.kind,
-            };
-            DisplayLine {
-                kind: line_kind,
-                source: &record.payload,
-            }
-        });
+        let records = hunk.records().flat_map(record_lines);
         iter::once(hunk_header).chain(records)
     });
 
     git.chain(file_headers).chain(hunks)
+}
+
+/// A record's payload line, then the no-newline marker after it when it has one.
+fn record_lines(
+    AddressedRecord { address, record }: AddressedRecord<'_>,
+) -> impl Iterator<Item = DisplayLine<'_>> {
+    let line = move |part, source| DisplayLine {
+        kind: LineKind::Record {
+            address,
+            kind: record.kind,
+            part,
+        },
+        source,
+    };
+    let payload = line(RecordPart::Payload, &record.payload);
+    let marker = record
+        .no_newline
+        .as_ref()
+        .map(|marker| line(RecordPart::NoNewlineMarker, marker));
+
+    iter::once(payload).chain(marker)
 }
 
 /// The Git header's `diff --git` line, then its metadata lines.
@@ -177,7 +228,7 @@ fn git_header_lines(git: &GitHeader) -> impl Iterator<Item = DisplayLine<'_>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LineKind, of_file};
+    use super::{LineKind, RecordPart, of_file};
     use crate::{
         document::{FileBody, RecordKind},
         parser::parse_patch,
@@ -205,7 +256,11 @@ mod tests {
             [first_deletion, first_addition],
             [second_deletion, second_addition],
         ] = <[_; 2]>::try_from(addresses).expect("the fixture holds two hunks");
-        let record = |address, kind| LineKind::Record { address, kind };
+        let record = |address, kind| LineKind::Record {
+            address,
+            kind,
+            part: RecordPart::Payload,
+        };
 
         let kinds = of_file(file).map(|line| line.kind).collect::<Vec<_>>();
 
