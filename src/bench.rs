@@ -18,8 +18,7 @@ use crate::{
     document::DiffDocument,
     input,
     measurement::{Observer, Parent, Profile, Stage, Unobserved},
-    navigation::interaction::Command,
-    navigation::scroll::Movement,
+    navigation::{interaction::Command, scroll::Movement},
     preferences::PreferenceChange,
     prepared::PreparedDocument,
     terminal::{self, Tui},
@@ -232,11 +231,12 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
             Parent::Syntax => profile.duration(Stage::Syntax),
         };
 
-        let mut attributed = Duration::ZERO;
+        let attributed = children
+            .iter()
+            .map(|&stage| profile.duration(stage))
+            .sum::<Duration>();
         for &stage in children {
-            let duration = profile.duration(stage);
-            attributed += duration;
-            write_stage(report, stage.label(), parent, duration);
+            write_stage(report, stage.label(), parent, profile.duration(stage));
         }
 
         let unattributed = total
