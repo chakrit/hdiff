@@ -33,7 +33,7 @@ pub(super) fn gutter(
 }
 
 /// The style of the whole row, behind and under its text.
-pub(super) fn row_style(tone: RowTone, palette: &RowPalette) -> Style {
+pub(super) fn whole_row(tone: RowTone, palette: &RowPalette) -> Style {
     match tone {
         RowTone::Changed(side) => {
             let colors = palette.change.get(side);
@@ -64,10 +64,11 @@ pub(super) fn segment_style(text_style: TextStyle, theme: &Theme) -> Style {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::gutter;
     use crate::{
         screen::Cells,
         side::Side,
+        styling::RowTone,
         theme::{ColorDepth, Theme},
     };
 

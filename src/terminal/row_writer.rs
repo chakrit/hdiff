@@ -9,7 +9,7 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::{
-    row_style::{gutter, row_style, segment_style},
+    row_style::{gutter, segment_style, whole_row},
     rows::PaneRow,
 };
 use crate::{
@@ -58,7 +58,7 @@ pub(super) fn write_row(
     placement: RowPlacement,
     theme: &Theme,
 ) -> Clip {
-    buffer.set_style(area, row_style(row.tone(), &theme.rows));
+    buffer.set_style(area, whole_row(row.tone(), &theme.rows));
     let PaneRow::Text(text_row) = row else {
         return Clip::default();
     };
@@ -68,7 +68,7 @@ pub(super) fn write_row(
         text: cluster.text,
         style: segment_style(cluster.style, theme),
     });
-    let gutter = gutter(text_row.tone(), &theme.rows);
+    let marker_gutter = gutter(text_row.tone(), &theme.rows);
 
     let cursor = RowCursor {
         buffer,
@@ -84,12 +84,18 @@ pub(super) fn write_row(
                 horizontal_offset,
                 ..cursor
             };
-            write_clusters(cursor, gutter.into_iter().chain(payload_clusters))
+            write_clusters(cursor, marker_gutter.into_iter().chain(payload_clusters))
         }
         RowPlacement::Wrapped {
             line: ScreenLines::ZERO,
             width,
-        } => write_wrapped_line(cursor, gutter, payload_clusters, ScreenLines::ZERO, width),
+        } => write_wrapped_line(
+            cursor,
+            marker_gutter,
+            payload_clusters,
+            ScreenLines::ZERO,
+            width,
+        ),
         RowPlacement::Wrapped { line, width } => {
             let cursor = RowCursor {
                 column: MARKER_GUTTER_WIDTH,
@@ -308,10 +314,8 @@ mod tests {
         PaneRow::Text(page.row(page.rows().line_index(line), granularity))
     }
 
-    fn scrolled_buffer(row: PaneRow<'_>, width: u16, horizontal_offset: usize) -> Buffer {
-        let placement = RowPlacement::Scrolled {
-            horizontal_offset: Cells::new(horizontal_offset),
-        };
+    fn scrolled_buffer(row: PaneRow<'_>, width: u16, horizontal_offset: Cells) -> Buffer {
+        let placement = RowPlacement::Scrolled { horizontal_offset };
         write_placed(row, width, placement).buffer
     }
 
@@ -329,7 +333,7 @@ mod tests {
         page.rows()
             .line_indices()
             .map(|line| page.row(line, DiffGranularity::Line))
-            .map(|row| row_text(&scrolled_buffer(PaneRow::Text(row), width, 0)))
+            .map(|row| row_text(&scrolled_buffer(PaneRow::Text(row), width, Cells::ZERO)))
             .collect()
     }
 
@@ -397,7 +401,7 @@ mod tests {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
         let addition = first_page_row(&prepared, 4, DiffGranularity::Character);
 
-        let buffer = scrolled_buffer(addition, 8, 0);
+        let buffer = scrolled_buffer(addition, 8, Cells::ZERO);
 
         assert_eq!(buffer[(2, 0)].symbol(), "ก่");
     }
@@ -409,7 +413,7 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
         let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = scrolled_buffer(addition, 8, 3);
+        let buffer = scrolled_buffer(addition, 8, Cells::new(3));
 
         assert_eq!(buffer[(0, 0)].symbol(), " ");
         assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
@@ -421,7 +425,7 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
         let addition = first_page_row(&prepared, 3, DiffGranularity::Line);
 
-        let buffer = scrolled_buffer(addition, 5, 0);
+        let buffer = scrolled_buffer(addition, 5, Cells::ZERO);
 
         assert_eq!(buffer[(3, 0)].symbol(), "b");
         assert_eq!(buffer[(4, 0)].symbol(), " ");
@@ -456,9 +460,7 @@ mod tests {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
         let row = first_page_row(&prepared, 3, DiffGranularity::Line);
         let clip = |width, horizontal_offset| {
-            let placement = RowPlacement::Scrolled {
-                horizontal_offset: Cells::new(horizontal_offset),
-            };
+            let placement = RowPlacement::Scrolled { horizontal_offset };
             write_placed(row, width, placement).clip
         };
         let wrapped = RowPlacement::Wrapped {
@@ -467,14 +469,14 @@ mod tests {
         };
         let sides = |left, right| Clip { left, right };
 
-        assert_eq!(clip(7, 0), sides(false, false), "the row fits");
+        assert_eq!(clip(7, Cells::ZERO), sides(false, false), "the row fits");
         assert_eq!(
-            clip(6, 0),
+            clip(6, Cells::ZERO),
             sides(false, true),
             "a wide cluster that does not fit"
         );
-        assert_eq!(clip(4, 1), sides(true, true));
-        assert_eq!(clip(6, 1), sides(true, false));
+        assert_eq!(clip(4, Cells::ONE), sides(true, true));
+        assert_eq!(clip(6, Cells::ONE), sides(true, false));
         assert_eq!(
             write_placed(row, 3, wrapped).clip,
             sides(false, false),
@@ -484,7 +486,7 @@ mod tests {
 
     #[test]
     fn fills_an_alignment_peer_with_its_change_style_only() {
-        let buffer = scrolled_buffer(PaneRow::AlignmentPeer(Side::Old), 4, 0);
+        let buffer = scrolled_buffer(PaneRow::AlignmentPeer(Side::Old), 4, Cells::ZERO);
 
         assert_eq!(row_text(&buffer), "", "an alignment peer writes no text");
         let modifier = buffer[(3, 0)].modifier;
