@@ -242,7 +242,10 @@ mod tests {
 
     fn identity(input: &str) -> FileIdentity {
         let document = parse_patch(input.as_bytes()).expect("valid diff");
-        let file = document.files().next().expect("one file");
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the diff holds one file: {} files", files.len());
+        };
 
         file.identity.clone()
     }

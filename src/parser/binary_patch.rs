@@ -174,7 +174,10 @@ mod tests {
     fn keeps_binary_payload_and_surrounding_text_in_order() {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
         let document = parse_patch(input).expect("binary diff with text");
-        let view = document.file_views().next().expect("binary file");
+        let views = document.file_views().collect::<Vec<_>>();
+        let [view] = views.as_slice() else {
+            panic!("the patch holds one file: {} views", views.len());
+        };
         let FileBody::Metadata(body) = &view.file.body else {
             panic!("binary diff is metadata");
         };

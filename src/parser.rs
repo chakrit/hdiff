@@ -524,11 +524,15 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
-        let body = &document.files().next().expect("first file").body;
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the fixture holds one file: {} files", files.len());
+        };
 
         assert!(
-            matches!(body, FileBody::Metadata(_)),
-            "a section without a file header is metadata: {body:?}"
+            matches!(file.body, FileBody::Metadata(_)),
+            "a section without a file header is metadata: {:?}",
+            file.body
         );
     }
 
@@ -537,13 +541,15 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
+        let files = document.files().collect::<Vec<_>>();
+        let [file] = files.as_slice() else {
+            panic!("the fixture holds one file: {} files", files.len());
+        };
 
-        let body = &document.files().next().expect("first file").body;
-
-        assert_eq!(document.files().count(), 1);
         assert!(
-            matches!(body, FileBody::Metadata(_)),
-            "a rename-only section is metadata: {body:?}"
+            matches!(file.body, FileBody::Metadata(_)),
+            "a rename-only section is metadata: {:?}",
+            file.body
         );
     }
 }
