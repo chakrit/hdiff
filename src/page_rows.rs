@@ -11,6 +11,7 @@ use crate::{
     compact::Count,
     display_lines::{self, DisplayLine, LineKind},
     document::{FileView, RecordAddress, RecordKind},
+    preferences::ContextRecords,
     screen::Cells,
     side::{BySide, Side},
     source_text::SourceLine,
@@ -236,20 +237,20 @@ impl PageRows {
         *self.pair_of_line.get(line)
     }
 
-    /// Context rows show within `context_lines` records of a change in their own hunk;
-    /// every other row always shows.
-    pub(crate) fn shows_line(&self, index: LineIndex, context_lines: usize) -> bool {
+    /// Context rows show within `context` records of a change in their own hunk; every
+    /// other row always shows.
+    pub(crate) fn shows_line(&self, index: LineIndex, context: ContextRecords) -> bool {
         match self.visibility.get(index) {
             RowVisibility::Always => true,
-            RowVisibility::NearChange(distance) => distance.get() <= context_lines,
+            RowVisibility::NearChange(distance) => context.admits(*distance),
             RowVisibility::Never => false,
         }
     }
 
-    pub(crate) fn shows_pair(&self, index: PairIndex, context_lines: usize) -> bool {
+    pub(crate) fn shows_pair(&self, index: PairIndex, context: ContextRecords) -> bool {
         self.pair(index)
             .lines()
-            .any(|line| self.shows_line(line, context_lines))
+            .any(|line| self.shows_line(line, context))
     }
 
     /// Terminal cells of the line's payload, without the marker gutter.

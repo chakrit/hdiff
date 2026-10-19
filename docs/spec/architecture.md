@@ -131,7 +131,7 @@ but valid diff lines without data loss.
 - `Record`: context, addition, deletion, or unclassified/raw line, with original payload.
 - `PageIndex`: the selected page in file-list order; the viewport offset is the reader's
   current cursor location and moves without a separate editing cursor.
-- `ViewPreferences`: layout, granularity, wrapping, context-line count, file-list
+- `ViewPreferences`: layout, granularity, wrapping, context-record count, file-list
   visibility, and, once semantic diffing lands, a semantic strategy: the session-local
   display choices. Character presentation follows the
   [view model](#view-model) and [prepared style partition](#lossless-and-safe-rendering).
@@ -333,7 +333,7 @@ View choices are orthogonal rather than one growing mode enum:
 - `DiffLayout`: unified, vertical split, or stacked split;
 - `DiffGranularity`: line-based or character-based;
 - navigation-pane state: file list visibility;
-- display preferences: wrapping and context-line count.
+- display preferences: wrapping and context-record count.
 
 Pending delivery: `DiffSemantics` (textual or Tree-sitter semantic strategy), an active
 navigation pane, and a highlighting preference. Color capability is not a preference: the

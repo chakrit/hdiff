@@ -257,7 +257,7 @@ mod tests {
         extent::{DisplayExtent, ExtentSettings, ShownLines},
         geometry::PaneShape,
         parser::parse_patch,
-        preferences::DiffGranularity,
+        preferences::{ContextRecords, DiffGranularity},
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
         side::Side,
@@ -451,7 +451,7 @@ mod tests {
         let file = prepared.page(PageIndex::FIRST);
         let settings = ExtentSettings {
             shape: PaneShape::Single,
-            context_lines: 3,
+            context: ContextRecords::new(3),
             wrap: WrapWidth::Unbounded,
         };
         let shown = DisplayExtent::of(prepared, PageIndex::FIRST, settings);

@@ -3,7 +3,7 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     parser::parse_patch,
-    preferences::{DiffGranularity, DiffLayout, FileList},
+    preferences::{ContextRecords, DiffGranularity, DiffLayout, FileList},
     prepared::PreparedDocument,
     terminal::{Step, Tui},
     theme::ColorDepth,
@@ -351,7 +351,7 @@ fn preferences_start_in_unified_line_mode() {
     assert_eq!(start.layout, DiffLayout::Unified);
     assert_eq!(start.granularity, DiffGranularity::Line);
     assert_eq!(start.file_list, FileList::Shown);
-    assert_eq!(start.context_lines, 3);
+    assert_eq!(start.context, ContextRecords::new(3));
 }
 
 /// architecture.md (Lossless and safe rendering): the document is never truncated, so `$`

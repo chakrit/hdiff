@@ -8,6 +8,7 @@ use crate::{
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
     page_rows::{LineIndex, PageRows, PairIndex},
+    preferences::ContextRecords,
     prepared::{PageIndex, PreparedDocument},
     screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
 };
@@ -17,7 +18,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExtentSettings {
     pub shape: PaneShape,
-    pub context_lines: usize,
+    pub context: ContextRecords,
     pub wrap: WrapWidth,
 }
 
@@ -45,7 +46,7 @@ impl<R> RowLine<R> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct DisplayExtent {
     page: PageIndex,
-    context_lines: usize,
+    context: ContextRecords,
     wrap: WrapWidth,
     rows: VisibleRows,
     /// For each visible row, the line just past its last screen line.
@@ -80,21 +81,21 @@ impl DisplayExtent {
         let rows = document.page(page).rows();
         let ExtentSettings {
             shape,
-            context_lines,
+            context,
             wrap,
         } = settings;
 
         let measured = match shape {
             PaneShape::Single => rows
                 .line_indices()
-                .filter(|index| rows.shows_line(*index, context_lines))
+                .filter(|index| rows.shows_line(*index, context))
                 .map(|index| measured_row(rows, index, index, None, wrap))
                 .fold(ExtentRows::default(), ExtentRows::with)
                 .finish()
                 .map_rows(VisibleRows::Single),
             PaneShape::Split(direction) => rows
                 .pair_indices()
-                .filter(|index| rows.shows_pair(*index, context_lines))
+                .filter(|index| rows.shows_pair(*index, context))
                 .map(|index| {
                     let (first, second) = rows.pair(index).split_first();
                     measured_row(rows, index, first, second, wrap)
@@ -111,7 +112,7 @@ impl DisplayExtent {
 
         Self {
             page,
-            context_lines,
+            context,
             wrap,
             rows: visible_rows,
             line_ends,
@@ -191,7 +192,7 @@ impl DisplayExtent {
 
         ExtentSettings {
             shape,
-            context_lines: self.context_lines,
+            context: self.context,
             wrap: self.wrap,
         }
     }
@@ -422,6 +423,7 @@ mod tests {
         geometry::{PaneShape, SplitDirection},
         page_rows::{LineIndex, PageRows, PairIndex},
         parser::parse_patch,
+        preferences::ContextRecords,
         prepared::{PageIndex, PreparedDocument},
         screen::{Cells, NonZeroCells, ScreenLines},
     };
@@ -435,12 +437,12 @@ mod tests {
     fn extent_of(
         document: &PreparedDocument,
         shape: PaneShape,
-        context_lines: usize,
+        context: usize,
         wrap: WrapWidth,
     ) -> DisplayExtent {
         let settings = ExtentSettings {
             shape,
-            context_lines,
+            context: ContextRecords::new(context),
             wrap,
         };
 
@@ -513,13 +515,8 @@ mod tests {
         let document = prepared(
             b"--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n far0\n far1\n",
         );
-        let shown = |context_lines| {
-            let extent = extent_of(
-                &document,
-                PaneShape::Single,
-                context_lines,
-                WrapWidth::Unbounded,
-            );
+        let shown = |context| {
+            let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Unbounded);
             let lines = single_lines(&extent, 0, usize::MAX)
                 .into_iter()
                 .map(|line| line.row);
@@ -547,9 +544,8 @@ mod tests {
                 .as_bytes(),
         );
 
-        let width = |shape, context_lines| {
-            extent_of(&document, shape, context_lines, WrapWidth::Unbounded).width()
-        };
+        let width =
+            |shape, context| extent_of(&document, shape, context, WrapWidth::Unbounded).width();
 
         assert_eq!(width(PaneShape::Single, 1), Cells::new(24));
         assert_eq!(width(VERTICAL, 1), Cells::new(24));
@@ -628,7 +624,7 @@ mod tests {
         let mut extent = extent_of(&document, VERTICAL, 0, WrapWidth::Unbounded);
         let narrow = extent.settings();
         let wide = ExtentSettings {
-            context_lines: 3,
+            context: ContextRecords::new(3),
             ..narrow
         };
 

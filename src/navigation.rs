@@ -144,7 +144,7 @@ fn pane_line(view: &EffectiveView, anchor: AnchorLine) -> ScreenLines {
 fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSettings {
     ExtentSettings {
         shape: view.shape(),
-        context_lines: preferences.context_lines,
+        context: preferences.context,
         wrap: view.wrap(),
     }
 }

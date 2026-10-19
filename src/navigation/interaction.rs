@@ -248,7 +248,8 @@ mod tests {
     };
     use crate::{
         preferences::{
-            DiffGranularity, DiffLayout, FileList, PreferenceChange, ViewPreferences, Wrapping,
+            ContextRecords, DiffGranularity, DiffLayout, FileList, PreferenceChange,
+            ViewPreferences, Wrapping,
         },
         prepared::{PageCount, PageIndex},
     };
@@ -361,7 +362,10 @@ mod tests {
             after(PreferenceChange::ToggleWrapping).wrapping,
             Wrapping::Enabled
         );
-        assert_eq!(after(PreferenceChange::IncreaseContext).context_lines, 4);
+        assert_eq!(
+            after(PreferenceChange::IncreaseContext).context,
+            ContextRecords::new(4)
+        );
         assert_eq!(
             after(PreferenceChange::ToggleFileList).file_list,
             FileList::Hidden

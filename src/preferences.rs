@@ -1,9 +1,11 @@
+use crate::compact::Count;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewPreferences {
     pub layout: DiffLayout,
     pub granularity: DiffGranularity,
     pub wrapping: Wrapping,
-    pub context_lines: usize,
+    pub context: ContextRecords,
     pub file_list: FileList,
 }
 
@@ -13,7 +15,7 @@ impl ViewPreferences {
         layout: DiffLayout::Unified,
         granularity: DiffGranularity::Line,
         wrapping: Wrapping::Disabled,
-        context_lines: 3,
+        context: ContextRecords::new(3),
         file_list: FileList::Shown,
     };
 
@@ -32,11 +34,11 @@ impl ViewPreferences {
                 ..self
             },
             PreferenceChange::IncreaseContext => Self {
-                context_lines: self.context_lines.saturating_add(1),
+                context: self.context.increased(),
                 ..self
             },
             PreferenceChange::DecreaseContext => Self {
-                context_lines: self.context_lines.saturating_sub(1),
+                context: self.context.decreased(),
                 ..self
             },
             PreferenceChange::ToggleFileList => Self {
@@ -56,6 +58,29 @@ pub enum PreferenceChange {
     IncreaseContext,
     DecreaseContext,
     ToggleFileList,
+}
+
+/// How many context records show on either side of a change within its hunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContextRecords(usize);
+
+impl ContextRecords {
+    pub const fn new(records: usize) -> Self {
+        Self(records)
+    }
+
+    pub const fn increased(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    pub const fn decreased(self) -> Self {
+        Self(self.0.saturating_sub(1))
+    }
+
+    /// Whether a context record `distance` records from the nearest change shows.
+    pub fn admits(self, distance: Count) -> bool {
+        distance.get() <= self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
