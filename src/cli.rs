@@ -157,11 +157,12 @@ fn operand(argument: &OsStr) -> Operand {
 
 #[cfg(test)]
 mod tests {
+    use std::{ffi::OsString, path::PathBuf};
+
     use super::{
         Comparison, Depth, Driver, Invocation, Operand, Source, StdinState, UsageError,
         select_input, select_invocation,
     };
-    use std::{ffi::OsString, path::PathBuf};
 
     fn invocation_unpiped(words: &[&str]) -> Result<Invocation, UsageError> {
         select_invocation(&arguments(words), StdinState::Unpiped)
