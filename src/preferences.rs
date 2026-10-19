@@ -72,6 +72,9 @@ pub enum DiffLayout {
 }
 
 impl DiffLayout {
+    /// Every layout, in the order the layout shortcut cycles through them.
+    pub const ALL: [Self; 3] = [Self::Unified, Self::Vertical, Self::Stacked];
+
     /// The layout the layout shortcut switches to, cycling back to unified.
     pub const fn next(self) -> Self {
         match self {

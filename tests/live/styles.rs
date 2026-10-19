@@ -302,11 +302,7 @@ fn renders_character_detail_with_bright_changes_over_muted_text() {
 /// restores their syntax colors.
 #[test]
 fn toggles_unmatched_payload_colors_in_every_layout() {
-    for layout in [
-        DiffLayout::Unified,
-        DiffLayout::Vertical,
-        DiffLayout::Stacked,
-    ] {
+    for layout in DiffLayout::ALL {
         assert_unmatched_payload_toggle(layout);
     }
 }

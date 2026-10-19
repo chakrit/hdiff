@@ -480,13 +480,7 @@ mod tests {
     /// screen too narrow for both gives the panes the whole width.
     #[test]
     fn collapses_the_file_list_before_any_pane_loses_its_payload_column() {
-        let layouts = [
-            DiffLayout::Unified,
-            DiffLayout::Vertical,
-            DiffLayout::Stacked,
-        ];
-
-        for layout in layouts {
+        for layout in DiffLayout::ALL {
             for width in 20..=80 {
                 let screen = geometry(width, 30, layout);
                 if screen.file_column().is_some() {

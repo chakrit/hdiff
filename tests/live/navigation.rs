@@ -124,7 +124,7 @@ fn layout_cycle(mode: Mode) {
     let side_by_side = live.find(old).y == live.find(new).y;
     assert_eq!(side_by_side, mode.layout == DiffLayout::Vertical);
 
-    for _ in 0..3 {
+    for _ in DiffLayout::ALL {
         let layout = live.preferences().layout;
         live.press('v');
         assert_eq!(live.preferences().layout, layout.next());
