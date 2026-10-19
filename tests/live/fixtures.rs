@@ -32,6 +32,15 @@ pub fn file_name(index: usize) -> String {
     format!("file_{index:02}.rs")
 }
 
+/// The file list's marker and space before a modified file's name.
+pub const MODIFIED_ROW_PREFIX: &str = "~ ";
+
+/// The file list's row for file `index` in [`many_files`] or [`files_in_directories`],
+/// both of which modify every file.
+pub fn listed_row(index: usize) -> String {
+    format!("{MODIFIED_ROW_PREFIX}{}", file_name(index))
+}
+
 /// The directory of file `index` in [`files_in_directories`].
 pub fn directory_name(index: usize) -> String {
     format!("dir_{index:02}")

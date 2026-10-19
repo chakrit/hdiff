@@ -4,7 +4,8 @@ use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::{
-        TREE_PATCH, directory_name, file_name, files_in_directories, many_files, paired_patch,
+        MODIFIED_ROW_PREFIX, TREE_PATCH, directory_name, file_name, files_in_directories,
+        listed_row, many_files, paired_patch,
     },
     harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, change_label},
 };
@@ -24,12 +25,13 @@ struct EdgeMarkers {
     below: usize,
 }
 
-/// How many files the file list shows: selecting the file at this index, the first
+/// How many modified-file rows the file list shows. Every file in [`many_files`] and
+/// [`files_in_directories`] is modified, so selecting the file at this index, the first
 /// one past them, scrolls the list.
-fn listed_files(live: &Live) -> usize {
+fn listed_modified_files(live: &Live) -> usize {
     live.file_column()
         .iter()
-        .filter(|row| row.starts_with("~ "))
+        .filter(|row| row.starts_with(MODIFIED_ROW_PREFIX))
         .count()
 }
 
@@ -75,13 +77,13 @@ fn opens_the_keymap_popup_over_the_diff_not_the_file_list() {
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
     let patch = many_files(MORE_FILES_THAN_ROWS);
     let mut live = Live::load(&patch, Mode::line(DiffLayout::Unified));
-    let selected = listed_files(&live);
+    let selected = listed_modified_files(&live);
 
     for _ in 0..selected {
         live.next_file();
     }
     assert!(
-        live.shows(&format!("~ {}", file_name(selected))),
+        live.shows(&listed_row(selected)),
         "the selected file stays listed"
     );
     assert!(
@@ -194,7 +196,7 @@ fn colors_markers_by_state() {
 fn marks_files_beyond_the_file_list() {
     let file_count = MORE_FILES_THAN_ROWS;
     let mut live = Live::load(&many_files(file_count), Mode::line(DiffLayout::Unified));
-    let selected = listed_files(&live);
+    let selected = listed_modified_files(&live);
     let markers = |live: &Live| {
         let list = live.file_column().join("");
         EdgeMarkers {
@@ -203,10 +205,7 @@ fn marks_files_beyond_the_file_list() {
         }
     };
 
-    assert_eq!(
-        live.file_column()[FIRST_CONTENT_LINE],
-        format!("~ {}", file_name(0))
-    );
+    assert_eq!(live.file_column()[FIRST_CONTENT_LINE], listed_row(0));
     assert_eq!(
         markers(&live),
         EdgeMarkers { above: 0, below: 1 },
@@ -224,7 +223,7 @@ fn marks_files_beyond_the_file_list() {
     for _ in 0..=selected {
         live.previous_file();
     }
-    assert!(live.shows(&format!("~ {}", file_name(file_count - 1))));
+    assert!(live.shows(&listed_row(file_count - 1)));
     assert_eq!(
         markers(&live),
         EdgeMarkers { above: 1, below: 0 },
@@ -238,7 +237,7 @@ fn keeps_a_selection_below_its_headings_visible() {
         &files_in_directories(MORE_FILES_THAN_ROWS),
         Mode::line(DiffLayout::Unified),
     );
-    let selected = listed_files(&live);
+    let selected = listed_modified_files(&live);
 
     for _ in 0..selected {
         live.next_file();
@@ -246,7 +245,7 @@ fn keeps_a_selection_below_its_headings_visible() {
     let list = live.file_column();
     let selected_row = list
         .iter()
-        .position(|row| *row == format!("~ {}", file_name(selected)))
+        .position(|row| *row == listed_row(selected))
         .expect("the selected file stays listed below its heading rows");
     assert_eq!(
         list[selected_row - 1],
