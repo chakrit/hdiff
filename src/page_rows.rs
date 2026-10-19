@@ -405,16 +405,11 @@ impl SideBySideLayout {
     }
 }
 
-/// A changed line with the side it changes.
-struct LineSide {
-    line: LineIndex,
-    side: Side,
-}
-
-/// A maximal run of consecutive lines: all unchanged, or all changed with their sides.
+/// A maximal run of consecutive lines: all unchanged, or all changed, held as each side's
+/// column of lines in line order.
 enum Block {
     Unchanged(Vec<LineIndex>),
-    Changed(Vec<LineSide>),
+    Changed(BySide<Vec<LineIndex>>),
 }
 
 impl Block {
@@ -426,10 +421,10 @@ impl Block {
             let line = LineIndex::at(position);
             match (blocks.last_mut(), rendered_line.kind().changed_side()) {
                 (Some(Self::Unchanged(lines)), None) => lines.push(line),
-                (Some(Self::Changed(lines)), Some(side)) => lines.push(LineSide { line, side }),
+                (Some(Self::Changed(columns)), Some(side)) => columns.get_mut(side).push(line),
                 (None | Some(Self::Changed(_)), None) => blocks.push(Self::Unchanged(vec![line])),
                 (None | Some(Self::Unchanged(_)), Some(side)) => {
-                    blocks.push(Self::Changed(vec![LineSide { line, side }]));
+                    blocks.push(Self::Changed(BySide::of_side(side, vec![line], Vec::new())));
                 }
             }
         }
@@ -454,23 +449,14 @@ impl BlockRows {
                     .map(|offset| first_pair.offset(offset))
                     .collect(),
             },
-            Block::Changed(lines) => Self::changed(lines, first_pair),
+            Block::Changed(columns) => Self::changed(columns, first_pair),
         }
     }
 
     /// A changed block's *i*th old line and *i*th new line share row *i*. Each side's
     /// lines keep their order, so a no-newline marker sits right after its record in its
     /// side's column, and every line of the block takes a row.
-    fn changed(block: &[LineSide], first_pair: PairIndex) -> Self {
-        let column = |side| {
-            block
-                .iter()
-                .filter(|line_side| line_side.side == side)
-                .map(|line_side| line_side.line)
-                .collect::<Vec<_>>()
-        };
-        let columns = BySide::of(column);
-
+    fn changed(columns: &BySide<Vec<LineIndex>>, first_pair: PairIndex) -> Self {
         let paired_count = columns.as_ref().merge(|old, new| old.len().min(new.len()));
         let paired_lines = columns.as_ref().map(|column| &column[..paired_count]);
         let unmatched_lines = columns.as_ref().map(|column| &column[paired_count..]);
