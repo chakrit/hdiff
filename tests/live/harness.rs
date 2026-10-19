@@ -112,12 +112,17 @@ impl Live {
 
     pub fn resize(&mut self, size: Size) -> Step {
         self.resize_backend_only(size);
-        self.event(Event::Resize(size.width, size.height))
+        self.resize_event_only(size)
     }
 
     /// Changes the terminal's size without sending the resize event that follows it.
     pub fn resize_backend_only(&mut self, size: Size) {
         self.terminal.backend_mut().resize(size.width, size.height);
+    }
+
+    /// Sends the resize event a terminal sends for `size`, without changing its size.
+    pub fn resize_event_only(&mut self, size: Size) -> Step {
+        self.event(Event::Resize(size.width, size.height))
     }
 
     pub fn event(&mut self, event: Event) -> Step {
@@ -211,7 +216,7 @@ impl Live {
     /// pane.
     pub fn pane_middle_line(&self) -> usize {
         let screen = self.terminal.backend().buffer().area.as_size();
-        let view = EffectiveView::of(self.tui.preferences(), screen);
+        let view = EffectiveView::of(self.preferences(), screen);
         FIRST_CONTENT_LINE + view.pane_content().height.half().get()
     }
 

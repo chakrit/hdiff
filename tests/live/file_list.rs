@@ -9,6 +9,29 @@ use crate::{
 
 matrix!(file_list_toggle);
 
+/// docs/spec/architecture.md#interaction-model and docs/spec/architecture.md#view-model:
+/// `e` hides and shows the file list, floating a `? help` box while it is hidden and
+/// keeping the middle line's row in place.
+fn file_list_toggle(mode: Mode) {
+    let mut live = Live::load(&paired_patch(), mode);
+    for _ in 0..20 {
+        live.press('j');
+    }
+    let start = live.buffer();
+    let middle_line = live.pane_middle_line();
+    let middle = change_label(&live.rows()[middle_line]);
+    assert!(middle.is_some(), "a labeled row on the middle line");
+    assert!(live.shows("pairs.rs"), "the file list starts shown");
+
+    live.press('e');
+    assert!(!live.shows("pairs.rs"), "e hides the file list");
+    assert_eq!(change_label(&live.rows()[middle_line]), middle);
+    assert!(live.shows("? help"), "the help hint floats in a box");
+
+    live.press('e');
+    assert_eq!(live.buffer(), start, "e shows the file list again");
+}
+
 #[test]
 fn keeps_a_selection_beyond_the_file_list_height_visible() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
@@ -159,27 +182,4 @@ fn keeps_a_selection_below_its_headings_visible() {
         !live.shows("dir_00/"),
         "the list scrolls past earlier headings"
     );
-}
-
-/// docs/spec/architecture.md#interaction-model and docs/spec/architecture.md#view-model:
-/// `e` hides and shows the file list, floating a `? help` box while it is hidden and
-/// keeping the middle line's row in place.
-fn file_list_toggle(mode: Mode) {
-    let mut live = Live::load(&paired_patch(), mode);
-    for _ in 0..20 {
-        live.press('j');
-    }
-    let start = live.buffer();
-    let middle_line = live.pane_middle_line();
-    let middle = change_label(&live.rows()[middle_line]);
-    assert!(middle.is_some(), "a labeled row on the middle line");
-    assert!(live.shows("pairs.rs"), "the file list starts shown");
-
-    live.press('e');
-    assert!(!live.shows("pairs.rs"), "e hides the file list");
-    assert_eq!(change_label(&live.rows()[middle_line]), middle);
-    assert!(live.shows("? help"), "the help hint floats in a box");
-
-    live.press('e');
-    assert_eq!(live.buffer(), start, "e shows the file list again");
 }
