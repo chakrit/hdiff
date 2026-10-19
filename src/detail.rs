@@ -287,36 +287,41 @@ impl MarkedRun {
 /// The grapheme changes when one word replaces one similar word: one sharing at least
 /// half of the shorter word's graphemes. Any other replacement has none.
 fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<MarkedRun>> {
-    let BySide {
-        old: [before],
-        new: [after],
-    } = runs
-    else {
-        return None;
-    };
-    if before.kind != TokenKind::Word || after.kind != TokenKind::Word {
-        return None;
-    }
+    let words = runs.map(one_word).transpose()?;
 
-    let before_graphemes = before.text.graphemes(true).collect::<Vec<_>>();
-    let after_graphemes = after.text.graphemes(true).collect::<Vec<_>>();
-    let changes = diff_slices(Algorithm::Myers, &before_graphemes, &after_graphemes);
-
+    let graphemes = words.map(|word| word.graphemes(true).collect::<Vec<_>>());
+    let changes = graphemes
+        .as_ref()
+        .merge(|old, new| diff_slices(Algorithm::Myers, old, new))
+        .into_iter()
+        .map(|(tag, graphemes)| (changed_side(tag), graphemes))
+        .collect::<Vec<_>>();
     let common = changes
         .iter()
-        .filter(|(tag, _)| *tag == ChangeTag::Equal)
+        .filter(|(changed, _)| changed.is_none())
         .map(|(_, graphemes)| graphemes.len())
         .sum::<usize>();
-    let shortest = before_graphemes.len().min(after_graphemes.len());
-    if common.saturating_mul(2) < shortest {
-        return None;
-    }
+    let shortest = graphemes.as_ref().map(Vec::len).merge(usize::min);
 
-    let grapheme_changes = changes.into_iter().map(|(tag, graphemes)| {
-        let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-        MarkedRun::of(changed_side(tag), bytes)
-    });
-    Some(grapheme_changes.collect())
+    let similar = common.saturating_mul(2) >= shortest;
+    similar.then(|| {
+        changes
+            .into_iter()
+            .map(|(changed, graphemes)| {
+                let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
+                MarkedRun::of(changed, bytes)
+            })
+            .collect()
+    })
+}
+
+/// The run's text when it is exactly one word token; any other run has none.
+fn one_word<'t>(run: &[Token<'t>]) -> Option<&'t str> {
+    let [token] = run else {
+        return None;
+    };
+
+    (token.kind == TokenKind::Word).then_some(token.text)
 }
 
 // Spans
