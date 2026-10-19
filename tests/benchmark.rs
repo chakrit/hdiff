@@ -6,7 +6,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_trouble};
+use common::{TestEnv, assert_error};
 
 /// docs/spec/performance.md#benchmark-drivers: the drivers `--bench` accepts.
 const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
@@ -24,61 +24,20 @@ fn run(driver: &str, patch: &str) -> Output {
         .expect("run measurement")
 }
 
-fn fields(line: &str) -> BTreeMap<&str, u128> {
-    line.split_whitespace()
-        .skip(1)
-        .map(|field| {
-            let (key, value) = field.split_once('=').expect("key=value");
-            (key, value.parse().expect("integer measurement"))
-        })
-        .collect()
+/// The records of a successful report, which writes nothing to standard error.
+fn report(output: Output) -> String {
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+
+    String::from_utf8(output.stdout).expect("UTF-8 report")
+}
+
+fn records(report: &str) -> Vec<Record<'_>> {
+    report.lines().map(Record::parse).collect()
 }
 
 fn patch_bytes() -> u128 {
     u128::try_from(PATCH.len()).expect("patch length fits u128")
-}
-
-#[test]
-fn benchmark_accounts_for_input_and_parsing_before_preparation() {
-    let output = run("prepare", PATCH);
-    assert!(output.status.success(), "{output:?}");
-    assert!(output.stderr.is_empty());
-
-    let text = String::from_utf8(output.stdout).expect("UTF-8 report");
-    let lines = text.lines().collect::<Vec<_>>();
-    assert_eq!(lines.len(), 2, "preparation and startup records");
-    assert!(lines[0].starts_with("preparation "));
-    assert!(lines[1].starts_with("startup "));
-
-    let preparation = fields(lines[0]);
-    let startup = fields(lines[1]);
-
-    assert_eq!(preparation["files"], 1);
-    assert_eq!(preparation["records"], 2);
-    assert_eq!(startup["version"], 1);
-    assert_eq!(startup["bytes"], patch_bytes());
-    assert_eq!(startup["preparation_ns"], preparation["duration_ns"]);
-    assert!(
-        startup["ready_ns"]
-            >= startup["input_ns"] + startup["parse_ns"] + startup["preparation_ns"]
-    );
-}
-
-/// One `stage` record's parent, name, and duration.
-fn stage_record(line: &str) -> ((&str, &str), u128) {
-    let parts = line.split_whitespace().collect::<Vec<_>>();
-    assert_eq!(parts.len(), 4, "{line}");
-    assert_eq!(parts[0], "stage");
-
-    let name = parts[1].strip_prefix("name=").expect("stage name");
-    let parent = parts[2].strip_prefix("parent=").expect("stage parent");
-    let duration = parts[3]
-        .strip_prefix("duration_ns=")
-        .expect("duration")
-        .parse()
-        .expect("nanoseconds");
-
-    ((parent, name), duration)
 }
 
 /// docs/spec/performance.md#stages: every stage under its parent, plus each parent's
@@ -92,17 +51,90 @@ fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     preparation.into_iter().chain(syntax).collect()
 }
 
+/// One report line: its kind, then its `key=value` fields.
+struct Record<'a> {
+    line: &'a str,
+    kind: &'a str,
+    fields: BTreeMap<&'a str, &'a str>,
+}
+
+impl<'a> Record<'a> {
+    fn parse(line: &'a str) -> Self {
+        let mut words = line.split_whitespace();
+        let kind = words
+            .next()
+            .unwrap_or_else(|| panic!("record kind: {line:?}"));
+        let fields = words
+            .map(|field| {
+                field
+                    .split_once('=')
+                    .unwrap_or_else(|| panic!("key=value field {field:?} in {line:?}"))
+            })
+            .collect();
+
+        Self { line, kind, fields }
+    }
+
+    fn keys(&self) -> BTreeSet<&'a str> {
+        self.fields.keys().copied().collect()
+    }
+
+    fn text(&self, key: &str) -> &'a str {
+        self.fields
+            .get(key)
+            .copied()
+            .unwrap_or_else(|| panic!("{key} in {:?}", self.line))
+    }
+
+    fn integer(&self, key: &str) -> u128 {
+        self.text(key)
+            .parse()
+            .unwrap_or_else(|_| panic!("integer {key} in {:?}", self.line))
+    }
+}
+
+#[test]
+fn benchmark_accounts_for_input_and_parsing_before_preparation() {
+    let text = report(run("prepare", PATCH));
+    let records = records(&text);
+
+    let [preparation, startup] = &records[..] else {
+        panic!("preparation and startup records: {text}");
+    };
+    assert_eq!(preparation.kind, "preparation", "{text}");
+    assert_eq!(startup.kind, "startup", "{text}");
+    assert_eq!(preparation.integer("files"), 1);
+    assert_eq!(preparation.integer("records"), 2);
+    assert_eq!(startup.integer("version"), 1);
+    assert_eq!(startup.integer("bytes"), patch_bytes());
+    assert_eq!(
+        startup.integer("preparation_ns"),
+        preparation.integer("duration_ns")
+    );
+    assert!(
+        startup.integer("ready_ns")
+            >= startup.integer("input_ns")
+                + startup.integer("parse_ns")
+                + startup.integer("preparation_ns"),
+        "{text}"
+    );
+}
+
 #[test]
 fn stages_partitions_parent_costs_and_counts_real_work() {
-    let output = run("stages", PATCH);
-    assert!(output.status.success(), "{output:?}");
-    let text = String::from_utf8(output.stdout).expect("UTF-8 report");
-    let lines = text.lines().collect::<Vec<_>>();
+    let text = report(run("stages", PATCH));
+    let records = records(&text);
 
-    let startup = fields(lines[1]);
-    let stages = lines[3..lines.len() - 1]
+    let [diagnostic, startup, profile, stage_records @ .., work] = &records[..] else {
+        panic!("diagnostic, startup, profile, stage and work records: {text}");
+    };
+    let stages = stage_records
         .iter()
-        .map(|line| stage_record(line))
+        .map(|record| {
+            assert_eq!(record.kind, "stage", "{text}");
+            let key = (record.text("parent"), record.text("name"));
+            (key, record.integer("duration_ns"))
+        })
         .collect::<BTreeMap<_, _>>();
     let parent_sum = |parent: &str| -> u128 {
         stages
@@ -111,20 +143,19 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
             .map(|(_, duration)| duration)
             .sum()
     };
-    let work = fields(lines.last().expect("work counters"));
 
-    assert!(lines[0].starts_with("diagnostic "));
-    assert_eq!(lines[2], "profile version=1");
+    assert_eq!(diagnostic.kind, "diagnostic", "{text}");
+    assert_eq!(profile.line, "profile version=1", "{text}");
     assert_eq!(
         stages.keys().copied().collect::<BTreeSet<_>>(),
         expected_stages()
     );
-    assert_eq!(parent_sum("preparation"), startup["preparation_ns"]);
+    assert_eq!(parent_sum("preparation"), startup.integer("preparation_ns"));
     assert_eq!(parent_sum("syntax"), stages[&("preparation", "syntax")]);
-    assert_eq!(work["hunks"], 1);
-    assert_eq!(work["parse_calls"], 2);
-    assert_eq!(work["projected_bytes"], 24);
-    assert!(work["captures"] > 0);
+    assert_eq!(work.integer("hunks"), 1);
+    assert_eq!(work.integer("parse_calls"), 2);
+    assert_eq!(work.integer("projected_bytes"), 24);
+    assert!(work.integer("captures") > 0, "{text}");
 }
 
 #[test]
@@ -132,80 +163,79 @@ fn malformed_input_never_emits_success_measurements() {
     for driver in DRIVERS {
         let output = run(driver, "not a patch\n");
 
-        assert_trouble(&output);
-        assert!(output.stdout.is_empty());
-        assert_eq!(
-            String::from_utf8_lossy(&output.stderr),
-            "hdiff: input contains no diff\n",
-            "{driver}"
-        );
+        assert_error(&output, "input contains no diff");
     }
 }
 
 #[test]
 fn empty_input_still_emits_zero_count_measurements() {
     for driver in ["prepare", "stages"] {
-        let output = run(driver, "");
-        assert!(output.status.success(), "{driver}: {output:?}");
-        assert!(output.stderr.is_empty());
-        let text = String::from_utf8(output.stdout).expect("UTF-8 report");
-        let lines = text.lines().collect::<Vec<_>>();
-        let preparation = fields(lines[0]);
-        let startup = fields(lines[1]);
+        let text = report(run(driver, ""));
+        let records = records(&text);
+        let preparation = &records[0];
+        let startup = &records[1];
 
-        assert_eq!(preparation["files"], 0);
-        assert_eq!(preparation["records"], 0);
-        assert_eq!(startup["bytes"], 0);
-        assert_eq!(startup["version"], 1);
+        assert_eq!(preparation.integer("files"), 0);
+        assert_eq!(preparation.integer("records"), 0);
+        assert_eq!(startup.integer("bytes"), 0);
+        assert_eq!(startup.integer("version"), 1);
         if driver == "stages" {
-            assert_eq!(lines[2], "profile version=1");
-            let work = fields(lines.last().expect("work counters"));
-            assert!(work.values().all(|count| *count == 0));
+            assert_eq!(records[2].line, "profile version=1", "{text}");
+            let work = records.last().expect("work counters");
+            assert!(
+                work.keys().iter().all(|key| work.integer(key) == 0),
+                "{text}"
+            );
         }
     }
 }
 
 #[test]
 fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
-    let output = run("movement", PATCH);
-    assert!(output.status.success(), "{output:?}");
-    let text = String::from_utf8(output.stdout).expect("UTF-8 report");
+    let text = report(run("movement", PATCH));
 
-    let modes = text
-        .lines()
-        .map(|line| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            let [kind, version, layout, detail, wrap, key, step] = fields[..] else {
-                panic!("movement line shape: {line}");
-            };
-            assert_eq!((kind, version), ("movement", "version=2"), "{line}");
-            assert!(
-                matches!(key, "key=l" | "key=h" | "key=j" | "key=k"),
-                "{line}"
+    let modes = records(&text)
+        .iter()
+        .map(|record| {
+            assert_eq!(record.kind, "movement", "{}", record.line);
+            assert_eq!(
+                record.keys(),
+                BTreeSet::from(["version", "layout", "detail", "wrap", "key", "step_ns"]),
+                "{}",
+                record.line
             );
-            let (_, step_ns) = step.split_once("step_ns=").expect("step duration");
-            step_ns.parse::<u128>().expect("integer step duration");
-            (layout, detail, wrap)
+            assert_eq!(record.integer("version"), 2, "{}", record.line);
+            assert!(
+                matches!(record.text("key"), "l" | "h" | "j" | "k"),
+                "{}",
+                record.line
+            );
+            record.integer("step_ns");
+            (
+                record.text("layout"),
+                record.text("detail"),
+                record.text("wrap"),
+            )
         })
         .collect::<BTreeSet<_>>();
 
-    let expected = ["layout=unified", "layout=vertical", "layout=stacked"]
+    let expected = ["unified", "vertical", "stacked"]
         .into_iter()
-        .flat_map(|layout| ["detail=line", "detail=character"].map(|detail| (layout, detail)))
-        .flat_map(|(layout, detail)| ["wrap=off", "wrap=on"].map(|wrap| (layout, detail, wrap)))
+        .flat_map(|layout| ["line", "character"].map(|detail| (layout, detail)))
+        .flat_map(|(layout, detail)| ["off", "on"].map(|wrap| (layout, detail, wrap)))
         .collect::<BTreeSet<_>>();
     assert_eq!(modes, expected);
 }
 
 #[test]
 fn unsupported_language_has_no_syntax_parser_work() {
-    let output = run("stages", &PATCH.replace("a.rs", "a.txt"));
-    assert!(output.status.success(), "{output:?}");
-    let text = String::from_utf8(output.stdout).expect("UTF-8 report");
-    let work = fields(text.lines().last().expect("work counters"));
-    assert_eq!(work["hunks"], 1);
-    assert_eq!(work["parse_calls"], 0);
-    assert_eq!(work["captures"], 0);
+    let text = report(run("stages", &PATCH.replace("a.rs", "a.txt")));
+    let records = records(&text);
+    let work = records.last().expect("work counters");
+
+    assert_eq!(work.integer("hunks"), 1);
+    assert_eq!(work.integer("parse_calls"), 0);
+    assert_eq!(work.integer("captures"), 0);
 }
 
 #[test]
@@ -218,12 +248,8 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
         .stdin(Stdio::from(fs::File::open(patch).expect("patch input")))
         .output()
         .expect("stdin benchmark");
-    assert!(stdin.status.success(), "{stdin:?}");
-    let text = String::from_utf8(stdin.stdout).expect("report");
-    assert_eq!(
-        fields(text.lines().nth(1).expect("startup"))["bytes"],
-        patch_bytes()
-    );
+    let text = report(stdin);
+    assert_eq!(records(&text)[1].integer("bytes"), patch_bytes());
 
     let old = env.write_file("old.rs", "fn old() {}\n");
     let new = env.write_file("new.rs", "fn new() {}\n");
@@ -234,11 +260,8 @@ fn stdin_and_operand_comparison_report_the_acquired_patch_size() {
         .arg(new)
         .output()
         .expect("operand profile");
-    assert!(comparison.status.success(), "{comparison:?}");
-    let text = String::from_utf8(comparison.stdout).expect("report");
-    assert_eq!(
-        fields(text.lines().next().expect("diagnostic"))["records"],
-        2
-    );
-    assert!(fields(text.lines().nth(1).expect("startup"))["bytes"] > 0);
+    let text = report(comparison);
+    let records = records(&text);
+    assert_eq!(records[0].integer("records"), 2);
+    assert!(records[1].integer("bytes") > 0, "{text}");
 }

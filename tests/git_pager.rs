@@ -7,7 +7,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_trouble};
+use common::{TestEnv, assert_error};
 
 const ORIGINAL_CONFIG: &str = "[user]\n\tname = Test User\n";
 
@@ -46,10 +46,12 @@ fn install_prints_the_commands_it_applied() {
     let executable = copied_hdiff(&env, SPECIAL_EXECUTABLE);
     let (config_path, installation) = install(&env, &executable);
     assert!(installation.status.success(), "{installation:?}");
+
     let printed = String::from_utf8(installation.stdout).expect("UTF-8 commands");
     let [copy_command, config_command] = printed.lines().collect::<Vec<_>>()[..] else {
         panic!("expected a cp and a git config command, got {printed:?}");
     };
+
     fs::remove_file(env.path("gitconfig.bak")).expect("remove the installer's backup");
     let replayed_path = env.write_file("replayed", "");
 
@@ -92,13 +94,12 @@ fn install_names_a_config_path_it_cannot_inspect() {
     set_mode(&locked, 0o755);
     let installation = installation.expect("run hdiff installer");
 
-    assert_trouble(&installation);
-    assert_eq!(
-        String::from_utf8_lossy(&installation.stderr),
-        format!(
-            "hdiff: --install: {}: Permission denied (os error 13)\n",
+    assert_error(
+        &installation,
+        &format!(
+            "--install: {}: Permission denied (os error 13)",
             config_path.display()
-        )
+        ),
     );
 }
 
@@ -110,12 +111,16 @@ fn git_show_preserves_commit_text_and_repeated_file_paths() {
     let viewed = pipe_git_to_hdiff(&env, &arguments);
 
     assert!(viewed.status.success(), "{viewed:?}");
-    assert!(viewed.stderr.is_empty());
+    assert!(viewed.stderr.is_empty(), "{viewed:?}");
     assert_eq!(viewed.stdout, expected);
     let text = String::from_utf8(viewed.stdout).expect("UTF-8 Git history");
-    assert!(text.contains("First change"));
-    assert!(text.contains("Second change"));
-    assert_eq!(text.matches("diff --git a/file.txt b/file.txt").count(), 2);
+    assert!(text.contains("First change"), "{text}");
+    assert!(text.contains("Second change"), "{text}");
+    assert_eq!(
+        text.matches("diff --git a/file.txt b/file.txt").count(),
+        2,
+        "{text}"
+    );
 }
 
 #[test]
@@ -141,7 +146,7 @@ fn git_show_sanitizes_colored_commit_text_and_diff() {
     );
 
     assert!(viewed.status.success(), "{viewed:?}");
-    assert!(viewed.stderr.is_empty());
+    assert!(viewed.stderr.is_empty(), "{viewed:?}");
     assert_eq!(viewed.stdout, expected);
 }
 
@@ -155,12 +160,7 @@ fn git_show_without_diff_content_is_rejected() {
     ] {
         let viewed = pipe_git_to_hdiff(&env, &arguments);
 
-        assert_trouble(&viewed);
-        assert!(viewed.stdout.is_empty());
-        assert_eq!(
-            String::from_utf8_lossy(&viewed.stderr),
-            "hdiff: input contains no diff\n"
-        );
+        assert_error(&viewed, "input contains no diff");
     }
 }
 

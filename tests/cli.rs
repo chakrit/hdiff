@@ -6,7 +6,7 @@ use std::{
     process::{Output, Stdio},
 };
 
-use common::{TestEnv, assert_trouble, fixture};
+use common::{TestEnv, assert_error, error_output, fixture};
 
 fn run_hdiff(arguments: &[&str]) -> Output {
     TestEnv::new()
@@ -66,7 +66,7 @@ fn help_describes_the_cli_without_reading_diff_input() {
     let drivers = ["prepare", "stages", "movement"];
 
     assert!(help.status.success(), "{help:?}");
-    assert!(help.stderr.is_empty());
+    assert!(help.stderr.is_empty(), "{help:?}");
     let text = String::from_utf8(help.stdout).expect("help is UTF-8");
     assert!(text.starts_with("Usage: hdiff"), "{text}");
     for named in [
@@ -95,7 +95,7 @@ fn version_identifies_the_package_and_source_commit() {
     );
 
     assert!(version.status.success(), "{version:?}");
-    assert!(version.stderr.is_empty());
+    assert!(version.stderr.is_empty(), "{version:?}");
     assert_eq!(
         String::from_utf8(version.stdout).expect("version is UTF-8"),
         expected
@@ -115,11 +115,9 @@ fn bench_rejects_install_even_when_that_patch_filename_exists() {
         .output()
         .expect("bench with incompatible installation option");
 
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "hdiff: --install cannot be combined with diff input operands\n"
+    assert_error(
+        &output,
+        "--install cannot be combined with diff input operands",
     );
 }
 
@@ -138,8 +136,8 @@ fn empty_sources_exit_silently() {
             .expect("run empty viewer input");
 
         assert!(output.status.success(), "{operands:?}: {output:?}");
-        assert!(output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
+        assert!(output.stdout.is_empty(), "{operands:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{operands:?}: {output:?}");
     }
 }
 
@@ -149,7 +147,7 @@ fn metadata_only_input_remains_visible() {
     let output = run_hdiff(&[patch.to_str().expect("fixture path is UTF-8")]);
 
     assert!(output.status.success(), "{output:?}");
-    assert!(output.stderr.is_empty());
+    assert!(output.stderr.is_empty(), "{output:?}");
     assert_eq!(
         output.stdout,
         include_bytes!("fixtures/git-rename-only.patch")
@@ -169,12 +167,7 @@ fn truncated_patch_is_an_error() {
         .output()
         .expect("run hdiff on a truncated patch");
 
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "hdiff: line 5: truncated hunk\n"
-    );
+    assert_error(&output, "line 5: truncated hunk");
 }
 
 #[test]
@@ -182,12 +175,12 @@ fn directory_comparison_descends_only_with_recursion() {
     let env = comparison_tree();
 
     let top_level = compare(&env, &["before", "after"]);
-    assert!(top_level.contains("+new top\n"));
-    assert!(!top_level.contains("+new inner\n"));
+    assert!(top_level.contains("+new top\n"), "{top_level}");
+    assert!(!top_level.contains("+new inner\n"), "{top_level}");
 
     let recursive = compare(&env, &["-r", "before", "after"]);
-    assert!(recursive.contains("+new top\n"));
-    assert!(recursive.contains("+new inner\n"));
+    assert!(recursive.contains("+new top\n"), "{recursive}");
+    assert!(recursive.contains("+new inner\n"), "{recursive}");
 }
 
 #[test]
@@ -225,11 +218,9 @@ fn piped_stdin_with_file_operands_is_a_usage_error() {
         .output()
         .expect("run comparison with piped stdin");
 
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "hdiff: piped standard input cannot be combined with file operands; name it with -\n"
+    assert_error(
+        &output,
+        "piped standard input cannot be combined with file operands; name it with -",
     );
 }
 
@@ -267,33 +258,21 @@ fn patch_file_holding_only_text_is_an_error() {
         .output()
         .expect("run hdiff on a text-only patch");
 
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "hdiff: input contains no diff\n"
-    );
+    assert_error(&output, "input contains no diff");
 }
 
 #[test]
 fn usage_errors_name_the_program_on_one_stderr_line() {
     let output = run_hdiff(&["a", "b", "c"]);
 
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "hdiff: expected zero, one, or two operands\n"
-    );
+    assert_error(&output, "expected zero, one, or two operands");
 }
 
 #[test]
 fn failed_comparisons_report_each_diff_error_line() {
     let output = run_hdiff(&["missing-before", "missing-after"]);
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_trouble(&output);
-    assert!(output.stdout.is_empty());
+    let stderr = error_output(&output);
     let lines = stderr.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 2, "{stderr}");
     assert!(
@@ -310,8 +289,7 @@ fn failed_comparisons_report_each_diff_error_line() {
 fn unreadable_patch_files_are_named_in_the_error() {
     let output = run_hdiff(&["missing.patch"]);
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_trouble(&output);
+    let stderr = error_output(&output);
     assert!(stderr.starts_with("hdiff: missing.patch: "), "{stderr}");
     assert_eq!(stderr.matches('\n').count(), 1, "{stderr}");
 }
