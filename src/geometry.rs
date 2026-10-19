@@ -1,7 +1,7 @@
 //! The screen's areas for one screen size, file-list preference and pane shape: the
-//! file-list column and its separator while the list fits, the diff area beside it, and
-//! the content each diff pane of the shape shows, and whether the screen is too small to
-//! show panes at all. Rules:
+//! file-list column and its separator while the list fits, the diff area beside it, the
+//! content each diff pane of the shape shows, and whether the screen is too small to show
+//! panes at all. Rules:
 //! docs/spec/architecture.md#interaction-model and
 //! docs/spec/architecture.md#continuity-markers and
 //! docs/spec/architecture.md#viewport-coordinates.
@@ -57,13 +57,15 @@ pub enum SplitDirection {
 }
 
 /// A screen's areas for one pane shape: the whole screen, the file-list column when it is
-/// shown, the diff area beside it, and the content each pane of the shape shows there.
+/// shown, the diff area beside it, the content each pane of the shape shows there, and
+/// whether the screen is too small to show those panes.
 pub struct ScreenGeometry {
     screen: Rect,
     shape: PaneShape,
     file_column: Option<FileColumn>,
     diff: Rect,
     pane_content: PaneContent,
+    too_small: Option<TooSmall>,
 }
 
 impl ScreenGeometry {
@@ -107,6 +109,7 @@ impl ScreenGeometry {
             PaneShape::Single => PaneContent::inside(diff),
             PaneShape::Split(direction) => SplitPanes::of(diff, direction).content(),
         };
+        let too_small = TooSmall::of(screen, pane_content);
 
         Self {
             screen,
@@ -114,6 +117,7 @@ impl ScreenGeometry {
             file_column,
             diff,
             pane_content,
+            too_small,
         }
     }
 
@@ -140,16 +144,9 @@ impl ScreenGeometry {
         self.pane_content
     }
 
-    /// Why the screen shows only a message instead of its panes, if it does: narrower
-    /// than the minimum layout, or too short for each pane to show one content line.
+    /// Why the screen shows only a message instead of its panes, if it does.
     pub fn too_small(&self) -> Option<TooSmall> {
-        let narrow = self.screen.width < MINIMUM_SCREEN_WIDTH;
-
-        match (narrow, self.pane_content.height) {
-            (true, _) => Some(TooSmall::Narrow),
-            (false, ScreenLines::ZERO) => Some(TooSmall::Short),
-            (false, _) => None,
-        }
+        self.too_small
     }
 }
 
@@ -160,6 +157,21 @@ pub enum TooSmall {
     Narrow,
     /// A diff pane would have no content line.
     Short,
+}
+
+impl TooSmall {
+    /// Why `screen`, whose panes show `pane_content`, is too small to show them, if it
+    /// is: narrower than the minimum layout, or too short for each pane to show one
+    /// content line.
+    fn of(screen: Rect, pane_content: PaneContent) -> Option<Self> {
+        let narrow = screen.width < MINIMUM_SCREEN_WIDTH;
+
+        match (narrow, pane_content.height) {
+            (true, _) => Some(Self::Narrow),
+            (false, ScreenLines::ZERO) => Some(Self::Short),
+            (false, _) => None,
+        }
+    }
 }
 
 /// The file list and the full-height separator beside it.
@@ -369,11 +381,19 @@ fn stacked_pane_height(area_height: u16) -> u16 {
 mod tests {
     use ratatui::layout::{Rect, Size};
 
-    use super::{FileColumn, PaneShape, ScreenGeometry};
+    use super::{FileColumn, PaneShape, ScreenGeometry, TooSmall};
     use crate::{
         preferences::{DiffLayout, FileList},
         screen::{Cells, ScreenLines},
     };
+
+    /// What a screen shows: a message, or its panes with or without the file list.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Shown {
+        Message(TooSmall),
+        DiffOnly,
+        WithFileList,
+    }
 
     /// The areas of a `width` by `height` screen in `layout` with the file list preferred
     /// shown; the list still collapses where its panes would lose their payload column.
@@ -422,15 +442,64 @@ mod tests {
         assert_eq!(content_width(23, DiffLayout::Vertical), Cells::new(9));
     }
 
-    /// docs/spec/architecture.md#interaction-model: the file list collapses before the
-    /// diff view, so a screen too narrow for both gives the panes the whole width.
+    /// docs/spec/architecture.md#interaction-model: the minimum layout shows one content
+    /// line in each diff pane, and the file list collapses before the diff view.
     #[test]
-    fn collapses_the_file_list_on_a_screen_too_narrow_for_it_and_the_diff() {
-        let collapsed =
-            |screen_width, layout| geometry(screen_width, 30, layout).file_column().is_none();
+    fn derives_compact_pane_visibility_from_terminal_size() {
+        let cases = [
+            (19, 3, DiffLayout::Unified, Shown::Message(TooSmall::Narrow)),
+            (20, 2, DiffLayout::Unified, Shown::Message(TooSmall::Short)),
+            (27, 3, DiffLayout::Unified, Shown::DiffOnly),
+            (28, 3, DiffLayout::Unified, Shown::DiffOnly),
+            (28, 3, DiffLayout::Vertical, Shown::DiffOnly),
+            (28, 6, DiffLayout::Stacked, Shown::Message(TooSmall::Short)),
+            (28, 7, DiffLayout::Stacked, Shown::DiffOnly),
+            (80, 7, DiffLayout::Stacked, Shown::WithFileList),
+        ];
 
-        assert!(collapsed(23, DiffLayout::Unified));
-        assert!(collapsed(23, DiffLayout::Vertical));
+        for (width, height, layout, expected) in cases {
+            let screen = geometry(width, height, layout);
+            let shown = match (screen.too_small(), screen.file_column()) {
+                (Some(too_small), _) => Shown::Message(too_small),
+                (None, None) => Shown::DiffOnly,
+                (None, Some(_)) => Shown::WithFileList,
+            };
+
+            assert_eq!(shown, expected, "{width}×{height} {layout:?}");
+        }
+    }
+
+    /// docs/spec/architecture.md#interaction-model: as width decreases the file list
+    /// collapses before the diff view, so no pane it leaves lacks a payload column, and a
+    /// screen too narrow for both gives the panes the whole width.
+    #[test]
+    fn collapses_the_file_list_before_any_pane_loses_its_payload_column() {
+        let layouts = [
+            DiffLayout::Unified,
+            DiffLayout::Vertical,
+            DiffLayout::Stacked,
+        ];
+
+        for layout in layouts {
+            for width in 20..=80 {
+                let screen = geometry(width, 30, layout);
+                if screen.file_column().is_some() {
+                    assert!(
+                        screen.pane_content().payload_width().is_some(),
+                        "{layout:?} at {width} columns shows the file list over a pane \
+                         without a payload column"
+                    );
+                }
+            }
+            assert!(
+                geometry(23, 30, layout).file_column().is_none(),
+                "{layout:?} at 23 columns keeps the file list beside the diff"
+            );
+            assert!(
+                geometry(120, 30, layout).file_column().is_some(),
+                "{layout:?} shows the file list where it fits"
+            );
+        }
     }
 
     #[test]

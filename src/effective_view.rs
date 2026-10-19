@@ -84,102 +84,11 @@ mod tests {
 
     use super::{EffectiveView, WrapWidth};
     use crate::{
-        geometry::{PaneContent, SplitDirection, SplitPanes, TooSmall},
+        geometry::{PaneContent, SplitDirection, SplitPanes},
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
         screen::{Cells, ScreenLines},
         side::BySide,
     };
-
-    /// What a screen shows: a message, or its panes with or without the file list.
-    #[derive(Debug, PartialEq, Eq)]
-    enum Shown {
-        Message(TooSmall),
-        DiffOnly,
-        WithFileList,
-    }
-
-    /// docs/spec/architecture.md#interaction-model: the minimum layout shows one content
-    /// line in each diff pane, and the file list collapses before the diff view.
-    #[test]
-    fn derives_compact_pane_visibility_from_terminal_size() {
-        let cases = [
-            (
-                Size::new(19, 3),
-                DiffLayout::Unified,
-                Shown::Message(TooSmall::Narrow),
-            ),
-            (
-                Size::new(20, 2),
-                DiffLayout::Unified,
-                Shown::Message(TooSmall::Short),
-            ),
-            (Size::new(27, 3), DiffLayout::Unified, Shown::DiffOnly),
-            (Size::new(28, 3), DiffLayout::Unified, Shown::DiffOnly),
-            (Size::new(28, 3), DiffLayout::Vertical, Shown::DiffOnly),
-            (
-                Size::new(28, 6),
-                DiffLayout::Stacked,
-                Shown::Message(TooSmall::Short),
-            ),
-            (Size::new(28, 7), DiffLayout::Stacked, Shown::DiffOnly),
-            (Size::new(80, 7), DiffLayout::Stacked, Shown::WithFileList),
-        ];
-
-        for (screen, layout, expected) in cases {
-            let preferences = ViewPreferences {
-                layout,
-                ..ViewPreferences::INITIAL
-            };
-            let view = EffectiveView::of(preferences, screen);
-            let shown = match (view.geometry().too_small(), view.geometry().file_column()) {
-                (Some(too_small), _) => Shown::Message(too_small),
-                (None, None) => Shown::DiffOnly,
-                (None, Some(_)) => Shown::WithFileList,
-            };
-
-            assert_eq!(
-                shown, expected,
-                "{}×{} {layout:?}",
-                screen.width, screen.height
-            );
-        }
-    }
-
-    /// docs/spec/architecture.md#interaction-model: as width decreases the file list
-    /// collapses before the diff view, so no pane it leaves lacks a payload column.
-    #[test]
-    fn collapses_the_file_list_before_any_pane_loses_its_payload_column() {
-        let layouts = [
-            DiffLayout::Unified,
-            DiffLayout::Vertical,
-            DiffLayout::Stacked,
-        ];
-        let view_at = |layout, width| {
-            let preferences = ViewPreferences {
-                layout,
-                ..ViewPreferences::INITIAL
-            };
-            EffectiveView::of(preferences, Size::new(width, 30))
-        };
-
-        for layout in layouts {
-            for width in 20..=80 {
-                let view = view_at(layout, width);
-                let geometry = view.geometry();
-                if geometry.file_column().is_some() {
-                    assert!(
-                        geometry.pane_content().payload_width().is_some(),
-                        "{layout:?} at {width} columns shows the file list over a pane \
-                         without a payload column"
-                    );
-                }
-            }
-            assert!(
-                view_at(layout, 120).geometry().file_column().is_some(),
-                "{layout:?} shows the file list where it fits"
-            );
-        }
-    }
 
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
