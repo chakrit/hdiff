@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn wraps_payloads_inside_the_marker_gutter_unless_wrapping_is_off() {
+    fn wraps_payloads_beside_the_marker_gutter_unless_wrapping_is_off_or_no_payload_fits() {
         let wrap = |wrapping, width| {
             let content = PaneContent {
                 width: Cells::new(width),

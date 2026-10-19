@@ -74,7 +74,7 @@ impl ScreenGeometry {
     /// only while every pane beside it keeps a payload column.
     pub fn of(size: Size, file_list: FileList, shape: PaneShape) -> Self {
         let screen = Rect::from((Position::ORIGIN, size));
-        let diff_only = Self::with_diff(screen, shape, None, screen);
+        let diff_only = Self::of_areas(screen, shape, None, screen);
 
         match file_list {
             FileList::Hidden => diff_only,
@@ -95,11 +95,11 @@ impl ScreenGeometry {
             Layout::horizontal([Constraint::Length(FILE_COLUMN_WIDTH), Constraint::Min(0)])
                 .areas(screen);
 
-        Self::with_diff(screen, shape, Some(FileColumn::of(column)), diff)
+        Self::of_areas(screen, shape, Some(FileColumn::of(column)), diff)
     }
 
     /// `screen` with `file_column` beside `diff`, which `shape` divides into panes.
-    fn with_diff(
+    fn of_areas(
         screen: Rect,
         shape: PaneShape,
         file_column: Option<FileColumn>,
