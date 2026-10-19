@@ -20,24 +20,24 @@ use crate::{
     tab_stops::{MeasuredText, MeasuredTextRef},
 };
 
-/// The position of an item among its page's items of kind `Of`. The kind keeps a line
+/// The position of an item in its page's position space `Of`. The space keeps a line
 /// position from indexing pairs, and a pair position from indexing lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PagePosition<Of>(Count, PhantomData<Of>);
 
-/// A page's rendered lines, as a position kind.
+/// The position space of a page's rendered lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Line {}
+pub enum LineSpace {}
 
-/// A page's side-by-side rows, as a position kind.
+/// The position space of a page's side-by-side rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Pair {}
+pub enum PairSpace {}
 
 /// The position of a rendered line among its page's lines.
-pub type LineIndex = PagePosition<Line>;
+pub type LineIndex = PagePosition<LineSpace>;
 
 /// The position of a side-by-side row among its page's pairs.
-pub type PairIndex = PagePosition<Pair>;
+pub type PairIndex = PagePosition<PairSpace>;
 
 impl<Of> PagePosition<Of> {
     fn at(position: usize) -> Self {
