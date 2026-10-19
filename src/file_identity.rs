@@ -3,7 +3,7 @@
 
 use crate::{
     headers::{
-        FileHeader, GitHeader, GitMetadata, HeaderPath, git_header_names, quoted_or_plain, unquote,
+        FileHeader, GitHeader, GitMetadata, GitNames, HeaderPath, git_header_names, quoted_or_plain,
     },
     side::BySide,
     source_text::{SourceLine, sanitize},
@@ -164,13 +164,11 @@ fn git_change(lines: &[SourceLine]) -> Option<GitChange> {
 /// The name a `diff --git <old> <new>` line gives: the path suffix its halves share.
 fn git_header_path(line: &SourceLine) -> Option<Box<str>> {
     let names = git_header_names(line.sanitized())?;
-    if !names.starts_with('"') {
-        return unquoted_git_name(names);
-    }
 
-    let (old, rest) = unquote(names)?;
-    let new = quoted_or_plain(rest.strip_prefix(' ')?)?;
-    shared_suffix(&old, &new).map(Box::from)
+    match GitNames::of(names)? {
+        GitNames::Split(BySide { old, new }) => shared_suffix(&old, &new).map(Box::from),
+        GitNames::Unsplit(names) => unquoted_git_name(names),
+    }
 }
 
 /// Unquoted names may contain spaces; the halves split at the one space whose sides

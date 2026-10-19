@@ -135,56 +135,75 @@ impl FileTree {
 
 // Rows
 
+/// The group a file's row is listed in.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Group<'a> {
+    #[default]
+    TopLevel,
+    /// Files under one directory, listed after its heading.
+    Directory(&'a str),
+}
+
 /// A file view with where its row goes and what it shows.
 #[derive(Clone, Copy)]
 struct Placed<'a> {
     view: FileView<'a>,
-    /// Empty at the top level.
-    directory: &'a str,
+    group: Group<'a>,
     name: &'a str,
     marker: StateMarker,
 }
 
 impl<'a> Placed<'a> {
     fn of(view: FileView<'a>) -> Self {
-        let (directory, name, marker) = match &view.file.identity {
+        let (group, name, marker) = match &view.file.identity {
             FileIdentity::Path { state, path } => {
-                let path = path.as_str();
-                let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
-                (directory, name, StateMarker::State(*state))
+                let (group, name) = grouped(path.as_str());
+                (group, name, StateMarker::State(*state))
             }
-            FileIdentity::Unknown { header } => ("", header.as_str(), StateMarker::Unknown),
+            FileIdentity::Unknown { header } => {
+                (Group::TopLevel, header.as_str(), StateMarker::Unknown)
+            }
         };
 
         Self {
             view,
-            directory,
+            group,
             name,
             marker,
         }
     }
 
     fn is_top_level(&self) -> bool {
-        self.directory.is_empty()
+        self.group == Group::TopLevel
     }
 }
 
-/// File-list rows built in list order, with the directory of the group being listed.
+/// The group `path` is listed in and the name its row shows.
+fn grouped(path: &str) -> (Group<'_>, &str) {
+    match path.rsplit_once('/') {
+        Some(("", name)) => (Group::TopLevel, name),
+        Some((directory, name)) => (Group::Directory(directory), name),
+        None => (Group::TopLevel, path),
+    }
+}
+
+/// File-list rows built in list order, with the group being listed.
 #[derive(Default)]
 struct TreeRows<'a> {
     rows: Vec<TreeRow>,
-    /// Empty while listing top-level files.
-    directory: &'a str,
+    group: Group<'a>,
 }
 
 impl<'a> TreeRows<'a> {
     /// Lists `file` after the rows so far, under its directory's heading when it opens a
     /// new group.
     fn push(&mut self, file: &Placed<'a>) -> ListedFile<'a> {
-        if file.directory != self.directory {
-            let heading = format!("{}/", file.directory);
-            self.rows.push(TreeRow::Directory(heading.into()));
-            self.directory = file.directory;
+        if file.group != self.group {
+            if let Group::Directory(directory) = file.group {
+                let heading = format!("{directory}/");
+                self.rows.push(TreeRow::Directory(heading.into()));
+            }
+            self.group = file.group;
         }
 
         let row = TreeRowIndex(self.rows.len());
