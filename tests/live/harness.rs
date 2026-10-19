@@ -214,9 +214,12 @@ impl Live {
             name.windows(2).all(|pair| pair[0] == pair[1]),
             "{row:?} draws its name in one color: {name:?}"
         );
+        let [name_color, ..] = name[..] else {
+            panic!("{row:?} draws a name");
+        };
         FileRowColors {
             marker,
-            name: name[0],
+            name: name_color,
         }
     }
 

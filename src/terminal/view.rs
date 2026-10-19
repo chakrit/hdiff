@@ -78,6 +78,8 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
     }
 }
 
+/// The only content a screen too small for the minimum layout renders. Rules:
+/// docs/spec/architecture.md#interaction-model.
 const fn too_small_message(too_small: TooSmall) -> &'static str {
     match too_small {
         TooSmall::Narrow => "screen too narrow",

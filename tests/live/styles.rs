@@ -31,7 +31,10 @@ fn assert_unmatched_payload_toggle(layout: DiffLayout) {
     ];
     for payload in payloads.map(|(payload, _)| payload) {
         let payload_cells = unique_payload_cells(&line_rendered, payload);
-        assert_eq!(payload_cells[0].fg, THEME.syntax.keyword, "Rust keyword");
+        let [keyword, ..] = payload_cells else {
+            panic!("{payload:?} is drawn");
+        };
+        assert_eq!(keyword.fg, THEME.syntax.keyword, "Rust keyword");
     }
 
     live.press('c');
