@@ -5,6 +5,7 @@ use std::{
     fmt,
     fs::File,
     io::{self, Write},
+    iter,
     panic::{self, PanicHookInfo},
     sync::Arc,
 };
@@ -99,7 +100,7 @@ impl std::error::Error for SessionError {}
 /// The part of a session that failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStage {
-    /// Raw mode or the alternate screen could not be entered.
+    /// The terminal could not be set up: its size, raw mode, or the alternate screen.
     Start,
     /// The interactive loop failed.
     Run,
@@ -120,17 +121,46 @@ impl fmt::Display for CleanupSuffix<'_> {
 /// The restore steps that failed, at least one, in the order they were attempted. Shown
 /// as `cleanup failed: ` and each failed step with its error.
 #[derive(Debug)]
-pub struct RestoreFailures(Vec<(RestoreStep, io::Error)>);
+pub struct RestoreFailures {
+    first: RestoreFailure,
+    rest: Vec<RestoreFailure>,
+}
+
+impl RestoreFailures {
+    /// `failures` in their order, or `None` when there are none.
+    fn of(failures: impl IntoIterator<Item = RestoreFailure>) -> Option<Self> {
+        let mut failures = failures.into_iter();
+        let first = failures.next()?;
+
+        Some(Self {
+            first,
+            rest: failures.collect(),
+        })
+    }
+}
 
 impl fmt::Display for RestoreFailures {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let failures = self
-            .0
-            .iter()
-            .map(|(step, error)| format!("{}: {error}", step.label()))
+        let failures = iter::once(&self.first)
+            .chain(&self.rest)
+            .map(|failure| format!("{}: {}", failure.step.label(), failure.error))
             .collect::<Vec<_>>();
 
         write!(formatter, "cleanup failed: {}", failures.join("; "))
+    }
+}
+
+/// One restore step that failed, with its error.
+#[derive(Debug)]
+struct RestoreFailure {
+    step: RestoreStep,
+    error: io::Error,
+}
+
+impl RestoreFailure {
+    /// The failure of `step`, when `result` is one.
+    fn of(step: RestoreStep, result: io::Result<()>) -> Option<Self> {
+        result.err().map(|error| Self { step, error })
     }
 }
 
@@ -170,17 +200,14 @@ fn restore(terminal: &mut impl Write, entered: Entered) -> Result<(), RestoreFai
     };
     let raw_mode = terminal::disable_raw_mode();
 
-    let steps = [(RestoreStep::Cursor, cursor)]
-        .into_iter()
-        .chain(screen.map(|screen| (RestoreStep::AlternateScreen, screen)))
-        .chain([(RestoreStep::RawMode, raw_mode)]);
-    let failures = steps
-        .filter_map(|(step, result)| result.err().map(|error| (step, error)))
-        .collect::<Vec<_>>();
-
-    match failures.is_empty() {
-        true => Ok(()),
-        false => Err(RestoreFailures(failures)),
+    let failures = [
+        RestoreFailure::of(RestoreStep::Cursor, cursor),
+        screen.and_then(|screen| RestoreFailure::of(RestoreStep::AlternateScreen, screen)),
+        RestoreFailure::of(RestoreStep::RawMode, raw_mode),
+    ];
+    match RestoreFailures::of(failures.into_iter().flatten()) {
+        None => Ok(()),
+        Some(failures) => Err(failures),
     }
 }
 
