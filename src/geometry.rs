@@ -12,10 +12,10 @@ use crate::{
     side::BySide,
 };
 
-/// Rows each pane's continuity-marker frame takes: one above and one below.
-pub const PANE_FRAME_HEIGHT: u16 = 2;
-/// Columns each diff pane's continuity-marker frame takes: one on either side.
-const PANE_FRAME_WIDTH: u16 = 2;
+/// Rows a continuity-marker frame takes on each of its top and bottom edges.
+const FRAME_ROWS_PER_EDGE: u16 = 1;
+/// Columns a diff pane's continuity-marker frame takes on each of its side edges.
+const FRAME_COLUMNS_PER_EDGE: u16 = 1;
 
 const MINIMUM_SCREEN_WIDTH: u16 = 20;
 const FILE_LIST_WIDTH: u16 = 24;
@@ -83,6 +83,13 @@ pub struct PaneContent {
     pub height: ScreenLines,
 }
 
+/// An area with a continuity-marker frame, and the content inside the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FramedArea {
+    area: Rect,
+    content: Rect,
+}
+
 impl ScreenGeometry {
     /// The areas of a screen of `size` at the origin.
     pub fn of(size: Size, file_list: FileList) -> Self {
@@ -136,10 +143,41 @@ impl ScreenGeometry {
     }
 }
 
+impl FramedArea {
+    /// A diff pane: a frame row above and below and a frame column on either side.
+    pub fn diff_pane(area: Rect) -> Self {
+        Self {
+            area,
+            content: inset(area, FRAME_COLUMNS_PER_EDGE),
+        }
+    }
+
+    /// The file list: a frame row above and below, and no frame columns.
+    pub fn file_list(area: Rect) -> Self {
+        Self {
+            area,
+            content: inset(area, 0),
+        }
+    }
+
+    /// Rows a file list takes to show `content` rows inside its frame.
+    pub const fn file_list_height(content: u16) -> u16 {
+        content + 2 * FRAME_ROWS_PER_EDGE
+    }
+
+    pub fn area(&self) -> Rect {
+        self.area
+    }
+
+    pub fn content(&self) -> Rect {
+        self.content
+    }
+}
+
 impl PaneContent {
     /// The content inside `pane`'s frame.
     fn inside(pane: Rect) -> Self {
-        let interior = frame_interior(pane);
+        let interior = FramedArea::diff_pane(pane).content();
 
         Self {
             width: Cells::from(interior.width),
@@ -213,25 +251,13 @@ impl SplitPanes {
     }
 }
 
-/// The content area inside a diff pane's continuity-marker frame.
-pub fn frame_interior(pane: Rect) -> Rect {
-    let rows = inside_frame_rows(pane);
-
+/// `area` without its frame rows, and without `columns` frame columns on either side.
+fn inset(area: Rect, columns: u16) -> Rect {
     Rect::new(
-        rows.x + PANE_FRAME_WIDTH / 2,
-        rows.y,
-        rows.width.saturating_sub(PANE_FRAME_WIDTH),
-        rows.height,
-    )
-}
-
-/// `area` without its frame rows above and below.
-pub fn inside_frame_rows(area: Rect) -> Rect {
-    Rect::new(
-        area.x,
-        area.y + PANE_FRAME_HEIGHT / 2,
-        area.width,
-        area.height.saturating_sub(PANE_FRAME_HEIGHT),
+        area.x + columns,
+        area.y + FRAME_ROWS_PER_EDGE,
+        area.width.saturating_sub(2 * columns),
+        area.height.saturating_sub(2 * FRAME_ROWS_PER_EDGE),
     )
 }
 

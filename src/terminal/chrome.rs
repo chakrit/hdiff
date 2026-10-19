@@ -15,7 +15,7 @@ use ratatui::{
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileTree, TreeRow, TreeRowIndex},
-    geometry::{PANE_FRAME_HEIGHT, SplitDirection, frame_interior, inside_frame_rows},
+    geometry::{FramedArea, SplitDirection},
     prepared::PageKind,
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
@@ -47,7 +47,7 @@ pub(super) fn render_file_column(
         PageKind::File { row } => Some(row),
         PageKind::Text => None,
     };
-    let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
+    let list_height = FramedArea::file_list_height(MINIMUM_FILE_LIST_HEIGHT);
     let hint_height = area
         .height
         .saturating_sub(list_height)
@@ -155,33 +155,18 @@ pub(super) fn draw_inner_separator(
     fill(buffer, area, symbol, style);
 }
 
-/// A content area inside a continuity-marker frame. Rules:
+/// The continuity markers drawn on a framed area's frame. Rules:
 /// docs/spec/architecture.md#continuity-markers.
 #[derive(Clone, Copy)]
-pub(super) struct ContinuityFrame {
-    pane: Rect,
-    content: Rect,
-}
+pub(super) struct ContinuityFrame(FramedArea);
 
 impl ContinuityFrame {
-    /// A diff pane: one frame row above and below and one frame column on either side.
-    pub(super) fn diff_pane(pane: Rect) -> Self {
-        Self {
-            pane,
-            content: frame_interior(pane),
-        }
-    }
-
-    /// The file list: one frame row above and below, and no frame columns.
-    fn file_list(area: Rect) -> Self {
-        Self {
-            pane: area,
-            content: inside_frame_rows(area),
-        }
+    pub(super) fn of(framed: FramedArea) -> Self {
+        Self(framed)
     }
 
     pub(super) fn content(&self) -> Rect {
-        self.content
+        self.0.content()
     }
 
     /// `◂` and `▸` midway down each side where any visible row was clipped.
@@ -191,19 +176,18 @@ impl ContinuityFrame {
         clip: Clip,
         palette: &ChromePalette,
     ) {
-        if self.content.is_empty() {
+        let (area, content) = (self.0.area(), self.0.content());
+        if content.is_empty() {
             return;
         }
         let style = Style::default().fg(palette.dim_separator);
-        let y = self.content.y + self.content.height / 2;
+        let y = content.y + content.height / 2;
 
         if clip.left {
-            buffer[(self.pane.left(), y)]
-                .set_symbol("◂")
-                .set_style(style);
+            buffer[(area.left(), y)].set_symbol("◂").set_style(style);
         }
         if clip.right {
-            buffer[(self.pane.right() - 1, y)]
+            buffer[(area.right() - 1, y)]
                 .set_symbol("▸")
                 .set_style(style);
         }
@@ -216,20 +200,21 @@ impl ContinuityFrame {
         window: LineWindow,
         palette: &ChromePalette,
     ) {
-        if self.content.is_empty() {
+        let (area, content) = (self.0.area(), self.0.content());
+        if content.is_empty() {
             return;
         }
         let style = Style::default().fg(palette.dim_separator);
-        let center = self.pane.x + self.pane.width / 2;
-        let shown = ScreenLines::from(self.content.height);
+        let center = area.x + area.width / 2;
+        let shown = ScreenLines::from(content.height);
 
         if window.first > ScreenLines::ZERO {
-            buffer[(center, self.pane.top())]
+            buffer[(center, area.top())]
                 .set_symbol("▴")
                 .set_style(style);
         }
         if window.first.saturating_add(shown) < window.total {
-            buffer[(center, self.pane.bottom() - 1)]
+            buffer[(center, area.bottom() - 1)]
                 .set_symbol("▾")
                 .set_style(style);
         }
@@ -254,7 +239,7 @@ fn render_file_list(
     selected_row: Option<TreeRowIndex>,
     palette: &ChromePalette,
 ) {
-    let list_frame = ContinuityFrame::file_list(area);
+    let list_frame = ContinuityFrame::of(FramedArea::file_list(area));
     let content = list_frame.content();
     let Some(height) = NonZeroUsize::new(usize::from(content.height)) else {
         return;
