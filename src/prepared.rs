@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
-    document::{DiffDocument, DiffFiles},
+    document::{DiffDocument, DiffFiles, FileView},
     file_tree::{FileSelection, FileTree, ListedFile, ListedTree, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
     non_empty::NonEmpty,
@@ -166,16 +166,26 @@ impl FilePage {
         observer: &mut impl Observer,
     ) -> Self {
         Self {
-            page: PreparedPage {
-                rows: StyledRows::of_file_view(listed.view, syntax, observer),
-            },
+            page: PreparedPage::of_file_view(listed.view, syntax, observer),
             row: listed.row,
         }
     }
 }
 
 impl PreparedPage {
-    /// Surrounding text has no syntax or character detail.
+    /// The page of one file occurrence with its surrounding text.
+    fn of_file_view(
+        view: FileView<'_>,
+        syntax: &mut SyntaxHighlighter,
+        observer: &mut impl Observer,
+    ) -> Self {
+        Self {
+            rows: StyledRows::of_file_view(view, syntax, observer),
+        }
+    }
+
+    /// The page of a document's text; surrounding text has no syntax or character
+    /// detail.
     fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
             rows: StyledRows::of_text(text, observer),
