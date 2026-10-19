@@ -96,7 +96,7 @@ impl Driver {
     }
 }
 
-// startup timing
+// Startup timing
 
 /// Times startup from the moment reading the input begins. Each later phase is marked by
 /// consuming the clock for the phase before it, so phases can only be marked in order.
@@ -178,7 +178,7 @@ struct Startup {
     bytes: usize,
 }
 
-// reports
+// Reports
 
 /// The first report line's record name: plain preparation, or preparation under a
 /// profile.
@@ -266,7 +266,7 @@ fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Durati
     .expect("writing to a String cannot fail");
 }
 
-// movement
+// Movement
 
 const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
 const MOVEMENTS: [Movement; 4] = [
