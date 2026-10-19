@@ -25,6 +25,7 @@ use crate::{
     theme::ColorDepth,
 };
 
+/// What a `--bench` run measures: preparation, preparation by stage, or movement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Driver {
     Prepare,
@@ -97,17 +98,15 @@ pub struct InputClock {
 
 /// A startup clock whose input has been read.
 pub struct ParseClock {
-    started: Instant,
+    reading: InputClock,
     input_finished: Instant,
     bytes: usize,
 }
 
 /// A startup clock whose input has been read and parsed.
 pub struct PreparationClock {
-    started: Instant,
-    input_finished: Instant,
+    parsing: ParseClock,
     parse_finished: Instant,
-    bytes: usize,
 }
 
 impl InputClock {
@@ -120,7 +119,7 @@ impl InputClock {
     /// Marks reading `content` finished.
     pub fn input_read(self, content: &input::Content) -> ParseClock {
         ParseClock {
-            started: self.started,
+            reading: self,
             input_finished: Instant::now(),
             bytes: content.bytes().len(),
         }
@@ -131,10 +130,8 @@ impl ParseClock {
     /// Marks parsing finished.
     pub fn parsed(self) -> PreparationClock {
         PreparationClock {
-            started: self.started,
-            input_finished: self.input_finished,
+            parsing: self,
             parse_finished: Instant::now(),
-            bytes: self.bytes,
         }
     }
 }
@@ -144,12 +141,17 @@ impl PreparationClock {
         let prepared = PreparedDocument::prepare_observed(document, observer);
         let ready = Instant::now();
 
+        let ParseClock {
+            reading: InputClock { started },
+            input_finished,
+            bytes,
+        } = self.parsing;
         let startup = Startup {
-            input: self.input_finished.duration_since(self.started),
-            parse: self.parse_finished.duration_since(self.input_finished),
+            input: input_finished.duration_since(started),
+            parse: self.parse_finished.duration_since(input_finished),
             preparation: ready.duration_since(self.parse_finished),
-            ready: ready.duration_since(self.started),
-            bytes: self.bytes,
+            ready: ready.duration_since(started),
+            bytes,
         };
         Ready { startup, prepared }
     }
