@@ -7,7 +7,7 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    navigation::{Navigation, interaction::Outcome},
+    navigation::{Navigation, Step},
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     theme::{ColorDepth, Theme},
@@ -44,12 +44,6 @@ impl OutputMode {
             false => Self::Finite,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
-    Continue,
-    Exit,
 }
 
 /// The interactive loop. Rules: docs/spec/architecture.md#interactive-loop.
@@ -96,15 +90,13 @@ impl Tui {
         let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(screen);
 
-        let pages = self.navigation.document().page_count();
-        match self.navigation.interaction().respond(event, pages) {
-            Outcome::Exit => return Ok(Step::Exit),
-            Outcome::Redraw => {}
-            Outcome::Effect(effect) => self.navigation.step(effect),
+        match self.navigation.respond(event) {
+            Step::Exit => Ok(Step::Exit),
+            Step::Continue => {
+                self.draw(terminal)?;
+                Ok(Step::Continue)
+            }
         }
-
-        self.draw(terminal)?;
-        Ok(Step::Continue)
     }
 
     /// Draws the interaction, first adopting the size of the frame it draws, so bounds

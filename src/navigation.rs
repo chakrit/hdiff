@@ -12,13 +12,20 @@ use ratatui::layout::Size;
 
 use self::{
     extent::{ExtentSettings, ScrollExtent, ShownLines},
-    interaction::{AnchorLine, Effect, Interaction, Placement},
+    interaction::{AnchorLine, Effect, Event, Interaction, Outcome, Placement},
     scroll::{ScrollBounds, ScrollPosition},
 };
 use crate::{
     effective_view::EffectiveView, preferences::ViewPreferences, prepared::PreparedDocument,
     screen::ScreenLines,
 };
+
+/// Whether the session goes on after an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Continue,
+    Exit,
+}
 
 /// The document a session shows and the interaction it is at, with the effective view and
 /// scroll extent that show it. Navigation owns the document, so the extent resolves its
@@ -75,8 +82,21 @@ impl Navigation {
             .shown(&self.document, granularity, offset, limit)
     }
 
+    /// Leads the interaction where `event` asks among the document's pages: the session
+    /// exits, or goes on to draw what it leads to.
+    pub fn respond(&mut self, event: Event) -> Step {
+        match self.interaction.respond(event, self.document.page_count()) {
+            Outcome::Exit => Step::Exit,
+            Outcome::Redraw => Step::Continue,
+            Outcome::Effect(effect) => {
+                self.step(effect);
+                Step::Continue
+            }
+        }
+    }
+
     /// Leads the interaction where `effect` asks; the view and extent then show it.
-    pub fn step(&mut self, effect: Effect) {
+    fn step(&mut self, effect: Effect) {
         let interaction = self.interaction;
 
         match effect {
