@@ -37,7 +37,7 @@ pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
 }
 
 /// The changed spans of a line that changes `side`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ChangedDetail {
     side: Side,
     spans: Box<[PayloadSpan]>,

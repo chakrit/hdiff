@@ -105,7 +105,7 @@ impl StyledRows {
 
 /// How a row is toned: a change to one side, an unchanged record (context or raw), a hunk
 /// header, or any other line.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum RowTone {
     Changed(Side),
     UnchangedRecord,
