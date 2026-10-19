@@ -98,12 +98,8 @@ fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
                 continue;
             }
             LineStart::GitHeader => parse_git_section(line, &mut lines)?,
-            LineStart::OldFileHeader(field) => {
-                let old = FileHeader {
-                    path: HeaderPath::of_field(field),
-                    line,
-                };
-                parse_unified(None, old, &mut lines)?
+            LineStart::OldFileHeader(path) => {
+                parse_unified(None, FileHeader { line, path }, &mut lines)?
             }
         };
         files.push(FileSection {
@@ -121,22 +117,27 @@ fn parse_sections(input: &[u8]) -> Result<DiffDocument, ParseError> {
 // Sections
 
 /// How a line outside a file section starts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LineStart<'a> {
+#[derive(Debug, PartialEq, Eq)]
+enum LineStart {
     Text,
     GitHeader,
-    /// A `---` line, with its field after the prefix.
-    OldFileHeader(&'a str),
+    /// A `---` line, with the path it names.
+    OldFileHeader(HeaderPath),
 }
 
-fn line_start(text: &str) -> Result<LineStart<'_>, Malformed> {
+fn line_start(text: &str) -> Result<LineStart, Malformed> {
     reject_unsupported_header(text)?;
 
     if text.starts_with("diff --git ") {
         return Ok(LineStart::GitHeader);
     }
-    let start = header_field(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
+    let start = header_path(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
     Ok(start)
+}
+
+/// The path a `---` (old) or `+++` (new) file header line names.
+fn header_path(text: &str, side: Side) -> Option<HeaderPath> {
+    header_field(text, side).map(HeaderPath::of_field)
 }
 
 /// The field of a `---` (old) or `+++` (new) file header line.
@@ -309,10 +310,7 @@ fn parse_hunk(
     if remaining != exhausted {
         return Err(lines.next_line_error(Malformed::TruncatedHunk));
     }
-    if lines
-        .peek()
-        .is_some_and(|line| is_excess_record(line.sanitized()))
-    {
+    if lines.peek().is_some_and(is_excess_record) {
         return Err(lines.next_line_error(Malformed::ExcessRecords));
     }
     Ok(Hunk {
@@ -336,11 +334,7 @@ fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usi
 }
 
 fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
-    let marked = line.split_first().and_then(|(marker, payload)| {
-        let kind = RecordKind::of_marker(marker)?;
-        Some(Record { kind, payload })
-    });
-    if let Some(record) = marked {
+    if let Some(record) = marked_record(&line) {
         return Ok(record);
     }
 
@@ -353,16 +347,20 @@ fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
     }
 }
 
+/// The record `line` holds when its first visible character is a record marker.
+fn marked_record(line: &SourceLine) -> Option<Record> {
+    let (marker, payload) = line.split_first()?;
+    let kind = RecordKind::of_marker(marker)?;
+
+    Some(Record { kind, payload })
+}
+
 /// A marked record after a hunk's declared counts are complete; a `---` line starts the
 /// next file instead.
-fn is_excess_record(text: &str) -> bool {
-    let marked = text
-        .chars()
-        .next()
-        .and_then(RecordKind::of_marker)
-        .is_some();
+fn is_excess_record(line: &SourceLine) -> bool {
+    let marked = marked_record(line).is_some();
 
-    marked && header_field(text, Side::Old).is_none()
+    marked && header_field(line.sanitized(), Side::Old).is_none()
 }
 
 /// The old-side and new-side line counts an `@@ -old +new @@` hunk header declares.
@@ -447,7 +445,7 @@ impl<'a> SourceLines<'a> {
 
     /// Takes the next line when it is `side`'s file header.
     fn next_file_header(&mut self, side: Side) -> Option<FileHeader> {
-        self.next_if_map(|text| header_field(text, side).map(HeaderPath::of_field))
+        self.next_if_map(|text| header_path(text, side))
             .map(|(line, path)| FileHeader { line, path })
     }
 
