@@ -133,7 +133,7 @@ fn layout_cycle(mode: Mode) {
     assert_eq!(
         live.buffer(),
         start,
-        "three presses of v return to the same layout"
+        "one press of v per layout returns to the same layout"
     );
 }
 

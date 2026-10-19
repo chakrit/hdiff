@@ -21,7 +21,7 @@ impl ViewPreferences {
     };
 
     /// The preferences `change` produces from these, with every other choice kept.
-    pub const fn after(self, change: PreferenceChange) -> Self {
+    pub fn after(self, change: PreferenceChange) -> Self {
         match change {
             PreferenceChange::NextLayout => Self {
                 layout: self.layout.next(),
@@ -75,13 +75,16 @@ impl DiffLayout {
     /// Every layout, in the order the layout shortcut cycles through them.
     pub const ALL: [Self; 3] = [Self::Unified, Self::Vertical, Self::Stacked];
 
-    /// The layout the layout shortcut switches to, cycling back to unified.
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Unified => Self::Vertical,
-            Self::Vertical => Self::Stacked,
-            Self::Stacked => Self::Unified,
-        }
+    /// The layout the layout shortcut switches to: the one after this in `ALL`, cycling
+    /// back to the first.
+    pub fn next(self) -> Self {
+        let [first, ..] = Self::ALL;
+
+        Self::ALL
+            .into_iter()
+            .skip_while(|&layout| layout != self)
+            .nth(1)
+            .unwrap_or(first)
     }
 
     /// The layout's name in benchmark movement records.
