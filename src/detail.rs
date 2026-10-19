@@ -114,8 +114,7 @@ impl<'a> PairCursor<'a> {
 
     /// Passes the next `bytes` bytes of both sides, which are equal, unmarked.
     fn pass(&mut self, bytes: usize) {
-        self.offsets.old += bytes;
-        self.offsets.new += bytes;
+        self.offsets = self.offsets.map(|offset| offset + bytes);
     }
 
     /// Marks the next `bytes` bytes of `side` changed.
@@ -271,6 +270,7 @@ fn similar_word_changes(
     if before.kind != TokenKind::Word || after.kind != TokenKind::Word {
         return None;
     }
+
     let before_graphemes = before.text.graphemes(true).collect::<Vec<_>>();
     let after_graphemes = after.text.graphemes(true).collect::<Vec<_>>();
     let changes = diff_slices(Algorithm::Myers, &before_graphemes, &after_graphemes);
