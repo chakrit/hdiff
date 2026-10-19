@@ -163,8 +163,9 @@ pub fn assert_fixture_succeeded(command: &Command, output: &Output) {
     assert!(output.status.success(), "{command:?}: {output:?}");
 }
 
-/// The standard error of an hdiff run that failed: it exited with the trouble status
-/// and wrote nothing to standard output. Rules: docs/spec/architecture.md#error-output.
+/// The standard error of an hdiff run that failed: it exited with the trouble status,
+/// wrote nothing to standard output, and wrote UTF-8. Rules:
+/// docs/spec/architecture.md#error-output.
 #[allow(dead_code)]
 pub fn error_output(output: &Output) -> String {
     assert_eq!(
@@ -174,7 +175,9 @@ pub fn error_output(output: &Output) -> String {
     );
     assert!(output.stdout.is_empty(), "{output:?}");
 
-    String::from_utf8_lossy(&output.stderr).into_owned()
+    str::from_utf8(&output.stderr)
+        .unwrap_or_else(|error| panic!("{error}: {output:?}"))
+        .to_owned()
 }
 
 /// Asserts that hdiff failed with the one-line error `message`, after its `hdiff: `

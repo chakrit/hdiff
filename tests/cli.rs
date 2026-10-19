@@ -203,15 +203,14 @@ fn failed_comparisons_report_each_diff_error_line() {
 
     let stderr = error_output(&output);
     let lines = stderr.lines().collect::<Vec<_>>();
-    assert_eq!(lines.len(), 2, "{stderr}");
+    let [before, after] = lines[..] else {
+        panic!("two error lines: {stderr}");
+    };
     assert!(
-        lines[0].starts_with("hdiff: diff: missing-before"),
+        before.starts_with("hdiff: diff: missing-before"),
         "{stderr}"
     );
-    assert!(
-        lines[1].starts_with("hdiff: diff: missing-after"),
-        "{stderr}"
-    );
+    assert!(after.starts_with("hdiff: diff: missing-after"), "{stderr}");
 }
 
 #[test]
