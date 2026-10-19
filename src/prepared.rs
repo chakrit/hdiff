@@ -147,7 +147,7 @@ impl PreparedPage {
         observer: &mut impl Observer,
     ) -> Self {
         Self {
-            rows: StyledRows::of_file(&listed.view, syntax, observer),
+            rows: StyledRows::of_file_view(listed.view, syntax, observer),
             kind: PageKind::File { row: listed.row },
         }
     }

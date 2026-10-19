@@ -5,6 +5,7 @@
 
 use std::{
     iter::{self, Chain, Once},
+    marker::PhantomData,
     option,
 };
 
@@ -19,27 +20,28 @@ use crate::{
     tab_stops::{MeasuredText, MeasuredTextRef},
 };
 
-/// The position of a rendered line among its page's lines.
+/// The position of an item among its page's items of kind `Of`. The kind keeps a line
+/// position from indexing pairs, and a pair position from indexing lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LineIndex(Count);
+pub struct PagePosition<Of>(Count, PhantomData<Of>);
+
+/// A page's rendered lines, as a position kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Line {}
+
+/// A page's side-by-side rows, as a position kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Pair {}
+
+/// The position of a rendered line among its page's lines.
+pub type LineIndex = PagePosition<Line>;
 
 /// The position of a side-by-side row among its page's pairs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PairIndex(Count);
+pub type PairIndex = PagePosition<Pair>;
 
-impl LineIndex {
+impl<Of> PagePosition<Of> {
     fn at(position: usize) -> Self {
-        Self(Count::of(position))
-    }
-
-    fn get(self) -> usize {
-        self.0.get()
-    }
-}
-
-impl PairIndex {
-    fn at(position: usize) -> Self {
-        Self(Count::of(position))
+        Self(Count::of(position), PhantomData)
     }
 
     fn get(self) -> usize {
@@ -152,8 +154,8 @@ enum RowVisibility {
 }
 
 impl PageRows {
-    pub fn of_file(view: &FileView<'_>) -> Self {
-        Self::new(display_lines::of_file_view(*view))
+    pub fn of_file_view(view: FileView<'_>) -> Self {
+        Self::new(display_lines::of_file_view(view))
     }
 
     /// The rows of a document that holds only surrounding text.
@@ -454,7 +456,7 @@ mod tests {
 
     fn rows_of(patch: &[u8]) -> PageRows {
         let document = parse_patch(patch).expect("valid diff");
-        PageRows::of_file(&document.file_views().next().expect("first file"))
+        PageRows::of_file_view(document.file_views().next().expect("first file"))
     }
 
     /// The line as a reader sees it: its record marker, then its payload.
@@ -500,7 +502,7 @@ mod tests {
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");
-        let rows = PageRows::of_file(&document.file_views().nth(1).expect("second file"));
+        let rows = PageRows::of_file_view(document.file_views().nth(1).expect("second file"));
 
         assert_eq!(rows.line(rows.line_index(2)).kind(), LineKind::HunkHeader);
         assert_eq!(rows.line(rows.line_index(5)).kind(), LineKind::HunkHeader);

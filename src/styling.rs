@@ -28,12 +28,12 @@ pub struct StyledRows {
 impl StyledRows {
     /// The rows of one file occurrence, each line styled with the syntax spans of its
     /// record and its character detail.
-    pub fn of_file(
-        view: &FileView<'_>,
+    pub fn of_file_view(
+        view: FileView<'_>,
         highlighter: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
-        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file(view));
+        let rows = observer.measure(Stage::Layout, |_| PageRows::of_file_view(view));
         let syntax = observer.measure(Stage::Syntax, |observer| {
             highlighter.highlight_file(view.file, observer)
         });
@@ -358,7 +358,7 @@ mod tests {
     fn detail_presentation_suppresses_syntax_and_marks_unchanged_gaps() {
         let document = parse_patch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-αcall!\n+αcell!\n".as_bytes())
             .expect("valid diff");
-        let rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+        let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
         let details = character_details(&rows);
         let addition = rows.line_index(4);
         let detail = details
