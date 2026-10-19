@@ -86,9 +86,15 @@ mod tests {
     use crate::{
         geometry::{PaneContent, SplitDirection, SplitPanes},
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
-        screen::{Cells, ScreenLines},
+        screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
         side::BySide,
     };
+
+    /// The wrap width of a pane `content` cells wide: its content beside the marker
+    /// gutter.
+    fn beside_gutter(content: usize) -> WrapWidth {
+        WrapWidth::at(content - MARKER_GUTTER_WIDTH.get())
+    }
 
     #[test]
     fn wraps_both_side_by_side_panes_at_the_narrower_payload_width() {
@@ -102,9 +108,9 @@ mod tests {
         let panes = SplitPanes::of(view.geometry().diff(), SplitDirection::Vertical).panes();
 
         // 79 columns beside the separator split into a 39-column and a 40-column pane,
-        // whose frames leave 37 content columns, two of them the marker gutter.
+        // whose frames leave 37 content columns.
         assert_eq!(panes.map(|pane| pane.width), BySide { old: 39, new: 40 });
-        assert_eq!(view.wrap(), WrapWidth::at(35));
+        assert_eq!(view.wrap(), beside_gutter(37));
     }
 
     /// docs/spec/architecture.md#view-model: while wrapping is enabled the maximum
@@ -128,10 +134,10 @@ mod tests {
             WrapWidth::of_panes(wrapping, content)
         };
 
-        assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
-        assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
+        assert_eq!(wrap(Wrapping::Enabled, 24), beside_gutter(24));
+        assert_eq!(wrap(Wrapping::Enabled, 51), beside_gutter(51));
         assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Off);
-        assert_eq!(wrap(Wrapping::Enabled, 78), WrapWidth::at(76));
+        assert_eq!(wrap(Wrapping::Enabled, 78), beside_gutter(78));
         assert_eq!(wrap(Wrapping::Enabled, 2), WrapWidth::NoPayload);
     }
 }
