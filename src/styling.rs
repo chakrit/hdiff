@@ -2,7 +2,7 @@
 //! docs/spec/architecture.md#palette-and-character-detail and
 //! docs/spec/architecture.md#technology-direction.
 
-use std::{cmp::Reverse, collections::BinaryHeap};
+use std::{cmp::Reverse, collections::BinaryHeap, slice};
 
 use crate::{
     detail::{ChangedDetail, character_details},
@@ -327,7 +327,7 @@ impl Partition {
     /// Each segment's end and style, in order.
     fn boundaries(&self) -> &[Boundary] {
         match self {
-            Self::Uniform(boundary) => std::slice::from_ref(boundary),
+            Self::Uniform(boundary) => slice::from_ref(boundary),
             Self::Split(boundaries) => boundaries,
         }
     }
