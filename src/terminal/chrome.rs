@@ -75,9 +75,7 @@ pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePal
 
 /// A bordered box with a padding column inside each side, drawn over the chrome and panes
 /// it floats on, and clipped to the area it floats over.
-pub(super) struct FloatingBox {
-    area: Rect,
-}
+pub(super) struct FloatingBox(FramedArea);
 
 impl FloatingBox {
     /// The border on every side, and a padding column inside each side border.
@@ -109,9 +107,7 @@ impl FloatingBox {
         let size = Self::EDGES.around(content);
         let box_area = Rect::from((origin(size), size));
 
-        Self {
-            area: box_area.intersection(area),
-        }
+        Self(FramedArea::of(box_area.intersection(area), Self::EDGES))
     }
 
     /// Clears the box and draws its border, returning the content area inside the border
@@ -119,9 +115,9 @@ impl FloatingBox {
     pub(super) fn render(self, frame: &mut Frame, palette: &ChromePalette) -> Rect {
         let border = Block::bordered().border_style(Style::default().fg(palette.separator));
 
-        frame.render_widget(Clear, self.area);
-        frame.render_widget(border, self.area);
-        Self::EDGES.inside(self.area)
+        frame.render_widget(Clear, self.0.area());
+        frame.render_widget(border, self.0.area());
+        self.0.content()
     }
 }
 

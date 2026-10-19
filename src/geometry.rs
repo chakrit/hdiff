@@ -270,7 +270,7 @@ impl FrameEdges {
     }
 }
 
-/// An area with a continuity-marker frame, and the content inside the frame.
+/// An area with a frame of edges around its sides, and the content inside the frame.
 pub struct FramedArea {
     area: Rect,
     content: Rect,
@@ -288,7 +288,7 @@ impl FramedArea {
     }
 
     /// `area` inside a frame with `edges`.
-    fn of(area: Rect, edges: FrameEdges) -> Self {
+    pub fn of(area: Rect, edges: FrameEdges) -> Self {
         Self {
             area,
             content: edges.inside(area),
