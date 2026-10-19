@@ -108,13 +108,13 @@ impl Tui {
     pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
         let Self { navigation, theme } = self;
 
-        terminal
-            .draw(|frame| {
-                navigation.adopt_screen(frame.area().as_size());
+        terminal.draw(|frame| {
+            navigation.adopt_screen(frame.area().as_size());
 
-                view::render_prepared_frame(frame, navigation, theme)
-            })
-            .map(|_| ())
+            view::render_prepared_frame(frame, navigation, theme)
+        })?;
+
+        Ok(())
     }
 }
 
