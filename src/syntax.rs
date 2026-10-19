@@ -94,7 +94,7 @@ impl SyntaxHighlighter {
         let projections = observer.measure(Stage::Projection, |observer| {
             let projections =
                 styles.map_sides(|side, styles| Projection::from_hunk(hunk, side, styles));
-            for projection in [&projections.old, &projections.new] {
+            for projection in projections.iter() {
                 observer.count(Work::ProjectedBytes(projection.source.len()));
             }
             projections
@@ -126,7 +126,7 @@ impl SyntaxHighlighter {
                 }),
         };
 
-        passes.old.into_iter().chain(passes.new).collect()
+        passes.into_iter().flatten().collect()
     }
 
     /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A

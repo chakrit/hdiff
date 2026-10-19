@@ -266,6 +266,7 @@ mod tests {
     use ratatui::style::Color;
 
     use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
+    use crate::side::Side;
 
     #[test]
     fn reads_crossterm_color_counts_as_depths() {
@@ -304,10 +305,11 @@ mod tests {
     fn draws_unchanged_detail_text_dimmer_than_line_mode_text() {
         for depth in every_depth() {
             let change = &Theme::for_depth(depth).rows.change;
-            for (side, colors) in [("old", &change.old), ("new", &change.new)] {
+            for side in Side::BOTH {
+                let colors = change.get(side);
                 assert!(
                     gray_level(colors.unchanged) < gray_level(colors.body),
-                    "{depth:?} {side}: {:?} is not dimmer than {:?}",
+                    "{depth:?} {side:?}: {:?} is not dimmer than {:?}",
                     colors.unchanged,
                     colors.body
                 );
@@ -409,8 +411,7 @@ mod tests {
             .into_iter()
             .flatten()
             .copied()
-            .chain(change_colors(&change.old))
-            .chain(change_colors(&change.new))
+            .chain(change.iter().flat_map(change_colors))
             .collect()
     }
 }

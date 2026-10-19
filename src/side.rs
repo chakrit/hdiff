@@ -55,11 +55,26 @@ impl<T> BySide<T> {
         }
     }
 
+    /// Each side's value, old then new.
+    pub fn iter(&self) -> std::array::IntoIter<&T, 2> {
+        self.as_ref().into_iter()
+    }
+
     /// Each side's value paired with `other`'s value for that side.
     pub fn zip<U>(self, other: BySide<U>) -> BySide<(T, U)> {
         BySide {
             old: (self.old, other.old),
             new: (self.new, other.new),
         }
+    }
+}
+
+/// Each side's value, old then new.
+impl<T> IntoIterator for BySide<T> {
+    type Item = T;
+    type IntoIter = std::array::IntoIter<T, 2>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        [self.old, self.new].into_iter()
     }
 }
