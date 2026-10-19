@@ -11,7 +11,7 @@ pub mod scroll;
 use ratatui::layout::Size;
 
 use self::{
-    extent::{ExtentSettings, ScrollExtent, ShownLines},
+    extent::{ExtentSettings, LineRequest, ScrollExtent, ShownLines},
     interaction::{AnchorLine, Effect, Event, Interaction, Outcome, Placement},
     scroll::{ScrollBounds, ScrollPosition},
 };
@@ -77,11 +77,12 @@ impl Navigation {
     /// the interaction's granularity.
     pub fn shown(&self) -> ShownLines<'_> {
         let granularity = self.interaction.preferences().granularity;
-        let offset = self.interaction.scroll().position().vertical;
-        let limit = self.view.geometry().pane_content().height;
+        let request = LineRequest {
+            first: self.interaction.scroll().position().vertical,
+            count: self.view.geometry().pane_content().height,
+        };
 
-        self.extent
-            .shown(&self.document, granularity, offset, limit)
+        self.extent.shown(&self.document, granularity, request)
     }
 
     /// Leads the interaction where `event` asks among the document's pages: the session

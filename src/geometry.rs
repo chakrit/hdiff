@@ -372,9 +372,20 @@ impl FramedArea {
     }
 }
 
-/// The cell halfway along `length` cells from `start`, rounding toward `start`.
-pub const fn halfway(start: u16, length: u16) -> u16 {
-    start + length / 2
+/// A run of cells along one axis, named so its start and its length cannot swap.
+#[derive(Debug, Clone, Copy)]
+pub struct AxisSpan {
+    /// The first cell.
+    pub start: u16,
+    /// Cells in the run.
+    pub length: u16,
+}
+
+impl AxisSpan {
+    /// The cell halfway along the run, rounding toward its start.
+    pub const fn halfway(self) -> u16 {
+        self.start + self.length / 2
+    }
 }
 
 /// Rows of each stacked pane, frame included: the panes share the height around a one-row

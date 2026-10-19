@@ -6,7 +6,7 @@ use std::iter;
 
 use crate::{
     compact::Count,
-    effective_view::WrapWidth,
+    effective_view::{HorizontalFit, WrapWidth},
     geometry::{PaneShape, SplitDirection},
     line_breaks::wrapped_line_count,
     page_rows::{LineIndex, PageRows, PairIndex, SideBySideRow},
@@ -23,6 +23,15 @@ pub(super) struct ExtentSettings {
     pub(super) shape: PaneShape,
     pub(super) context: ContextRecords,
     pub(super) wrap: WrapWidth,
+}
+
+/// The screen lines a pane asks for, named so the start and the count cannot swap.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct LineRequest {
+    /// The first screen line asked for.
+    pub(super) first: ScreenLines,
+    /// At most this many screen lines.
+    pub(super) count: ScreenLines,
 }
 
 /// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row
@@ -132,17 +141,19 @@ impl ScrollExtent {
     /// How far these rows scroll horizontally in panes `content_width` cells wide, at the
     /// wrap width they were measured at.
     pub(super) fn horizontal_range(&self, content_width: Cells) -> Cells {
-        self.wrap.horizontal_range(self.width(), content_width)
+        self.wrap.horizontal_range(HorizontalFit {
+            rows_width: self.width(),
+            content_width,
+        })
     }
 
-    /// Up to `limit` screen lines from line `offset`, with their rows from this extent's
-    /// page of `document` in `granularity`'s styles.
+    /// The screen lines `request` asks for, with their rows from this extent's page of
+    /// `document` in `granularity`'s styles.
     pub(super) fn shown<'a>(
         &'a self,
         document: &'a PreparedDocument,
         granularity: DiffGranularity,
-        offset: ScreenLines,
-        limit: ScreenLines,
+        request: LineRequest,
     ) -> ShownLines<'a> {
         let page = document.page(self.page);
 
@@ -150,14 +161,14 @@ impl ScrollExtent {
             VisibleRows::Single(lines) => ShownLines::Single(PageLines {
                 page,
                 granularity,
-                lines: lines.lines_from(offset, limit),
+                lines: lines.lines_from(request),
             }),
             VisibleRows::Split { direction, pairs } => ShownLines::Split {
                 direction: *direction,
                 lines: PageLines {
                     page,
                     granularity,
-                    lines: pairs.lines_from(offset, limit),
+                    lines: pairs.lines_from(request),
                 },
             },
         }
@@ -304,15 +315,15 @@ impl<R: Copy + Ord> MeasuredRows<R> {
         lines_taken(&self.rows)
     }
 
-    /// Up to `limit` screen lines from line `offset`.
-    fn lines_from(&self, offset: ScreenLines, limit: ScreenLines) -> RowLines<'_, R> {
-        let position = self.position_at(offset);
+    /// The screen lines `request` asks for.
+    fn lines_from(&self, request: LineRequest) -> RowLines<'_, R> {
+        let position = self.position_at(request.first);
 
         RowLines {
             measured: self,
             position,
-            wrapped_line: offset.saturating_sub(self.line_start(position)),
-            remaining: limit,
+            wrapped_line: request.first.saturating_sub(self.line_start(position)),
+            remaining: request.count,
         }
     }
 
@@ -506,7 +517,7 @@ fn line_height(rows: &PageRows, index: LineIndex, wrap: WrapWidth) -> ScreenLine
 
 #[cfg(test)]
 mod tests {
-    use super::{ExtentSettings, RowLine, ScrollExtent, VisibleRows};
+    use super::{ExtentSettings, LineRequest, RowLine, ScrollExtent, VisibleRows};
     use crate::{
         effective_view::WrapWidth,
         geometry::{PaneShape, SplitDirection},
@@ -577,28 +588,20 @@ mod tests {
             .collect()
     }
 
-    /// Up to `limit` screen lines of a single-pane extent from line `offset`.
-    fn single_lines(
-        extent: &ScrollExtent,
-        offset: ScreenLines,
-        limit: ScreenLines,
-    ) -> Vec<RowLine<LineIndex>> {
+    /// The screen lines `request` asks for of a single-pane extent.
+    fn single_lines(extent: &ScrollExtent, request: LineRequest) -> Vec<RowLine<LineIndex>> {
         let VisibleRows::Single(lines) = &extent.visible else {
             panic!("a single pane shows lines");
         };
-        lines.lines_from(offset, limit).collect()
+        lines.lines_from(request).collect()
     }
 
-    /// Up to `limit` screen lines of a split-pane extent from line `offset`.
-    fn pair_lines(
-        extent: &ScrollExtent,
-        offset: ScreenLines,
-        limit: ScreenLines,
-    ) -> Vec<RowLine<PairIndex>> {
+    /// The screen lines `request` asks for of a split-pane extent.
+    fn pair_lines(extent: &ScrollExtent, request: LineRequest) -> Vec<RowLine<PairIndex>> {
         let VisibleRows::Split { pairs, .. } = &extent.visible else {
             panic!("split panes show pairs");
         };
-        pairs.lines_from(offset, limit).collect()
+        pairs.lines_from(request).collect()
     }
 
     /// The first page's line that reads as `text`.
@@ -631,10 +634,11 @@ mod tests {
         let shown = |count| {
             let context = ContextRecords::new(count);
             let extent = extent_of(&document, PaneShape::Single, context, WrapWidth::Off);
-            let all = ScreenLines::new(usize::MAX);
-            let lines = single_lines(&extent, ScreenLines::ZERO, all)
-                .into_iter()
-                .map(|line| line.row);
+            let all = LineRequest {
+                first: ScreenLines::ZERO,
+                count: ScreenLines::new(usize::MAX),
+            };
+            let lines = single_lines(&extent, all).into_iter().map(|line| line.row);
             texts(&document, lines).concat()
         };
 
@@ -717,7 +721,13 @@ mod tests {
             "the 45-cell deletion takes three lines"
         );
         assert_eq!(
-            single_lines(&unified, unified_from, ScreenLines::new(3)),
+            single_lines(
+                &unified,
+                LineRequest {
+                    first: unified_from,
+                    count: ScreenLines::new(3),
+                }
+            ),
             [
                 line(WRAPPED_DELETION, second),
                 line(WRAPPED_DELETION, third),
@@ -730,7 +740,13 @@ mod tests {
             "the paired row takes its taller side's three lines"
         );
         assert_eq!(
-            pair_lines(&vertical, vertical_from, ScreenLines::new(2)),
+            pair_lines(
+                &vertical,
+                LineRequest {
+                    first: vertical_from,
+                    count: ScreenLines::new(2),
+                }
+            ),
             [pair(WRAPPED_DELETION, third), pair(" context", first)]
         );
     }

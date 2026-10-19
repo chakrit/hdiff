@@ -39,6 +39,15 @@ impl EffectiveView {
     }
 }
 
+/// Rows of one width drawn in panes of another, named so the two widths cannot swap.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HorizontalFit {
+    /// The widest row's width.
+    pub(crate) rows_width: Cells,
+    /// The width a pane shows of each row.
+    pub(crate) content_width: Cells,
+}
+
 /// The width at which rows break into screen lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WrapWidth {
@@ -62,11 +71,11 @@ impl WrapWidth {
         }
     }
 
-    /// How far rows `rows_width` cells wide scroll horizontally in panes `content_width`
-    /// cells wide: only unwrapped rows scroll, until their end fills the pane.
-    pub(crate) fn horizontal_range(self, rows_width: Cells, content_width: Cells) -> Cells {
+    /// How far `fit`'s rows scroll horizontally in its panes: only unwrapped rows scroll,
+    /// until their end fills the pane.
+    pub(crate) fn horizontal_range(self, fit: HorizontalFit) -> Cells {
         match self {
-            Self::Off => rows_width.saturating_sub(content_width),
+            Self::Off => fit.rows_width.saturating_sub(fit.content_width),
             Self::At(_) | Self::NoPayload => Cells::ZERO,
         }
     }
@@ -82,7 +91,7 @@ impl WrapWidth {
 mod tests {
     use ratatui::layout::Size;
 
-    use super::{EffectiveView, WrapWidth};
+    use super::{EffectiveView, HorizontalFit, WrapWidth};
     use crate::{
         geometry::{PaneContent, SplitDirection, SplitPanes},
         preferences::{DiffLayout, FileList, ViewPreferences, Wrapping},
@@ -117,7 +126,11 @@ mod tests {
     /// horizontal offset is zero; unwrapped rows scroll until their end fills the pane.
     #[test]
     fn scrolls_horizontally_only_while_wrapping_is_off() {
-        let range = |wrap: WrapWidth| wrap.horizontal_range(Cells::new(47), Cells::new(22));
+        let fit = HorizontalFit {
+            rows_width: Cells::new(47),
+            content_width: Cells::new(22),
+        };
+        let range = |wrap: WrapWidth| wrap.horizontal_range(fit);
 
         assert_eq!(range(WrapWidth::Off), Cells::new(25));
         assert_eq!(range(WrapWidth::at(20)), Cells::ZERO);

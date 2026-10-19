@@ -15,7 +15,7 @@ use ratatui::{
 use super::row_writer::Clip;
 use crate::{
     file_tree::{FileSelection, TreeRow},
-    geometry::{FrameEdges, FramedArea, SplitDirection, halfway},
+    geometry::{AxisSpan, FrameEdges, FramedArea, SplitDirection},
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
 };
@@ -95,8 +95,16 @@ impl FloatingBox {
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
         Self::placed(area, content, |size| {
             Position::new(
-                halfway(area.x, area.width.saturating_sub(size.width)),
-                halfway(area.y, area.height.saturating_sub(size.height)),
+                AxisSpan {
+                    start: area.x,
+                    length: area.width.saturating_sub(size.width),
+                }
+                .halfway(),
+                AxisSpan {
+                    start: area.y,
+                    length: area.height.saturating_sub(size.height),
+                }
+                .halfway(),
             )
         })
     }
@@ -178,7 +186,11 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let y = halfway(content.y, content.height);
+        let y = AxisSpan {
+            start: content.y,
+            length: content.height,
+        }
+        .halfway();
 
         if clip.left {
             buffer[(area.left(), y)].set_symbol("◂").set_style(style);
@@ -205,7 +217,11 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let center = halfway(area.x, area.width);
+        let center = AxisSpan {
+            start: area.x,
+            length: area.width,
+        }
+        .halfway();
         let shown = ScreenLines::from(content.height);
 
         if window.first > ScreenLines::ZERO {
