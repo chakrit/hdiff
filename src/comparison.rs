@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, path::PathBuf};
 
-use crate::side::{BySide, Side};
+use crate::side::BySide;
 
 /// Two operands for `diff -u`. Rules: docs/spec/architecture.md#input-contract.
 #[derive(Debug, PartialEq, Eq)]
@@ -12,9 +12,9 @@ pub struct Comparison {
 impl Comparison {
     /// Whether either operand is standard input.
     pub fn reads_stdin(&self) -> bool {
-        Side::BOTH
-            .into_iter()
-            .any(|side| *self.operands.get(side) == Operand::Stdin)
+        self.operands
+            .iter()
+            .any(|operand| *operand == Operand::Stdin)
     }
 }
 
