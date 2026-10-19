@@ -130,13 +130,13 @@ impl PageCount {
 
 impl PreparedPage {
     fn file(
-        file: FileView<'_>,
+        view: FileView<'_>,
         row: TreeRowIndex,
         syntax: &mut SyntaxHighlighter,
         observer: &mut impl Observer,
     ) -> Self {
         Self {
-            rows: StyledRows::of_file(&file, syntax, observer),
+            rows: StyledRows::of_file(&view, syntax, observer),
             kind: PageKind::File { row },
         }
     }
