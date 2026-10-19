@@ -22,13 +22,8 @@ pub fn character_details(page_rows: &PageRows) -> LineMap<Option<ChangedDetail>>
     let whole = |line| Box::new([PayloadSpan::whole(payload(line))]) as Box<[_]>;
 
     page_rows.line_values_by_pair(|row| match row {
-        SideBySideRow::Paired(lines) => {
-            let spans = changed_pair_spans(lines.map(payload));
-            BySide {
-                old: ChangedDetail::of(Side::Old, spans.old.into_boxed_slice()),
-                new: ChangedDetail::of(Side::New, spans.new.into_boxed_slice()),
-            }
-        }
+        SideBySideRow::Paired(lines) => changed_pair_spans(lines.map(payload))
+            .map_sides(|side, spans| ChangedDetail::of(side, spans.into_boxed_slice())),
         SideBySideRow::OldOnly(line) => BySide {
             old: ChangedDetail::of(Side::Old, whole(line)),
             new: None,

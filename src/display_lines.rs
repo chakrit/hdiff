@@ -135,7 +135,7 @@ pub fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     };
     let file_headers = unified
         .into_iter()
-        .flat_map(|body| [&body.headers.old, &body.headers.new])
+        .flat_map(|body| body.headers.iter())
         .map(|header| DisplayLine {
             kind: LineKind::FileHeader,
             source: &header.line,
