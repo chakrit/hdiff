@@ -450,6 +450,8 @@ fn point_at(source: &[u8], offset: usize) -> Point {
 
 #[cfg(test)]
 mod tests {
+    use tree_sitter::{InputEdit, Point};
+
     use super::{
         ByLanguage, Language, LanguageHighlighter, Projection, Styles, SyntaxClass,
         SyntaxHighlighter, SyntaxSpan,
@@ -460,7 +462,57 @@ mod tests {
         parser::parse_patch,
         side::Side,
     };
-    use tree_sitter::{InputEdit, Point};
+
+    /// The syntax spans of each record of the first hunk of `patch`'s first file, in
+    /// record order.
+    fn highlights_of(patch: &[u8]) -> Vec<Vec<SyntaxSpan>> {
+        observed_highlights_of(patch, &mut Unobserved)
+    }
+
+    fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
+        with_first_unified(patch, |file, body| {
+            let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
+
+            body.addressed_hunks()
+                .next()
+                .expect("first hunk")
+                .records()
+                .map(|(address, _)| highlights.get(address).clone())
+                .collect()
+        })
+    }
+
+    /// `test` applied to the records of the first hunk of `patch`'s first file, which
+    /// must be unified.
+    fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+        with_first_unified(patch, |_, body| {
+            body.hunks.first().expect("first hunk").with_records(test)
+        })
+    }
+
+    /// `test` applied to `patch`'s first file and its body, which must be unified.
+    fn with_first_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
+        let document = parse_patch(patch).expect("valid diff");
+        let file = document.files().next().expect("first file");
+        let FileBody::Unified(body) = &file.body else {
+            panic!("fixture should contain a unified file");
+        };
+
+        test(file, body)
+    }
+
+    /// `test` applied to the new-side projection of a hunk adding `lines`.
+    fn with_added_projection<T>(lines: &[&str], test: impl FnOnce(&Projection) -> T) -> T {
+        let added = lines
+            .iter()
+            .map(|line| format!("+{line}\n"))
+            .collect::<String>();
+        let patch = format!("--- a/x\n+++ b/x\n@@ -0,0 +1,{} @@\n{added}", lines.len());
+
+        with_first_hunk(patch.as_bytes(), |hunk| {
+            test(&Projection::from_hunk(hunk, Side::New, Styles::Changes))
+        })
+    }
 
     #[test]
     fn describes_the_changed_projection_range_for_incremental_parsing() {
@@ -621,56 +673,5 @@ mod tests {
         );
 
         assert_eq!(profile.work().parse_calls, 1);
-    }
-
-    /// The syntax spans of each record of the first hunk of `patch`'s first file, in
-    /// record order.
-    fn highlights_of(patch: &[u8]) -> Vec<Vec<SyntaxSpan>> {
-        observed_highlights_of(patch, &mut Unobserved)
-    }
-
-    fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
-        with_first_unified(patch, |file, body| {
-            let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
-
-            body.addressed_hunks()
-                .next()
-                .expect("first hunk")
-                .records()
-                .map(|(address, _)| highlights.get(address).clone())
-                .collect()
-        })
-    }
-
-    /// `test` applied to the records of the first hunk of `patch`'s first file, which
-    /// must be unified.
-    fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
-        with_first_unified(patch, |_, body| {
-            body.hunks.first().expect("first hunk").with_records(test)
-        })
-    }
-
-    /// `test` applied to `patch`'s first file and its body, which must be unified.
-    fn with_first_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
-        let document = parse_patch(patch).expect("valid diff");
-        let file = document.files().next().expect("first file");
-        let FileBody::Unified(body) = &file.body else {
-            panic!("fixture should contain a unified file");
-        };
-
-        test(file, body)
-    }
-
-    /// `test` applied to the new-side projection of a hunk adding `lines`.
-    fn with_added_projection<T>(lines: &[&str], test: impl FnOnce(&Projection) -> T) -> T {
-        let added = lines
-            .iter()
-            .map(|line| format!("+{line}\n"))
-            .collect::<String>();
-        let patch = format!("--- a/x\n+++ b/x\n@@ -0,0 +1,{} @@\n{added}", lines.len());
-
-        with_first_hunk(patch.as_bytes(), |hunk| {
-            test(&Projection::from_hunk(hunk, Side::New, Styles::Changes))
-        })
     }
 }
