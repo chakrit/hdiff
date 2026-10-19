@@ -14,7 +14,7 @@ use super::{
 use crate::{
     line_breaks::LineBreaks,
     screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
-    styling::{StyledRow, TextStyle},
+    styling::{Boundary, StyledRow, TextStyle},
     tab_stops::TabStops,
     theme::Theme,
 };
@@ -134,20 +134,23 @@ fn write_wrapped_line<'c>(
 /// style boundaries cannot split a cluster.
 struct ExpandedPayload {
     text: String,
-    segment_ends: Vec<(usize, TextStyle)>,
+    boundaries: Vec<Boundary>,
 }
 
 impl ExpandedPayload {
     fn new(row: StyledRow<'_>) -> Self {
         let mut tab_stops = TabStops::default();
         let mut text = String::new();
-        let mut segment_ends = Vec::new();
+        let mut boundaries = Vec::new();
 
-        for (segment, text_style) in row.segments() {
+        for (segment, style) in row.segments() {
             tab_stops.expand_into(segment, &mut text);
-            segment_ends.push((text.len(), text_style));
+            boundaries.push(Boundary {
+                end: text.len(),
+                style,
+            });
         }
-        Self { text, segment_ends }
+        Self { text, boundaries }
     }
 
     /// Each cluster with the style of the segment containing its first byte.
@@ -161,14 +164,14 @@ impl ExpandedPayload {
     /// it, since segment ends ascend.
     fn style_at(&self, position: usize) -> TextStyle {
         let containing = self
-            .segment_ends
-            .partition_point(|(end, _)| *end <= position);
-        let (_, text_style) = self
-            .segment_ends
+            .boundaries
+            .partition_point(|boundary| boundary.end <= position);
+        let boundary = self
+            .boundaries
             .get(containing)
             .expect("every cluster starts inside a segment");
 
-        *text_style
+        boundary.style
     }
 }
 

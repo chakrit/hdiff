@@ -223,10 +223,11 @@ enum Partition {
     Split(Box<[Boundary]>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct Boundary {
-    end: usize,
-    style: TextStyle,
+/// Where a styled segment of a payload ends, and the style it is drawn in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Boundary {
+    pub end: usize,
+    pub style: TextStyle,
 }
 
 impl Partition {
