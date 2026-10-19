@@ -1,6 +1,8 @@
 //! Byte ranges of a displayed line's payload that syntax and character detail annotate.
 //! Rules: docs/spec/architecture.md#lossless-and-safe-rendering.
 
+use std::ops::Range;
+
 /// A byte range of a payload that starts and ends on character boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PayloadSpan {
@@ -9,11 +11,12 @@ pub struct PayloadSpan {
 }
 
 impl PayloadSpan {
-    /// The bytes of `payload` from `start` up to `end`.
+    /// The `bytes` of `payload`.
     ///
-    /// Panics when `start` is after `end`, or when either is not a character boundary of
-    /// `payload`.
-    pub fn within(payload: &str, start: usize, end: usize) -> Self {
+    /// Panics when the range starts after it ends, or when either bound is not a
+    /// character boundary of `payload`.
+    pub fn within(payload: &str, bytes: Range<usize>) -> Self {
+        let Range { start, end } = bytes;
         assert!(start <= end, "a payload span starts before it ends");
         assert!(
             payload.is_char_boundary(start) && payload.is_char_boundary(end),
