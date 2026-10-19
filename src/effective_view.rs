@@ -43,11 +43,13 @@ impl EffectiveView {
             (false, ScreenLines::ZERO) => Some(TooSmall::Short),
             (false, _) => None,
         };
+        let wrap = WrapWidth::for_panes(preferences.wrapping, pane_content.width);
+
         Self {
             shape,
             geometry,
             pane_content,
-            wrap: WrapWidth::for_panes(preferences.wrapping, pane_content.width),
+            wrap,
             too_small,
         }
     }
@@ -78,10 +80,11 @@ impl EffectiveView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapWidth {
     /// Wrapping is off: every row is one line, scrolled horizontally.
-    Unbounded,
+    Off,
     /// Payloads wrap at this many cells.
     At(NonZeroCells),
-    /// Wrapping is on, but the pane has no payload column to wrap in or scroll through.
+    /// Wrapping is on, but the pane has no payload column to wrap in: every row is one
+    /// line, never scrolled.
     NoPayload,
 }
 
@@ -93,7 +96,7 @@ impl WrapWidth {
         let payload_width = NonZeroCells::new(content_width.saturating_sub(MARKER_GUTTER_WIDTH));
 
         match (wrapping, payload_width) {
-            (Wrapping::Disabled, _) => Self::Unbounded,
+            (Wrapping::Disabled, _) => Self::Off,
             (Wrapping::Enabled, Some(width)) => Self::At(width),
             (Wrapping::Enabled, None) => Self::NoPayload,
         }
@@ -103,7 +106,7 @@ impl WrapWidth {
     /// cells wide: only unwrapped rows scroll, until their end fills the pane.
     pub(crate) fn horizontal_range(self, rows_width: Cells, content_width: Cells) -> Cells {
         match self {
-            Self::Unbounded => rows_width.saturating_sub(content_width),
+            Self::Off => rows_width.saturating_sub(content_width),
             Self::At(_) | Self::NoPayload => Cells::ZERO,
         }
     }
@@ -202,7 +205,7 @@ mod tests {
     fn scrolls_horizontally_only_while_wrapping_is_off() {
         let range = |wrap: WrapWidth| wrap.horizontal_range(Cells::new(47), Cells::new(22));
 
-        assert_eq!(range(WrapWidth::Unbounded), Cells::new(25));
+        assert_eq!(range(WrapWidth::Off), Cells::new(25));
         assert_eq!(range(WrapWidth::at(20)), Cells::ZERO);
         assert_eq!(range(WrapWidth::NoPayload), Cells::ZERO);
     }
@@ -213,7 +216,7 @@ mod tests {
 
         assert_eq!(wrap(Wrapping::Enabled, 24), WrapWidth::at(22));
         assert_eq!(wrap(Wrapping::Enabled, 51), WrapWidth::at(49));
-        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Unbounded);
+        assert_eq!(wrap(Wrapping::Disabled, 51), WrapWidth::Off);
         assert_eq!(wrap(Wrapping::Enabled, 78), WrapWidth::at(76));
     }
 }
