@@ -35,6 +35,7 @@ pub enum PaneShape {
 }
 
 impl PaneShape {
+    /// The panes `layout` divides the diff area into.
     pub const fn of(layout: DiffLayout) -> Self {
         match layout {
             DiffLayout::Unified => Self::Single,
@@ -122,6 +123,7 @@ pub struct FileColumn {
 }
 
 impl FileColumn {
+    /// `column` divided into the list, then the separator padded on both sides.
     fn of(column: Rect) -> Self {
         let [list, _, separator, _] = Layout::horizontal([
             Constraint::Length(FILE_LIST_WIDTH),
@@ -144,6 +146,7 @@ pub struct SplitPanes {
 }
 
 impl SplitPanes {
+    /// `area` split in `direction` into two even panes around their separator.
     fn of(area: Rect, direction: SplitDirection) -> Self {
         let [old, separator, new] = match direction {
             SplitDirection::Vertical => Layout::horizontal([
@@ -281,6 +284,7 @@ impl FramedArea {
         Self::of(area, FrameEdges::FILE_LIST)
     }
 
+    /// `area` inside a frame with `edges`.
     fn of(area: Rect, edges: FrameEdges) -> Self {
         Self {
             area,
