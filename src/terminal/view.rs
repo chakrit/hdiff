@@ -129,6 +129,10 @@ impl PaneDrawing<'_> {
                 line: wrapped_line,
                 width,
             },
+            // A pane without a payload column shows each row's start, never scrolled.
+            WrapWidth::NoPayload => RowPlacement::Scrolled {
+                horizontal_offset: Cells::ZERO,
+            },
         }
     }
 }

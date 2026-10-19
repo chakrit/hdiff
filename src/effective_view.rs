@@ -77,10 +77,12 @@ impl EffectiveView {
 /// The width at which rows break into screen lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapWidth {
-    /// Every row is one line, scrolled horizontally.
+    /// Wrapping is off: every row is one line, scrolled horizontally.
     Unbounded,
     /// Payloads wrap at this many cells.
     At(NonZeroCells),
+    /// Wrapping is on, but the pane has no payload column to wrap in or scroll through.
+    NoPayload,
 }
 
 impl WrapWidth {
@@ -93,17 +95,16 @@ impl WrapWidth {
         match (wrapping, payload_width) {
             (Wrapping::Disabled, _) => Self::Unbounded,
             (Wrapping::Enabled, Some(width)) => Self::At(width),
-            // A pane without a payload column has nothing to wrap, so each row stays one
-            // line.
-            (Wrapping::Enabled, None) => Self::Unbounded,
+            (Wrapping::Enabled, None) => Self::NoPayload,
         }
     }
 
-    /// Cells of a payload `width` cells wide that the pane must scroll through.
-    pub(crate) fn visible_width(self, width: Cells) -> Cells {
+    /// How far rows `rows_width` cells wide scroll horizontally in panes `content_width`
+    /// cells wide: only unwrapped rows scroll, until their end fills the pane.
+    pub(crate) fn horizontal_range(self, rows_width: Cells, content_width: Cells) -> Cells {
         match self {
-            Self::Unbounded => width,
-            Self::At(cells) => width.min(cells.get()),
+            Self::Unbounded => rows_width.saturating_sub(content_width),
+            Self::At(_) | Self::NoPayload => Cells::ZERO,
         }
     }
 
@@ -195,20 +196,15 @@ mod tests {
         assert_eq!(view.wrap(), WrapWidth::at(35));
     }
 
-    /// A pane without a payload column has nothing to wrap, so its rows stay one line
-    /// each rather than one line per payload cell.
+    /// docs/spec/architecture.md#view-model: while wrapping is enabled the maximum
+    /// horizontal offset is zero; unwrapped rows scroll until their end fills the pane.
     #[test]
-    fn leaves_rows_unwrapped_in_a_pane_without_payload_room() {
-        let preferences = ViewPreferences {
-            wrapping: Wrapping::Enabled,
-            ..ViewPreferences::INITIAL
-        };
+    fn scrolls_horizontally_only_while_wrapping_is_off() {
+        let range = |wrap: WrapWidth| wrap.horizontal_range(Cells::new(47), Cells::new(22));
 
-        // The file column leaves the diff one column, all of it frame.
-        let view = EffectiveView::of(preferences, Size::new(28, 3));
-
-        assert_eq!(view.too_small(), None, "the panes still show");
-        assert_eq!(view.wrap(), WrapWidth::Unbounded);
+        assert_eq!(range(WrapWidth::Unbounded), Cells::new(25));
+        assert_eq!(range(WrapWidth::at(20)), Cells::ZERO);
+        assert_eq!(range(WrapWidth::NoPayload), Cells::ZERO);
     }
 
     #[test]

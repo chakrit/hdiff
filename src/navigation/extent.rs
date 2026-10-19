@@ -466,7 +466,7 @@ fn measured_row<R>(
 
     MeasuredRow {
         row,
-        width: wrap.visible_width(payload_width) + MARKER_GUTTER_WIDTH,
+        width: payload_width + MARKER_GUTTER_WIDTH,
         height,
     }
 }
@@ -665,11 +665,6 @@ mod tests {
         assert_eq!(
             anchor_offset(&document, &unified, 4, 0),
             ScreenLines::new(6)
-        );
-        assert_eq!(
-            unified.width(),
-            Cells::new(22),
-            "wrapped rows never scroll horizontally"
         );
         assert_eq!(
             vertical.line_count(),
