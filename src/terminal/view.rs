@@ -168,7 +168,7 @@ fn render_split_rows(
         // The separator runs beside the shown lines only.
         SplitDirection::Vertical => {
             let content = panes.old.content();
-            let height = content.height.min(frame_rows(shown));
+            let height = shown_rows(content.height, shown);
             let shown_separator = Rect::new(separator.x, content.y, separator.width, height);
             draw_inner_separator(frame.buffer_mut(), shown_separator, direction, palette);
         }
@@ -180,7 +180,7 @@ fn render_split_rows(
     pane_drawing.render(frame, panes.new, new_lines);
 }
 
-/// Frame rows `lines` take; lines are collected up to a pane's height, so they fit.
-fn frame_rows(lines: ScreenLines) -> u16 {
-    u16::try_from(lines.get()).expect("a pane's lines fit its height")
+/// Rows of a `height`-row area that `lines` fill: all of it when they reach past it.
+fn shown_rows(height: u16, lines: ScreenLines) -> u16 {
+    u16::try_from(lines.get()).map_or(height, |lines| height.min(lines))
 }
