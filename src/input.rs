@@ -36,15 +36,10 @@ impl Source {
 
     pub fn read(self) -> Result<Content, Error> {
         match self {
-            Self::Stdin => {
-                let mut bytes = Vec::new();
-                io::stdin().read_to_end(&mut bytes).map_err(Error::Stdin)?;
-                Ok(Content::Patch(bytes))
-            }
-            Self::PatchFile(path) => match fs::read(&path) {
-                Ok(bytes) => Ok(Content::Patch(bytes)),
-                Err(source) => Err(Error::PatchFile { path, source }),
-            },
+            Self::Stdin => read_stdin().map(Content::Patch).map_err(Error::Stdin),
+            Self::PatchFile(path) => fs::read(&path)
+                .map(Content::Patch)
+                .map_err(|source| Error::PatchFile { path, source }),
             Self::Comparison(comparison) => CompareFiles {
                 comparison: &comparison,
             }
@@ -53,6 +48,12 @@ impl Source {
             .map_err(Error::Comparison),
         }
     }
+}
+
+fn read_stdin() -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    io::stdin().read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// Whether standard input is a pipe or socket, as when another process feeds hdiff.
