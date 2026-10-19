@@ -2,12 +2,10 @@
 //! docs/spec/architecture.md#viewport-coordinates.
 
 /// A count, or a position counted from the start, retained as `u32` and used as `usize`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Count(u32);
 
 impl Count {
-    pub const ZERO: Self = Self(0);
-
     /// `value` as retained.
     ///
     /// Panics when `value` does not fit in `u32`.
