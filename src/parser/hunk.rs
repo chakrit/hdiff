@@ -19,19 +19,17 @@ pub(super) fn parse_hunk(
     earlier: BySide<bool>,
     lines: &mut SourceLines<'_>,
 ) -> Result<Hunk, Error> {
-    let exhausted = BySide::<usize>::default();
+    let exhausted = BySide::default();
     let mut remaining = expected;
     let mut ended = earlier;
-    let mut records: Vec<Record> = Vec::new();
-    while let Some(line) =
-        lines.next_if(|text| remaining != exhausted || is_no_newline_marker(text))
-    {
-        match is_no_newline_marker(line.sanitized()) {
-            true => {
+    let mut records = Vec::new();
+    while let Some(hunk_line) = next_hunk_line(lines, remaining != exhausted) {
+        match hunk_line {
+            HunkLine::NoNewlineMarker(line) => {
                 let marked = lines.at_last_line(mark_no_newline(&mut records, line))?;
                 ended = ended.or(marked);
             }
-            false => {
+            HunkLine::Record(line) => {
                 let record = lines.at_last_line(parse_record(line))?;
                 lines.at_last_line(check_side_open(ended, record.kind))?;
                 remaining = lines.at_last_line(count_record(remaining, record.kind))?;
@@ -50,6 +48,23 @@ pub(super) fn parse_hunk(
         header,
         records: records.into_boxed_slice(),
     })
+}
+
+/// A line inside a hunk, read once as a no-newline marker or as a line holding a record.
+enum HunkLine {
+    NoNewlineMarker(SourceLine),
+    Record(SourceLine),
+}
+
+/// Takes the next line of a hunk: a no-newline marker whenever one comes, and any other
+/// line only while the declared counts are `open`.
+fn next_hunk_line(lines: &mut SourceLines<'_>, open: bool) -> Option<HunkLine> {
+    let is_marker = is_no_newline_marker(lines.peek()?.sanitized());
+
+    match is_marker {
+        true => lines.next().map(HunkLine::NoNewlineMarker),
+        false => open.then(|| lines.next()).flatten().map(HunkLine::Record),
+    }
 }
 
 /// The counts `remaining` after one record of `kind`; a record on a side whose declared
@@ -177,7 +192,7 @@ pub(super) fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
 /// without a count states one line.
 fn range_count(range: &str) -> Option<usize> {
     match range.split_once(',') {
-        Some((start, count)) => decimal_count(count).filter(|_| is_decimal(start)),
+        Some((start, count)) => is_decimal(start).then(|| decimal_count(count)).flatten(),
         None => is_decimal(range).then_some(1),
     }
 }
