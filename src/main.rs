@@ -4,8 +4,9 @@ use std::{env, fmt, io, process::ExitCode};
 
 use hdiff::{
     actions::{
+        self,
         global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
-        install_git_diff_pager::{self, InstallGitDiffPager},
+        install_git_diff_pager::InstallGitDiffPager,
         write_output::{OutputContext, WriteOutput},
     },
     bench::{self, Driver},
@@ -114,7 +115,7 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
 }
 
 /// Writes `error` to standard error with every line naming the program.
-fn report(error: &RunError) -> io::Result<()> {
+fn report(error: &RunError) -> Result<(), actions::Error> {
     let message = error
         .to_string()
         .lines()
@@ -135,9 +136,9 @@ enum RunError {
     Input(input::Error),
     Parse(ParseError),
     Executable(io::Error),
-    Install(install_git_diff_pager::Error),
+    Install(actions::Error),
     Bench(io::Error),
-    Output(io::Error),
+    Output(actions::Error),
     Terminal(terminal::SessionError),
 }
 

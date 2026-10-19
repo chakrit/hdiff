@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     actions::{
-        child_process::ProcessError,
+        self,
         compare_files::{CompareFiles, CompareFilesContext},
     },
     comparison::{Comparison, Operand},
@@ -112,7 +112,7 @@ impl Content {
 pub enum Error {
     Stdin(io::Error),
     PatchFile { path: PathBuf, source: io::Error },
-    Comparison(ProcessError),
+    Comparison(actions::Error),
 }
 
 impl fmt::Display for Error {

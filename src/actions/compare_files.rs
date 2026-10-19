@@ -1,6 +1,6 @@
 use std::process::{Command, Stdio};
 
-use super::child_process::{self, ProcessError};
+use super::{Error, child_process};
 use crate::{
     comparison::{Comparison, Depth},
     exit_status::DiffStatus,
@@ -13,7 +13,7 @@ pub struct CompareFiles<'a> {
 pub struct CompareFilesContext;
 
 impl CompareFiles<'_> {
-    pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, ProcessError> {
+    pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, Error> {
         let operands = &self.comparison.operands;
         let recursion: &[&str] = match self.comparison.depth {
             Depth::TopLevel => &[],

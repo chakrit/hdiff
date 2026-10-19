@@ -1,12 +1,12 @@
 use std::{
     ffi::OsStr,
-    fmt, fs, io,
+    fs,
     path::{Path, PathBuf},
 };
 
 use super::{
+    Error,
     backup_global_git_config::BackupGlobalGitConfig,
-    child_process::ProcessError,
     global_git_config::{GitConfigEnvironment, GlobalGitConfigContext},
     set_global_diff_pager::SetGlobalDiffPager,
 };
@@ -18,30 +18,6 @@ pub struct InstallGitDiffPager {
 
 pub struct InstallGitDiffPagerReport {
     pub completed_commands: Vec<String>,
-}
-
-#[derive(Debug)]
-pub enum Error {
-    MissingHome,
-    GlobalConfigDisabled,
-    NonUtf8Path(PathRole),
-    InspectConfig {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Backup {
-        backup: BackupGlobalGitConfig,
-        source: io::Error,
-    },
-    SetPager(ProcessError),
-}
-
-/// Which path `--install` could not spell as a shell command.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PathRole {
-    Executable,
-    Config,
-    Backup,
 }
 
 impl InstallGitDiffPager {
@@ -57,9 +33,7 @@ impl InstallGitDiffPager {
 
         if let Some(backup) = backup {
             let backup_command = backup.shell_command();
-            backup
-                .run(context)
-                .map_err(|source| Error::Backup { backup, source })?;
+            backup.run(context)?;
             completed_commands.push(backup_command);
         }
 
@@ -67,37 +41,20 @@ impl InstallGitDiffPager {
             command: &pager_command,
         };
         let config_command = set_pager.shell_command();
-        set_pager.run(context).map_err(Error::SetPager)?;
+        set_pager.run(context)?;
         completed_commands.push(config_command);
 
         Ok(InstallGitDiffPagerReport { completed_commands })
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingHome => {
-                formatter.write_str("HOME is required to locate the global Git config")
-            }
-            Self::GlobalConfigDisabled => {
-                formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
-            }
-            Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
-            Self::InspectConfig { path, source } => {
-                write!(formatter, "{}: {source}", path.display())
-            }
-            Self::Backup { backup, source } => write!(
-                formatter,
-                "backing up {} to {}: {source}",
-                backup.config, backup.copy
-            ),
-            Self::SetPager(error) => write!(formatter, "{error}"),
-        }
-    }
+/// Which path `--install` could not spell as a shell command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PathRole {
+    Executable,
+    Config,
+    Backup,
 }
-
-impl std::error::Error for Error {}
 
 impl PathRole {
     pub fn label(self) -> &'static str {

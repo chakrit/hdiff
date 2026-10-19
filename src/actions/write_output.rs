@@ -1,5 +1,7 @@
 use std::io::{self, Write};
 
+use super::Error;
+
 pub struct WriteOutput<'a> {
     pub bytes: &'a [u8],
 }
@@ -9,11 +11,11 @@ pub struct OutputContext<'a, Writer> {
 }
 
 impl WriteOutput<'_> {
-    pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> io::Result<()> {
+    pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> Result<(), Error> {
         match context.writer.write_all(self.bytes) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-            Err(error) => Err(error),
+            Err(error) => Err(Error::Write(error)),
         }
     }
 }
@@ -22,7 +24,7 @@ impl WriteOutput<'_> {
 mod tests {
     use std::io::{self, Write};
 
-    use super::{OutputContext, WriteOutput};
+    use super::{Error, OutputContext, WriteOutput};
 
     struct LimitedWriter {
         bytes: Vec<u8>,
@@ -102,6 +104,9 @@ mod tests {
             .run(&mut context)
             .expect_err("non-broken-pipe failures should propagate");
 
-        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert!(
+            matches!(&error, Error::Write(source) if source.kind() == io::ErrorKind::PermissionDenied),
+            "{error:?}"
+        );
     }
 }

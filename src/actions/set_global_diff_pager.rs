@@ -1,9 +1,6 @@
 use std::{ffi::OsStr, process::Command};
 
-use super::{
-    child_process::{self, ProcessError},
-    global_git_config::GlobalGitConfigContext,
-};
+use super::{Error, child_process, global_git_config::GlobalGitConfigContext};
 use crate::shell_words;
 
 /// Sets `pager.diff` in the global Git config to `command`.
@@ -21,7 +18,7 @@ impl SetGlobalDiffPager<'_> {
         shell_words::command_line(&[GIT, config, global, key, value])
     }
 
-    pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), ProcessError> {
+    pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
         let mut git = Command::new(GIT);
         git.args(self.arguments());
         for (name, value) in context.environment.variables() {
