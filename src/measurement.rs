@@ -41,7 +41,9 @@ impl Stage {
     pub const fn parent(self) -> Parent {
         match self {
             Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
-            Self::Language | Self::Projection | Self::Parse | Self::Query => Parent::Syntax,
+            Self::Language | Self::Projection | Self::Parse | Self::Query => {
+                Parent::Stage(Self::Syntax)
+            }
         }
     }
 }
@@ -49,15 +51,17 @@ impl Stage {
 /// A measurement partitioned by disjoint child stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Parent {
+    /// The whole preparation, timed outside the profile.
     Preparation,
-    Syntax,
+    /// A profiled stage, whose own duration is the total its children partition.
+    Stage(Stage),
 }
 
 impl Parent {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Preparation => "preparation",
-            Self::Syntax => "syntax",
+            Self::Stage(stage) => stage.label(),
         }
     }
 }
@@ -230,6 +234,6 @@ mod tests {
             .map(|(parent, _)| parent)
             .collect::<Vec<_>>();
 
-        assert_eq!(parents, [Parent::Preparation, Parent::Syntax]);
+        assert_eq!(parents, [Parent::Preparation, Parent::Stage(Stage::Syntax)]);
     }
 }

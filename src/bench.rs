@@ -230,7 +230,7 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
     for (parent, children) in Stage::families() {
         let total = match parent {
             Parent::Preparation => preparation,
-            Parent::Syntax => profile.duration(Stage::Syntax),
+            Parent::Stage(stage) => profile.duration(stage),
         };
 
         let attributed = children
