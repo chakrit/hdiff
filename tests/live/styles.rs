@@ -10,6 +10,47 @@ use ratatui::{
 
 use crate::harness::{Live, Mode, THEME, cells, positions};
 
+/// In `layout`, a one-sided source payload takes syntax colors in line mode, its change
+/// color undimmed in character mode, and line mode again restores the frame.
+fn assert_unmatched_payload_toggle(layout: DiffLayout) {
+    let patch = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
+                 --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
+                 @@ -2,0 +2 @@\n+fn added() {}\n";
+    let mut live = Live::sized(patch, Mode::line(layout), Size::new(160, 30));
+    live.next_file();
+    let line_rendered = live.buffer();
+    let payloads = [
+        ("fn removed() {}", THEME.rows.change.old.marker),
+        ("fn added() {}", THEME.rows.change.new.marker),
+    ];
+    for (payload, _) in payloads {
+        let cells = unique_payload_cells(&line_rendered, payload);
+        assert_eq!(cells[0].fg, THEME.syntax.keyword, "Rust keyword");
+    }
+
+    live.press('c');
+    for (payload, color) in payloads {
+        let character = live.buffer();
+        for cell in unique_payload_cells(&character, payload) {
+            assert_eq!(cell.fg, color, "{layout:?}: {payload}");
+            assert!(!cell.modifier.contains(Modifier::DIM), "{payload}");
+        }
+    }
+
+    live.press('c');
+    assert_eq!(live.buffer(), line_rendered, "line mode restores the frame");
+}
+
+/// The cells of `payload`, which the screen shows once.
+fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
+    let mut occurrences = positions(buffer, payload);
+    let start = occurrences.next().expect("full source payload is visible");
+
+    assert!(occurrences.next().is_none(), "source payload appears once");
+    let first = buffer.index_of(start.x, start.y);
+    &buffer.content[first..first + usize::from(cells(payload))]
+}
+
 /// docs/spec/architecture.md#continuity-markers: markers take the dimmed separator tone.
 #[test]
 fn draws_continuity_markers_in_the_dimmed_separator_tone() {
@@ -191,14 +232,13 @@ fn renders_syntax_and_low_contrast_record_styles() {
     );
 }
 
-/// docs/spec/architecture.md#view-model and docs/spec/architecture.md#interaction-model:
-/// changed spans take undimmed change colors over text one step dimmer, and the selected
-/// file's row is one highlight.
+/// docs/spec/architecture.md#interaction-model: the selected file's row is one highlight
+/// across the whole row.
 #[test]
-fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_files_cohesively() {
+fn highlights_the_selected_file_row_as_one() {
     let live = Live::sized(
         "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n",
-        Mode::character(DiffLayout::Unified),
+        Mode::line(DiffLayout::Unified),
         Size::new(80, 8),
     );
 
@@ -214,6 +254,19 @@ fn renders_character_detail_with_bright_changes_over_muted_text_and_selects_file
         selected_row_end.bg, selected_label.bg,
         "the highlight spans the whole row"
     );
+}
+
+/// docs/spec/architecture.md#view-model: changed spans take undimmed change colors over
+/// text one step dimmer.
+#[test]
+fn renders_character_detail_with_bright_changes_over_muted_text() {
+    let live = Live::sized(
+        "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n",
+        Mode::character(DiffLayout::Unified),
+        Size::new(80, 8),
+    );
+
+    let rendered = live.buffer();
     assert_eq!(rendered[(31, 4)].fg, THEME.rows.change.old.marker);
     assert_eq!(rendered[(31, 5)].fg, THEME.rows.change.new.marker);
     assert!(
@@ -248,44 +301,6 @@ fn toggles_unmatched_payload_colors_in_every_layout() {
     ] {
         assert_unmatched_payload_toggle(layout);
     }
-}
-
-fn assert_unmatched_payload_toggle(layout: DiffLayout) {
-    let patch = "--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n\
-                 --- a/source.rs\n+++ b/source.rs\n@@ -1 +0,0 @@\n-fn removed() {}\n\
-                 @@ -2,0 +2 @@\n+fn added() {}\n";
-    let mut live = Live::sized(patch, Mode::line(layout), Size::new(160, 30));
-    live.next_file();
-    let line_rendered = live.buffer();
-    let payloads = [
-        ("fn removed() {}", THEME.rows.change.old.marker),
-        ("fn added() {}", THEME.rows.change.new.marker),
-    ];
-    for (payload, _) in payloads {
-        let cells = unique_payload_cells(&line_rendered, payload);
-        assert_eq!(cells[0].fg, THEME.syntax.keyword, "Rust keyword");
-    }
-
-    live.press('c');
-    for (payload, color) in payloads {
-        let character = live.buffer();
-        for cell in unique_payload_cells(&character, payload) {
-            assert_eq!(cell.fg, color, "{layout:?}: {payload}");
-            assert!(!cell.modifier.contains(Modifier::DIM), "{payload}");
-        }
-    }
-
-    live.press('c');
-    assert_eq!(live.buffer(), line_rendered, "line mode restores the frame");
-}
-
-fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
-    let mut occurrences = positions(buffer, payload);
-    let start = occurrences.next().expect("full source payload is visible");
-
-    assert!(occurrences.next().is_none(), "source payload appears once");
-    let first = buffer.index_of(start.x, start.y);
-    &buffer.content[first..first + usize::from(cells(payload))]
 }
 
 /// docs/spec/architecture.md#view-model: hunk headers are muted cyan-blue; file headers
