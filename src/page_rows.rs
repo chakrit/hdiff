@@ -205,16 +205,16 @@ impl PageRows {
 
     /// The rows of `lines`, with their side-by-side layout and each line's visibility
     /// derived once.
-    fn of_lines<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
-        let lines = lines.map(RenderedLine::of).collect::<Vec<_>>();
+    fn of_lines<'a>(displayed: impl Iterator<Item = DisplayLine<'a>>) -> Self {
+        let rendered = displayed.map(RenderedLine::of).collect::<Vec<_>>();
         let SideBySideLayout {
             pairs,
             pair_of_line,
-        } = SideBySideLayout::of(&lines);
-        let visibility = LineMap(row_visibility(&lines).into_boxed_slice());
+        } = SideBySideLayout::of(&rendered);
+        let visibility = LineMap(row_visibility(&rendered).into_boxed_slice());
 
         Self {
-            lines: lines.into_boxed_slice(),
+            lines: rendered.into_boxed_slice(),
             pairs,
             pair_of_line,
             visibility,
@@ -360,9 +360,8 @@ fn values_on_lines<T>(
     shared.into_iter().chain(changed)
 }
 
-/// The values of `placed`, one per line, in line order. Lines list a changed block's old
-/// lines before its new lines, while a row holds the block's *i*th old and *i*th new
-/// lines together, so values placed row by row are not in line order.
+/// The values of `placed`, one per line, in line order. A row holds a line from each of a
+/// changed block's two columns, so values placed row by row need not be in line order.
 fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Box<[T]> {
     let mut placed = placed.into_iter().collect::<Vec<_>>();
     placed.sort_by_key(|line_value| line_value.line);

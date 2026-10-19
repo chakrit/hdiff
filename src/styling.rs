@@ -367,8 +367,8 @@ mod tests {
     fn chooses_specific_captures_and_later_ties_without_losing_outer_styles() {
         let text = "αcall!";
         let whole = 0..text.len();
-        let call = text.find("call").expect("the text holds call");
-        let call = call..call + "call".len();
+        let call_start = text.find("call").expect("the text holds call");
+        let call = call_start..call_start + "call".len();
         let spans = [
             syntax(text, whole.clone(), whole.len(), SyntaxClass::String),
             syntax(text, call.clone(), call.len(), SyntaxClass::Property),
@@ -422,9 +422,11 @@ mod tests {
     #[test]
     fn capture_precedence_retains_specificity_after_multiline_clipping() {
         let text = "word";
+        let whole = 0..text.len();
+        let multiline_comment = "word\nacross three\nlines";
         let spans = [
-            syntax(text, 0..4, 4, SyntaxClass::Keyword),
-            syntax(text, 0..4, 20, SyntaxClass::Comment),
+            syntax(text, whole.clone(), whole.len(), SyntaxClass::Keyword),
+            syntax(text, whole, multiline_comment.len(), SyntaxClass::Comment),
         ];
         let partition = syntax_partition(text, &spans);
 

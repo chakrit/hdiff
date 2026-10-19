@@ -118,8 +118,8 @@ impl Cells {
 
     /// Cells from this column to the next multiple of `interval` after it.
     pub const fn padding_to_next_multiple_of(self, interval: NonZeroCells) -> Self {
-        let interval = interval.0.get();
-        Self::new(interval - self.0 % interval)
+        let stop = interval.0.get();
+        Self::new(stop - self.0 % stop)
     }
 
     /// Lines these cells fill at `width` when every line but the last is full; none still

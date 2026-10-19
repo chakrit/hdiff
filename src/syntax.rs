@@ -662,18 +662,24 @@ mod tests {
             b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         );
 
-        let context = classes(&context);
-        assert!(context.contains(&SyntaxClass::Keyword), "{context:?}");
-        assert!(!context.contains(&SyntaxClass::Comment), "{context:?}");
-        let comment_opening = classes(&comment_opening);
+        let context_classes = classes(&context);
         assert!(
-            comment_opening.contains(&SyntaxClass::Comment),
-            "{comment_opening:?}"
+            context_classes.contains(&SyntaxClass::Keyword),
+            "{context_classes:?}"
         );
-        let comment_closing = classes(&comment_closing);
         assert!(
-            comment_closing.contains(&SyntaxClass::Comment),
-            "{comment_closing:?}"
+            !context_classes.contains(&SyntaxClass::Comment),
+            "{context_classes:?}"
+        );
+        let opening_classes = classes(&comment_opening);
+        assert!(
+            opening_classes.contains(&SyntaxClass::Comment),
+            "{opening_classes:?}"
+        );
+        let closing_classes = classes(&comment_closing);
+        assert!(
+            closing_classes.contains(&SyntaxClass::Comment),
+            "{closing_classes:?}"
         );
     }
 
@@ -767,10 +773,16 @@ mod tests {
         );
 
         assert_eq!(context, []);
-        let deleted = classes(&deleted);
-        assert!(deleted.contains(&SyntaxClass::Keyword), "{deleted:?}");
-        let added = classes(&added);
-        assert!(added.contains(&SyntaxClass::Keyword), "{added:?}");
+        let deleted_classes = classes(&deleted);
+        assert!(
+            deleted_classes.contains(&SyntaxClass::Keyword),
+            "{deleted_classes:?}"
+        );
+        let added_classes = classes(&added);
+        assert!(
+            added_classes.contains(&SyntaxClass::Keyword),
+            "{added_classes:?}"
+        );
     }
 
     #[test]
