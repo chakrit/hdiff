@@ -39,6 +39,7 @@ pub struct Live {
 }
 
 impl Live {
+    /// `patch` on the default screen, in `mode`.
     pub fn load(patch: &str, mode: Mode) -> Self {
         Self::sized(patch, mode, SCREEN)
     }
@@ -55,6 +56,7 @@ impl Live {
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
     }
 
+    /// `prepared` on a terminal of `size` with its first frame drawn, then in `mode`.
     fn start(prepared: PreparedDocument, mode: Mode, size: Size) -> Self {
         let mut terminal =
             Terminal::new(TestBackend::new(size.width, size.height)).expect("test terminal");
@@ -70,6 +72,7 @@ impl Live {
         self.tui.preferences()
     }
 
+    /// Presses `v` until the layout is `mode`'s, then `c` when the granularity is not.
     pub fn enter(&mut self, mode: Mode) {
         while self.preferences().layout != mode.layout {
             self.press('v');
@@ -79,18 +82,22 @@ impl Live {
         }
     }
 
+    /// `key` with no modifier.
     pub fn press(&mut self, key: char) -> Step {
         self.send(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE))
     }
 
+    /// The key event `key`.
     pub fn send(&mut self, key: KeyEvent) -> Step {
         self.event(Event::Key(key))
     }
 
+    /// Tab, which turns to the next file's page.
     pub fn next_file(&mut self) -> Step {
         self.send(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
     }
 
+    /// BackTab, which turns to the previous file's page.
     pub fn previous_file(&mut self) -> Step {
         self.send(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
     }
@@ -110,10 +117,12 @@ impl Live {
         self.control('c')
     }
 
+    /// Esc.
     pub fn escape(&mut self) -> Step {
         self.send(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
     }
 
+    /// Changes the terminal to `size`, then sends the resize event a terminal sends.
     pub fn resize(&mut self, size: Size) -> Step {
         self.resize_backend_only(size);
         self.resize_event_only(size)
@@ -129,15 +138,18 @@ impl Live {
         self.event(Event::Resize(size.width, size.height))
     }
 
+    /// Steps the session through `event`; drawing to the test terminal cannot fail.
     pub fn event(&mut self, event: Event) -> Step {
         let Ok(step) = self.tui.step(&mut self.terminal, event);
         step
     }
 
+    /// A copy of the drawn screen.
     pub fn buffer(&self) -> Buffer {
         self.terminal.backend().buffer().clone()
     }
 
+    /// Each screen row's symbols, untrimmed.
     pub fn rows(&self) -> Vec<String> {
         let buffer = self.terminal.backend().buffer();
         let area = buffer.area;
@@ -159,7 +171,7 @@ impl Live {
             .map(|row| {
                 let column = row
                     .split_once('│')
-                    .map_or(row.as_str(), |(column, _)| column);
+                    .map_or(row.as_str(), |(before, _)| before);
                 column.trim_end().to_owned()
             })
             .collect()
@@ -171,6 +183,7 @@ impl Live {
         self.buffer()[(position.x, position.y)].bg
     }
 
+    /// How many times `symbol` is drawn on the screen.
     pub fn count(&self, symbol: char) -> usize {
         self.rows()
             .iter()
@@ -192,8 +205,8 @@ impl Live {
         let start = self.find(row);
         let buffer = self.buffer();
         let marker = buffer[(start.x, start.y)].fg;
-        let name_start = start.x + cells(marker_label) + cells(" ");
-        let name = (name_start..start.x + cells(row))
+        let name_start = start.x + columns(marker_label) + columns(" ");
+        let name = (name_start..start.x + columns(row))
             .map(|x| buffer[(x, start.y)].fg)
             .collect::<Vec<_>>();
 
@@ -241,14 +254,14 @@ pub fn positions<'a>(buffer: &'a Buffer, text: &'a str) -> impl Iterator<Item = 
     buffer.area.positions().filter(move |start| {
         let drawn_through = graphemes.iter().try_fold(start.x, |x, grapheme| {
             let drawn = x < buffer.area.right() && buffer[(x, start.y)].symbol() == *grapheme;
-            drawn.then(|| x + cells(grapheme))
+            drawn.then(|| x + columns(grapheme))
         });
         drawn_through.is_some()
     })
 }
 
 /// Screen columns `text` covers.
-pub fn cells(text: &str) -> u16 {
+pub fn columns(text: &str) -> u16 {
     Cells::of_text(text).frame_columns()
 }
 
@@ -266,6 +279,7 @@ pub struct Mode {
 }
 
 impl Mode {
+    /// `layout` in line granularity.
     pub const fn line(layout: DiffLayout) -> Self {
         Self {
             layout,
@@ -273,6 +287,7 @@ impl Mode {
         }
     }
 
+    /// `layout` in character granularity.
     pub const fn character(layout: DiffLayout) -> Self {
         Self {
             layout,

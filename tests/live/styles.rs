@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     fixtures::{EXTRA_DELETION, ONE_LETTER_CHANGE},
-    harness::{Live, Mode, THEME, cells, positions},
+    harness::{Live, Mode, THEME, columns, positions},
 };
 
 const EIGHT_ROWS: Size = Size::new(80, 8);
@@ -54,7 +54,7 @@ fn unique_payload_cells<'a>(buffer: &'a Buffer, payload: &str) -> &'a [Cell] {
 
     assert!(occurrences.next().is_none(), "source payload appears once");
     let first = buffer.index_of(start.x, start.y);
-    &buffer.content[first..first + usize::from(cells(payload))]
+    &buffer.content[first..first + usize::from(columns(payload))]
 }
 
 /// docs/spec/architecture.md#continuity-markers: markers take the dimmed separator tone.
