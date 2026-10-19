@@ -137,7 +137,7 @@ impl SyntaxHighlighter {
                 tree.edit(&base_projection.edit_to(projection));
                 tree
             });
-            observer.count(Work::Parse);
+            observer.count(Work::ParseCall);
             highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
         });
         let spans = observer.measure(Stage::Query, |observer| {
