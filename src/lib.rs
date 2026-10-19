@@ -9,6 +9,7 @@ pub mod detail;
 pub mod display_lines;
 pub mod document;
 pub mod effective_view;
+pub mod error_output;
 pub mod exit_status;
 pub mod file_identity;
 pub mod file_tree;
