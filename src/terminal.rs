@@ -54,18 +54,14 @@ pub enum Step {
 
 /// The interactive loop. Rules: docs/spec/architecture.md#interactive-loop.
 pub struct Tui {
-    document: PreparedDocument,
     navigation: Navigation,
     theme: &'static Theme,
 }
 
 impl Tui {
     pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
-        let navigation = Navigation::start(&document, ViewPreferences::INITIAL, screen);
-
         Self {
-            document,
-            navigation,
+            navigation: Navigation::start(document, ViewPreferences::INITIAL, screen),
             theme: Theme::for_depth(color_depth),
         }
     }
@@ -97,7 +93,7 @@ impl Tui {
         let Some(event) = bindings::event_for(event) else {
             return Ok(Step::Continue);
         };
-        let pages = self.document.page_count();
+        let pages = self.navigation.document().page_count();
         let effect = match self.navigation.interaction().respond(event, pages) {
             Outcome::Exit => return Ok(Step::Exit),
             Outcome::Ignored => return Ok(Step::Continue),
@@ -106,9 +102,9 @@ impl Tui {
         };
 
         let screen = autoresize_to_frame_size(terminal)?;
-        self.navigation.adopt_screen(&self.document, screen);
+        self.navigation.adopt_screen(screen);
         if let Some(effect) = effect {
-            self.navigation.step(&self.document, effect);
+            self.navigation.step(effect);
         }
 
         self.draw(terminal)?;
@@ -118,17 +114,13 @@ impl Tui {
     /// Draws the interaction, first adopting the size of the frame it draws, so bounds
     /// and drawing always read one screen size.
     pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
-        let Self {
-            document,
-            navigation,
-            theme,
-        } = self;
+        let Self { navigation, theme } = self;
 
         terminal
             .draw(|frame| {
-                navigation.adopt_screen(document, frame.area().as_size());
+                navigation.adopt_screen(frame.area().as_size());
 
-                view::render_prepared_frame(frame, document, navigation, theme)
+                view::render_prepared_frame(frame, navigation, theme)
             })
             .map(|_| ())
     }
