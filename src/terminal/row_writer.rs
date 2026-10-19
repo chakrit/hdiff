@@ -58,8 +58,9 @@ pub(super) fn write_row(
     theme: &Theme,
 ) -> Clip {
     buffer.set_style(area, whole_row(row.tone(), &theme.rows));
-    let PaneRow::Text(text_row) = row else {
-        return Clip::default();
+    let text_row = match row {
+        PaneRow::Text(text_row) => text_row,
+        PaneRow::AlignmentPeer(_) => return Clip::default(),
     };
 
     let payload = ExpandedPayload::of(text_row);
@@ -330,14 +331,19 @@ mod tests {
     /// `horizontal_offset`.
     fn scrolled_buffer(row: PaneRow<'_>, width: u16, horizontal_offset: Cells) -> Buffer {
         let placement = RowPlacement::Scrolled { horizontal_offset };
-        write_placed(row, width, placement).buffer
+        write_placed(row, width, placement, THEME).buffer
     }
 
-    /// `row` written at `placement` into a one-line pane `width` cells wide.
-    fn write_placed(row: PaneRow<'_>, width: u16, placement: RowPlacement) -> Written {
+    /// `row` written with `theme` at `placement` into a one-line pane `width` cells wide.
+    fn write_placed(
+        row: PaneRow<'_>,
+        width: u16,
+        placement: RowPlacement,
+        theme: &Theme,
+    ) -> Written {
         let area = Rect::new(0, 0, width, 1);
         let mut buffer = Buffer::empty(area);
-        let clip = write_row(&mut buffer, area, row, placement, THEME);
+        let clip = write_row(&mut buffer, area, row, placement, theme);
         Written { buffer, clip }
     }
 
@@ -496,7 +502,13 @@ mod tests {
                 line: ScreenLines::new(line),
                 width: NonZeroCells::of(wrap_width),
             };
-            write_placed(addition, pane_width(Cells::new(wrap_width)), placement).buffer
+            write_placed(
+                addition,
+                pane_width(Cells::new(wrap_width)),
+                placement,
+                THEME,
+            )
+            .buffer
         };
 
         let first = wrapped_line(0);
@@ -525,21 +537,21 @@ mod tests {
             ColorDepth::Basic,
         ];
 
+        let width = pane_width(Cells::of_text("old"));
+
         for depth in depths {
             let theme = Theme::of_depth(depth);
-            for side in Side::BOTH {
+            for (side, colors) in theme.rows.change.as_ref().into_sides() {
                 let row = first_changed_row(&prepared, side, DiffGranularity::Line);
-                let area = Rect::new(0, 0, pane_width(Cells::of_text("old")), 1);
-                let mut buffer = Buffer::empty(area);
                 let placement = RowPlacement::Scrolled {
                     horizontal_offset: Cells::ZERO,
                 };
-                write_row(&mut buffer, area, row, placement, theme);
+                let written = write_placed(row, width, placement, theme);
 
-                let marker = first_cell(&buffer);
+                let marker = first_cell(&written.buffer);
                 assert_eq!(
                     (marker.fg, marker.modifier.contains(Modifier::DIM)),
-                    (theme.rows.change.get(side).marker, false),
+                    (colors.marker, false),
                     "{depth:?} {side:?}: {marker:?}"
                 );
             }
@@ -554,7 +566,7 @@ mod tests {
         let row = first_added_row(&prepared, DiffGranularity::Line);
         let clip = |width, horizontal_offset| {
             let placement = RowPlacement::Scrolled { horizontal_offset };
-            write_placed(row, width, placement).clip
+            write_placed(row, width, placement, THEME).clip
         };
         let wrapped = RowPlacement::Wrapped {
             line: ScreenLines::new(1),
@@ -594,7 +606,7 @@ mod tests {
         assert_eq!(clip(scrolled_short_of_wide, scroll), past_both);
         assert_eq!(clip(scrolled_fits, scroll), past_left);
         assert_eq!(
-            write_placed(row, pane_width(Cells::ONE), wrapped).clip,
+            write_placed(row, pane_width(Cells::ONE), wrapped, THEME).clip,
             inside,
             "a wrapped line shows its whole part of the row"
         );
