@@ -155,10 +155,18 @@ impl KeymapPopup {
     fn admit(self, command: Command) -> Option<Command> {
         match (self, command) {
             (Self::Closed, Command::Keymap(KeymapCommand::Close)) => None,
-            (Self::Closed, command) => Some(command),
-            (Self::Open, Command::Keymap(_) | Command::Quit) => {
-                Some(Command::Keymap(KeymapCommand::Close))
-            }
+            (
+                Self::Closed,
+                command @ (Command::Keymap(KeymapCommand::Toggle)
+                | Command::Movement(_)
+                | Command::Page(_)
+                | Command::Preference(_)
+                | Command::Quit),
+            ) => Some(command),
+            (
+                Self::Open,
+                Command::Keymap(KeymapCommand::Toggle | KeymapCommand::Close) | Command::Quit,
+            ) => Some(Command::Keymap(KeymapCommand::Close)),
             (Self::Open, Command::Movement(_) | Command::Page(_) | Command::Preference(_)) => None,
         }
     }
