@@ -491,16 +491,17 @@ impl LineSize {
 
 /// Screen lines the line takes; only lines wider than the wrap width are measured.
 fn line_height(rows: &PageRows, index: LineIndex, wrap: WrapWidth) -> ScreenLines {
-    let cells = match wrap {
-        WrapWidth::At(cells) => cells,
-        WrapWidth::Off | WrapWidth::NoPayload => return ScreenLines::ONE,
-    };
-    let payload = rows.measured_text(index);
-    if payload.cells() <= cells.get() {
-        return ScreenLines::ONE;
+    match wrap {
+        WrapWidth::At(cells) => {
+            let payload = rows.measured_text(index);
+            if payload.cells() <= cells.get() {
+                ScreenLines::ONE
+            } else {
+                wrapped_line_count(payload, cells)
+            }
+        }
+        WrapWidth::Off | WrapWidth::NoPayload => ScreenLines::ONE,
     }
-
-    wrapped_line_count(payload, cells)
 }
 
 #[cfg(test)]
