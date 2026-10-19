@@ -17,12 +17,12 @@ impl SourceLine {
     /// The line read from `bytes`, which keeps them exactly and reads its sanitized text
     /// and line ending through the scanner once.
     pub fn decode(bytes: &[u8]) -> Self {
-        let read = scan(bytes).fold(ReadLine::default(), ReadLine::after);
+        let read = ReadLine::of(bytes);
 
         Self {
             bytes: bytes.into(),
             sanitized: read.sanitized.into_boxed_str(),
-            line_ending: LineEnding::of(bytes, read.ends_in_cr),
+            line_ending: read.ending.line_ending(),
         }
     }
 
@@ -72,16 +72,6 @@ pub enum LineEnding {
 }
 
 impl LineEnding {
-    /// The ending of `bytes`, whose text before its final LF ends in a CR read in plain
-    /// text when `ends_in_cr`.
-    fn of(bytes: &[u8], ends_in_cr: bool) -> Self {
-        match (bytes.ends_with(b"\n"), ends_in_cr) {
-            (true, true) => Self::CrLf,
-            (true, false) => Self::Lf,
-            (false, true | false) => Self::None,
-        }
-    }
-
     /// The ending as written.
     pub fn text(self) -> &'static str {
         match self {
@@ -92,47 +82,71 @@ impl LineEnding {
     }
 }
 
-/// A line read so far: its visible text, and whether a CR read in plain text has come
-/// after its last visible character.
+/// Some bytes read through the scanner: the one fold that collects their visible text,
+/// and how their line ending stands.
 #[derive(Default)]
 struct ReadLine {
     sanitized: String,
-    ends_in_cr: bool,
+    ending: EndingSoFar,
 }
 
 impl ReadLine {
-    /// The line after reading one more character. Hidden characters other than a plain
-    /// CR, such as the LF itself or the SGR codes Git paints around a CR, leave the CR
-    /// where it was.
+    /// `bytes` read from plain text.
+    fn of(bytes: &[u8]) -> Self {
+        scan(bytes).fold(Self::default(), Self::after)
+    }
+
+    /// The line after reading one more character.
     fn after(mut self, read: Read) -> Self {
-        match read {
-            Read {
-                decoded,
-                step: Step::Shown(_),
-                ..
-            } => {
-                self.sanitized.push(decoded.character);
-                self.ends_in_cr = false;
-            }
-            Read {
-                decoded: DecodedChar {
-                    character: '\r', ..
-                },
-                read_in: State::Ground,
-                step: Step::Hidden(_),
-            } => self.ends_in_cr = true,
-            Read {
-                step: Step::Hidden(_),
-                ..
-            } => {}
+        if let Step::Shown(_) = read.step {
+            self.sanitized.push(read.decoded.character);
         }
+        self.ending = self.ending.after(&read);
         self
+    }
+}
+
+/// How a line's ending stands after the characters read so far.
+#[derive(Default, Clone, Copy)]
+enum EndingSoFar {
+    /// No ending yet: the line has no characters, or more came after its last LF.
+    #[default]
+    Open,
+    /// A CR read in plain text, followed so far only by hidden characters.
+    CarriageReturn,
+    /// An LF read last, after a pending CR or not.
+    Closed(LineEnding),
+}
+
+impl EndingSoFar {
+    /// The ending after `read`. Hidden characters between a plain CR and the LF, such as
+    /// the SGR codes Git paints around a CR, leave the CR pending.
+    fn after(self, read: &Read) -> Self {
+        match (read.class, read.read_in, read.step, self) {
+            (Class::LineFeed, _, Step::Hidden(_), Self::CarriageReturn) => {
+                Self::Closed(LineEnding::CrLf)
+            }
+            (Class::LineFeed, _, Step::Hidden(_), Self::Open | Self::Closed(_)) => {
+                Self::Closed(LineEnding::Lf)
+            }
+            (Class::CarriageReturn, State::Ground, Step::Hidden(_), _) => Self::CarriageReturn,
+            (_, _, Step::Shown(_), _) | (_, _, Step::Hidden(_), Self::Closed(_)) => Self::Open,
+            (_, _, Step::Hidden(_), Self::Open | Self::CarriageReturn) => self,
+        }
+    }
+
+    /// The line's ending once every character is read: only an LF read last ends it.
+    fn line_ending(self) -> LineEnding {
+        match self {
+            Self::Closed(ending) => ending,
+            Self::Open | Self::CarriageReturn => LineEnding::None,
+        }
     }
 }
 
 /// The visible text of `bytes`, decoded as lossy UTF-8.
 pub fn sanitize(bytes: &[u8]) -> String {
-    visible(bytes).map(|decoded| decoded.character).collect()
+    ReadLine::of(bytes).sanitized
 }
 
 /// A character decoded from input, with the source bytes it was decoded from.
@@ -141,10 +155,11 @@ struct DecodedChar {
     character: char,
 }
 
-/// One character as the scanner read it: the state it was read in, and what reading it
-/// did.
+/// One character as the scanner read it: its class, the state it was read in, and what
+/// reading it did.
 struct Read {
     decoded: DecodedChar,
+    class: Class,
     read_in: State,
     step: Step,
 }
@@ -169,14 +184,16 @@ impl<I: Iterator<Item = DecodedChar>> Iterator for Scan<I> {
 
     fn next(&mut self) -> Option<Read> {
         let decoded = self.decoded.next()?;
+        let class = Class::of(decoded.character);
         let read_in = self.state;
-        let step = read_in.read(Class::of(decoded.character));
+        let step = read_in.read(class);
 
         self.state = match step {
             Step::Shown(next) | Step::Hidden(next) => next,
         };
         Some(Read {
             decoded,
+            class,
             read_in,
             step,
         })
@@ -261,6 +278,7 @@ enum State {
 
 /// What reading one character does: shows it or hides it, and the state reading moves
 /// the scanner to.
+#[derive(Clone, Copy)]
 enum Step {
     Shown(State),
     Hidden(State),
@@ -295,6 +313,10 @@ enum Class {
     Bell,
     /// Tab: the one visible control character.
     Tab,
+    /// CR: a hidden control, and in plain text the start of a CRLF ending.
+    CarriageReturn,
+    /// LF: a hidden control, and the end of a line.
+    LineFeed,
     /// Any other C0 control character.
     OtherC0,
     /// DEL.
@@ -325,6 +347,8 @@ impl Class {
             '\u{1b}' => Self::Escape,
             '\u{7}' => Self::Bell,
             '\t' => Self::Tab,
+            '\r' => Self::CarriageReturn,
+            '\n' => Self::LineFeed,
             '\u{0}'..='\u{1f}' => Self::OtherC0,
             '\u{7f}' => Self::Delete,
             '\u{20}'..='\u{2f}' => Self::Intermediate,
@@ -368,7 +392,11 @@ impl State {
             }
             (
                 Ground | Escape | EscapeIntermediate | ControlSequence,
-                Class::Bell | Class::OtherC0 | Class::Delete,
+                Class::Bell
+                | Class::CarriageReturn
+                | Class::LineFeed
+                | Class::OtherC0
+                | Class::Delete,
             ) => Step::Hidden(self),
             (Escape | EscapeIntermediate, Class::NonAscii) => Step::Shown(Ground),
             (Escape | EscapeIntermediate, Class::Intermediate) => Step::Hidden(EscapeIntermediate),
@@ -384,6 +412,8 @@ impl State {
             (
                 OscString | CommandString,
                 Class::Tab
+                | Class::CarriageReturn
+                | Class::LineFeed
                 | Class::OtherC0
                 | Class::Delete
                 | Class::Intermediate
@@ -457,6 +487,7 @@ mod tests {
             (b"a\n", LineEnding::Lf),
             (b"a", LineEnding::None),
             (b"a\r", LineEnding::None),
+            (b"a\n\x1b[m", LineEnding::None),
         ] {
             assert_eq!(SourceLine::decode(line).line_ending(), ending, "{line:?}");
         }
