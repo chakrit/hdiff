@@ -46,7 +46,7 @@ impl TabStops {
 
 /// A borrowed [`MeasuredText`]: a payload and the terminal cells it covers once its tabs
 /// are expanded.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct MeasuredTextRef<'a> {
     text: &'a str,
     cells: Cells,

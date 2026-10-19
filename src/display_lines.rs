@@ -70,7 +70,7 @@ impl<'a> DisplayLine<'a> {
 }
 
 /// The line ending a source line ends with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 enum LineEnding {
     None,
     Lf,

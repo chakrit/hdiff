@@ -190,7 +190,7 @@ struct ParseBase<'p, 'h> {
 
 // Languages
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Language {
     Rust,
     JavaScript,
