@@ -355,7 +355,7 @@ impl BlockRows {
         // A block is uniform, so its lines all carry a side exactly when it is changed.
         let changed = block
             .iter()
-            .map(|(line, side)| side.map(|side| (*line, side)))
+            .map(|(line, changed_side)| changed_side.map(|side| (*line, side)))
             .collect::<Option<Vec<_>>>();
 
         match changed {

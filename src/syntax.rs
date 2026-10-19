@@ -44,7 +44,8 @@ impl SyntaxClass {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxSpan {
-    pub span: PayloadSpan,
+    /// The payload bytes the class covers.
+    pub bytes: PayloadSpan,
     pub capture_length: usize,
     pub class: SyntaxClass,
 }
@@ -67,10 +68,8 @@ impl SyntaxHighlighter {
     }
 
     /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the
-    /// record it styles.
-    ///
-    /// docs/spec/architecture.md#technology-direction: context stays textual when the
-    /// paths select different languages.
+    /// record it styles. Context stays textual when the paths select different languages.
+    /// Rules: docs/spec/architecture.md#technology-direction.
     fn highlight_hunk<'h>(
         &mut self,
         headers: &BySide<FileHeader>,
@@ -117,8 +116,8 @@ impl SyntaxHighlighter {
             }
             None => languages
                 .zip(projections.as_ref())
-                .map(|(language, projection)| {
-                    language
+                .map(|(selected, projection)| {
+                    selected
                         .and_then(|language| {
                             self.highlight_projection(language, projection, None, observer)
                         })
@@ -144,9 +143,9 @@ impl SyntaxHighlighter {
         let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
 
         let tree = observer.measure(Stage::Parse, |observer| {
-            let edited_base = base.map(|(base_projection, mut tree)| {
-                tree.edit(&base_projection.edit_to(projection));
-                tree
+            let edited_base = base.map(|(base_projection, mut base_tree)| {
+                base_tree.edit(&base_projection.edit_to(projection));
+                base_tree
             });
             observer.count(Work::ParseCall);
             highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
@@ -185,11 +184,11 @@ enum Language {
 
 impl Language {
     fn for_header(path: &HeaderPath) -> Option<Self> {
-        let HeaderPath::Path(path) = path else {
+        let HeaderPath::Path(text) = path else {
             return None;
         };
 
-        match path.rsplit_once('.')?.1 {
+        match text.rsplit_once('.')?.1 {
             "rs" => Some(Self::Rust),
             "js" | "jsx" => Some(Self::JavaScript),
             "py" => Some(Self::Python),
@@ -394,7 +393,7 @@ impl<'h> Projection<'h> {
 
                 let payload = &self.source[record.source.clone()];
                 let span = SyntaxSpan {
-                    span: PayloadSpan::within(payload, clipped),
+                    bytes: PayloadSpan::within(payload, clipped),
                     capture_length,
                     class,
                 };
@@ -493,8 +492,8 @@ mod tests {
             highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
 
         assert_eq!(highlights[1][0].class, SyntaxClass::Keyword);
-        assert_eq!(highlights[1][0].span.start(), 0);
-        assert_eq!(highlights[1][0].span.end(), 2);
+        assert_eq!(highlights[1][0].bytes.start(), 0);
+        assert_eq!(highlights[1][0].bytes.end(), 2);
     }
 
     /// docs/spec/architecture.md#technology-direction: matching languages use the new
@@ -571,7 +570,7 @@ mod tests {
                         .iter()
                         .position(|projected| projected.record == position)
                         .expect("a mapped span names a projected record");
-                    (projected_index, span.span.start(), span.span.end())
+                    (projected_index, span.bytes.start(), span.bytes.end())
                 })
                 .collect::<Vec<_>>()
         });
