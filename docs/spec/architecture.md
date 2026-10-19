@@ -90,9 +90,9 @@ path.
 document; it owns neither the terminal nor the input source.
 
 ```text
-Tui::new(document, screen, color depth)  starts at the first page
-tui.run(&mut terminal, events)           draws, then steps each event until Exit
-tui.step(&mut terminal, event)           event -> Event -> Exit | Redraw | Effect -> draw
+Tui::start(document, screen, color depth)  starts at the first page
+tui.run(&mut terminal, events)             draws, then steps each event until Exit
+tui.step(&mut terminal, event)             event -> Event -> Exit | Redraw | Effect -> draw
 ```
 
 Output is Ratatui's `Terminal<B: Backend>`. Input is any

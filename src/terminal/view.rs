@@ -55,14 +55,17 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
         theme,
     };
 
+    // The shown lines carry the shape they were measured for, so the diff area is divided
+    // by that shape.
+    let diff = geometry.diff();
     match navigation.shown() {
         ShownLines::Single(lines) => {
             let pane_lines = lines.map(|screen_line| screen_line.map(PaneRow::Text));
-            let pane = ContinuityFrame::diff_pane(geometry.single_pane());
+            let pane = ContinuityFrame::diff_pane(diff);
             pane_drawing.render(frame, pane, pane_lines);
         }
         ShownLines::Split { direction, lines } => {
-            let split = geometry.split_panes(direction);
+            let split = SplitPanes::of(diff, direction);
             render_split_rows(frame, lines, split, &pane_drawing);
         }
     }
@@ -73,10 +76,10 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
             render_file_column(frame, column.list, selection, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
         }
-        None => render_help_box(frame, screen, &theme.chrome),
+        None => render_help_box(frame, diff, &theme.chrome),
     }
     if let KeymapPopup::Open = interaction.keymap() {
-        render_keymap_popup(frame, geometry.diff(), theme);
+        render_keymap_popup(frame, diff, theme);
     }
 }
 

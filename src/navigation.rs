@@ -78,7 +78,7 @@ impl Navigation {
     pub fn shown(&self) -> ShownLines<'_> {
         let granularity = self.interaction.preferences().granularity;
         let offset = self.interaction.scroll().position().vertical;
-        let limit = self.view.pane_content().height;
+        let limit = self.view.geometry().pane_content().height;
 
         self.extent
             .shown(&self.document, granularity, offset, limit)
@@ -172,14 +172,14 @@ impl Navigation {
 fn pane_line(view: &EffectiveView, anchor: AnchorLine) -> ScreenLines {
     match anchor {
         AnchorLine::PaneTop => ScreenLines::ZERO,
-        AnchorLine::PaneMiddle => view.pane_content().height.half(),
+        AnchorLine::PaneMiddle => view.geometry().pane_content().height.half(),
     }
 }
 
 /// What `view` shows a page's rows with at `preferences`' context count.
 fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSettings {
     ExtentSettings {
-        shape: view.shape(),
+        shape: view.geometry().shape(),
         context: preferences.context,
         wrap: view.wrap(),
     }
@@ -189,7 +189,7 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
 /// and only unwrapped rows scroll horizontally. The vertical offset always names a line,
 /// even when a too-short screen shows no pane.
 fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> ScrollBounds {
-    let content = view.pane_content();
+    let content = view.geometry().pane_content();
     let shown_lines = content.height.max(ScreenLines::ONE);
 
     ScrollBounds::new(

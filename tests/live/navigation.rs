@@ -341,7 +341,7 @@ fn context_changes_keep_the_middle_row() {
 /// records show on either side of a change.
 #[test]
 fn preferences_start_in_unified_line_mode() {
-    let tui = Tui::new(
+    let tui = Tui::start(
         PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
         SCREEN,
         ColorDepth::TrueColor,

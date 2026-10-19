@@ -53,7 +53,7 @@ pub struct Tui {
 impl Tui {
     /// The first page of `document` in the initial preferences on a `screen`-sized
     /// terminal, drawn in the palette for `color_depth`.
-    pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
+    pub fn start(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
         Self {
             navigation: Navigation::start(document, ViewPreferences::INITIAL, screen),
             theme: Theme::of_depth(color_depth),
