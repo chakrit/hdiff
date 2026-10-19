@@ -249,7 +249,7 @@ impl SplitPanes {
     fn content(self) -> PaneContent {
         self.panes
             .map(PaneContent::inside)
-            .merge(PaneContent::narrowest)
+            .merge(PaneContent::common)
     }
 }
 
@@ -272,8 +272,9 @@ impl PaneContent {
         }
     }
 
-    /// The narrower width and the shorter height of `self` and `other`.
-    fn narrowest(self, other: Self) -> Self {
+    /// The content both `self` and `other` hold: the narrower width and the shorter
+    /// height.
+    fn common(self, other: Self) -> Self {
         Self {
             width: self.width.min(other.width),
             height: self.height.min(other.height),
@@ -327,7 +328,7 @@ impl FrameEdges {
     }
 
     /// The content inside a frame over `area`.
-    pub fn inside(self, area: Rect) -> Rect {
+    fn inside(self, area: Rect) -> Rect {
         Rect::new(
             area.x + self.columns,
             area.y + self.rows,
