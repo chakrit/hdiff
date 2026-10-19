@@ -13,7 +13,6 @@ use crate::{
     preferences::{ContextRecords, DiffGranularity},
     prepared::{PageIndex, PreparedDocument, PreparedPage},
     screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
-    side::BySide,
     styling::StyledRow,
 };
 
@@ -41,15 +40,6 @@ impl<R> RowLine<R> {
             row: convert(self.row),
             wrapped_line: self.wrapped_line,
         }
-    }
-}
-
-impl<T> RowLine<BySide<T>> {
-    /// The same screen line of each side's row.
-    pub fn split(self) -> BySide<RowLine<T>> {
-        let wrapped_line = self.wrapped_line;
-
-        self.row.map(|row| RowLine { row, wrapped_line })
     }
 }
 
