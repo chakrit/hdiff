@@ -23,12 +23,14 @@ pub(super) fn event_for(event: TerminalEvent) -> Option<Event> {
     }
 }
 
+/// The event `key` is bound to; none when no binding names it.
 fn event_bound_to(key: Key) -> Option<Event> {
     all_bindings()
         .find(|binding| binding.key == key)
         .map(|binding| binding.action.event())
 }
 
+/// Every binding the keymap popup lists, in table order.
 fn all_bindings() -> impl Iterator<Item = Binding> {
     GROUPS
         .iter()
@@ -66,6 +68,7 @@ pub(super) enum Key {
 }
 
 impl Key {
+    /// The key `key` presses as the bindings name it; none for any other modifier set.
     fn of(key: KeyEvent) -> Option<Self> {
         const NONE: KeyModifiers = KeyModifiers::NONE;
         const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
@@ -95,6 +98,7 @@ impl Key {
         }
     }
 
+    /// The key as the keymap popup shows it.
     pub(super) fn label(self) -> String {
         match self {
             Self::Char(character) => character.to_string(),
@@ -131,6 +135,7 @@ impl KeyAction {
         }
     }
 
+    /// The session event this action sends.
     const fn event(self) -> Event {
         match self {
             Self::Command(command) => Event::Command(command),
@@ -203,6 +208,7 @@ pub(super) struct ShortcutGroup {
     pub(super) shortcuts: &'static [Shortcut],
 }
 
+/// `key` bound to `command`.
 const fn binds(key: Key, command: Command) -> Binding {
     Binding {
         key,
@@ -210,10 +216,12 @@ const fn binds(key: Key, command: Command) -> Binding {
     }
 }
 
+/// `key` bound to `movement`.
 const fn movement(key: Key, movement: Movement) -> Binding {
     binds(key, Command::Movement(movement))
 }
 
+/// `key` bound to the preference `change`.
 const fn preference(key: Key, change: PreferenceChange) -> Binding {
     binds(key, Command::Preference(change))
 }

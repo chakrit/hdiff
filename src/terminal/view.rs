@@ -95,6 +95,8 @@ struct PaneDrawing<'a> {
 }
 
 impl PaneDrawing<'_> {
+    /// Writes `lines` into `pane`'s content rows, then marks the frame where rows were
+    /// clipped and where the window has lines past an edge.
     fn render<'a>(
         &self,
         frame: &mut Frame,
@@ -118,6 +120,8 @@ impl PaneDrawing<'_> {
         pane.draw_window_markers(buffer, self.window, &self.theme.chrome);
     }
 
+    /// Where wrapped line `wrapped_line` of a row is placed: at the horizontal offset
+    /// when rows are unwrapped, or as that line of the row broken at the wrap width.
     fn placement(&self, wrapped_line: ScreenLines) -> RowPlacement {
         match self.wrap {
             WrapWidth::Off | WrapWidth::NoPayload => RowPlacement::Scrolled {

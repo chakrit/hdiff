@@ -51,6 +51,8 @@ pub struct Tui {
 }
 
 impl Tui {
+    /// The first page of `document` in the initial preferences on a `screen`-sized
+    /// terminal, drawn in the palette for `color_depth`.
     pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
         Self {
             navigation: Navigation::start(document, ViewPreferences::INITIAL, screen),
@@ -139,6 +141,8 @@ impl Iterator for TtyEvents {
 }
 
 impl TtyEvents {
+    /// `event`, or, when it is a resize, the last of the resizes already waiting behind
+    /// it; the first other event waiting is kept for the next read.
     fn coalesce_resize(&mut self, event: TerminalEvent) -> io::Result<TerminalEvent> {
         let TerminalEvent::Resize(..) = event else {
             return Ok(event);
