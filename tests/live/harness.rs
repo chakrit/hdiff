@@ -253,14 +253,13 @@ pub fn cells(text: &str) -> u16 {
 }
 
 /// The foregrounds a file row draws its marker and its name in.
-#[derive(Debug, Clone, Copy)]
 pub struct FileRowColors {
     pub marker: Color,
     pub name: Color,
 }
 
 /// The layout and granularity a session starts in.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Mode {
     pub layout: DiffLayout,
     pub granularity: DiffGranularity,

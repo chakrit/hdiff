@@ -171,7 +171,6 @@ impl RestoreStep {
 
 /// How far a session got into the terminal modes it enters, each implying the ones
 /// before.
-#[derive(Debug)]
 enum Entered {
     RawMode,
     AlternateScreen,
@@ -298,7 +297,6 @@ fn report_after_panic(failure: &PanicRestoreFailure) {
 }
 
 /// Why a panic's restore left the terminal as the panic found it, in part or whole.
-#[derive(Debug)]
 enum PanicRestoreFailure {
     /// The controlling terminal could not be reopened.
     Reopen(io::Error),

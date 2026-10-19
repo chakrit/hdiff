@@ -29,7 +29,6 @@ pub use session::{
 
 /// How the viewer writes its output. Rules:
 /// docs/spec/architecture.md#input-and-terminal-boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
     Finite,
     Interactive,

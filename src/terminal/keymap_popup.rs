@@ -37,7 +37,7 @@ const DIAMOND_SPACE: &str = " ";
 const COLUMN_GAP: u16 = 3;
 
 /// How many columns of groups the popup lays out.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 enum Columns {
     One,
     Two,

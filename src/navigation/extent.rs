@@ -17,7 +17,7 @@ use crate::{
 
 /// What a page's rows are shown with: the pane shape, the context count, and the wrap
 /// width.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExtentSettings {
     pub shape: PaneShape,
     pub context: ContextRecords,
@@ -26,7 +26,7 @@ pub struct ExtentSettings {
 
 /// One screen line: wrapped line `wrapped_line`, counted from the row's first, of row
 /// `row`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RowLine<R> {
     pub row: R,
     pub wrapped_line: ScreenLines,
@@ -54,7 +54,6 @@ impl<T> RowLine<BySide<T>> {
 /// The rows of one page that one pane shape shows at one context count and wrap width,
 /// their screen lines, and the widest row. A viewport's vertical offset indexes these
 /// lines; the extent resolves its rows on its own page, so its indexes reach no other.
-#[derive(Debug)]
 pub struct ScrollExtent {
     page: PageIndex,
     context: ContextRecords,
@@ -274,7 +273,6 @@ impl<'a> Iterator for PageLines<'a, PairIndex> {
 }
 
 /// The visible rows: a single pane shows lines, and split panes show pairs.
-#[derive(Debug)]
 enum VisibleRows {
     Single(MeasuredRows<LineIndex>),
     Split {
@@ -286,14 +284,12 @@ enum VisibleRows {
 /// Visible rows in display order, each with the line just past its last screen line, and
 /// the cells of the widest row. A row and its line end are held together, so no row lacks
 /// one.
-#[derive(Debug)]
 struct MeasuredRows<R> {
     rows: Box<[PlacedRow<R>]>,
     width: Cells,
 }
 
 /// A visible row and the screen line just past its last one.
-#[derive(Debug)]
 struct PlacedRow<R> {
     row: R,
     line_end: LineEnd,
@@ -395,7 +391,7 @@ impl<R> FromIterator<MeasuredRow<R>> for MeasuredRows<R> {
 
 /// The screen line just past a visible row's last one, retained as compactly as a line
 /// record's counts.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct LineEnd(Count);
 
 impl LineEnd {
@@ -475,7 +471,6 @@ fn measured_row<R>(
 }
 
 /// One line's payload cells and the screen lines it takes.
-#[derive(Clone, Copy)]
 struct LineSize {
     payload_width: Cells,
     height: ScreenLines,
