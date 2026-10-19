@@ -13,6 +13,8 @@ pub struct OutputContext<'a, Writer> {
 }
 
 impl WriteOutput<'_> {
+    /// Writes every byte to the context's writer; a broken pipe is the reader leaving,
+    /// so it ends output without an error.
     pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> Result<(), Error> {
         match context.writer.write_all(self.bytes) {
             Ok(()) => Ok(()),

@@ -24,6 +24,8 @@ pub struct InstallGitDiffPagerReport {
 }
 
 impl InstallGitDiffPager {
+    /// Plans the whole install before changing anything, then backs up the global config
+    /// when it exists and sets the pager, reporting each command once it has applied.
     pub fn run(
         self,
         context: &mut GlobalGitConfigContext,

@@ -14,6 +14,7 @@ pub struct ReportError<'a, E> {
 }
 
 impl<E: Display> ReportError<'_, E> {
+    /// Writes the error's message, prefixed line by line, as one write.
     pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> Result<(), Error> {
         let message = error_output::prefixed(&self.error.to_string());
 

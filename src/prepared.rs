@@ -165,6 +165,7 @@ impl PageCount {
 }
 
 impl FilePage {
+    /// The prepared page for a listed file, beside the file-list row that names it.
     fn of(
         listed: ListedFile<'_>,
         syntax: &mut SyntaxHighlighter,
@@ -206,6 +207,7 @@ impl PreparedPage {
         self.rows.row(index, granularity)
     }
 
+    /// How many hunk records the page's rows show; a text page shows none.
     fn record_count(&self) -> usize {
         self.rows.rows().record_count()
     }
