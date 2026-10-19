@@ -424,8 +424,8 @@ mod tests {
         );
     }
 
-    /// Rules: docs/spec/architecture.md#keyboard-bindings: Shift types the character it
-    /// shifts, and a chord the table does not bind does nothing.
+    /// docs/spec/architecture.md#keyboard-bindings: Shift types the character it shifts,
+    /// and a chord the table does not bind does nothing.
     #[test]
     fn admits_only_the_modifiers_the_bindings_name() {
         let alt = KeyModifiers::ALT;

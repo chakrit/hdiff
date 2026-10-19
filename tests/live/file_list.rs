@@ -119,6 +119,7 @@ fn colors_markers_by_state() {
     assert_ne!(name, deleted, "names are not colored by state");
 }
 
+/// docs/spec/architecture.md#continuity-markers: the file list marks rows past each edge.
 #[test]
 fn marks_files_beyond_the_file_list() {
     let mut live = Live::load(&many_files(40), Mode::line(DiffLayout::Unified));
@@ -127,8 +128,6 @@ fn marks_files_beyond_the_file_list() {
         (list.matches('▴').count(), list.matches('▾').count())
     };
 
-    // docs/spec/architecture.md#continuity-markers: the file list marks rows past each
-    // edge.
     assert_eq!(live.file_list()[FIRST_CONTENT_LINE], "~ file_00.rs");
     assert_eq!(markers(&live), (0, 1), "files below the list");
     for _ in 0..36 {

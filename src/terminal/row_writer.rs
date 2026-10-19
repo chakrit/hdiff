@@ -267,14 +267,14 @@ mod tests {
 
     const THEME: &Theme = Theme::for_depth(ColorDepth::TrueColor);
 
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering preserves
+    /// source text through styling.
     #[test]
     fn syntax_highlighting_preserves_source_text() {
         let prepared = prepare(
             b"--- a/example.rs\n+++ b/example.rs\n@@ -1,3 +1,3 @@\n fn example() {\n-    let excluded = ace.excluded_mcp();\n+    let excluded = ace.excluded_mcp()?;\n }\n",
         );
 
-        // docs/spec/architecture.md#lossless-and-safe-rendering: lossless rendering
-        // preserves source text through styling.
         assert_eq!(
             rendered_rows(&prepared, 120),
             [
@@ -311,6 +311,8 @@ mod tests {
         );
     }
 
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: style boundaries never split
+    /// or drop a grapheme cluster.
     #[test]
     fn keeps_a_cluster_whole_when_its_mark_starts_a_style_segment() {
         let prepared = prepare("--- a/t\n+++ b/t\n@@ -1 +1 @@\n-ก\n+ก่\n".as_bytes());
@@ -319,11 +321,11 @@ mod tests {
 
         let buffer = write(PaneRow::Text(addition), 8, 0);
 
-        // docs/spec/architecture.md#lossless-and-safe-rendering: style boundaries never
-        // split or drop a grapheme cluster.
         assert_eq!(buffer[(2, 0)].symbol(), "ก่");
     }
 
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: a wide grapheme cut by the
+    /// left pane edge renders its visible cells blank, keeping later text in its column.
     #[test]
     fn blanks_the_visible_cell_of_a_wide_cluster_cut_by_the_left_edge() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
@@ -332,9 +334,6 @@ mod tests {
 
         let buffer = write(PaneRow::Text(addition), 8, 3);
 
-        // docs/spec/architecture.md#lossless-and-safe-rendering: a wide grapheme cut by
-        // the left pane edge renders its visible cells blank, keeping later text in its
-        // column.
         assert_eq!(buffer[(0, 0)].symbol(), " ");
         assert_eq!(buffer[(0, 0)].bg, THEME.rows.change.new.background);
         assert_eq!(buffer[(1, 0)].symbol(), "x");
@@ -379,6 +378,8 @@ mod tests {
         assert_eq!(past_the_end[(5, 0)].bg, THEME.rows.change.new.background);
     }
 
+    /// docs/spec/architecture.md#continuity-markers: the row has cells left of the offset,
+    /// or continues past the right edge.
     #[test]
     fn reports_the_sides_where_a_row_leaves_the_pane() {
         let prepared = prepare("--- a/c\n+++ b/c\n@@ -0,0 +1 @@\n+abc界\n".as_bytes());
@@ -394,8 +395,6 @@ mod tests {
         };
         let sides = |left, right| Clip { left, right };
 
-        // docs/spec/architecture.md#continuity-markers: the row has cells left of the
-        // offset, or continues past the right edge.
         assert_eq!(clip(7, 0), sides(false, false), "the row fits");
         assert_eq!(
             clip(6, 0),

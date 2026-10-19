@@ -124,6 +124,8 @@ mod tests {
         Split,
     }
 
+    /// docs/spec/architecture.md#interaction-model: the minimum layout shows one content
+    /// line in each diff pane.
     #[test]
     fn derives_compact_pane_visibility_from_terminal_size() {
         let cases = [
@@ -148,8 +150,6 @@ mod tests {
             ((28, 7), DiffLayout::Stacked, Shown::Split),
         ];
 
-        // docs/spec/architecture.md#interaction-model: the minimum layout shows one
-        // content line in each diff pane.
         for ((width, height), layout, expected) in cases {
             let preferences = ViewPreferences {
                 layout,
