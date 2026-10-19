@@ -213,9 +213,7 @@ fn parse_binary_patch(lines: &mut Lines<'_>) -> Result<Vec<SourceLine>, ParseErr
 
         let payload_start = patch.len();
         while let Some(line) = lines.next_if(|text| !text.is_empty()) {
-            let text = line.sanitized();
-            lines.at_last_line(reject_unsupported_header(text))?;
-            if text.starts_with("diff --") || text.starts_with("--- ") {
+            if lines.at_last_line(line_start(line.sanitized()))? != LineStart::Text {
                 return Err(lines.last_line_error(Malformed::TruncatedBinaryPatch));
             }
             patch.push(line);
@@ -601,6 +599,28 @@ mod tests {
                 .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B")
         );
         assert_eq!(render_unified(&document), input);
+    }
+
+    #[test]
+    fn only_a_section_start_cuts_a_binary_payload_short() {
+        let patch = |payload: &str| {
+            format!(
+                "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\n{payload}\n\n"
+            )
+        };
+
+        assert_eq!(
+            parse_patch(patch("diff --git a/next b/next").as_bytes()),
+            malformed(5, Malformed::TruncatedBinaryPatch)
+        );
+        assert_eq!(
+            parse_patch(patch("--- a/next").as_bytes()),
+            malformed(5, Malformed::TruncatedBinaryPatch)
+        );
+        assert!(
+            parse_patch(patch("diff --stat").as_bytes()).is_ok(),
+            "a line that starts no section is not a new section inside a payload either"
+        );
     }
 
     /// Every file's unified body, in input order; each fixture file must be unified.
