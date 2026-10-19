@@ -116,6 +116,7 @@ fn write_clusters<'c>(
             break;
         }
     }
+
     cursor.clip
 }
 
@@ -335,6 +336,11 @@ mod tests {
         Written { buffer, clip }
     }
 
+    /// The width of a pane that holds the marker gutter and `payload` cells after it.
+    fn pane_width(payload: Cells) -> u16 {
+        (MARKER_GUTTER_WIDTH + payload).frame_columns()
+    }
+
     /// The cell of a one-line `buffer` that shows payload column `column` of a row
     /// scrolled right by `horizontal_offset`: past the marker gutter, less the offset.
     fn payload_cell(buffer: &Buffer, column: Cells, horizontal_offset: Cells) -> &Cell {
@@ -375,6 +381,7 @@ mod tests {
             text.push_str(symbol);
             x += symbol.cell_width().max(1);
         }
+
         text.trim_end().to_owned()
     }
 
@@ -444,7 +451,8 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+界x\n".as_bytes());
         let addition = first_added_row(&prepared, DiffGranularity::Line);
 
-        let offset = Cells::new(3);
+        // Scrolled past the gutter and the wide cluster's first cell.
+        let offset = MARKER_GUTTER_WIDTH + Cells::ONE;
         let buffer = scrolled_buffer(addition, 8, offset);
         let wide_second_cell = payload_cell(&buffer, Cells::ONE, offset);
 
@@ -458,7 +466,8 @@ mod tests {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+ab界\n".as_bytes());
         let addition = first_added_row(&prepared, DiffGranularity::Line);
 
-        let buffer = scrolled_buffer(addition, 5, Cells::ZERO);
+        let one_cell_short_of_the_wide_cluster = pane_width(Cells::of_text("ab") + Cells::ONE);
+        let buffer = scrolled_buffer(addition, one_cell_short_of_the_wide_cluster, Cells::ZERO);
 
         let wide_start = payload_cell(&buffer, Cells::new(2), Cells::ZERO);
 
@@ -471,12 +480,13 @@ mod tests {
     fn writes_each_wrapped_line_with_the_marker_on_the_first_only() {
         let prepared = prepare("--- a/w\n+++ b/w\n@@ -0,0 +1 @@\n+abcde界f\n".as_bytes());
         let addition = first_added_row(&prepared, DiffGranularity::Line);
+        let wrap_width = 4;
         let wrapped_line = |line| {
             let placement = RowPlacement::Wrapped {
                 line: ScreenLines::new(line),
-                width: NonZeroCells::of(4),
+                width: NonZeroCells::of(wrap_width),
             };
-            write_placed(addition, 6, placement).buffer
+            write_placed(addition, pane_width(Cells::new(wrap_width)), placement).buffer
         };
 
         let first = wrapped_line(0);
@@ -524,27 +534,30 @@ mod tests {
             right: true,
         };
 
-        assert_eq!(clip(7, Cells::ZERO), inside, "the row fits");
+        let fits = pane_width(Cells::of_text("abc界"));
+
+        assert_eq!(clip(fits, Cells::ZERO), inside, "the row fits");
         assert_eq!(
-            clip(6, Cells::ZERO),
+            clip(fits - 1, Cells::ZERO),
             past_right,
             "a wide cluster that does not fit"
         );
-        assert_eq!(clip(4, Cells::ONE), past_both);
-        assert_eq!(clip(6, Cells::ONE), past_left);
+        assert_eq!(clip(fits - 3, Cells::ONE), past_both);
+        assert_eq!(clip(fits - 1, Cells::ONE), past_left);
         assert_eq!(
-            write_placed(row, 3, wrapped).clip,
+            write_placed(row, pane_width(Cells::ONE), wrapped).clip,
             inside,
             "a wrapped line shows its whole part of the row"
         );
     }
 
     #[test]
-    fn fills_an_alignment_peer_with_its_change_style_only() {
+    fn fills_an_alignment_peer_with_its_dimmed_change_background() {
         let buffer = scrolled_buffer(PaneRow::AlignmentPeer(Side::Old), 4, Cells::ZERO);
 
         assert_eq!(row_text(&buffer), "", "an alignment peer writes no text");
-        let modifier = last_cell(&buffer).modifier;
-        assert!(modifier.contains(Modifier::DIM), "{modifier:?}");
+        let cell = last_cell(&buffer);
+        assert_eq!(cell.bg, THEME.rows.change.old.background);
+        assert!(cell.modifier.contains(Modifier::DIM), "{:?}", cell.modifier);
     }
 }
