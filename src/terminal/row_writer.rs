@@ -237,10 +237,9 @@ impl RowCursor<'_> {
         }
     }
 
-    /// The frame column of pane cell `cell`: the one place pane cells become `u16`.
+    /// The frame column of pane cell `cell`.
     fn x(&self, cell: Cells) -> u16 {
-        let cell = u16::try_from(cell.get()).expect("visible cells fit the pane");
-        self.area.x + cell
+        self.area.x + cell.frame_columns()
     }
 }
 

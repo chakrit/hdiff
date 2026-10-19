@@ -64,6 +64,13 @@ impl Cells {
         (self.0..end.0).map(Self)
     }
 
+    /// These cells as a frame's `u16` columns: the one narrowing where a frame is drawn.
+    ///
+    /// Panics when they do not fit a frame.
+    pub fn frame_columns(self) -> u16 {
+        u16::try_from(self.0).expect("cells drawn on a frame fit u16")
+    }
+
     /// These cells less `other`, or `None` when `other` is more.
     pub const fn checked_sub(self, other: Self) -> Option<Self> {
         match self.0.checked_sub(other.0) {
@@ -146,6 +153,13 @@ impl ScreenLines {
     /// Half of these lines, rounded down.
     pub const fn half(self) -> Self {
         Self(self.0 / 2)
+    }
+
+    /// These lines as a frame's `u16` rows: the one narrowing where a frame is drawn.
+    ///
+    /// Panics when they do not fit a frame.
+    pub fn frame_rows(self) -> u16 {
+        u16::try_from(self.0).expect("lines drawn on a frame fit u16")
     }
 }
 

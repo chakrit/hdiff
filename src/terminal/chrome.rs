@@ -26,9 +26,13 @@ const MINIMUM_FILE_LIST_HEIGHT: u16 = 3;
 const HELP_HINT: &str = "? help";
 /// Columns before the file column's hint.
 const HELP_HINT_INDENT: u16 = 1;
-/// A border and a padding column on each side of the hint.
-const HELP_BOX_FRAME_WIDTH: u16 = 4;
-const HELP_BOX_HEIGHT: u16 = 3;
+/// Lines the hint takes.
+const HELP_HINT_HEIGHT: u16 = 1;
+
+/// The border's column or row on each side of a floating box.
+const FLOATING_BOX_BORDER: u16 = 1;
+/// Columns between a floating box's border and its content on each side.
+const FLOATING_BOX_PADDING: u16 = 1;
 
 /// Draws the file list above the help hint in the file-list column, selecting the row of
 /// the page's file; a text page selects none.
@@ -44,7 +48,10 @@ pub(super) fn render_file_column(
         PageKind::Text => None,
     };
     let list_height = MINIMUM_FILE_LIST_HEIGHT + PANE_FRAME_HEIGHT;
-    let hint_height = area.height.saturating_sub(list_height).min(1);
+    let hint_height = area
+        .height
+        .saturating_sub(list_height)
+        .min(HELP_HINT_HEIGHT);
     let [list_area, hint_area] = Layout::vertical([
         Constraint::Min(list_height),
         Constraint::Length(hint_height),
@@ -52,29 +59,75 @@ pub(super) fn render_file_column(
     .areas(area);
 
     render_file_list(frame, list_area, tree, selected_row, palette);
-    render_help_hint(frame.buffer_mut(), hint_area, palette);
+    draw_help_hint(frame.buffer_mut(), hint_area, palette);
 }
 
 /// The help hint in a box floating over the bottom-left corner of `area`, while the file list
 /// is hidden.
 pub(super) fn render_help_box(frame: &mut Frame, area: Rect, palette: &ChromePalette) {
-    let hint_width =
-        u16::try_from(Cells::of_text(HELP_HINT).get()).expect("the help hint fits a row");
-    let help_box = Rect::new(
-        area.x,
-        area.bottom().saturating_sub(HELP_BOX_HEIGHT),
-        hint_width + HELP_BOX_FRAME_WIDTH,
-        HELP_BOX_HEIGHT,
-    )
-    .intersection(area);
+    let hint_width = Cells::of_text(HELP_HINT).frame_columns();
+    let help_box = FloatingBox::bottom_left_of(area, hint_width, HELP_HINT_HEIGHT);
 
-    let border = Block::bordered()
-        .border_style(Style::default().fg(palette.separator))
-        .padding(Padding::horizontal(1));
+    let content = help_box.render(frame, palette);
     let text = Line::styled(HELP_HINT, Style::default().fg(palette.hint));
+    frame.render_widget(Paragraph::new(text), content);
+}
 
-    frame.render_widget(Clear, help_box);
-    frame.render_widget(Paragraph::new(text).block(border), help_box);
+/// A bordered box with a padding column inside each side, drawn over the chrome and panes it
+/// floats on, and clipped to the area it floats over.
+pub(super) struct FloatingBox {
+    area: Rect,
+}
+
+impl FloatingBox {
+    /// Columns the border and padding take across a box.
+    pub(super) const FRAME_WIDTH: u16 = 2 * (FLOATING_BOX_BORDER + FLOATING_BOX_PADDING);
+    /// Rows the border takes down a box.
+    const FRAME_HEIGHT: u16 = 2 * FLOATING_BOX_BORDER;
+
+    /// A box of `width` by `height` content in the bottom-left corner of `area`.
+    fn bottom_left_of(area: Rect, width: u16, height: u16) -> Self {
+        let height = height + Self::FRAME_HEIGHT;
+        let box_area = Rect::new(
+            area.x,
+            area.bottom().saturating_sub(height),
+            width + Self::FRAME_WIDTH,
+            height,
+        );
+
+        Self {
+            area: box_area.intersection(area),
+        }
+    }
+
+    /// A box of `width` by `height` content centered over `area`.
+    pub(super) fn centered_in(area: Rect, width: u16, height: u16) -> Self {
+        let width = width + Self::FRAME_WIDTH;
+        let height = height + Self::FRAME_HEIGHT;
+        let box_area = Rect::new(
+            area.x + area.width.saturating_sub(width) / 2,
+            area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        );
+
+        Self {
+            area: box_area.intersection(area),
+        }
+    }
+
+    /// Clears the box and draws its border, returning the content area inside the border
+    /// and padding.
+    pub(super) fn render(self, frame: &mut Frame, palette: &ChromePalette) -> Rect {
+        let border = Block::bordered()
+            .border_style(Style::default().fg(palette.separator))
+            .padding(Padding::horizontal(FLOATING_BOX_PADDING));
+        let content = border.inner(self.area);
+
+        frame.render_widget(Clear, self.area);
+        frame.render_widget(border, self.area);
+        content
+    }
 }
 
 /// The full-height separator between the file-list column and the diff panes.
@@ -249,7 +302,7 @@ fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
     ListItem::new(line)
 }
 
-fn render_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
+fn draw_help_hint(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
     if area.is_empty() {
         return;
     }
