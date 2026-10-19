@@ -111,7 +111,7 @@ impl DiffGranularity {
     }
 
     /// The other granularity.
-    pub const fn toggled(self) -> Self {
+    const fn toggled(self) -> Self {
         match self {
             Self::Line => Self::Character,
             Self::Character => Self::Line,
@@ -136,7 +136,7 @@ impl Wrapping {
     }
 
     /// The other wrapping state.
-    pub const fn toggled(self) -> Self {
+    const fn toggled(self) -> Self {
         match self {
             Self::Disabled => Self::Enabled,
             Self::Enabled => Self::Disabled,
@@ -155,12 +155,12 @@ impl ContextRecords {
     }
 
     /// One more context record.
-    pub const fn increased(self) -> Self {
+    const fn increased(self) -> Self {
         Self(self.0.saturating_add(1))
     }
 
     /// One fewer context record, stopping at none.
-    pub const fn decreased(self) -> Self {
+    const fn decreased(self) -> Self {
         Self(self.0.saturating_sub(1))
     }
 
@@ -179,7 +179,7 @@ pub enum FileList {
 
 impl FileList {
     /// The other file-list state.
-    pub const fn toggled(self) -> Self {
+    const fn toggled(self) -> Self {
         match self {
             Self::Shown => Self::Hidden,
             Self::Hidden => Self::Shown,
