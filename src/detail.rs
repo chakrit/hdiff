@@ -78,19 +78,19 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
         .as_ref()
         .merge(|old, new| diff_slices(Algorithm::Myers, old, new))
         .into_iter()
-        .map(|(tag, run)| (changed_side(tag), run))
+        .map(DiffRun::of)
         .peekable();
     let mut cursor = PairCursor::new(payloads);
 
-    while let Some((changed, run)) = changes.next() {
-        let replacement = changed.and_then(|side| {
+    while let Some(run) = changes.next() {
+        let replacement = run.changed.and_then(|side| {
             changes
-                .next_if(|(next, _)| next.is_some_and(|next| next != side))
-                .map(|(_, opposite)| BySide::of_side(side, run, opposite))
+                .next_if(|next| next.changed.is_some_and(|next_side| next_side != side))
+                .map(|opposite| BySide::of_side(side, run.items, opposite.items))
         });
         let token_run = match replacement {
             Some(runs) => TokenRun::Replaced(runs),
-            None => TokenRun::Marked(MarkedRun::of(changed, tokens_len(run))),
+            None => TokenRun::Marked(MarkedRun::of(run.changed, tokens_len(run.items))),
         };
         token_run.advance(&mut cursor);
     }
@@ -249,12 +249,23 @@ impl TokenRun<'_, '_> {
     }
 }
 
-/// The side a diff change lies on; a kept run lies on neither.
-fn changed_side(tag: ChangeTag) -> Option<Side> {
-    match tag {
-        ChangeTag::Equal => None,
-        ChangeTag::Delete => Some(Side::Old),
-        ChangeTag::Insert => Some(Side::New),
+/// One run of a diff between a pair's sequences: the side it changes, and its items.
+struct DiffRun<'r, T> {
+    /// The side the run changes; a kept run changes neither.
+    changed: Option<Side>,
+    items: &'r [T],
+}
+
+impl<'r, T> DiffRun<'r, T> {
+    /// The run a `diff_slices` change names: its tag decides the side it changes.
+    fn of((tag, items): (ChangeTag, &'r [T])) -> Self {
+        let changed = match tag {
+            ChangeTag::Equal => None,
+            ChangeTag::Delete => Some(Side::Old),
+            ChangeTag::Insert => Some(Side::New),
+        };
+
+        Self { changed, items }
     }
 }
 
@@ -294,12 +305,12 @@ fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<MarkedRun>> {
         .as_ref()
         .merge(|old, new| diff_slices(Algorithm::Myers, old, new))
         .into_iter()
-        .map(|(tag, graphemes)| (changed_side(tag), graphemes))
+        .map(DiffRun::of)
         .collect::<Vec<_>>();
     let common = changes
         .iter()
-        .filter(|(changed, _)| changed.is_none())
-        .map(|(_, graphemes)| graphemes.len())
+        .filter(|run| run.changed.is_none())
+        .map(|run| run.items.len())
         .sum::<usize>();
     let shortest = graphemes.as_ref().map(Vec::len).merge(usize::min);
 
@@ -307,9 +318,9 @@ fn similar_word_changes(runs: BySide<&[Token<'_>]>) -> Option<Vec<MarkedRun>> {
     similar.then(|| {
         changes
             .into_iter()
-            .map(|(changed, graphemes)| {
-                let bytes = graphemes.iter().map(|grapheme| grapheme.len()).sum();
-                MarkedRun::of(changed, bytes)
+            .map(|run| {
+                let bytes = run.items.iter().map(|grapheme| grapheme.len()).sum();
+                MarkedRun::of(run.changed, bytes)
             })
             .collect()
     })
@@ -411,7 +422,11 @@ mod tests {
         ] {
             let patch = format!("--- a/file\n+++ b/file\n@@ {hunk} @@\n{records}");
             let document = parse_patch(patch.as_bytes()).expect("valid unmatched diff");
-            let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
+            let views = document.file_views().collect::<Vec<_>>();
+            let [view] = views.as_slice() else {
+                panic!("{hunk}: the patch holds one file, not {}", views.len());
+            };
+            let rows = PageRows::of_file_view(*view);
             let details = character_details(&rows);
 
             for (index, line) in rows.lines() {
@@ -427,8 +442,31 @@ mod tests {
         }
     }
 
+    /// docs/spec/architecture.md#palette-and-character-detail: grapheme spans mark only
+    /// what differs between similar replacement words.
     #[test]
     fn marks_only_the_replaced_graphemes_in_a_changed_pair() {
+        let (old, new) = ("let café = call;", "let café = cell;");
+        let differing_grapheme = |payload: &str, word: &str, grapheme: &str| {
+            let word_start = payload.find(word).expect("the payload holds the word");
+            let in_word = word.find(grapheme).expect("the word holds the grapheme");
+            let start = word_start + in_word;
+            PayloadSpan::within(payload, start..start + grapheme.len())
+        };
+
+        assert_eq!(
+            spans_of(old, new),
+            BySide {
+                old: vec![differing_grapheme(old, "call", "a")],
+                new: vec![differing_grapheme(new, "cell", "e")],
+            }
+        );
+    }
+
+    /// docs/spec/architecture.md#palette-and-character-detail: an unrelated word that
+    /// replaces another inside an unchanged line is marked whole.
+    #[test]
+    fn marks_an_unrelated_replacement_word_whole_inside_an_unchanged_line() {
         let (old, new) = ("let café = old;", "let café = new;");
 
         assert_eq!(
