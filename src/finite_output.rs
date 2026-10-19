@@ -4,7 +4,7 @@
 use crate::{display_lines, document::DiffDocument};
 
 /// The document as finite output: every displayed line, in input order.
-pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
+pub fn of_document(document: &DiffDocument) -> Vec<u8> {
     let mut output = String::new();
     for line in display_lines::of_document(document) {
         line.write_text(&mut output);
@@ -14,7 +14,7 @@ pub fn render_unified(document: &DiffDocument) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::render_unified;
+    use super::of_document;
     use crate::parser::parse_patch;
 
     #[test]
@@ -22,7 +22,7 @@ mod tests {
         let input = b"\x1b[31mmessage\x1b[0m\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\x1b]8;;https://bad\x07footer\xff";
         let document = parse_patch(input).expect("diff with surrounding text");
 
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(
             rendered,
@@ -31,11 +31,11 @@ mod tests {
     }
 
     #[test]
-    fn renders_unified_structure_in_source_order() {
+    fn writes_diff_structure_in_source_order() {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n";
         let document = parse_patch(input).expect("valid diff");
 
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(rendered, input);
     }
@@ -45,7 +45,7 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-multiline.patch");
 
         let document = parse_patch(input).expect("valid Git fixture");
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(rendered, input);
     }
@@ -55,7 +55,7 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-rename-only.patch");
 
         let document = parse_patch(input).expect("valid metadata-only Git fixture");
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(rendered, input);
     }
@@ -65,7 +65,7 @@ mod tests {
         let input = include_bytes!("../tests/fixtures/git-multiline-coloured.patch");
 
         let document = parse_patch(input).expect("valid colored Git fixture");
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(
             rendered,
@@ -78,7 +78,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n\x1b]8;;https://bad\x07+new\n";
 
         let document = parse_patch(input).expect("valid diff with a controlled record");
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(
             rendered,
@@ -91,7 +91,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+tab\t e\xcc\x81 \xe7\x95\x8c \x1b[31mred\x1b[0m \x1b]8;;https://bad\x07link\x1bPbad\x1b\\\x01\n";
         let document = parse_patch(input).expect("valid diff");
 
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
 
         assert!(text.contains("tab\t e\u{301} \u{754c} red link"));
@@ -105,7 +105,7 @@ mod tests {
         let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+\xffnew\n";
         let document = parse_patch(input).expect("valid diff");
 
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
         let text = String::from_utf8(rendered).expect("safe UTF-8 output");
 
         assert!(text.contains("+\u{fffd}new\n"));
@@ -117,7 +117,7 @@ mod tests {
             b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file";
         let document = parse_patch(input).expect("valid diff with raw marker");
 
-        let rendered = render_unified(&document);
+        let rendered = of_document(&document);
 
         assert_eq!(rendered, input);
     }

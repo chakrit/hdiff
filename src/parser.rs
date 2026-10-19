@@ -477,7 +477,7 @@ mod tests {
     use super::{Malformed, ParseError, parse_comparison, parse_patch};
     use crate::{
         document::{DiffDocument, FileBody, Hunk, RecordKind, UnifiedBody},
-        render::render_unified,
+        finite_output,
     };
 
     fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, ParseError> {
@@ -490,7 +490,7 @@ mod tests {
 
         let document = parse_patch(input).expect("diff with surrounding text");
 
-        assert_eq!(render_unified(&document), input);
+        assert_eq!(finite_output::of_document(&document), input);
     }
 
     #[test]
@@ -507,7 +507,7 @@ mod tests {
 
         let document = parse_comparison(input).expect("text-only comparison output");
 
-        assert_eq!(render_unified(&document), input);
+        assert_eq!(finite_output::of_document(&document), input);
     }
 
     #[test]
@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(header.metadata.len(), 2);
         assert_eq!(views[0].leading[0].sanitized(), "message");
         assert_eq!(views[0].trailing[0].sanitized(), "footer");
-        assert_eq!(render_unified(&document), input);
+        assert_eq!(finite_output::of_document(&document), input);
     }
 
     #[test]
@@ -605,7 +605,7 @@ mod tests {
                 .iter()
                 .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B")
         );
-        assert_eq!(render_unified(&document), input);
+        assert_eq!(finite_output::of_document(&document), input);
     }
 
     #[test]
