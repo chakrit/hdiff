@@ -153,11 +153,7 @@ enum RowVisibility {
 
 impl PageRows {
     pub fn of_file(view: &FileView<'_>) -> Self {
-        let lines = display_lines::of_text(view.leading)
-            .chain(display_lines::of_file(view.file))
-            .chain(display_lines::of_text(view.trailing));
-
-        Self::new(lines)
+        Self::new(display_lines::of_file_view(*view))
     }
 
     /// The rows of a document that holds only surrounding text.
@@ -222,7 +218,9 @@ impl PageRows {
         // line order.
         placed.sort_by_key(|(line, _)| *line);
 
-        LineMap(placed.into_iter().map(|(_, value)| value).collect())
+        let values = placed.into_iter().map(|(_, line_value)| line_value);
+
+        LineMap(values.collect())
     }
 
     pub fn pair(&self, index: PairIndex) -> SideBySideRow<LineIndex> {
@@ -405,13 +403,13 @@ impl BlockRows {
 }
 
 fn row_visibility(rendered_lines: &[RenderedLine]) -> Vec<RowVisibility> {
-    let before = distances_from_previous_change(rendered_lines.iter());
-    let mut after = distances_from_previous_change(rendered_lines.iter().rev());
-    after.reverse();
+    let distances_before = distances_from_previous_change(rendered_lines.iter());
+    let mut distances_after = distances_from_previous_change(rendered_lines.iter().rev());
+    distances_after.reverse();
 
     rendered_lines
         .iter()
-        .zip(before.into_iter().zip(after))
+        .zip(distances_before.into_iter().zip(distances_after))
         .map(|(line, (before, after))| {
             if !is_context_line(line) {
                 return RowVisibility::Always;
@@ -451,7 +449,7 @@ fn is_context_line(line: &RenderedLine) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{LineIndex, PageRows, RenderedLine, SideBySideRow};
+    use super::{PageRows, RenderedLine, SideBySideRow};
     use crate::{display_lines::LineKind, parser::parse_patch};
 
     fn rows_of(patch: &[u8]) -> PageRows {
@@ -464,16 +462,18 @@ mod tests {
         format!("{}{}", line.kind().marker(), line.payload())
     }
 
-    fn shown_lines(rows: &PageRows, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
-        lines.map(|line| shown(rows.line(line))).collect()
+    /// Every line of `rows` as a reader sees it, in line order.
+    fn shown_lines(rows: &PageRows) -> Vec<String> {
+        rows.line_indices()
+            .map(|line| shown(rows.line(line)))
+            .collect()
     }
 
     #[test]
     fn payloads_exclude_the_record_marker_and_line_ending() {
-        let input =
-            b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file";
-        let document = parse_patch(input).expect("valid diff");
-        let rows = PageRows::of_file(&document.file_views().next().expect("first file"));
+        let rows = rows_of(
+            b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file",
+        );
 
         let payloads = rows
             .lines()
@@ -500,11 +500,12 @@ mod tests {
             b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
         )
         .expect("valid multi-file diff");
-        let view = PageRows::of_file(&document.file_views().nth(1).expect("second file"));
-        assert_eq!(view.line(view.line_index(2)).kind(), LineKind::HunkHeader);
-        assert_eq!(view.line(view.line_index(5)).kind(), LineKind::HunkHeader);
+        let rows = PageRows::of_file(&document.file_views().nth(1).expect("second file"));
+
+        assert_eq!(rows.line(rows.line_index(2)).kind(), LineKind::HunkHeader);
+        assert_eq!(rows.line(rows.line_index(5)).kind(), LineKind::HunkHeader);
         assert_eq!(
-            shown_lines(&view, view.line_indices()),
+            shown_lines(&rows),
             [
                 "--- a/second",
                 "+++ b/second",
@@ -521,30 +522,28 @@ mod tests {
     #[test]
     fn lays_out_a_metadata_only_file() {
         let patch = include_str!("../tests/fixtures/git-rename-only.patch");
-        let view = rows_of(patch.as_bytes());
+        let rows = rows_of(patch.as_bytes());
+
         assert!(
-            view.lines()
+            rows.lines()
                 .all(|(_, line)| matches!(line.kind(), LineKind::Metadata))
         );
-        assert_eq!(
-            shown_lines(&view, view.line_indices()),
-            patch.lines().collect::<Vec<_>>()
-        );
+        assert_eq!(shown_lines(&rows), patch.lines().collect::<Vec<_>>());
     }
 
     #[test]
     fn aligns_asymmetric_changed_blocks_with_blank_vertical_peers() {
-        let view = rows_of(
+        let rows = rows_of(
             b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
         );
-        let text = |line| shown(view.line(line));
-        let pairs = view
+        let text = |line| shown(rows.line(line));
+        let pairs = rows
             .pair_indices()
-            .map(|index| view.pair(index))
+            .map(|index| rows.pair(index))
             .collect::<Vec<_>>();
 
         assert_eq!(pairs.len(), 6);
-        assert_eq!(view.lines().count(), 7);
+        assert_eq!(rows.lines().count(), 7);
         assert!(matches!(
             pairs[3],
             SideBySideRow::Paired(lines)
