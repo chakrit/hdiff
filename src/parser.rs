@@ -237,7 +237,9 @@ fn parse_unified(
     let mut ended = BySide::<bool>::default();
     while let Some(header) = lines.next_if(starts_hunk_header) {
         let expected = lines.at_last_line(hunk_counts(header.sanitized()))?;
-        hunks.push(parse_hunk(header, expected, &mut ended, lines)?);
+        let hunk = parse_hunk(header, expected, ended, lines)?;
+        ended = ended.or(hunk.ended_sides());
+        hunks.push(hunk);
     }
     let Some(hunks) = NonEmpty::of(hunks) else {
         return Err(lines.next_line_error(Malformed::FileWithoutHunks));
