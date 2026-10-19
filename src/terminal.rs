@@ -149,14 +149,9 @@ impl Iterator for TtyEvents {
     type Item = io::Result<TerminalEvent>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let event = match self.pending.take() {
-            Some(event) => event,
-            None => match event::read() {
-                Ok(event) => event,
-                Err(error) => return Some(Err(error)),
-            },
-        };
-        Some(self.coalesce_resize(event))
+        let event = self.pending.take().map_or_else(event::read, Ok);
+
+        Some(event.and_then(|event| self.coalesce_resize(event)))
     }
 }
 
