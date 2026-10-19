@@ -14,7 +14,7 @@ use self::{
 };
 use crate::{
     effective_view::EffectiveView,
-    extent::{DisplayExtent, ExtentSettings},
+    extent::{ExtentSettings, ScrollExtent},
     preferences::ViewPreferences,
     prepared::PreparedDocument,
     screen::ScreenLines,
@@ -25,7 +25,7 @@ use crate::{
 pub struct Navigation {
     interaction: Interaction,
     view: EffectiveView,
-    extent: DisplayExtent,
+    extent: ScrollExtent,
 }
 
 impl Navigation {
@@ -39,7 +39,7 @@ impl Navigation {
         Self {
             interaction,
             view,
-            extent: DisplayExtent::of(document, interaction.page(), settings),
+            extent: ScrollExtent::of(document, interaction.page(), settings),
         }
     }
 
@@ -51,7 +51,7 @@ impl Navigation {
         &self.view
     }
 
-    pub fn extent(&self) -> &DisplayExtent {
+    pub fn extent(&self) -> &ScrollExtent {
         &self.extent
     }
 
@@ -152,7 +152,7 @@ fn settings_of(preferences: ViewPreferences, view: &EffectiveView) -> ExtentSett
 
 /// The limits of `extent` shown in `view`: content scrolls until its end fills the pane.
 /// The vertical offset always names a line, even when a too-short screen shows no pane.
-fn bounds_of(extent: &DisplayExtent, view: &EffectiveView) -> DisplayBounds {
+fn bounds_of(extent: &ScrollExtent, view: &EffectiveView) -> DisplayBounds {
     let content = view.pane_content();
     let shown_lines = content.height.max(ScreenLines::ONE);
 
