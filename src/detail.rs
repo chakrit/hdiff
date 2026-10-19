@@ -7,7 +7,7 @@ use similar::{Algorithm, ChangeTag, utils::diff_slices};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    page_rows::{LineIndex, LineMap, PageRows, SideBySideRow},
+    page_rows::{LineIndex, LineMap, PageRows},
     side::{BySide, Side},
     span::PayloadSpan,
 };
@@ -27,23 +27,10 @@ pub fn character_details(rows: &PageRows) -> LineMap<Option<ChangedDetail>> {
         is_payload.then_some(line)
     };
 
-    rows.line_values_by_pair(|row| match row {
-        SideBySideRow::Shared(_) => BySide::default(),
-        SideBySideRow::Paired(lines) => changed_payload_details(rows, lines.map(payload_line)),
-        SideBySideRow::OldOnly(line) => changed_payload_details(
-            rows,
-            BySide {
-                old: payload_line(line),
-                new: None,
-            },
-        ),
-        SideBySideRow::NewOnly(line) => changed_payload_details(
-            rows,
-            BySide {
-                old: None,
-                new: payload_line(line),
-            },
-        ),
+    rows.line_values_by_pair(|row| {
+        let payload_lines = row.changed_lines().map(|line| line.and_then(payload_line));
+
+        changed_payload_details(rows, payload_lines)
     })
 }
 
