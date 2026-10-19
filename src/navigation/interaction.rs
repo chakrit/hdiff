@@ -54,22 +54,30 @@ impl Interaction {
         self.keymap
     }
 
-    /// What `event` asks of the session among `pages` pages.
+    /// What `event` asks of the session among `pages` pages, once the keymap popup has
+    /// filtered its command.
     pub fn respond(&self, event: Event, pages: PageCount) -> Outcome {
-        let effect = match event {
-            Event::Interrupt | Event::Command(Command::Quit) => return Outcome::Exit,
+        let command = match event {
+            Event::Interrupt => return Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
-            // before it responds and every frame adopts as it draws.
+            // before it applies an effect and every frame adopts as it draws.
             Event::Resize => return Outcome::Redraw,
-            Event::Command(Command::Movement(movement)) => Effect::Scroll(movement),
-            Event::Command(Command::Page(step)) => Effect::TurnPage(step.applied(self.page, pages)),
-            Event::Command(Command::Keymap(command)) => Effect::Keymap(self.keymap.after(command)),
-            Event::Command(Command::Preference(change)) => Effect::Redisplay {
+            Event::Command(command) => command,
+        };
+        let Some(command) = self.keymap.admit(command) else {
+            return Outcome::Ignored;
+        };
+
+        let effect = match command {
+            Command::Quit => return Outcome::Exit,
+            Command::Movement(movement) => Effect::Scroll(movement),
+            Command::Page(step) => Effect::TurnPage(step.applied(self.page, pages)),
+            Command::Keymap(command) => Effect::Keymap(self.keymap.after(command)),
+            Command::Preference(change) => Effect::Redisplay {
                 preferences: self.preferences.after(change),
                 placement: placement_after(change),
             },
         };
-
         Outcome::Effect(effect)
     }
 
@@ -128,9 +136,14 @@ pub enum KeymapPopup {
 }
 
 impl KeymapPopup {
+    /// Whether `command` closes the popup while it is open.
+    pub fn closes(command: Command) -> bool {
+        Self::Open.admit(command) == Some(Command::Keymap(KeymapCommand::Close))
+    }
+
     /// The command this popup lets through: while open, only its close keys act, all
     /// closing it; while closed, there is nothing to close.
-    pub fn admit(self, command: Command) -> Option<Command> {
+    fn admit(self, command: Command) -> Option<Command> {
         match (self, command) {
             (Self::Closed, Command::Keymap(KeymapCommand::Close)) => None,
             (Self::Closed, command) => Some(command),
@@ -165,16 +178,6 @@ pub enum Event {
     Resize,
 }
 
-impl Event {
-    /// The event once `keymap` filters bound commands; session events always apply.
-    pub fn admitted(self, keymap: KeymapPopup) -> Option<Self> {
-        match self {
-            Self::Command(command) => keymap.admit(command).map(Self::Command),
-            Self::Interrupt | Self::Resize => Some(self),
-        }
-    }
-}
-
 /// What a bound key asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -201,12 +204,13 @@ impl PageStep {
 }
 
 /// What an event asks of the session: to end it, to draw it again at the terminal's size,
-/// or to change the interaction.
+/// to change the interaction, or nothing, for a command the keymap popup filters out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Exit,
     Redraw,
     Effect(Effect),
+    Ignored,
 }
 
 /// What an event does to the interaction, before navigation places the scroll position.
@@ -393,12 +397,17 @@ mod tests {
     /// nothing.
     #[test]
     fn admits_only_closing_keys_interrupts_and_resizes_while_the_keymap_is_open() {
-        let open = KeymapPopup::Open;
+        let closed = interaction(PageIndex::FIRST, DiffLayout::Unified);
+        let open = closed.keymap_switched(KeymapPopup::Open);
         let close = Command::Keymap(KeymapCommand::Close);
-        let resize = Event::Resize;
+        let respond = |interaction: Interaction, event| interaction.respond(event, TWO_PAGES);
 
         for closing in [Command::Keymap(KeymapCommand::Toggle), close, Command::Quit] {
-            assert_eq!(open.admit(closing), Some(close));
+            assert_eq!(
+                respond(open, command(closing)),
+                Outcome::Effect(Effect::Keymap(KeymapPopup::Closed)),
+                "{closing:?}"
+            );
         }
         for ignored in [
             Command::Movement(Movement::Down),
@@ -406,15 +415,16 @@ mod tests {
             Command::Preference(PreferenceChange::NextLayout),
             Command::Preference(PreferenceChange::ToggleFileList),
         ] {
-            assert_eq!(open.admit(ignored), None);
+            assert_eq!(
+                respond(open, command(ignored)),
+                Outcome::Ignored,
+                "{ignored:?}"
+            );
         }
-        assert_eq!(Event::Interrupt.admitted(open), Some(Event::Interrupt));
-        assert_eq!(resize.admitted(open), Some(resize));
-        assert_eq!(
-            KeymapPopup::Closed.admit(Command::Quit),
-            Some(Command::Quit)
-        );
-        assert_eq!(KeymapPopup::Closed.admit(close), None);
+        assert_eq!(respond(open, Event::Interrupt), Outcome::Exit);
+        assert_eq!(respond(open, Event::Resize), Outcome::Redraw);
+        assert_eq!(respond(closed, command(Command::Quit)), Outcome::Exit);
+        assert_eq!(respond(closed, command(close)), Outcome::Ignored);
     }
 
     #[test]

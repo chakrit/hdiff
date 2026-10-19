@@ -47,11 +47,9 @@ pub(crate) fn character_for(command: Command) -> Option<char> {
 /// The keys that close the open keymap popup, in table order: every key whose command the
 /// open popup turns into closing it.
 pub(super) fn keymap_closing_keys() -> impl Iterator<Item = Key> {
-    let close = Command::Keymap(KeymapCommand::Close);
-
     all_bindings()
-        .filter(move |binding| match binding.action {
-            KeyAction::Command(command) => KeymapPopup::Open.admit(command) == Some(close),
+        .filter(|binding| match binding.action {
+            KeyAction::Command(command) => KeymapPopup::closes(command),
             KeyAction::Interrupt => false,
         })
         .map(|binding| binding.key)
