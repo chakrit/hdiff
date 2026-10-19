@@ -1,5 +1,7 @@
 //! Movement, file rotation, layout and preference changes, resizing, and exiting.
 
+use std::iter;
+
 use hdiff::{
     navigation::Step,
     parser::parse_patch,
@@ -124,10 +126,12 @@ fn layout_cycle(mode: Mode) {
     let side_by_side = live.find(old).y == live.find(new).y;
     assert_eq!(side_by_side, mode.layout == DiffLayout::Vertical);
 
-    for _ in DiffLayout::ALL {
-        let layout = live.preferences().layout;
+    let cycle = iter::successors(Some(mode.layout), |layout| Some(layout.next()))
+        .skip(1)
+        .take(DiffLayout::ALL.len());
+    for expected in cycle {
         live.press('v');
-        assert_eq!(live.preferences().layout, layout.next());
+        assert_eq!(live.preferences().layout, expected);
         assert!(live.shows(old) && live.shows(new));
     }
     assert_eq!(

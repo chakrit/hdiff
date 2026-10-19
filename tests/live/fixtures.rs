@@ -46,6 +46,12 @@ pub fn directory_name(index: usize) -> String {
     format!("dir_{index:02}")
 }
 
+/// The file list's heading row for the directory of file `index` in
+/// [`files_in_directories`].
+pub fn directory_row(index: usize) -> String {
+    format!("{}/", directory_name(index))
+}
+
 /// How many `x` graphemes the wide row of [`long_patch`] holds.
 pub const WIDE_ROW_GRAPHEMES: usize = 200;
 

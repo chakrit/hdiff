@@ -32,8 +32,11 @@ impl<'a> SideBySideRow<StyledRow<'a>> {
         match self {
             Self::Shared(row) => BySide::both(PaneRow::Text(row)),
             Self::Paired(rows) => rows.map(PaneRow::Text),
-            Self::Unmatched { side, line } => BySide::only(side, line)
-                .map_sides(|pane, row| row.map_or(PaneRow::AlignmentPeer(pane), PaneRow::Text)),
+            Self::Unmatched { side, line } => {
+                BySide::only(side, line).map_sides(|pane_side, row| {
+                    row.map_or(PaneRow::AlignmentPeer(pane_side), PaneRow::Text)
+                })
+            }
         }
     }
 }

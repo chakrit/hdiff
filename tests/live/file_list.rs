@@ -4,7 +4,7 @@ use hdiff::preferences::DiffLayout;
 
 use crate::{
     fixtures::{
-        MODIFIED_ROW_PREFIX, TREE_PATCH, directory_name, file_name, files_in_directories,
+        MODIFIED_ROW_PREFIX, TREE_PATCH, directory_row, file_name, files_in_directories,
         listed_row, many_files, paired_patch,
     },
     harness::{FIRST_CONTENT_LINE, HEIGHT, Live, Mode, change_label},
@@ -247,12 +247,9 @@ fn keeps_a_selection_below_its_headings_visible() {
         .iter()
         .position(|row| *row == listed_row(selected))
         .expect("the selected file stays listed below its heading rows");
-    assert_eq!(
-        list[selected_row - 1],
-        format!("{}/", directory_name(selected))
-    );
+    assert_eq!(list[selected_row - 1], directory_row(selected));
     assert!(
-        !live.shows(&format!("{}/", directory_name(0))),
+        !live.shows(&directory_row(0)),
         "the list scrolls past earlier headings"
     );
 }
