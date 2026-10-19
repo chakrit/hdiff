@@ -265,7 +265,7 @@ fn changed_side(tag: ChangeTag) -> Option<Side> {
 /// changed on one.
 enum GraphemeChange {
     Kept(usize),
-    Changed(Side, usize),
+    Changed { side: Side, bytes: usize },
 }
 
 impl GraphemeChange {
@@ -274,7 +274,7 @@ impl GraphemeChange {
     fn of(tag: ChangeTag, bytes: usize) -> Self {
         match changed_side(tag) {
             None => Self::Kept(bytes),
-            Some(side) => Self::Changed(side, bytes),
+            Some(side) => Self::Changed { side, bytes },
         }
     }
 
@@ -282,7 +282,7 @@ impl GraphemeChange {
     fn advance(self, cursor: &mut PairCursor<'_>) {
         match self {
             Self::Kept(bytes) => cursor.pass(bytes),
-            Self::Changed(side, bytes) => cursor.mark(side, bytes),
+            Self::Changed { side, bytes } => cursor.mark(side, bytes),
         }
     }
 }
