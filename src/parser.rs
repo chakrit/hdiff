@@ -2,8 +2,8 @@ use std::{fmt, iter, mem};
 
 use crate::{
     document::{
-        ContextMarker, DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind,
-        UnifiedBody,
+        ContextMarker, DiffDocument, DiffFile, FileBody, FileSection, Hunk, MetadataBody, Record,
+        RecordKind, UnifiedBody,
     },
     file_identity::FileIdentity,
     headers::{
@@ -55,6 +55,7 @@ pub enum Malformed {
     MissingBinaryPatchBlock,
     UnmarkedHunkLine,
     MisplacedNoNewlineMarker,
+    MissingGitMetadata,
 }
 
 impl Malformed {
@@ -76,6 +77,7 @@ impl Malformed {
             Self::MissingBinaryPatchBlock => "missing binary patch block",
             Self::UnmarkedHunkLine => "unmarked line in hunk",
             Self::MisplacedNoNewlineMarker => "no-newline marker does not follow a record",
+            Self::MissingGitMetadata => "Git header has no extended header or file headers",
         }
     }
 }
@@ -170,14 +172,17 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
         line: header,
         metadata: metadata.into_boxed_slice(),
     };
-    let file = match lines.next_file_header(Side::Old) {
-        Some(old) => parse_unified(Some(git), old, lines)?,
-        None => DiffFile {
-            identity: FileIdentity::of_metadata(&git),
-            body: FileBody::Metadata(git),
-        },
+    if let Some(old) = lines.next_file_header(Side::Old) {
+        return parse_unified(Some(git), old, lines);
+    }
+
+    let Some(body) = MetadataBody::of(git) else {
+        return Err(lines.next_line_error(Malformed::MissingGitMetadata));
     };
-    Ok(file)
+    Ok(DiffFile {
+        identity: FileIdentity::of_metadata(body.git()),
+        body: FileBody::Metadata(body),
+    })
 }
 
 /// Whether `text` is one of Git's extended header lines after `diff --git`.
@@ -710,18 +715,31 @@ mod tests {
         }
     }
 
+    /// docs/spec/architecture.md#input-contract: Git writes an extended header after
+    /// every `diff --git` line it gives no `---` / `+++` headers.
+    #[test]
+    fn rejects_a_git_header_with_nothing_after_it() {
+        for input in ["diff --git a/x b/x\n", "diff --git a/x b/x\nhello\n"] {
+            assert_eq!(
+                parse_patch(input.as_bytes()),
+                malformed(2, Malformed::MissingGitMetadata),
+                "{input}"
+            );
+        }
+    }
+
     #[test]
     fn keeps_text_separate_from_metadata_only_files() {
         let input =
             b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
         let document = parse_patch(input).expect("mode-only diff with text");
         let views = document.file_views().collect::<Vec<_>>();
-        let FileBody::Metadata(header) = &views[0].file.body else {
+        let FileBody::Metadata(body) = &views[0].file.body else {
             panic!("mode-only diff is metadata");
         };
 
         assert_eq!(views.len(), 1);
-        assert_eq!(header.metadata.len(), 2);
+        assert_eq!(body.git().metadata.len(), 2);
         assert_eq!(views[0].leading[0].sanitized(), "message");
         assert_eq!(views[0].trailing[0].sanitized(), "footer");
         assert_eq!(finite_output::of_document(&document), input);
@@ -732,18 +750,18 @@ mod tests {
         let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
         let document = parse_patch(input).expect("binary diff with text");
         let view = document.file_views().next().expect("binary file");
-        let FileBody::Metadata(header) = &view.file.body else {
+        let FileBody::Metadata(body) = &view.file.body else {
             panic!("binary diff is metadata");
         };
 
+        let metadata = &body.git().metadata;
+
         assert_eq!(view.trailing[0].sanitized(), "footer");
         assert!(
-            header
-                .metadata
+            metadata
                 .iter()
                 .any(|line| line.sanitized() == "KcmZQzWC8#H2LJ>B"),
-            "the binary payload line is kept in {:?}",
-            header.metadata
+            "the binary payload line is kept in {metadata:?}"
         );
         assert_eq!(finite_output::of_document(&document), input);
     }

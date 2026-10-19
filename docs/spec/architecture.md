@@ -221,7 +221,8 @@ before that file's unified headers. ANSI control sequences are ignored for struc
 recognition while the original source bytes remain available for safe rendering.
 
 Metadata-only Git sections, including binary changes, pure renames, and mode-only changes,
-are valid review content and render without requiring unified headers or hunks.
+are valid review content and render without requiring unified headers or hunks. A
+`diff --git` line followed by neither an extended header nor file headers is malformed.
 
 ## Initial CLI surface
 
