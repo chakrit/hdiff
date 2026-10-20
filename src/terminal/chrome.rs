@@ -95,8 +95,12 @@ impl FloatingBox {
     pub(super) fn centered_in(area: Rect, content: Size) -> Self {
         Self::placed(area, content, |size| {
             Position::new(
-                AxisSpan::columns_of(area).less(size.width).halfway(),
-                AxisSpan::rows_of(area).less(size.height).halfway(),
+                AxisSpan::columns_of(area)
+                    .remaining_after(size.width)
+                    .halfway(),
+                AxisSpan::rows_of(area)
+                    .remaining_after(size.height)
+                    .halfway(),
             )
         })
     }

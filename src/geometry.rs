@@ -400,7 +400,7 @@ impl AxisSpan {
 
     /// The run left at this run's start once `taken` cells are set aside from its
     /// length; none are left when `taken` covers the whole run.
-    pub const fn less(self, taken: u16) -> Self {
+    pub const fn remaining_after(self, taken: u16) -> Self {
         Self {
             start: self.start,
             length: self.length.saturating_sub(taken),
