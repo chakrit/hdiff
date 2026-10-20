@@ -209,12 +209,12 @@ const fn interrupts(key: Key) -> Binding {
 }
 
 /// `key` bound to the scroll `motion`.
-const fn movement(key: Key, motion: Movement) -> Binding {
+const fn moves(key: Key, motion: Movement) -> Binding {
     binds(key, Command::Movement(motion))
 }
 
 /// `key` bound to the preference `change`.
-const fn preference(key: Key, change: PreferenceChange) -> Binding {
+const fn changes(key: Key, change: PreferenceChange) -> Binding {
     binds(key, Command::Preference(change))
 }
 
@@ -224,42 +224,42 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
         heading: "Scroll",
         shortcuts: &[
             Shortcut::Diamond {
-                up: movement(Key::Char('k'), Movement::Up),
-                left: movement(Key::Char('h'), Movement::Left),
-                right: movement(Key::Char('l'), Movement::Right),
-                down: movement(Key::Char('j'), Movement::Down),
+                up: moves(Key::Char('k'), Movement::Up),
+                left: moves(Key::Char('h'), Movement::Left),
+                right: moves(Key::Char('l'), Movement::Right),
+                down: moves(Key::Char('j'), Movement::Down),
                 action: "scroll",
             },
             Shortcut::Keys {
                 bindings: &[
-                    movement(Key::Down, Movement::Down),
-                    movement(Key::Up, Movement::Up),
+                    moves(Key::Down, Movement::Down),
+                    moves(Key::Up, Movement::Up),
                 ],
                 action: "down / up",
             },
             Shortcut::Keys {
                 bindings: &[
-                    movement(Key::Control('d'), Movement::HalfPageDown),
-                    movement(Key::Control('u'), Movement::HalfPageUp),
+                    moves(Key::Control('d'), Movement::HalfPageDown),
+                    moves(Key::Control('u'), Movement::HalfPageUp),
                 ],
                 action: "half page down / up",
             },
             Shortcut::Keys {
                 bindings: &[
-                    movement(Key::Char('g'), Movement::Top),
-                    movement(Key::Char('G'), Movement::Bottom),
+                    moves(Key::Char('g'), Movement::Top),
+                    moves(Key::Char('G'), Movement::Bottom),
                 ],
                 action: "top / bottom",
             },
             Shortcut::Keys {
                 bindings: &[
-                    movement(Key::Char('0'), Movement::FarLeft),
-                    movement(Key::Char('^'), Movement::FarLeft),
+                    moves(Key::Char('0'), Movement::FarLeft),
+                    moves(Key::Char('^'), Movement::FarLeft),
                 ],
                 action: "far left",
             },
             Shortcut::Keys {
-                bindings: &[movement(Key::Char('$'), Movement::FarRight)],
+                bindings: &[moves(Key::Char('$'), Movement::FarRight)],
                 action: "far right",
             },
         ],
@@ -275,7 +275,7 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
                 action: "next / previous file",
             },
             Shortcut::Keys {
-                bindings: &[preference(Key::Char('e'), PreferenceChange::ToggleFileList)],
+                bindings: &[changes(Key::Char('e'), PreferenceChange::ToggleFileList)],
                 action: "show / hide file list",
             },
         ],
@@ -284,24 +284,21 @@ pub(super) const GROUPS: [ShortcutGroup; 4] = [
         heading: "View",
         shortcuts: &[
             Shortcut::Keys {
-                bindings: &[preference(Key::Char('v'), PreferenceChange::NextLayout)],
+                bindings: &[changes(Key::Char('v'), PreferenceChange::NextLayout)],
                 action: "cycle layout",
             },
             Shortcut::Keys {
-                bindings: &[preference(
-                    Key::Char('c'),
-                    PreferenceChange::ToggleGranularity,
-                )],
+                bindings: &[changes(Key::Char('c'), PreferenceChange::ToggleGranularity)],
                 action: "character detail",
             },
             Shortcut::Keys {
-                bindings: &[preference(Key::Char('w'), PreferenceChange::ToggleWrapping)],
+                bindings: &[changes(Key::Char('w'), PreferenceChange::ToggleWrapping)],
                 action: "wrap",
             },
             Shortcut::Keys {
                 bindings: &[
-                    preference(Key::Char('+'), PreferenceChange::IncreaseContext),
-                    preference(Key::Char('-'), PreferenceChange::DecreaseContext),
+                    changes(Key::Char('+'), PreferenceChange::IncreaseContext),
+                    changes(Key::Char('-'), PreferenceChange::DecreaseContext),
                 ],
                 action: "more / less context",
             },
