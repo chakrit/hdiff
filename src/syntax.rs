@@ -232,17 +232,17 @@ enum Language {
 impl Language {
     /// The language a header path's extension selects; a path without a known
     /// extension, or a header without a path, selects none.
-    fn of_header(path: &HeaderPath) -> Option<Self> {
-        match path {
-            HeaderPath::Path(text) => Self::of_path(text),
+    fn of_header(header_path: &HeaderPath) -> Option<Self> {
+        match header_path {
+            HeaderPath::Path(path) => Self::of_path(path),
             HeaderPath::DevNull | HeaderPath::Undecodable => None,
         }
     }
 
     /// The language a path's extension selects; a path without a known extension
     /// selects none.
-    fn of_path(text: &str) -> Option<Self> {
-        let (_, extension) = text.rsplit_once('.')?;
+    fn of_path(path: &str) -> Option<Self> {
+        let (_, extension) = path.rsplit_once('.')?;
         match extension {
             "rs" => Some(Self::Rust),
             "js" | "jsx" => Some(Self::JavaScript),
@@ -452,9 +452,12 @@ impl<'h> Projection<'h> {
         capture: Range<usize>,
         class: SyntaxClass,
     ) -> impl Iterator<Item = RecordEntry<'h, SyntaxSpan>> + '_ {
-        let first_record = self.first_overlapping_record(capture.start);
-        let capture_end = capture.end;
         let capture_length = capture.len();
+        let Range {
+            start: capture_start,
+            end: capture_end,
+        } = capture;
+        let first_record = self.first_overlapping_record(capture_start);
 
         self.records
             .iter()
@@ -462,8 +465,8 @@ impl<'h> Projection<'h> {
             .take_while(move |record| record.payload_bytes.start < capture_end)
             .filter_map(move |record| {
                 let offset = record.payload_bytes.start;
-                let clipped_start = capture.start.max(offset) - offset;
-                let clipped_end = capture.end.min(record.payload_bytes.end) - offset;
+                let clipped_start = capture_start.max(offset) - offset;
+                let clipped_end = capture_end.min(record.payload_bytes.end) - offset;
                 let clipped = clipped_start..clipped_end;
                 if clipped.is_empty() {
                     return None;
