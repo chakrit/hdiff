@@ -96,40 +96,68 @@ fn changed_pair_spans(payloads: BySide<&str>) -> BySide<Vec<PayloadSpan>> {
     }
 
     cursor
-        .spans
-        .zip(payloads)
+        .marked()
         .map(|(spans, payload)| coalesce_tiny_equal_islands(spans, payload))
 }
 
 /// Walks a changed pair's payloads together, marking the changed spans of each side.
 struct PairCursor<'a> {
-    payloads: BySide<&'a str>,
-    offsets: BySide<usize>,
-    spans: BySide<Vec<PayloadSpan>>,
+    sides: BySide<SideCursor<'a>>,
 }
 
 impl<'a> PairCursor<'a> {
     fn new(payloads: BySide<&'a str>) -> Self {
         Self {
-            payloads,
-            offsets: BySide::default(),
-            spans: BySide::default(),
+            sides: payloads.map(SideCursor::new),
         }
     }
 
     /// Passes the next `bytes` bytes of both sides, which are equal, unmarked.
     fn pass(&mut self, bytes: usize) {
-        self.offsets = self.offsets.map(|offset| offset + bytes);
+        for side in self.sides.iter_mut() {
+            side.pass(bytes);
+        }
     }
 
     /// Marks the next `bytes` bytes of `side` changed.
     fn mark(&mut self, side: Side, bytes: usize) {
-        let start = *self.offsets.get(side);
-        let end = start + bytes;
+        self.sides.get_mut(side).mark(bytes);
+    }
 
-        let span = PayloadSpan::within(self.payloads.get(side), start..end);
-        self.spans.get_mut(side).push(span);
-        *self.offsets.get_mut(side) = end;
+    /// Each side's payload with the spans marked on it.
+    fn marked(self) -> BySide<(Vec<PayloadSpan>, &'a str)> {
+        self.sides.map(|side| (side.spans, side.payload))
+    }
+}
+
+/// One side of a changed pair as the walk reads it: its payload, how far the walk has
+/// read it, and the spans marked on it so far.
+struct SideCursor<'a> {
+    payload: &'a str,
+    offset: usize,
+    spans: Vec<PayloadSpan>,
+}
+
+impl<'a> SideCursor<'a> {
+    fn new(payload: &'a str) -> Self {
+        Self {
+            payload,
+            offset: 0,
+            spans: Vec::new(),
+        }
+    }
+
+    /// Passes the next `bytes` bytes unmarked.
+    fn pass(&mut self, bytes: usize) {
+        self.offset += bytes;
+    }
+
+    /// Marks the next `bytes` bytes changed.
+    fn mark(&mut self, bytes: usize) {
+        let end = self.offset + bytes;
+        self.spans
+            .push(PayloadSpan::within(self.payload, self.offset..end));
+        self.offset = end;
     }
 }
 
