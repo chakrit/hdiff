@@ -100,10 +100,10 @@ fn check_payload_line(text: &str) -> Result<(), Malformed> {
 /// groups of five characters, each group holding four bytes, with no more than three
 /// bytes of filler.
 fn is_payload_line(text: &str) -> bool {
-    let Some((count_character, encoded)) = text.split_at_checked(1) else {
+    let Some((&count_byte, encoded)) = text.as_bytes().split_first() else {
         return false;
     };
-    let Some(byte_count) = payload_byte_count(count_character) else {
+    let Some(byte_count) = payload_byte_count(count_byte) else {
         return false;
     };
 
@@ -113,7 +113,7 @@ fn is_payload_line(text: &str) -> bool {
     let fits =
         groups > 0 && whole_groups && byte_count <= held && byte_count > held - BASE85_GROUP_BYTES;
 
-    fits && encoded.bytes().all(|byte| BASE85.contains(&byte))
+    fits && encoded.iter().all(|byte| BASE85.contains(byte))
 }
 
 /// The characters in one base-85 group.
@@ -126,15 +126,11 @@ const BASE85_GROUP_BYTES: usize = 4;
 const BASE85: &[u8] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~";
 
-/// The byte count a payload line's first character states; none for any other character.
-fn payload_byte_count(stated: &str) -> Option<usize> {
-    let [byte] = stated.as_bytes() else {
-        return None;
-    };
-
-    match byte {
-        b'A'..=b'Z' => Some(usize::from(byte - b'A') + 1),
-        b'a'..=b'z' => Some(usize::from(byte - b'a') + 27),
+/// The byte count a payload line's first byte states; none for any other byte.
+fn payload_byte_count(stated: u8) -> Option<usize> {
+    match stated {
+        b'A'..=b'Z' => Some(usize::from(stated - b'A') + 1),
+        b'a'..=b'z' => Some(usize::from(stated - b'a') + 27),
         _ => None,
     }
 }
