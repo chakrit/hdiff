@@ -540,7 +540,10 @@ fn distances_from_previous_change<'a>(
 
 /// Whether `line` shows an unchanged record of a hunk.
 fn is_context_line(line: &RenderedLine) -> bool {
-    matches!(line.kind().record_kind(), Some(RecordKind::Context(_)))
+    match line.kind().record_kind() {
+        Some(RecordKind::Context(_)) => true,
+        Some(RecordKind::Addition | RecordKind::Deletion) | None => false,
+    }
 }
 
 #[cfg(test)]
