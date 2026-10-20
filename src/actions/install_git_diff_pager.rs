@@ -261,10 +261,14 @@ mod tests {
     };
 
     use super::{Error, InstallPlan, PathRole, backup_path};
-    use crate::actions::global_git_config::GitConfigEnvironment;
+    use crate::actions::global_git_config::{GitConfigEnvironment, GitConfigVariables};
 
     fn environment_for(config_path: &Path) -> GitConfigEnvironment {
-        GitConfigEnvironment::of(Some(config_path.as_os_str().to_owned()), None, None)
+        GitConfigEnvironment::of(GitConfigVariables {
+            git_config_global: Some(config_path.as_os_str().to_owned()),
+            home: None,
+            xdg_config_home: None,
+        })
     }
 
     #[test]
@@ -326,11 +330,11 @@ mod tests {
         fs::create_dir_all(xdg_config.parent().expect("config directory"))
             .expect("create config directory");
         fs::write(&xdg_config, "").expect("write xdg config");
-        let environment = GitConfigEnvironment::of(
-            None,
-            Some(home.path().as_os_str().to_owned()),
-            Some("".into()),
-        );
+        let environment = GitConfigEnvironment::of(GitConfigVariables {
+            git_config_global: None,
+            home: Some(home.path().as_os_str().to_owned()),
+            xdg_config_home: Some("".into()),
+        });
 
         let plan = InstallPlan::of_registered(&environment, Path::new("/bin/hdiff")).expect("plan");
 

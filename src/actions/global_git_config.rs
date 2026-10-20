@@ -18,6 +18,14 @@ pub struct GitConfigEnvironment {
     xdg_config_home: Option<OsString>,
 }
 
+/// The values of the variables that decide the global Git config, each by name so no two
+/// can be passed in each other's place; `None` is unset.
+pub struct GitConfigVariables {
+    pub git_config_global: Option<OsString>,
+    pub home: Option<OsString>,
+    pub xdg_config_home: Option<OsString>,
+}
+
 const GIT_CONFIG_GLOBAL: &str = "GIT_CONFIG_GLOBAL";
 const HOME: &str = "HOME";
 const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
@@ -25,19 +33,21 @@ const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
 impl GitConfigEnvironment {
     /// The variables as this process received them.
     pub fn of_process() -> Self {
-        Self::of(
-            env::var_os(GIT_CONFIG_GLOBAL),
-            env::var_os(HOME),
-            env::var_os(XDG_CONFIG_HOME),
-        )
+        Self::of(GitConfigVariables {
+            git_config_global: env::var_os(GIT_CONFIG_GLOBAL),
+            home: env::var_os(HOME),
+            xdg_config_home: env::var_os(XDG_CONFIG_HOME),
+        })
     }
 
-    /// The variables with these values; `None` is unset.
-    pub fn of(
-        git_config_global: Option<OsString>,
-        home: Option<OsString>,
-        xdg_config_home: Option<OsString>,
-    ) -> Self {
+    /// The environment holding `variables`.
+    pub fn of(variables: GitConfigVariables) -> Self {
+        let GitConfigVariables {
+            git_config_global,
+            home,
+            xdg_config_home,
+        } = variables;
+
         Self {
             git_config_global,
             home,
@@ -108,10 +118,14 @@ fn joined(directory: &OsStr, relative: &str) -> PathBuf {
 mod tests {
     use std::path::Path;
 
-    use super::GitConfigEnvironment;
+    use super::{GitConfigEnvironment, GitConfigVariables};
 
     fn with_home(home: &str, xdg_config_home: Option<&str>) -> GitConfigEnvironment {
-        GitConfigEnvironment::of(None, Some(home.into()), xdg_config_home.map(Into::into))
+        GitConfigEnvironment::of(GitConfigVariables {
+            git_config_global: None,
+            home: Some(home.into()),
+            xdg_config_home: xdg_config_home.map(Into::into),
+        })
     }
 
     #[test]
