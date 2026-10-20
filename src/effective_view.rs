@@ -40,7 +40,7 @@ impl EffectiveView {
 }
 
 /// Rows of one width drawn in panes of another, named so the two widths cannot swap.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub(crate) struct HorizontalFit {
     /// The widest row's width.
     pub(crate) rows_width: Cells,

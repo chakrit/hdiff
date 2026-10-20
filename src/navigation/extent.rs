@@ -26,7 +26,6 @@ pub(super) struct ExtentSettings {
 }
 
 /// The screen lines a pane asks for, named so the start and the count cannot swap.
-#[derive(Debug, Clone, Copy)]
 pub(super) struct LineRequest {
     /// The first screen line asked for.
     pub(super) first: ScreenLines,
