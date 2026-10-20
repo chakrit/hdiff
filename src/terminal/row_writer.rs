@@ -140,33 +140,26 @@ fn write_wrapped_line<'c>(
     line: ScreenLines,
     width: NonZeroCells,
 ) -> Clip {
-    let line_clusters = payload_clusters
-        .scan(LineBreaks::new(width), |breaks, cluster| {
-            let placed = breaks.place(cluster.text).map(|placed_line| PlacedCluster {
-                line: placed_line,
-                cluster,
-            });
-            Some(placed)
-        })
-        .flatten()
+    let line_clusters = LineBreaks::placed(width, payload_clusters, |cluster| cluster.text)
         .skip_while(|placed| placed.line < line)
         .take_while(|placed| placed.line == line)
-        .map(|placed| placed.cluster);
+        .map(|placed| placed.item);
 
     write_clusters(cursor, gutter.into_iter().chain(line_clusters))
-}
-
-/// A payload cluster with the wrapped line it falls on.
-struct PlacedCluster<'c> {
-    line: ScreenLines,
-    cluster: StyledText<'c, Style>,
 }
 
 /// A row's payload with tabs expanded, segmented into grapheme clusters as a whole so
 /// style boundaries cannot split a cluster.
 struct ExpandedPayload {
     text: String,
-    boundaries: Vec<Boundary>,
+    segments: Option<ExpandedSegments>,
+}
+
+/// An expanded payload's segment styles: the earlier segments with where each ends, then
+/// the last segment's style, which runs to the text's end.
+struct ExpandedSegments {
+    earlier: Vec<Boundary>,
+    last: TextStyle,
 }
 
 impl ExpandedPayload {
@@ -184,26 +177,33 @@ impl ExpandedPayload {
             });
         }
 
-        Self { text, boundaries }
+        let segments = boundaries.pop().map(|last| ExpandedSegments {
+            earlier: boundaries,
+            last: last.style,
+        });
+        Self { text, segments }
     }
 
-    /// Each cluster with the style of the segment containing its first byte.
-    fn clusters(&self) -> StyledClusters<'_> {
-        StyledClusters {
+    /// Each cluster with the style of the segment containing its first byte; a payload
+    /// without segments has no text and so no clusters.
+    fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
+        self.segments.iter().flat_map(|segments| StyledClusters {
             clusters: self.text.grapheme_indices(true),
-            rest: self.boundaries.iter(),
+            earlier: segments.earlier.iter(),
             current: None,
-        }
+            last: segments.last,
+        })
     }
 }
 
-/// A payload's clusters walked together with its segment ends. Both ascend, and the walk
-/// alone asks for segments, so it only ever moves forward through them; the segments end
-/// where the text ends, so it ends with the last cluster.
+/// A payload's clusters walked together with its earlier segment ends. Both ascend, and
+/// the walk alone asks for segments, so it only ever moves forward through them; past the
+/// earlier segments every cluster is in the last one.
 struct StyledClusters<'p> {
     clusters: GraphemeIndices<'p>,
-    rest: slice::Iter<'p, Boundary>,
+    earlier: slice::Iter<'p, Boundary>,
     current: Option<&'p Boundary>,
+    last: TextStyle,
 }
 
 impl<'p> Iterator for StyledClusters<'p> {
@@ -215,11 +215,12 @@ impl<'p> Iterator for StyledClusters<'p> {
         let current_contains = self.current.is_some_and(|boundary| ends_after(&boundary));
 
         if !current_contains {
-            self.current = self.rest.find(ends_after);
+            self.current = self.earlier.find(ends_after);
         }
-        self.current.map(|boundary| StyledText {
+        let style = self.current.map_or(self.last, |boundary| boundary.style);
+        Some(StyledText {
             text: cluster,
-            style: boundary.style,
+            style,
         })
     }
 }

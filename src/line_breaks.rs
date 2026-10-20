@@ -41,21 +41,39 @@ impl LineBreaks {
         Some(self.line)
     }
 
-    /// Lines `clusters` occupy when placed in order on lines `width` cells wide: one past
-    /// the last line a cluster lands on, so an empty payload still takes one.
-    pub fn count_lines<'a>(
+    /// Each of `items` with the wrapped line it lands on, placed in order on lines
+    /// `width` cells wide by the cluster `text` gives for it; an item whose cluster
+    /// covers no cells takes no place and is left out.
+    pub fn placed<'a, T>(
         width: NonZeroCells,
-        clusters: impl IntoIterator<Item = &'a str>,
-    ) -> ScreenLines {
-        clusters
+        items: impl IntoIterator<Item = T>,
+        text: impl Fn(&T) -> &'a str,
+    ) -> impl Iterator<Item = Placed<T>> {
+        items
             .into_iter()
-            .scan(Self::new(width), |breaks, cluster| {
-                Some(breaks.place(cluster))
+            .scan(Self::new(width), move |breaks, item| {
+                let placed = breaks.place(text(&item)).map(|line| Placed { line, item });
+                Some(placed)
             })
             .flatten()
-            .last()
-            .map_or(ScreenLines::ONE, |line| line + ScreenLines::ONE)
     }
+
+    /// Lines `clusters` occupy when placed in order on lines `width` cells wide: one past
+    /// the last line a cluster lands on, so an empty payload still takes one.
+    pub fn line_count<'a>(
+        clusters: impl IntoIterator<Item = &'a str>,
+        width: NonZeroCells,
+    ) -> ScreenLines {
+        Self::placed(width, clusters, |cluster| cluster)
+            .last()
+            .map_or(ScreenLines::ONE, |placed| placed.line + ScreenLines::ONE)
+    }
+}
+
+/// An item with the wrapped line it lands on.
+pub struct Placed<T> {
+    pub line: ScreenLines,
+    pub item: T,
 }
 
 /// Lines `payload` wraps to at `width` cells once its tabs are expanded.
@@ -69,7 +87,7 @@ pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> 
     let mut expanded = String::new();
     TabStops::default().expand_into(text, &mut expanded);
 
-    LineBreaks::count_lines(width, expanded.graphemes(true))
+    LineBreaks::line_count(expanded.graphemes(true), width)
 }
 
 #[cfg(test)]
@@ -94,14 +112,11 @@ mod tests {
     fn breaks_before_a_cluster_that_does_not_fit_the_rest_of_its_line() {
         let clusters = ["a", "a", "a", "界", "界", "界"];
 
-        let lines: Vec<_> = clusters
-            .into_iter()
-            .scan(LineBreaks::new(NonZeroCells::of(4)), |breaks, cluster| {
-                Some(breaks.place(cluster))
-            })
+        let lines: Vec<_> = LineBreaks::placed(NonZeroCells::of(4), clusters, |cluster| cluster)
+            .map(|placed| placed.line)
             .collect();
 
-        assert_eq!(lines, [0, 0, 0, 1, 1, 2].map(placed));
+        assert_eq!(lines, [0, 0, 0, 1, 1, 2].map(ScreenLines::new));
         assert_eq!(wrapped_lines(&clusters.concat(), 4), ScreenLines::new(3));
     }
 
@@ -121,7 +136,7 @@ mod tests {
         assert_eq!(breaks.place("a"), placed(0));
         assert_eq!(breaks.place("\u{7}"), None);
         assert_eq!(
-            LineBreaks::count_lines(NonZeroCells::of(1), ["a", "\u{7}"]),
+            LineBreaks::line_count(["a", "\u{7}"], NonZeroCells::of(1)),
             ScreenLines::new(1)
         );
     }
@@ -156,7 +171,7 @@ mod tests {
     fn counts_single_cell_text_as_the_cluster_walk_does() {
         let text = "\tlet x = 1;\t// ascii";
         let cells = MeasuredTextRef::of_text(text).cells().get();
-        let walked = LineBreaks::count_lines(NonZeroCells::of(3), iter::repeat_n("a", cells));
+        let walked = LineBreaks::line_count(iter::repeat_n("a", cells), NonZeroCells::of(3));
 
         assert_eq!(wrapped_lines(text, 3), walked);
         assert_eq!(wrapped_lines(text, 300), ScreenLines::new(1));
