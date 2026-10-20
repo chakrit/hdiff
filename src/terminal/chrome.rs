@@ -205,7 +205,7 @@ impl ContinuityFrame {
         else {
             return;
         };
-        let center = AxisSpan::columns_of(area).halfway();
+        let center = AxisSpan::columns_of(content).halfway();
         let shown = ScreenLines::from(content.height);
 
         if window.first > ScreenLines::ZERO {
