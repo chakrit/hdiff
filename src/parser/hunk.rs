@@ -230,10 +230,12 @@ mod tests {
     fn first_hunk_records<const N: usize>(document: &DiffDocument) -> &[Record; N] {
         let records = &first_hunk(document).records;
 
-        records
-            .as_ref()
-            .try_into()
-            .unwrap_or_else(|_| panic!("the first hunk holds {} records, not {N}", records.len()))
+        records.as_ref().try_into().unwrap_or_else(|error| {
+            panic!(
+                "the first hunk holds {} records, not {N}: {error}",
+                records.len()
+            )
+        })
     }
 
     /// docs/spec/architecture.md#input-contract: structural parsing is strict, so a
