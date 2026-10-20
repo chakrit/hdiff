@@ -121,15 +121,16 @@ enum EndingSoFar {
 
 impl EndingSoFar {
     /// The ending after `read`. Hidden characters between a plain CR and the LF, such as
-    /// the SGR codes Git paints around a CR, leave the CR pending. The scanner never
-    /// shows a CR or an LF, so their arms need not ask what reading them did.
+    /// the SGR codes Git paints around a CR, leave the CR pending.
     fn after(self, read: &Read) -> Self {
-        match (read.class, read.read_in, read.step, self) {
-            (Class::LineFeed, _, _, Self::CarriageReturn) => Self::Closed(LineEnding::CrLf),
-            (Class::LineFeed, _, _, Self::Open | Self::Closed(_)) => Self::Closed(LineEnding::Lf),
-            (Class::CarriageReturn, State::Ground, _, _) => Self::CarriageReturn,
-            (_, _, Step::Shown(_), _) | (_, _, Step::Hidden(_), Self::Closed(_)) => Self::Open,
-            (_, _, Step::Hidden(_), Self::Open | Self::CarriageReturn) => self,
+        match (EndingInput::of(read), self) {
+            (EndingInput::LineFeed, Self::CarriageReturn) => Self::Closed(LineEnding::CrLf),
+            (EndingInput::LineFeed, Self::Open | Self::Closed(_)) => Self::Closed(LineEnding::Lf),
+            (EndingInput::PlainCarriageReturn, Self::Open | Self::CarriageReturn)
+            | (EndingInput::PlainCarriageReturn, Self::Closed(_)) => Self::CarriageReturn,
+            (EndingInput::Shown, Self::Open | Self::CarriageReturn | Self::Closed(_))
+            | (EndingInput::Hidden, Self::Closed(_)) => Self::Open,
+            (EndingInput::Hidden, Self::Open | Self::CarriageReturn) => self,
         }
     }
 
@@ -138,6 +139,53 @@ impl EndingSoFar {
         match self {
             Self::Closed(ending) => ending,
             Self::Open | Self::CarriageReturn => LineEnding::None,
+        }
+    }
+}
+
+/// What one read character means for a line's ending.
+#[derive(Clone, Copy)]
+enum EndingInput {
+    /// An LF, which ends a line.
+    LineFeed,
+    /// A CR read in plain text, which may start a CRLF ending.
+    PlainCarriageReturn,
+    /// Any other character the scanner shows.
+    Shown,
+    /// Any other character the scanner hides, a CR inside a sequence included.
+    Hidden,
+}
+
+impl EndingInput {
+    /// What `read` means for the ending. The scanner hides every CR and LF, so their
+    /// class alone decides them.
+    fn of(read: &Read) -> Self {
+        match read.class {
+            Class::LineFeed => Self::LineFeed,
+            Class::CarriageReturn => match read.read_in {
+                State::Ground => Self::PlainCarriageReturn,
+                State::Escape
+                | State::EscapeIntermediate
+                | State::ControlSequence
+                | State::OscString
+                | State::CommandString => Self::Hidden,
+            },
+            Class::Cancel
+            | Class::Escape
+            | Class::Bell
+            | Class::Tab
+            | Class::OtherC0
+            | Class::Delete
+            | Class::Intermediate
+            | Class::Parameter
+            | Class::Final(_)
+            | Class::Introducer(_)
+            | Class::StringTerminator
+            | Class::OtherC1
+            | Class::NonAscii => match read.step {
+                Step::Shown(_) => Self::Shown,
+                Step::Hidden(_) => Self::Hidden,
+            },
         }
     }
 }
