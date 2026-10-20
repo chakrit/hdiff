@@ -374,7 +374,6 @@ impl FramedArea {
 
 /// A run of cells along one axis of a rectangle, taken whole so its start and its length
 /// cannot swap or come from different axes.
-#[derive(Debug, Clone, Copy)]
 pub struct AxisSpan {
     /// The first cell.
     start: u16,
