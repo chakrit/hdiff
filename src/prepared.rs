@@ -290,8 +290,8 @@ mod tests {
             observed.file_selection(PageIndex::FIRST)
         );
         assert_eq!(ordinary.record_count(), observed.record_count());
-        for (ordinary, observed) in ordinary.pages().into_iter().zip(observed.pages()) {
-            assert_eq!(ordinary, observed);
+        for (ordinary_page, observed_page) in ordinary.pages().into_iter().zip(observed.pages()) {
+            assert_eq!(ordinary_page, observed_page);
         }
     }
 

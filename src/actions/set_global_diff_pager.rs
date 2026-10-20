@@ -44,7 +44,7 @@ impl SetGlobalDiffPager<'_> {
 /// Gives Git exactly the environment the config path was resolved from.
 fn set_or_remove(git: &mut Command, EnvironmentVariable { name, value }: EnvironmentVariable) {
     match value {
-        Some(value) => git.env(name, value),
+        Some(text) => git.env(name, text),
         None => git.env_remove(name),
     };
 }
