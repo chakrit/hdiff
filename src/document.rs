@@ -280,6 +280,7 @@ pub struct HunkRecords<'a, 'h> {
 }
 
 impl<'a, 'h> HunkRecords<'a, 'h> {
+    /// The records of `hunk` under a fresh brand `'h`, which no other call shares.
     fn of(hunk: &'a Hunk) -> Self {
         Self {
             hunk,
@@ -349,7 +350,9 @@ impl Record {
 pub enum RecordKind {
     /// A line of both sides, spelled with the marker its producer wrote.
     Context(ContextMarker),
+    /// A line of the new side only, marked `+`.
     Addition,
+    /// A line of the old side only, marked `-`.
     Deletion,
 }
 

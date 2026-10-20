@@ -51,7 +51,9 @@ pub fn file_header_field(text: &str, side: Side) -> Option<&str> {
 
 /// One of Git's extended header lines after `diff --git`, as far as naming a file needs.
 pub enum GitMetadata<'a> {
+    /// A `new file mode` line: the file is added.
     Added,
+    /// A `deleted file mode` line: the file is deleted.
     Deleted,
     /// A rename's destination field, as written.
     RenameTo(&'a str),
