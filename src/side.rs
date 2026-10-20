@@ -85,6 +85,11 @@ impl<T> BySide<T> {
         self.as_ref().into_iter()
     }
 
+    /// Each side's value, old then new, to change in place.
+    pub fn iter_mut(&mut self) -> array::IntoIter<&mut T, 2> {
+        [&mut self.old, &mut self.new].into_iter()
+    }
+
     /// Each side's value paired with `other`'s value for that side.
     pub fn zip<U>(self, other: BySide<U>) -> BySide<(T, U)> {
         BySide {
