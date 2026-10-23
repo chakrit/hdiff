@@ -384,6 +384,8 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   and position-advance fast paths while retaining the public query boundary.
 - **Per-file syntax projection.** Concatenating each side's hunks into one projection per
   file regressed preparation time and is rejected.
+- **Printable-ASCII widths.** Text of printable ASCII measures one cell per byte without
+  grapheme segmentation.
 
 ## Optimization method
 

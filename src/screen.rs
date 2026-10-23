@@ -84,9 +84,17 @@ impl<Space> From<u16> for Measure<Space> {
 }
 
 impl Cells {
-    /// Cells the row writer covers drawing `text`.
+    /// Cells the row writer covers drawing `text`. Each printable ASCII character is a
+    /// cluster of its own covering one cell, so only other text is segmented.
     pub fn of_text(text: &str) -> Self {
-        text.graphemes(true).map(Self::of_cluster).sum()
+        let printable_ascii = text
+            .bytes()
+            .all(|byte| byte == b' ' || byte.is_ascii_graphic());
+
+        match printable_ascii {
+            true => Self::new(text.len()),
+            false => text.graphemes(true).map(Self::of_cluster).sum(),
+        }
     }
 
     /// Cells the row writer covers drawing `cluster`, measured with Ratatui's
@@ -191,5 +199,27 @@ impl ScreenLines {
     /// Panics when they do not fit a frame.
     pub fn frame_rows(self) -> u16 {
         u16::try_from(self.0).expect("lines drawn on a frame fit u16")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cells;
+
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: text covers the cells its
+    /// clusters cover, so a mark combining with an ASCII letter adds none and a control
+    /// character covers none.
+    #[test]
+    fn measures_text_by_the_cells_its_clusters_cover() {
+        for (text, cells) in [
+            ("", 0),
+            ("a b~", 4),
+            ("e\u{301}x", 2),
+            ("a\u{1}b", 2),
+            ("a\r\nb", 2),
+            ("界x", 3),
+        ] {
+            assert_eq!(Cells::of_text(text), Cells::new(cells), "{text:?}");
+        }
     }
 }
