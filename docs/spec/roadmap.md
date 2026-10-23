@@ -76,9 +76,10 @@ and human terminal checks passed for every delivered slice. Historical delivery 
 and verification records are preserved in `.ace/spec-cleanup-roadmap-before.md` and in
 Git history.
 
-## Parked preparation optimization
+## Preparation optimization
 
-Further preparation optimization is parked. Resumption requires considering a more
+The performance pass (product slice 2) resumes preparation optimization. Resumption
+requires considering a more
 drastic refactor or a multi-threaded parsing architecture; the accepted architecture
 remains single-threaded.
 
@@ -87,9 +88,7 @@ whole-document preparation, and pinned-corpus measurements are complete. Remaini
 preparation work is to remove only measured redundant work, including inactive layouts,
 rows outside the viewport, allocations, cloning, palette construction, and span ordering.
 Each resumed slice requires its specification amendment, tests, verification, audit, and
-commit under the [performance contract](performance.md). Before the first resumed
-comparison, change `bench/kubernetes.sh` to key its improvement verdict on retired
-instructions as the performance contract requires; it still keys on cycles.
+commit under the [performance contract](performance.md).
 
 ## Deferred work
 
@@ -138,8 +137,8 @@ implementation remains unapproved.
    and other keys except `Ctrl-C` do nothing, and close it with `?`, `Esc`, and `q`
    without exiting.
 
-2. Performance pass under the [performance contract](performance.md). Scope not yet
-   planned.
+2. Performance pass covering movement and preparation, under the
+   [performance contract](performance.md).
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
