@@ -2,7 +2,7 @@
 //! counts hold, any of which, the last included, may be followed by one no-newline
 //! marker. Rules: docs/spec/architecture.md#input-contract.
 
-use super::{Error, Malformed, SourceLines, decimal_count, is_decimal, reject_unsupported_header};
+use super::{Error, Malformed, SourceLines, header_number, reject_unsupported_header};
 use crate::{
     document::{ContextMarker, Hunk, Record, RecordKind},
     headers::{file_header_field, git_header_names},
@@ -195,9 +195,8 @@ pub(super) fn hunk_counts(header: &str) -> Result<BySide<usize>, Malformed> {
 /// without a count states one line.
 fn range_count(range: &str) -> Option<usize> {
     match range.split_once(',') {
-        Some((start, _)) if !is_decimal(start) => None,
-        Some((_, count)) => decimal_count(count),
-        None => is_decimal(range).then_some(1),
+        Some((start, count)) => header_number(start).and(header_number(count)),
+        None => header_number(range).and(Some(1)),
     }
 }
 
@@ -254,17 +253,18 @@ mod tests {
         }
     }
 
-    /// docs/spec/architecture.md#input-contract: a range's start is any run of ASCII
-    /// digits, and a count too large to hold makes the header invalid.
+    /// docs/spec/architecture.md#input-contract: a start or count too large for hdiff to
+    /// hold makes the header invalid.
     #[test]
-    fn reads_a_start_of_any_length_and_rejects_a_count_too_large_to_hold() {
+    fn rejects_a_start_or_count_too_large_to_hold() {
         let files = "--- a/file\n+++ b/file\n";
         let long_start = format!("{files}@@ -{0},1 +{0},1 @@\n-old\n+new\n", "9".repeat(30));
         let long_count = format!("{files}@@ -1,{} +1 @@\n-old\n+new\n", "9".repeat(30));
 
-        assert!(
-            parse_patch(long_start.as_bytes()).is_ok(),
-            "{long_start:?} has a long start"
+        assert_eq!(
+            parse_patch(long_start.as_bytes()),
+            malformed(3, Malformed::InvalidHunkHeader),
+            "{long_start:?} has a start too large to hold"
         );
         assert_eq!(
             parse_patch(long_count.as_bytes()),

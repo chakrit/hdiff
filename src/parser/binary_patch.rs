@@ -2,7 +2,7 @@
 //! the base-85 payload lines each block holds. Rules:
 //! docs/spec/architecture.md#input-contract.
 
-use super::{Error, LineStart, Malformed, SourceLines, is_decimal, line_start};
+use super::{Error, LineStart, Malformed, SourceLines, header_number, line_start};
 use crate::{
     document::{BinaryBlock, BinaryPatch},
     non_empty::NonEmpty,
@@ -74,7 +74,7 @@ fn binary_block_field(text: &str) -> Option<&str> {
 
 /// Checks that a `literal` or `delta` block header states its size as a count.
 fn check_binary_block_size(header: &str) -> Result<(), Malformed> {
-    let stated = binary_block_field(header).is_some_and(is_decimal);
+    let stated = binary_block_field(header).and_then(header_number).is_some();
 
     match stated {
         true => Ok(()),
@@ -160,6 +160,21 @@ mod tests {
     fn rejects_a_signed_block_size() {
         let binary =
             "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral +12\npayload\n\n";
+
+        assert_eq!(
+            parse_patch(binary.as_bytes()),
+            malformed(4, Malformed::InvalidBinaryPatchHeader)
+        );
+    }
+
+    /// docs/spec/architecture.md#input-contract: a count too large for hdiff to hold
+    /// makes the header invalid.
+    #[test]
+    fn rejects_a_block_size_too_large_to_hold() {
+        let binary = format!(
+            "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral {}\npayload\n\n",
+            "9".repeat(30)
+        );
 
         assert_eq!(
             parse_patch(binary.as_bytes()),
