@@ -14,7 +14,8 @@ and rendering; `src/actions/` owns effectful work.
 the Kubernetes preparation benchmark and the fixture measurement script.
 
 Read `docs/spec/architecture.md` for product and engineering contracts,
-`docs/spec/performance.md` for measurement contracts, and `docs/spec/roadmap.md` for tasks.
+`docs/spec/performance.md` for measurement contracts, `docs/spec/audit.md` before any
+audit or audit repair, and `docs/spec/roadmap.md` for tasks.
 
 ## Commands and skills
 
