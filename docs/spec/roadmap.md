@@ -138,8 +138,8 @@ implementation remains unapproved.
    and other keys except `Ctrl-C` do nothing, and close it with `?`, `Esc`, and `q`
    without exiting.
 
-2. Performance pass after the code-quality audit, under the
-   [performance contract](performance.md). Scope not yet planned.
+2. Performance pass under the [performance contract](performance.md). Scope not yet
+   planned.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
