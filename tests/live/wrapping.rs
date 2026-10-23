@@ -81,21 +81,32 @@ fn resizing_keeps_the_top_line_of_a_wrapped_record() {
     let mut live = Live::load(&long_patch(), Mode::line(DiffLayout::Unified));
     live.press('w');
     live.press('g');
-    let top_line = |live: &Live| right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE]);
-    // The wide row's first line opens with its marker; its continuation opens with `x`.
-    // The wide row is the page's second record, so its continuation starts on the first
-    // screen, fewer presses away than the screen has rows.
-    let screen_rows = live.rows().len();
-    let mut presses = 0;
-    while !top_line(&live).starts_with('x') {
-        assert!(
-            presses < screen_rows,
-            "scrolls to the wide row's second line within a screen: {:?}",
-            top_line(&live)
-        );
+    let top_line = |live: &Live| {
+        right_of_first_separator(&live.rows()[FIRST_CONTENT_LINE])
+            .trim_end()
+            .to_owned()
+    };
+    // docs/spec/architecture.md#view-model: each `j` scrolls one screen line, and the
+    // wide row's continuation is a line of its own with a blank marker column and
+    // spacer. The page reads three header lines, `row_0`, then the wide row's first and
+    // second lines.
+    let tops = ["+++ b/long.rs", "@@ -0,0 +1,200 @@", "+ row_0"];
+    for expected in tops {
         live.press('j');
-        presses += 1;
+        assert_eq!(top_line(&live), expected);
     }
+    live.press('j');
+    let first = top_line(&live);
+    assert!(
+        first.starts_with("+ wide_xx"),
+        "the wide row's first line: {first:?}"
+    );
+    live.press('j');
+    let second = top_line(&live);
+    assert!(
+        !second.is_empty() && second.chars().all(|symbol| symbol == 'x'),
+        "the wide row's second line holds only its x run: {second:?}"
+    );
 
     live.resize(Size::new(100, 20));
 
