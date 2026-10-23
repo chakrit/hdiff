@@ -44,6 +44,7 @@ matrix!(
     keymap_popup,
     half_page_movement,
     key_before_resize_event,
+    half_page_before_resize_event,
     stale_resize_event,
     bottom_on_too_short_screen
 );
@@ -286,6 +287,28 @@ fn key_before_resize_event(mode: Mode) {
         live.buffer(),
         expected,
         "the resize event that follows changes nothing"
+    );
+}
+
+/// docs/spec/architecture.md#viewport-coordinates: each step adopts the terminal's size
+/// before it responds, so a `Ctrl-D` that arrives before its resize event moves half of
+/// the resized pane's lines, not half of the pane it replaced.
+fn half_page_before_resize_event(mode: Mode) {
+    let mut live = Live::load(&paired_patch(), mode);
+    for _ in 0..LINES_INTO_THE_BLOCK {
+        live.press('j');
+    }
+    let top_label = |live: &Live| label_number(&live.rows()[FIRST_CONTENT_LINE]);
+    let top = top_label(&live);
+
+    live.resize_backend_only(RESIZED);
+    live.control('d');
+
+    let resized_pane_lines = live.old_label_lines();
+    assert_eq!(
+        top_label(&live),
+        top + resized_pane_lines / 2,
+        "Ctrl-D moves half of the resized pane"
     );
 }
 
