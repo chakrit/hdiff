@@ -84,16 +84,26 @@ impl LineEnding {
 
 /// Some bytes read through the scanner: the one fold that collects their visible text,
 /// and how their line ending stands.
-#[derive(Default)]
 struct ReadLine {
     sanitized: String,
     ending: EndingSoFar,
 }
 
 impl ReadLine {
-    /// `bytes` read from plain text.
+    /// `bytes` read from plain text. Characters that show in plain text and leave the
+    /// scanner there read as themselves, so the leading run of them is taken whole and
+    /// only the bytes after it go through the scanner.
     fn of(bytes: &[u8]) -> Self {
-        scan(bytes).fold(Self::default(), Self::after)
+        let valid = bytes.utf8_chunks().next().map_or("", |chunk| chunk.valid());
+        let plain_end = valid
+            .find(|character| !stays_plain(character))
+            .unwrap_or(valid.len());
+
+        let plain_run = Self {
+            sanitized: valid[..plain_end].to_owned(),
+            ending: EndingSoFar::Open,
+        };
+        scan(&bytes[plain_end..]).fold(plain_run, Self::after)
     }
 
     /// The line after reading one more character.
@@ -108,10 +118,9 @@ impl ReadLine {
 }
 
 /// How a line's ending stands after the characters read so far.
-#[derive(Default, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum EndingSoFar {
     /// No ending yet: the line has no characters, or more came after its last LF.
-    #[default]
     Open,
     /// A CR read in plain text, followed so far only by hidden characters.
     CarriageReturn,
@@ -187,6 +196,14 @@ impl EndingInput {
                 Step::Hidden(_) => Self::Hidden,
             },
         }
+    }
+}
+
+/// Whether `character` shows when read in plain text and leaves the scanner there.
+fn stays_plain(character: char) -> bool {
+    match State::Ground.read(Class::of(character)) {
+        Step::Shown(next) => next.is_plain_text(),
+        Step::Hidden(_) => false,
     }
 }
 
@@ -577,6 +594,27 @@ mod tests {
             ),
             "red\ttab link\u{fffd}end"
         );
+    }
+
+    /// Plain text before the first invalid byte or control character reads as the
+    /// scanner reads it, and what follows still decodes and ends the line.
+    #[test]
+    fn reads_plain_text_up_to_an_invalid_byte_or_control_as_the_scanner_does() {
+        for (line, shown, ending) in [
+            (b"\tif x {\n".as_slice(), "\tif x {", LineEnding::Lf),
+            (
+                b"caf\xc3\xa9 \xffend\r\n",
+                "caf\u{e9} \u{fffd}end",
+                LineEnding::CrLf,
+            ),
+            (b"a b\x1b[31mred\x07\n", "a bred", LineEnding::Lf),
+            (b"x\ry", "xy", LineEnding::None),
+        ] {
+            let decoded = SourceLine::decode(line);
+
+            assert_eq!(decoded.sanitized(), shown, "{line:?}");
+            assert_eq!(decoded.line_ending(), ending, "{line:?}");
+        }
     }
 
     /// A single-character C1 introducer opens the same sequence as its 7-bit `ESC`

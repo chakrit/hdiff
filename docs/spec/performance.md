@@ -386,6 +386,8 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   file regressed preparation time and is rejected.
 - **Printable-ASCII widths.** Text of printable ASCII measures one cell per byte without
   grapheme segmentation.
+- **Plain-text line prefix.** Decoding a source line takes its leading run of characters
+  that show in plain text whole, and scans only the bytes after it.
 
 ## Optimization method
 
