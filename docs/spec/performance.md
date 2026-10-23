@@ -388,6 +388,9 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   grapheme segmentation.
 - **Plain-text line prefix.** Decoding a source line takes its leading run of characters
   that show in plain text whole, and scans only the bytes after it.
+- **Styled-byte query range.** Restricting each highlight query to the bytes of its
+  styled records left every span unchanged but saved under 1.1% of retired instructions,
+  and peak memory regressed on one range; it is rejected.
 
 ## Optimization method
 
