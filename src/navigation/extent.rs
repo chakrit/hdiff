@@ -524,8 +524,7 @@ mod tests {
         parser::parse_patch,
         preferences::ContextRecords,
         prepared::{PageIndex, PreparedDocument},
-        screen::{Cells, MARKER_GUTTER_WIDTH, ScreenLines},
-        tab_stops::MeasuredTextRef,
+        screen::{Cells, ScreenLines},
     };
 
     const VERTICAL: PaneShape = PaneShape::Split(SplitDirection::Vertical);
@@ -668,9 +667,12 @@ mod tests {
             extent_of(&document, shape, ContextRecords::new(count), WrapWidth::Off).width()
         };
 
-        // Each row spans the marker gutter and its payload once its tab is expanded.
-        let addition = MARKER_GUTTER_WIDTH + MeasuredTextRef::of_text(ADDITION).cells();
-        let far_context = MARKER_GUTTER_WIDTH + Cells::of_text(FAR_CONTEXT);
+        // docs/spec/architecture.md#view-model and #lossless-and-safe-rendering: a row
+        // spans the marker column and payload spacer (2 cells) and its payload, whose tab
+        // expands to the 2-column stop. The addition is 2 + 2 + ten two-cell characters
+        // = 24 cells; the far context line is 2 + 38 characters = 40 cells.
+        let addition = Cells::new(24);
+        let far_context = Cells::new(40);
 
         assert_eq!(widest(PaneShape::Single, 1), addition);
         assert_eq!(widest(VERTICAL, 1), addition);
@@ -779,12 +781,10 @@ mod tests {
     #[test]
     fn finds_an_anchored_pair_again_in_a_rebuilt_extent() {
         let document = prepared(CHANGE_AMONG_CONTEXT);
-        let change_offset = |context| {
-            let change = line_at(&document, "-old", ScreenLines::ZERO);
-            extent_of(&document, VERTICAL, context, WrapWidth::Off).offset_of(&document, change)
-        };
         let [narrow_context, wide_context] = [0, 3].map(ContextRecords::new);
-        let [narrow_offset, wide_offset] = [narrow_context, wide_context].map(change_offset);
+        // Narrow pairs: ---, +++, @@, then -old|+new on line 3. Wide context adds c0, c1
+        // and c2 before the change, moving it to line 6.
+        let [narrow_offset, wide_offset] = [3, 6].map(ScreenLines::new);
         let mut extent = extent_of(&document, VERTICAL, narrow_context, WrapWidth::Off);
         let narrow = extent.settings();
         let wide = ExtentSettings {
@@ -796,10 +796,6 @@ mod tests {
         let widened_settings = extent.settings();
         let narrowed = extent.reanchor(&document, narrow, wide_offset);
 
-        assert_ne!(
-            narrow_offset, wide_offset,
-            "wide context shows rows before the change"
-        );
         assert_eq!(widened_settings, wide, "the extent shows the new settings");
         assert_eq!(widened, Some(wide_offset));
         assert_eq!(narrowed, Some(narrow_offset));

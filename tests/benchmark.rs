@@ -31,18 +31,6 @@ fn patch_bytes() -> u128 {
     u128::try_from(PATCH.len()).expect("patch length fits u128")
 }
 
-/// The bytes syntax projects from [`PATCH`]: each record's payload with its line ending,
-/// the record marker left out.
-fn record_payload_bytes() -> u128 {
-    let records = PATCH
-        .split_inclusive('\n')
-        .skip_while(|line| !line.starts_with("@@ "))
-        .skip(1);
-    let bytes: usize = records.map(|record| record.len() - 1).sum();
-
-    u128::try_from(bytes).expect("payload length fits u128")
-}
-
 /// docs/spec/performance.md#stages: every stage under its parent, plus each parent's
 /// unattributed remainder.
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
@@ -177,11 +165,9 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
     assert_eq!(parent_sum("syntax"), *syntax_stage, "{text}");
     assert_eq!(work.integer("hunks"), 1, "{text}");
     assert_eq!(work.integer("parse_calls"), 2, "{text}");
-    assert_eq!(
-        work.integer("projected_bytes"),
-        record_payload_bytes(),
-        "{text}"
-    );
+    // docs/spec/performance.md#stages: the old buffer "fn old() {}\n" and the new buffer
+    // "fn new() {}\n" hold 12 bytes each.
+    assert_eq!(work.integer("projected_bytes"), 24, "{text}");
     assert!(work.integer("captures") > 0, "{text}");
 }
 
