@@ -138,3 +138,28 @@ fn stacked_panes_need_room_for_one_content_line_each() {
     assert_eq!(live.count('▾'), 2, "each pane shows a line");
     assert!(!live.shows("screen too short"));
 }
+
+/// docs/spec/architecture.md#continuity-markers: `▴` and `▾` sit at the center of their
+/// frame rows and `◂` and `▸` at the middle of their frame columns. With the file list
+/// hidden, the one unified pane fills the screen, so on a 121 by 37 screen its content
+/// spans columns 1 to 119, centered on column 60, and rows 1 to 35, centered on row 18.
+#[test]
+fn continuity_markers_sit_at_the_center_of_their_frame_edges() {
+    let mut live = Live::sized(
+        &long_patch(),
+        Mode::line(DiffLayout::Unified),
+        Size::new(121, 37),
+    );
+    live.press('e');
+    live.press('j');
+    live.press('l');
+
+    let at = |marker| {
+        let position = live.find(marker);
+        (position.x, position.y)
+    };
+    assert_eq!(at("▴"), (60, 0), "above the content's center column");
+    assert_eq!(at("▾"), (60, 36), "below the content's center column");
+    assert_eq!(at("◂"), (0, 18), "left of the content's middle row");
+    assert_eq!(at("▸"), (120, 18), "right of the content's middle row");
+}
