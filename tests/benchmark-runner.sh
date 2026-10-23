@@ -77,11 +77,12 @@ instructions=100
 memory=100
 if [ "$role" = candidate ]; then
     case "$FAKE_CASE" in
-        regressed) cycles=120 ;;
-        noisy) cycles=80; [ "$count" -ne 2 ] || cycles=140 ;;
+        regressed) instructions=80; cycles=120 ;;
+        noisy) cycles=80; instructions=80; [ "$count" -ne 2 ] || instructions=140 ;;
+        cycle-only) cycles=80 ;;
         instruction-regression) instructions=120; cycles=80 ;;
-        memory-regression) memory=120; cycles=80 ;;
-        *) cycles=80 ;;
+        memory-regression) instructions=80; memory=120; cycles=80 ;;
+        *) instructions=80; cycles=80 ;;
     esac
 fi
 cat >&2 <<TIMING
@@ -202,6 +203,7 @@ run_case improved compare no
     exit 1
 }
 assert_contains "$fixture/output.txt" 'verdict=improved'
+assert_contains "$fixture/output.txt" 'instruction_saving=20'
 assert_contains "$fixture/output.txt" 'cycle_saving=20'
 assert_contains "$fixture/builds.txt" '\+stable build --release --locked'
 [ "$(wc -l < "$fixture/executions.txt")" -eq 10 ]
@@ -217,12 +219,12 @@ baseline --bench prepare
 candidate --bench prepare'
 [ "$(cat "$fixture/executions.txt")" = "$expected" ]
 
-for case_name in regressed noisy instruction-regression memory-regression legacy; do
+for case_name in regressed noisy cycle-only instruction-regression memory-regression legacy; do
     run_case "$case_name" compare no
     [ "$case_status" -eq 0 ] || exit 1
     case "$case_name" in
         regressed|instruction-regression|memory-regression) verdict=regressed ;;
-        noisy) verdict=inconclusive ;;
+        noisy|cycle-only) verdict=inconclusive ;;
         legacy) verdict=improved ;;
     esac
     assert_contains "$fixture/output.txt" "verdict=$verdict"

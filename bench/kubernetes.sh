@@ -768,8 +768,8 @@ EOF
         "$memory_saving_1" "$memory_saving_2" "$memory_saving_3")
 
     verdict=inconclusive
-    if [ "$average_cycle_saving" -gt "$cycle_dispersion" ] && \
-        [ $((average_instruction_saving + instruction_dispersion)) -ge 0 ] && \
+    if [ "$average_instruction_saving" -gt "$instruction_dispersion" ] && \
+        [ $((average_cycle_saving + cycle_dispersion)) -ge 0 ] && \
         [ $((average_memory_saving + memory_dispersion)) -ge 0 ]; then
         verdict=improved
     elif [ $((average_cycle_saving + cycle_dispersion)) -lt 0 ] || \
