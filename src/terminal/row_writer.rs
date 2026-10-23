@@ -6,7 +6,6 @@
 use std::{ops::ControlFlow, slice};
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
-use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 
 use super::{
     row_style::{gutter, segment_style, whole_row},
@@ -14,7 +13,9 @@ use super::{
 };
 use crate::{
     line_breaks::LineBreaks,
-    screen::{Cells, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines},
+    screen::{
+        Cells, ClusterIndices, MARKER_GUTTER_WIDTH, NonZeroCells, ScreenLines, cluster_indices,
+    },
     styling::{Boundary, StyledRow, StyledText, TextStyle},
     tab_stops::TabStops,
     theme::Theme,
@@ -188,7 +189,7 @@ impl ExpandedPayload {
     /// without segments has no text and so no clusters.
     fn clusters(&self) -> impl Iterator<Item = StyledText<'_, TextStyle>> {
         self.segments.iter().flat_map(|segments| StyledClusters {
-            clusters: self.text.grapheme_indices(true),
+            clusters: cluster_indices(&self.text),
             earlier: segments.earlier.iter(),
             current: None,
             last: segments.last,
@@ -200,7 +201,7 @@ impl ExpandedPayload {
 /// the walk alone asks for segments, so it only ever moves forward through them; past the
 /// earlier segments every cluster is in the last one.
 struct StyledClusters<'p> {
-    clusters: GraphemeIndices<'p>,
+    clusters: ClusterIndices<'p>,
     earlier: slice::Iter<'p, Boundary>,
     current: Option<&'p Boundary>,
     last: TextStyle,

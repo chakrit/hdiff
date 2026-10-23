@@ -276,6 +276,30 @@ scheduler priority 19, worst `movement` step on the 1,024-hunk workload, from 0.
 |----------------------------------|--------------------------|------------|
 | `20260927T143809Z-7136b58-3764`  | `7136b58` + chrome       | 0.187 ms   |
 
+#### Printable-ASCII clusters
+
+The row writer walks a printable-ASCII row a byte per cluster and segments only other
+text. Same measurement as [Cached layout splits](#cached-layout-splits), now 192 steps
+per run; `--bench prepare` on the same workload is unchanged:
+
+| Binary          | Retired instructions (three runs)             | Mean          |
+|-----------------|-----------------------------------------------|---------------|
+| `957c715`       | 2,684,475,583 · 2,675,009,425 · 2,668,707,957 | 2,676,064,322 |
+| + clusters      | 2,574,537,555 · 2,571,878,379 · 2,564,395,865 | 2,570,270,600 |
+
+The mean saving is 105.8 million retired instructions per run (paired savings 109.9,
+103.1, and 104.3 million), about 0.55 million per step. `bench/fixtures.sh` at scheduler
+priority 19 on the 1,024-hunk workload:
+
+| Run                              | Revision                 | Median step | Worst step |
+|----------------------------------|--------------------------|-------------|------------|
+| `20261023T200415Z-27e045c-69473` | `27e045c`                | 0.193 ms    | 0.374 ms   |
+| `20261023T213804Z-f65b056-49594` | `f65b056` + clusters     | 0.123 ms    | 0.421 ms   |
+
+The worst step is a single outlier in both runs; the 90th percentile fell from 0.325 to
+0.167 ms. The baseline fixture run is at `27e045c`, before the printable-ASCII width and
+plain-text prefix slices.
+
 ### Preparation comparisons
 
 Optimization comparisons measure the complete `hdiff` process with macOS

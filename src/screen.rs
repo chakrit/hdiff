@@ -12,7 +12,7 @@ use std::{
 };
 
 use ratatui::buffer::CellWidth;
-use unicode_segmentation::UnicodeSegmentation;
+use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 
 use crate::compact::Count;
 
@@ -83,15 +83,50 @@ impl<Space> From<u16> for Measure<Space> {
     }
 }
 
-impl Cells {
-    /// Cells the row writer covers drawing `text`. Each printable ASCII character is a
-    /// cluster of its own covering one cell, so only other text is segmented.
-    pub fn of_text(text: &str) -> Self {
-        let printable_ascii = text
-            .bytes()
-            .all(|byte| byte == b' ' || byte.is_ascii_graphic());
+/// The grapheme clusters the row writer draws `text` as, each with the byte it starts at.
+/// Printable ASCII is a cluster per character, so only other text is segmented.
+pub fn cluster_indices(text: &str) -> ClusterIndices<'_> {
+    match is_printable_ascii(text) {
+        true => ClusterIndices::PrintableAscii { text, next: 0 },
+        false => ClusterIndices::Segmented(text.grapheme_indices(true)),
+    }
+}
 
-        match printable_ascii {
+/// The clusters of some text, in order, from [`cluster_indices`].
+pub enum ClusterIndices<'t> {
+    /// Printable ASCII `text`, a cluster per byte, from byte `next` on.
+    PrintableAscii { text: &'t str, next: usize },
+    /// Text of any characters, segmented by Unicode's grapheme rules.
+    Segmented(GraphemeIndices<'t>),
+}
+
+impl<'t> Iterator for ClusterIndices<'t> {
+    type Item = (usize, &'t str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::PrintableAscii { text, next } => {
+                let start = *next;
+                let cluster = text.get(start..start + 1)?;
+                *next += 1;
+                Some((start, cluster))
+            }
+            Self::Segmented(clusters) => clusters.next(),
+        }
+    }
+}
+
+/// Whether every character of `text` is printable ASCII: each a cluster of its own that
+/// covers one cell.
+fn is_printable_ascii(text: &str) -> bool {
+    text.bytes().all(|byte| matches!(byte, b' '..=b'~'))
+}
+
+impl Cells {
+    /// Cells the row writer covers drawing `text`. Printable ASCII covers a cell per
+    /// character, so only other text is segmented.
+    pub fn of_text(text: &str) -> Self {
+        match is_printable_ascii(text) {
             true => Self::new(text.len()),
             false => text.graphemes(true).map(Self::of_cluster).sum(),
         }
@@ -204,7 +239,30 @@ impl ScreenLines {
 
 #[cfg(test)]
 mod tests {
-    use super::Cells;
+    use unicode_segmentation::UnicodeSegmentation;
+
+    use super::{Cells, cluster_indices};
+
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: the row writer draws the
+    /// grapheme clusters of the text, so walking clusters never splits or joins one.
+    #[test]
+    fn walks_the_grapheme_clusters_of_any_text() {
+        for text in [
+            "",
+            "a b~",
+            "e\u{301}x",
+            "a\u{1}b",
+            "a\r\nb",
+            "界x",
+            "x\u{1f1f9}\u{1f1ed}",
+        ] {
+            assert_eq!(
+                cluster_indices(text).collect::<Vec<_>>(),
+                text.grapheme_indices(true).collect::<Vec<_>>(),
+                "{text:?}"
+            );
+        }
+    }
 
     /// docs/spec/architecture.md#lossless-and-safe-rendering: text covers the cells its
     /// clusters cover, so a mark combining with an ASCII letter adds none and a control
