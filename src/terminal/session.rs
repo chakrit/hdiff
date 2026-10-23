@@ -270,7 +270,12 @@ impl RestoringPanicHook {
 
         panic::set_hook(Box::new(move |info| {
             if let Err(failure) = restore_after_panic() {
-                report_after_panic(&failure);
+                report_after_panic(
+                    &failure,
+                    &mut OutputContext {
+                        writer: &mut io::stderr(),
+                    },
+                );
             }
             chained(info);
         }));
@@ -294,12 +299,10 @@ fn restore_after_panic() -> Result<(), PanicRestoreFailure> {
         .map_err(PanicRestoreFailure::Restore)
 }
 
-/// Writes `failure` to standard error as every error is written, before the panic
-/// message. Rules: docs/spec/architecture.md#error-output.
-fn report_after_panic(failure: &PanicRestoreFailure) {
-    let reported = ReportError { error: failure }.run(&mut OutputContext {
-        writer: &mut io::stderr(),
-    });
+/// Writes `failure` to the context, standard error in the hook, as every error is
+/// written, before the panic message. Rules: docs/spec/architecture.md#error-output.
+fn report_after_panic(failure: &PanicRestoreFailure, context: &mut OutputContext<'_, impl Write>) {
+    let reported = ReportError { error: failure }.run(context);
     match reported {
         Ok(()) => {}
         // Standard error was the last channel left; the panic message still follows on
@@ -325,5 +328,34 @@ impl fmt::Display for PanicRestoreFailure {
             ),
             Self::Restore(failures) => write!(formatter, "{failures}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::{OutputContext, PanicRestoreFailure, report_after_panic};
+
+    /// docs/spec/architecture.md#error-output: a panic's failed terminal restore is
+    /// reported as every error is, each line prefixed `hdiff: `.
+    #[test]
+    fn reports_a_failed_panic_restore_with_every_line_prefixed() {
+        let error = io::Error::other("no device\nno terminal");
+        let failure = PanicRestoreFailure::Reopen(error);
+        let mut written = Vec::new();
+
+        report_after_panic(
+            &failure,
+            &mut OutputContext {
+                writer: &mut written,
+            },
+        );
+
+        assert_eq!(
+            String::from_utf8_lossy(&written),
+            "hdiff: cannot reopen /dev/tty to restore the terminal: no device\n\
+             hdiff: no terminal\n"
+        );
     }
 }
