@@ -117,35 +117,73 @@ the 167 MB Kubernetes projection from 25 s to under 1 s.
 The scanner should be about 700 lines. The specs should be about 1,500 lines, mostly
 word lists.
 
-## Rewriting `src/syntax.rs`
+## The chain, today and after
 
-The current highlighter is built around Tree-sitter, so it is rewritten rather than
-extended.
+### Today
 
-- **Kept:**
-  - `SyntaxClass`.
-  - `SyntaxSpan`, used by `src/styling.rs`.
-  - The `SyntaxHighlighter::highlight_file` entry point, used by `src/prepared.rs` and
-    `src/styling.rs`.
-- **Removed:**
-  - `Projection`, the per-hunk virtual source buffer, and `map_span`.
-  - `ParseBase`, `OldPass` and the incremental old-to-new reparse.
-  - `LanguageHighlighter` (parser, query and query cursor), `BundledGrammar`, and the
-    capture-name mapping.
-- **Replaced:**
-  - Extension-only language selection becomes a lookup from extension or whole file
-    name to a `Spec`.
-- **Revisited:**
-  - `SyntaxSpan::capture_length` breaks ties between overlapping captures in
-    `src/styling.rs`. Spans from the scanner never overlap, so that tie-breaking may go.
-- **Measurement:**
-  - The `language`, `projection`, `parse` and `query` stages, and the `parse_calls`,
-    `captures` and `projected_bytes` counters (`src/measurement.rs`), become one `scan`
-    stage with scanned-byte and span counts.
-  - `bench/kubernetes.sh`, its runner tests and `docs/spec/performance.md` follow that
-    change.
-- **Tests:** the tests in `src/syntax.rs` are rewritten as spec-driven tests, with one
-  sample per language.
+Each step walks the text again, and the syntax step copies and converts it twice:
+
+1. **Decode** (`src/source_text.rs`): each input line is read once through the
+   escape-sequence scanner into sanitized text.
+2. **Records** (`src/parser/hunk.rs`): the diff parser splits each line into its marker
+   and its payload.
+3. **Layout** (`src/page_rows.rs`): each file's rows are built in display order, and the
+   cells each payload covers are measured.
+4. **Syntax** (`src/syntax.rs`):
+   1. Each side of a hunk is copied into a joined source buffer (the projection).
+   2. Tree-sitter parses that buffer into a tree, and the new side is reparsed as an
+      edit of the old side.
+   3. The highlight query walks the tree and returns captures. Captures can overlap.
+   4. Each capture is mapped back onto the records it covers, into a
+      `RecordMap<Vec<SyntaxSpan>>` per file.
+5. **Detail** (`src/detail.rs`): changed line pairs are diffed by character.
+6. **Styling** (`src/styling.rs`): each row's spans are turned into ordered segments.
+   Because spans can overlap, `Partition::of` collects every span edge, sorts them, and
+   picks the shortest span covering each piece through a heap. Every row with spans
+   pays for the sort and the heap.
+7. **Drawing** (`src/terminal/row_writer.rs`) writes the segments.
+
+### After
+
+The scanner replaces steps 4 and 6 for syntax with one step:
+
+- **Styling scans:** while styling a file's rows in display order, styling keeps one
+  scanner state per side. Each record's payload is scanned in place with the state of
+  its side, and the scanner writes that row's segments directly, in order and never
+  overlapping.
+- **Context lines** belong to both sides. They are scanned with both states, so each
+  side's state stays right, and are colored from the new side as today. When the two
+  states are equal, which is the usual case, the line is scanned once.
+- **A hunk starts each side in the ground state.**
+
+What disappears:
+
+- The projection buffer and its copy.
+- Tree-sitter's tree, the reparse, the query, and the capture-to-record mapping.
+- The `RecordMap<Vec<SyntaxSpan>>` handed from syntax to styling, and the
+  `SyntaxSpan::capture_length` tie-break.
+- The edge sort and heap in `Partition::of` for syntax. They remain only if character
+  detail still needs them.
+- Extension-only language selection. It becomes a lookup from extension or whole file
+  name to a `Spec`.
+
+Measurement follows the change:
+
+- The `language`, `projection`, `parse` and `query` stages become one `scan` stage.
+- The `parse_calls`, `captures` and `projected_bytes` counters become scanned bytes and
+  segments.
+- `bench/kubernetes.sh`, its runner tests and `docs/spec/performance.md` follow.
+
+### Fusions considered and not taken
+
+- **Decoding and highlighting in one pass:** the decoder runs before the file's language
+  matters and exists for terminal safety. Fusing them would make safe decoding depend on
+  the language.
+- **Layout measurement and highlighting in one pass:** layout runs once per file
+  independently of color. Fusing them would tie wrapping to the language.
+
+Both extra passes walk clean, cache-hot text at memory speed. If a profile shows either
+one costing a perceptible amount, revisit it with that profile.
 
 ## Consequence for Tree-sitter
 
