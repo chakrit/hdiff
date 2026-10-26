@@ -139,9 +139,18 @@ implementation remains unapproved.
 2. Performance pass covering movement and preparation, under the
    [performance contract](performance.md).
 
-   - [ ] Hand-rolled highlighting for mainstream languages, per
-     [technology direction](architecture.md#technology-direction); other languages keep
-     Tree-sitter.
+   Build order, per [technology direction](architecture.md#technology-direction) and the
+   [preparation boundary](performance.md#preparation-boundary):
+
+   - [ ] hdiff's own scanner with the Go language table, replacing Tree-sitter in the
+     styling chain; measured on the Kubernetes benchmark.
+   - [ ] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
+   - [ ] Streamed loading: worker, key-reader, and main threads over one channel; a
+     diff parser that accepts input in pieces; pages that grow one change block at a
+     time; the screen drawn at the first byte; the dynamic file list.
+   - [ ] Measurements: time to the first screen and key latency while loading.
+   - [ ] The Tree-sitter second pass through the `tree-sitter` binary in the `PATH`.
+   - [ ] The remaining mainstream language tables.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 

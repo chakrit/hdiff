@@ -10,10 +10,12 @@ This file is authoritative for preparation, measurement, and performance optimiz
 
 Speed is about user perception, not about finishing a batch quickly.
 
-`hdiff` shows the first file as soon as it is ready. Input is read and parsed as it
-streams in, and the remaining files are prepared in the background on one thread while
-the user reads; the file list grows as files arrive. Keys never wait on loading. No async
-runtime is part of this boundary.
+`hdiff` draws its screen at the first byte of input, so empty input still exits
+silently, and fills in content one change block at a time as it arrives. Input is read
+and parsed as it streams in on one background thread while the user reads; the file list
+grows as files arrive. The highlighter colors each line as it arrives. Character detail
+and side-by-side pairing wait for the end of their change block. Keys never wait on
+loading. No async runtime is part of this boundary.
 
 File-list labels are derived as files arrive. Each prepared page derives only its own
 rendered rows, split pairs, syntax spans, and character-detail spans.
