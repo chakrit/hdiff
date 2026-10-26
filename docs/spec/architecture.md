@@ -520,9 +520,15 @@ Rust is the implementation language. `ratatui` owns layout and rendering; CROSST
 with `use-dev-tty` owns terminal I/O, events, resize, raw mode, alternate-screen handling,
 and lifecycle operations. The backend must support event reads from an explicit
 controlling-terminal handle when stdin contains diff data. Syntax highlighting goes
-through an hdiff-owned boundary with two modes: mainstream languages use hdiff's own
-hand-rolled lexer/parser, built for the fastest diff display; other languages call into
-Tree-sitter. The mainstream languages are Rust, JavaScript, Python, Go, and C.
+through an hdiff-owned boundary. Mainstream languages use hdiff's own hand-rolled
+lexer/parser, built for the fastest diff display. Once hdiff's own highlighter is done,
+hdiff highlights again with Tree-sitter whenever the `tree-sitter` binary is available in
+the `PATH`, and applies its colors. The mainstream languages are Go, Rust, C, JavaScript,
+Python, Java, C++, C#, Kotlin, Swift, PHP, Ruby, Shell, SQL, HTML, CSS, SCSS, Less, JSON,
+YAML, TOML, Markdown, XML, INI, Dockerfile, Makefile, CMake, Terraform / HCL, Protocol
+Buffers, GraphQL, Dart, Scala, Lua, Perl, R, Julia, Haskell, OCaml, F#, Elixir, Erlang,
+Clojure, Zig, Nim, Objective-C, Groovy, PowerShell, Visual Basic, Svelte, Vue, Crystal,
+Gleam, Assembly, and CUDA.
 Hand-rolled highlighting need only mostly match Tree-sitter's colors. Highlighting works
 fully out of the box; it never requires the user to download grammars or other binaries.
 The Tree-sitter parser set and performance rationale are recorded in
