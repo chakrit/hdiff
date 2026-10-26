@@ -72,8 +72,9 @@ work hunks=N parse_calls=N captures=N projected_bytes=N
 ```
 
 Preparation children are `labels`, `layout`, `syntax`, `detail`, and `unattributed`.
-Syntax children are `language`, `projection`, `parse`, `query`, and `unattributed`.
-Parse includes incremental-tree editing; query includes capture traversal and mapping.
+Syntax children are `language`, `projection`, `parse`, `query`, `scan`, and
+`unattributed`. Parse includes incremental-tree editing; query includes capture traversal
+and mapping; scan is hdiff's own scanner.
 Child durations partition their parent; parent and child durations are never summed
 together. Unattributed time includes orchestration, destruction, and observer bookkeeping
 outside named spans. Counts include attempted parse calls and all returned captures.
@@ -428,14 +429,15 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
 - **Styled-byte query range.** Restricting each highlight query to the bytes of its
   styled records left every span unchanged but saved under 1.1% of retired instructions,
   and peak memory regressed on one range; it is rejected.
+- **Go through hdiff's scanner.** Go hunks are highlighted by hdiff's own scanner,
+  reading each side's records in order, instead of Tree-sitter.
 
 ## Optimization method
 
 Optimization follows the [engineering standard](architecture.md#engineering-standard).
-The one-second Kubernetes preparation target is reached through successive proper
-refactors. Each slice starts by understanding the
-actual data flow and cost, then chooses the most elegant structural change that makes the
-fast path the natural implementation.
+The [targets](#targets) are reached through successive proper refactors. Each slice
+starts by understanding the actual data flow and cost, then chooses the most elegant
+structural change that makes the fast path the natural implementation.
 
 An optimization must improve the code as well as its runtime. Prepared and rendered
 output remain correct because the design makes them correct. When no clean and measured

@@ -1,0 +1,82 @@
+//! Go's lexical pieces.
+
+use super::{Marker, Pair, Spec};
+use crate::syntax::SyntaxClass;
+
+pub static GO: Spec = Spec {
+    line_markers: &[Marker {
+        text: "//",
+        class: SyntaxClass::Comment,
+    }],
+    delimited: &[
+        Pair::spanning("/*", "*/", SyntaxClass::Comment),
+        Pair::escaped("\"", SyntaxClass::String),
+        Pair::escaped("'", SyntaxClass::String),
+        Pair::spanning("`", "`", SyntaxClass::String),
+    ],
+    words: &[
+        (
+            &[
+                "break",
+                "case",
+                "chan",
+                "const",
+                "continue",
+                "default",
+                "defer",
+                "else",
+                "fallthrough",
+                "for",
+                "func",
+                "go",
+                "goto",
+                "if",
+                "import",
+                "interface",
+                "map",
+                "package",
+                "range",
+                "return",
+                "select",
+                "struct",
+                "switch",
+                "type",
+                "var",
+            ],
+            SyntaxClass::Keyword,
+        ),
+        (
+            &[
+                "any",
+                "bool",
+                "byte",
+                "comparable",
+                "complex128",
+                "complex64",
+                "error",
+                "float32",
+                "float64",
+                "int",
+                "int16",
+                "int32",
+                "int64",
+                "int8",
+                "rune",
+                "string",
+                "uint",
+                "uint16",
+                "uint32",
+                "uint64",
+                "uint8",
+                "uintptr",
+            ],
+            SyntaxClass::Type,
+        ),
+        (&["false", "iota", "nil", "true"], SyntaxClass::Constant),
+    ],
+    after: &[
+        ("func", SyntaxClass::Function),
+        ("type", SyntaxClass::Type),
+        (".", SyntaxClass::Property),
+    ],
+};

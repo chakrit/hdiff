@@ -36,8 +36,15 @@ fn patch_bytes() -> u128 {
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     let preparation =
         ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));
-    let syntax =
-        ["language", "projection", "parse", "query", "unattributed"].map(|name| ("syntax", name));
+    let syntax = [
+        "language",
+        "projection",
+        "parse",
+        "query",
+        "scan",
+        "unattributed",
+    ]
+    .map(|name| ("syntax", name));
 
     preparation.into_iter().chain(syntax).collect()
 }

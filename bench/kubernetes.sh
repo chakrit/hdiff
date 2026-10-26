@@ -170,7 +170,7 @@ EOF
 
     [ "$report_line" -gt 0 ] || fail 'empty benchmark result'
     if [ "$report_kind" = diagnostic ]; then
-        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:language syntax:projection syntax:parse syntax:query syntax:unattributed work'
+        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:language syntax:projection syntax:parse syntax:query syntax:scan syntax:unattributed work'
         [ "$stage_names" = "$expected" ] || fail 'incomplete or reordered profile stages'
         [ "$preparation_stage_sum" -eq "$duration" ] || fail 'preparation stages do not partition their parent'
         [ "$syntax_stage_sum" -eq "$syntax_duration" ] || fail 'syntax stages do not partition their parent'

@@ -11,12 +11,13 @@ pub enum Stage {
     Projection,
     Parse,
     Query,
+    Scan,
 }
 
 impl Stage {
     /// Every stage, in report order, read from the one field each stage has in
     /// [`ByStage`], so a stage cannot exist without appearing here.
-    pub const ALL: [Self; 8] = ByStage::STAGES.into_array();
+    pub const ALL: [Self; 9] = ByStage::STAGES.into_array();
 
     /// The stage's name in profile reports.
     pub const fn label(self) -> &'static str {
@@ -29,6 +30,7 @@ impl Stage {
             Self::Projection => "projection",
             Self::Parse => "parse",
             Self::Query => "query",
+            Self::Scan => "scan",
         }
     }
 
@@ -36,7 +38,9 @@ impl Stage {
     pub const fn parent(self) -> Parent {
         match self {
             Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
-            Self::Language | Self::Projection | Self::Parse | Self::Query => Parent::Syntax,
+            Self::Language | Self::Projection | Self::Parse | Self::Query | Self::Scan => {
+                Parent::Syntax
+            }
         }
     }
 }
@@ -193,6 +197,7 @@ struct ByStage<T> {
     projection: T,
     parse: T,
     query: T,
+    scan: T,
 }
 
 impl ByStage<Stage> {
@@ -206,12 +211,13 @@ impl ByStage<Stage> {
         projection: Stage::Projection,
         parse: Stage::Parse,
         query: Stage::Query,
+        scan: Stage::Scan,
     };
 }
 
 impl<T: Copy> ByStage<T> {
     /// The values in report order.
-    const fn into_array(self) -> [T; 8] {
+    const fn into_array(self) -> [T; 9] {
         let Self {
             labels,
             layout,
@@ -221,10 +227,11 @@ impl<T: Copy> ByStage<T> {
             projection,
             parse,
             query,
+            scan,
         } = self;
 
         [
-            labels, layout, syntax, detail, language, projection, parse, query,
+            labels, layout, syntax, detail, language, projection, parse, query, scan,
         ]
     }
 }
@@ -240,6 +247,7 @@ impl<T> ByStage<T> {
             Stage::Projection => &self.projection,
             Stage::Parse => &self.parse,
             Stage::Query => &self.query,
+            Stage::Scan => &self.scan,
         }
     }
 
@@ -253,6 +261,7 @@ impl<T> ByStage<T> {
             Stage::Projection => &mut self.projection,
             Stage::Parse => &mut self.parse,
             Stage::Query => &mut self.query,
+            Stage::Scan => &mut self.scan,
         }
     }
 }

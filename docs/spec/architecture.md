@@ -558,11 +558,13 @@ Hand-rolled highlighting need only mostly match Tree-sitter's colors. Highlighti
 fully out of the box; it never requires the user to download grammars or other binaries.
 The Tree-sitter parser set and performance rationale are recorded in
 `docs/vendor/syntax-highlighting.md`.
-Syntax highlighting projects each hunk's old and new records into separate bounded
-virtual source buffers, maps returned spans back to sanitized record payloads, and leaves
-unsupported languages as plain text. Every bundled grammar and its highlight query load;
-the bundled-grammar test checks each one. Projection records are ordered by virtual
-source range, so span mapping visits only records that overlap the returned source span.
+hdiff's scanner reads each side's records of a hunk in order from open ground, so a
+region an earlier record opens carries into the next. Tree-sitter highlighting projects
+each hunk's old and new records into separate bounded virtual source buffers and maps
+returned spans back to sanitized record payloads. Unsupported languages stay plain text.
+Every bundled grammar and its highlight query load; the bundled-grammar test checks each
+one. Projection records are ordered by virtual source range, so span mapping visits only
+records that overlap the returned source span.
 Safe rendering is the single source of
 display rows: each rendered record row retains its kind, hunk and record address, and its
 sanitized payload with the cells it covers. Page rows and their scroll extents derive

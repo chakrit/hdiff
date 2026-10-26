@@ -26,6 +26,7 @@ pub mod page_rows;
 pub mod parser;
 pub mod preferences;
 pub mod prepared;
+pub mod scanner;
 pub mod screen;
 pub mod shell_words;
 pub mod side;
