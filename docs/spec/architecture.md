@@ -330,6 +330,10 @@ it has no file-system navigation and no collapse or expansion.
   rotation and the file list follow this order.
 - Directory rows are headings only. Selection and `Tab` / `Shift-Tab` rotation move
   between files and never stop on a heading.
+- The file list is dynamic: it grows as files arrive, with a parsing status. A file shows
+  a "parsing" icon while it is parsed and an "error" icon when its input fails; there is
+  no loading icon. Files added to the list never shift the user's focus, and `Tab` /
+  `Shift-Tab` work intuitively during the load.
 - Rows have no indentation. A directory heading shows the directory's full path with a
   trailing `/`, such as `src/terminal/`. A directory whose only content is one
   subdirectory shares that subdirectory's heading. A heading appears wherever a file's

@@ -78,10 +78,9 @@ Git history.
 
 ## Preparation optimization
 
-The performance pass (product slice 2) resumes preparation optimization. Resumption
-requires considering a more
-drastic refactor or a multi-threaded parsing architecture; the accepted architecture
-remains single-threaded.
+The performance pass (product slice 2) resumes preparation optimization: streamed input,
+the first file shown first, and the remaining files prepared on one background thread,
+per the [preparation boundary](performance.md#preparation-boundary).
 
 The eager-preparation contract, benchmark mode, retained prepared-file representation,
 whole-document preparation, and pinned-corpus measurements are complete. Remaining

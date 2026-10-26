@@ -8,18 +8,15 @@ This file is authoritative for preparation, measurement, and performance optimiz
 
 ## Preparation boundary
 
-`hdiff` completes parsing, layout derivation, Tree-sitter syntax highlighting, and
-character detail before entering the terminal loop. The loop receives fully prepared data
-and has no parser, readiness, loading, or first-file state.
-It owns only interaction, terminal lifecycle, redraw decisions, and rendering of the
-prepared active viewport. No async runtime, executor, channel, or task dependency is
-part of this boundary.
+Speed is about user perception, not about finishing a batch quickly.
 
-Preparation is one optimized single-threaded pass. Incremental preparation is not part of
-this design unless measured preparation latency makes the eager boundary untenable.
+`hdiff` shows the first file as soon as it is ready. Input is read and parsed as it
+streams in, and the remaining files are prepared in the background on one thread while
+the user reads; the file list grows as files arrive. Keys never wait on loading. No async
+runtime is part of this boundary.
 
-Document-wide file-list labels are derived once during preparation. Each prepared page
-derives only its own rendered rows, split pairs, syntax spans, and character-detail spans.
+File-list labels are derived as files arrive. Each prepared page derives only its own
+rendered rows, split pairs, syntax spans, and character-detail spans.
 A page's `PageRows` is the sole owner of each exact-sized immutable rendered-row buffer.
 Unified and side-by-side layout projections reference those buffers.
 
