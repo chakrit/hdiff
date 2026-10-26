@@ -117,8 +117,6 @@ validate_report() {
     report_bytes=unavailable
     stage_names=
     preparation_stage_sum=0
-    syntax_stage_sum=0
-    syntax_duration=0
 
     while IFS= read -r line || [ -n "$line" ]; do
         report_line=$((report_line + 1))
@@ -170,10 +168,9 @@ EOF
 
     [ "$report_line" -gt 0 ] || fail 'empty benchmark result'
     if [ "$report_kind" = diagnostic ]; then
-        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:scan syntax:unattributed work'
+        expected=' preparation:labels preparation:layout preparation:detail preparation:styling preparation:unattributed work'
         [ "$stage_names" = "$expected" ] || fail 'incomplete or reordered profile stages'
         [ "$preparation_stage_sum" -eq "$duration" ] || fail 'preparation stages do not partition their parent'
-        [ "$syntax_stage_sum" -eq "$syntax_duration" ] || fail 'syntax stages do not partition their parent'
     fi
 }
 
@@ -190,14 +187,8 @@ EOF
             [ "$1" = "stage name=$stage_name parent=$stage_parent duration_ns=$stage_duration" ] ||
                 fail "invalid stage: $1"
             stage_names="$stage_names $stage_parent:$stage_name"
-            case "$stage_parent:$stage_name" in
-                preparation:syntax) syntax_duration=$stage_duration ;;
-            esac
-            case "$stage_parent" in
-                preparation) preparation_stage_sum=$((preparation_stage_sum + stage_duration)) ;;
-                syntax) syntax_stage_sum=$((syntax_stage_sum + stage_duration)) ;;
-                *) fail "unknown stage parent: $stage_parent" ;;
-            esac
+            [ "$stage_parent" = preparation ] || fail "unknown stage parent: $stage_parent"
+            preparation_stage_sum=$((preparation_stage_sum + stage_duration))
             ;;
         work)
             hunks=${first#hunks=}

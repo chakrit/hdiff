@@ -35,10 +35,9 @@ fn patch_bytes() -> u128 {
 /// unattributed remainder.
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     let preparation =
-        ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));
-    let syntax = ["scan", "unattributed"].map(|name| ("syntax", name));
+        ["labels", "layout", "detail", "styling", "unattributed"].map(|name| ("preparation", name));
 
-    preparation.into_iter().chain(syntax).collect()
+    preparation.into_iter().collect()
 }
 
 /// One report line: its kind, then its `key=value` fields.
@@ -158,10 +157,6 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
         startup.integer("preparation_ns"),
         "{text}"
     );
-    let syntax_stage = stages
-        .get(&("preparation", "syntax"))
-        .unwrap_or_else(|| panic!("a preparation/syntax stage record: {text}"));
-    assert_eq!(parent_sum("syntax"), *syntax_stage, "{text}");
     assert_eq!(work.integer("hunks"), 1, "{text}");
     // docs/spec/performance.md#stages: the scanner reads "fn old() {}" and "fn new() {}",
     // 11 bytes each, and gives each a keyword and a function name.

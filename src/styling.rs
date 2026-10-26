@@ -2,19 +2,19 @@
 //! docs/spec/architecture.md#palette-and-character-detail and
 //! docs/spec/architecture.md#technology-direction.
 
-use std::{cmp::Reverse, collections::BinaryHeap, slice};
+use std::slice;
 
 use crate::{
     detail::{ChangedDetail, character_details},
     display_lines::{LineKind, RecordPart},
-    document::{FileView, RecordMap},
+    document::FileView,
     measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
     preferences::DiffGranularity,
     side::Side,
     source_text::SourceLine,
     span::PayloadSpan,
-    syntax::{self, SyntaxClass, SyntaxSpan},
+    syntax::{DisplayScan, SyntaxClass},
 };
 
 /// A page's rows kept with the styles of each line, so a line can only be styled with
@@ -26,18 +26,15 @@ pub struct StyledRows {
 }
 
 impl StyledRows {
-    /// The rows of one file occurrence, each line styled with the syntax spans of its
-    /// record and its character detail.
+    /// The rows of one file occurrence, each line styled with its syntax and its
+    /// character detail.
     pub fn of_file_view(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         let rows = observer.time(Stage::Layout, || PageRows::of_file_view(view));
-        let syntax = observer.measure(Stage::Syntax, |observer| {
-            syntax::highlight_file(view.file, observer)
-        });
 
-        Self::styled(rows, &syntax, observer)
+        Self::styled(rows, DisplayScan::of_file(view.file), observer)
     }
 
-    /// The rows of surrounding text, which has no syntax spans; its shared rows carry no
+    /// The rows of surrounding text, which has no syntax; its shared rows carry no
     /// character detail.
     pub fn of_text<'a>(
         lines: impl IntoIterator<Item = &'a SourceLine>,
@@ -45,30 +42,30 @@ impl StyledRows {
     ) -> Self {
         let rows = observer.time(Stage::Layout, || PageRows::of_text(lines));
 
-        Self::styled(rows, &RecordMap::empty(), observer)
+        Self::styled(rows, DisplayScan::textual(), observer)
     }
 
-    /// The styles of each line of `rows`: the syntax spans of its record, looked up by
-    /// address, and the character detail derived here from these same rows.
-    fn styled(
-        rows: PageRows,
-        syntax_spans: &RecordMap<Vec<SyntaxSpan>>,
-        observer: &mut impl Observer,
-    ) -> Self {
+    /// The styles of each line of `rows`: the syntax `scan` reads from the lines in
+    /// display order, and the character detail derived here from these same rows.
+    fn styled(rows: PageRows, mut scan: DisplayScan, observer: &mut impl Observer) -> Self {
         let details = observer.time(Stage::Detail, || character_details(&rows));
+        let mut scratch = PartitionScratch::default();
 
-        let styles = rows.map_lines(|index, line| {
-            let text = line.payload();
-            let spans: &[SyntaxSpan] = line
-                .kind()
-                .payload_record()
-                .map_or(&[], |record| syntax_spans.get(record.address));
-            let detail = details.get(index).as_ref();
+        let styles = observer.measure(Stage::Styling, |observer| {
+            rows.map_lines(|index, line| {
+                let text = line.payload();
+                let mut syntax = scratch.start(text, TextStyle::Plain);
+                scan.line(line.kind(), text, observer, |span, class| {
+                    syntax.push(span, TextStyle::Syntax(class));
+                });
+                let syntax = syntax.finish();
+                let character = details
+                    .get(index)
+                    .as_ref()
+                    .map(|changed| character_partition(&mut scratch, text, changed));
 
-            RowStyles {
-                syntax: syntax_partition(text, spans),
-                character: detail.map(|changed| character_partition(text, changed)),
-            }
+                RowStyles { syntax, character }
+            })
         });
 
         Self { rows, styles }
@@ -194,47 +191,20 @@ struct RowStyles {
     character: Option<Partition>,
 }
 
-/// `text` split by its record's `syntax` spans; text no span covers is plain.
-fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
-    let annotations = syntax
-        .iter()
-        .map(|span| Annotation {
-            span: span.bytes,
-            priority_length: span.bytes.len(),
-            style: TextStyle::Syntax(span.class),
-        })
-        .collect::<Vec<_>>();
-
-    Partition::of(text, &annotations, TextStyle::Plain)
-}
-
 /// `text` split by its character `detail`: changed spans, and the unchanged text between
 /// them.
-fn character_partition(text: &str, detail: &ChangedDetail) -> Partition {
+fn character_partition(
+    scratch: &mut PartitionScratch,
+    text: &str,
+    detail: &ChangedDetail,
+) -> Partition {
     let side = detail.side();
-    let annotations = detail
-        .spans()
-        .iter()
-        .map(|span| Annotation {
-            span: *span,
-            priority_length: span.len(),
-            style: TextStyle::Detail(side, DetailStyle::Changed),
-        })
-        .collect::<Vec<_>>();
+    let mut partition = scratch.start(text, TextStyle::Detail(side, DetailStyle::Unchanged));
+    for span in detail.spans() {
+        partition.push(*span, TextStyle::Detail(side, DetailStyle::Changed));
+    }
 
-    Partition::of(
-        text,
-        &annotations,
-        TextStyle::Detail(side, DetailStyle::Unchanged),
-    )
-}
-
-/// A style over a span of a payload, ranked against overlapping annotations by its
-/// priority length: the shorter wins.
-struct Annotation {
-    span: PayloadSpan,
-    priority_length: usize,
-    style: TextStyle,
+    partition.finish()
 }
 
 /// A row's text split into styled segments: one style for all of it, or the end and
@@ -246,70 +216,13 @@ enum Partition {
 }
 
 /// Where a styled segment of a payload ends, and the style it is drawn in.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Boundary {
     pub end: usize,
     pub style: TextStyle,
 }
 
 impl Partition {
-    /// Splits `text` at annotation edges, which are spans of `text`; text no annotation
-    /// covers takes `uncovered`. Where annotations overlap, the shortest capture wins and
-    /// later encounters break ties.
-    /// Rules: docs/spec/architecture.md#technology-direction.
-    fn of(text: &str, annotations: &[Annotation], uncovered: TextStyle) -> Self {
-        if annotations.is_empty() {
-            return Self::Uniform(Boundary {
-                end: text.len(),
-                style: uncovered,
-            });
-        }
-
-        let mut offsets = annotations
-            .iter()
-            .flat_map(|annotation| [annotation.span.start(), annotation.span.end()])
-            .chain([0, text.len()])
-            .collect::<Vec<_>>();
-        offsets.sort_unstable();
-        offsets.dedup();
-
-        let mut start_order = (0..annotations.len()).collect::<Vec<_>>();
-        start_order.sort_unstable_by_key(|index| annotations[*index].span.start());
-        let mut starts = start_order.into_iter().peekable();
-
-        let mut active = BinaryHeap::new();
-        let mut boundaries: Vec<Boundary> = Vec::new();
-
-        for (&start, &end) in offsets.iter().zip(&offsets[1..]) {
-            while let Some(index) =
-                starts.next_if(|index| annotations[*index].span.start() <= start)
-            {
-                let annotation = &annotations[index];
-                active.push((Reverse(annotation.priority_length), index));
-            }
-
-            while let Some((_, index)) = active.peek()
-                && annotations[*index].span.end() <= start
-            {
-                active.pop();
-            }
-
-            let style = active
-                .peek()
-                .map_or(uncovered, |(_, index)| annotations[*index].style);
-
-            if let Some(previous) = boundaries.last_mut()
-                && previous.style == style
-            {
-                previous.end = end;
-            } else {
-                boundaries.push(Boundary { end, style });
-            }
-        }
-
-        Self::Split(boundaries.into_boxed_slice())
-    }
-
     /// Each segment's end and style, in order.
     fn boundaries(&self) -> &[Boundary] {
         match self {
@@ -319,21 +232,87 @@ impl Partition {
     }
 }
 
+/// Storage reused across rows, so building a partition allocates only its result.
+#[derive(Default)]
+struct PartitionScratch(Vec<Boundary>);
+
+impl PartitionScratch {
+    /// A partition of `text` to build from its spans; text no span covers takes
+    /// `uncovered`.
+    fn start(&mut self, text: &str, uncovered: TextStyle) -> PartitionBuild<'_> {
+        self.0.clear();
+
+        PartitionBuild {
+            boundaries: &mut self.0,
+            text_length: text.len(),
+            uncovered,
+            covered: 0,
+        }
+    }
+}
+
+/// A partition being built from spans that come in order and never overlap.
+struct PartitionBuild<'s> {
+    boundaries: &'s mut Vec<Boundary>,
+    text_length: usize,
+    uncovered: TextStyle,
+    /// Where the last span ended.
+    covered: usize,
+}
+
+impl PartitionBuild<'_> {
+    /// Adds `span` drawn in `style`, after the text before it.
+    ///
+    /// Panics when `span` starts before the last span ended.
+    fn push(&mut self, span: PayloadSpan, style: TextStyle) {
+        assert!(
+            span.start() >= self.covered,
+            "partition spans come in order and never overlap"
+        );
+
+        self.extend(span.start(), self.uncovered);
+        self.extend(span.end(), style);
+        self.covered = span.end();
+    }
+
+    /// The partition, with the text after the last span uncovered.
+    fn finish(mut self) -> Partition {
+        self.extend(self.text_length, self.uncovered);
+
+        match self.boundaries.as_slice() {
+            [] => Partition::Uniform(Boundary {
+                end: self.text_length,
+                style: self.uncovered,
+            }),
+            [only] => Partition::Uniform(*only),
+            all => Partition::Split(Box::from(all)),
+        }
+    }
+
+    /// Draws the text up to `end` in `style`, joining the segment before it when that is
+    /// drawn the same way.
+    fn extend(&mut self, end: usize, style: TextStyle) {
+        let start = self.boundaries.last().map_or(0, |boundary| boundary.end);
+        if end == start {
+            return;
+        }
+
+        match self.boundaries.last_mut() {
+            Some(previous) if previous.style == style => previous.end = end,
+            Some(_) | None => self.boundaries.push(Boundary { end, style }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
-
     use super::{
-        DetailStyle, Partition, RowTone, StyledRow, StyledText, TextStyle, character_partition,
-        syntax_partition,
+        DetailStyle, Partition, PartitionScratch, RowTone, StyledRow, StyledText, TextStyle,
+        character_partition,
     };
     use crate::{
-        detail::character_details,
-        page_rows::PageRows,
-        parser::parse_patch,
-        side::Side,
-        span::PayloadSpan,
-        syntax::{SyntaxClass, SyntaxSpan},
+        detail::character_details, page_rows::PageRows, parser::parse_patch, side::Side,
+        span::PayloadSpan, syntax::SyntaxClass,
     };
 
     fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<StyledText<'a, TextStyle>> {
@@ -349,34 +328,33 @@ mod tests {
         StyledText { text, style }
     }
 
-    fn syntax(text: &str, bytes: Range<usize>, class: SyntaxClass) -> SyntaxSpan {
-        SyntaxSpan {
-            bytes: PayloadSpan::within(text, bytes),
-            class,
-        }
-    }
-
-    /// docs/spec/architecture.md#technology-direction: overlap precedence applies styles
-    /// without changing source text.
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: spans style text without
+    /// changing it, and adjacent spans drawn alike form one segment.
     #[test]
-    fn chooses_specific_captures_and_later_ties_without_losing_outer_styles() {
-        let text = "αcall!";
-        let whole = 0..text.len();
-        let call_start = text.find("call").expect("the text holds call");
-        let call = call_start..call_start + "call".len();
-        let spans = [
-            syntax(text, whole.clone(), SyntaxClass::String),
-            syntax(text, call.clone(), SyntaxClass::Property),
-            syntax(text, call.clone(), SyntaxClass::Function),
-        ];
-        let partition = syntax_partition(text, &spans);
+    fn splits_text_at_ordered_spans_and_joins_adjacent_alike_segments() {
+        let text = "αcall(x)!";
+        let call = text.find("call").expect("the text holds call");
+        let x = text.find('x').expect("the text holds x");
+        let keyword = TextStyle::Syntax(SyntaxClass::Keyword);
+        let mut scratch = PartitionScratch::default();
+
+        let mut build = scratch.start(text, TextStyle::Plain);
+        build.push(PayloadSpan::within(text, call..call + 2), keyword);
+        build.push(PayloadSpan::within(text, call + 2..call + 4), keyword);
+        build.push(
+            PayloadSpan::within(text, x..x + 1),
+            TextStyle::Syntax(SyntaxClass::Variable),
+        );
+        let partition = build.finish();
 
         assert_eq!(
             segments(text, &partition),
             [
-                styled("α", TextStyle::Syntax(SyntaxClass::String)),
-                styled("call", TextStyle::Syntax(SyntaxClass::Function)),
-                styled("!", TextStyle::Syntax(SyntaxClass::String)),
+                styled("α", TextStyle::Plain),
+                styled("call", keyword),
+                styled("(", TextStyle::Plain),
+                styled("x", TextStyle::Syntax(SyntaxClass::Variable)),
+                styled(")!", TextStyle::Plain),
             ]
         );
     }
@@ -401,7 +379,7 @@ mod tests {
             .expect("a changed pair has detail");
         let text = rows.line(addition).payload();
 
-        let partition = character_partition(text, detail);
+        let partition = character_partition(&mut PartitionScratch::default(), text, detail);
 
         let new_detail = |style| TextStyle::Detail(Side::New, style);
         assert_eq!(
@@ -415,8 +393,10 @@ mod tests {
     }
 
     #[test]
-    fn text_without_annotations_takes_the_uncovered_style() {
-        let partition = syntax_partition("same", &[]);
+    fn text_without_spans_takes_the_uncovered_style() {
+        let partition = PartitionScratch::default()
+            .start("same", TextStyle::Plain)
+            .finish();
 
         assert_eq!(
             segments("same", &partition),

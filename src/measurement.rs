@@ -1,74 +1,27 @@
 use std::time::{Duration, Instant};
 
-/// A timed part of preparation, whose duration the profile accumulates.
+/// A timed part of preparation, whose duration the profile accumulates. The stages
+/// partition preparation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Labels,
     Layout,
-    Syntax,
     Detail,
-    Scan,
+    Styling,
 }
 
 impl Stage {
     /// Every stage, in report order, read from the one field each stage has in
     /// [`ByStage`], so a stage cannot exist without appearing here.
-    pub const ALL: [Self; 5] = ByStage::STAGES.into_array();
+    pub const ALL: [Self; 4] = ByStage::STAGES.into_array();
 
     /// The stage's name in profile reports.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Labels => "labels",
             Self::Layout => "layout",
-            Self::Syntax => "syntax",
             Self::Detail => "detail",
-            Self::Scan => "scan",
-        }
-    }
-
-    /// The enclosing measurement whose duration this stage's duration partitions.
-    pub const fn parent(self) -> Parent {
-        match self {
-            Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
-            Self::Scan => Parent::Syntax,
-        }
-    }
-}
-
-/// A measurement partitioned by disjoint child stages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Parent {
-    /// The whole preparation, timed outside the profile.
-    Preparation,
-    /// Syntax highlighting, timed as [`Stage::Syntax`].
-    Syntax,
-}
-
-impl Parent {
-    /// Every parent, in report order.
-    pub const ALL: [Self; 2] = [Self::Preparation, Self::Syntax];
-
-    /// The stages that partition this parent's duration, in report order.
-    pub fn stages(self) -> impl Iterator<Item = Stage> {
-        Stage::ALL
-            .into_iter()
-            .filter(move |stage| stage.parent() == self)
-    }
-
-    /// The parent's name in profile reports.
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Preparation => "preparation",
-            Self::Syntax => Stage::Syntax.label(),
-        }
-    }
-
-    /// The profiled stage whose duration is this parent's total; none for a parent timed
-    /// outside the profile.
-    pub const fn measured_by(self) -> Option<Stage> {
-        match self {
-            Self::Preparation => None,
-            Self::Syntax => Some(Stage::Syntax),
+            Self::Styling => "styling",
         }
     }
 }
@@ -180,9 +133,8 @@ pub struct WorkCounts {
 struct ByStage<T> {
     labels: T,
     layout: T,
-    syntax: T,
     detail: T,
-    scan: T,
+    styling: T,
 }
 
 impl ByStage<Stage> {
@@ -190,24 +142,22 @@ impl ByStage<Stage> {
     const STAGES: Self = Self {
         labels: Stage::Labels,
         layout: Stage::Layout,
-        syntax: Stage::Syntax,
         detail: Stage::Detail,
-        scan: Stage::Scan,
+        styling: Stage::Styling,
     };
 }
 
 impl<T: Copy> ByStage<T> {
     /// The values in report order.
-    const fn into_array(self) -> [T; 5] {
+    const fn into_array(self) -> [T; 4] {
         let Self {
             labels,
             layout,
-            syntax,
             detail,
-            scan,
+            styling,
         } = self;
 
-        [labels, layout, syntax, detail, scan]
+        [labels, layout, detail, styling]
     }
 }
 
@@ -216,9 +166,8 @@ impl<T> ByStage<T> {
         match stage {
             Stage::Labels => &self.labels,
             Stage::Layout => &self.layout,
-            Stage::Syntax => &self.syntax,
             Stage::Detail => &self.detail,
-            Stage::Scan => &self.scan,
+            Stage::Styling => &self.styling,
         }
     }
 
@@ -226,9 +175,8 @@ impl<T> ByStage<T> {
         match stage {
             Stage::Labels => &mut self.labels,
             Stage::Layout => &mut self.layout,
-            Stage::Syntax => &mut self.syntax,
             Stage::Detail => &mut self.detail,
-            Stage::Scan => &mut self.scan,
+            Stage::Styling => &mut self.styling,
         }
     }
 }
@@ -237,7 +185,7 @@ impl<T> ByStage<T> {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{ByStage, Parent, Stage};
+    use super::{ByStage, Stage};
 
     #[test]
     fn every_stage_holds_its_own_field() {
@@ -250,15 +198,5 @@ mod tests {
         for stage in Stage::ALL {
             assert_eq!(*ByStage::STAGES.get(stage), stage);
         }
-    }
-
-    #[test]
-    fn reports_every_stage_once_under_its_parent_in_stage_order() {
-        let reported = Parent::ALL
-            .into_iter()
-            .flat_map(Parent::stages)
-            .collect::<Vec<_>>();
-
-        assert_eq!(reported, Stage::ALL);
     }
 }

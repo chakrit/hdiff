@@ -1,10 +1,11 @@
-//! The syntax spans of each record, from hdiff's own scanner. Rules:
+//! The syntax of each displayed line, from hdiff's own scanner. Rules:
 //! docs/spec/architecture.md#technology-direction.
 
 use crate::{
-    document::{DiffFile, HunkRecords, Record, RecordEntry, RecordMap},
-    headers::{FileHeader, HeaderPath},
-    measurement::{Observer, Stage, Work},
+    display_lines::{LineKind, RecordPart},
+    document::{DiffFile, FileBody},
+    headers::HeaderPath,
+    measurement::{Observer, Work},
     scanner::{ScanState, Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST},
     side::{BySide, Side},
     span::PayloadSpan,
@@ -25,105 +26,122 @@ pub enum SyntaxClass {
     Variable,
 }
 
-/// One syntax class over part of a record's payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SyntaxSpan {
-    /// The payload bytes the class covers.
-    pub bytes: PayloadSpan,
-    /// The kind of syntax the span marks.
-    pub class: SyntaxClass,
+/// A page's syntax read line by line in display order: each side's language and where
+/// its scan stands. Each side reads its own records in order, so a region an earlier
+/// record opens carries into the next; a hunk starts both sides on open ground.
+pub struct DisplayScan {
+    languages: BySide<Option<&'static Spec>>,
+    /// Whether both sides read one language, so context takes the new side's syntax;
+    /// otherwise context stays textual.
+    shared: bool,
+    states: BySide<ScanState>,
 }
 
-/// The syntax spans of each record of `file`.
-pub fn highlight_file(file: &DiffFile, observer: &mut impl Observer) -> RecordMap<Vec<SyntaxSpan>> {
-    file.record_map(|headers, hunk| highlight_hunk(headers, hunk, observer))
-}
+impl DisplayScan {
+    /// The scan of `file`'s lines, each side in its path's language.
+    pub fn of_file(file: &DiffFile) -> Self {
+        let languages = match &file.body {
+            FileBody::Unified(body) => body
+                .headers
+                .as_ref()
+                .map(|header| Language::of_header(&header.path)),
+            FileBody::Metadata(_) => BySide::default(),
+        };
+        let shared = languages.merge(|old, new| old.is_some() && old == new);
 
-/// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the record it
-/// styles. Each side reads in its path's language; context takes the new side's spans,
-/// and stays textual when the paths select different languages.
-fn highlight_hunk<'h>(
-    headers: &BySide<FileHeader>,
-    hunk: HunkRecords<'_, 'h>,
-    observer: &mut impl Observer,
-) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-    observer.count(Work::Hunk);
-    let languages = headers
-        .as_ref()
-        .map(|header| Language::of_header(&header.path));
-    let shared_language = languages.merge(|old, new| old.filter(|language| new == Some(*language)));
-    let styled_records = BySide {
-        old: StyledRecords::Changes,
-        new: match shared_language {
-            Some(_) => StyledRecords::ChangesAndContext,
-            None => StyledRecords::Changes,
-        },
-    };
-
-    let side_spans = observer.measure(Stage::Scan, |observer| {
-        languages
-            .zip(styled_records)
-            .map_sides(|side, (language, styled)| {
-                language.map_or_else(Vec::new, |language| {
-                    scan_side(language.spec(), hunk, side, styled, observer)
-                })
-            })
-    });
-
-    side_spans.into_iter().flatten().collect()
-}
-
-/// The spans the scanner gives `side`'s `styled` records of `hunk`, reading every record
-/// of the side in order from open ground so a region carries across records.
-fn scan_side<'h>(
-    spec: &Spec,
-    hunk: HunkRecords<'_, 'h>,
-    side: Side,
-    styled: StyledRecords,
-    observer: &mut impl Observer,
-) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-    let mut spans = Vec::new();
-    let side_records = hunk
-        .positioned()
-        .filter(|entry| entry.value.kind.on_side(side));
-
-    side_records.fold(ScanState::default(), |state, entry| {
-        let payload = entry.value.payload.sanitized();
-        let shows = styled.includes(entry.value);
-        observer.count(Work::ScannedBytes(payload.len()));
-        spec.scan(state, payload, |bytes, class| {
-            if shows {
-                spans.push(RecordEntry {
-                    position: entry.position,
-                    value: SyntaxSpan {
-                        bytes: PayloadSpan::within(payload, bytes),
-                        class,
-                    },
-                });
-            }
-        })
-    });
-
-    observer.count(Work::Segments(spans.len()));
-    spans
-}
-
-/// Which records on a side take its syntax spans.
-#[derive(Clone, Copy)]
-enum StyledRecords {
-    /// Only the side's own changes.
-    Changes,
-    /// The side's changes and the context it shares with the other side.
-    ChangesAndContext,
-}
-
-impl StyledRecords {
-    /// Whether `record`, a record on the side, takes the side's spans.
-    fn includes(self, record: &Record) -> bool {
-        match self {
-            Self::Changes => record.kind.changed_side().is_some(),
-            Self::ChangesAndContext => true,
+        Self {
+            languages: languages.map(|language| language.map(Language::spec)),
+            shared,
+            states: BySide::default(),
         }
+    }
+
+    /// The scan of lines in no language, such as surrounding text.
+    pub fn textual() -> Self {
+        Self {
+            languages: BySide::default(),
+            shared: false,
+            states: BySide::default(),
+        }
+    }
+
+    /// Gives `emit` the syntax spans of the next displayed line, of `kind` with
+    /// `payload`, in order, and advances the scan past it.
+    pub fn line(
+        &mut self,
+        kind: LineKind,
+        payload: &str,
+        observer: &mut impl Observer,
+        mut emit: impl FnMut(PayloadSpan, SyntaxClass),
+    ) {
+        match kind {
+            LineKind::HunkHeader => {
+                observer.count(Work::Hunk);
+                self.states = BySide::default();
+            }
+            LineKind::Record {
+                kind: record_kind,
+                part: RecordPart::Payload,
+                ..
+            } => match record_kind.changed_side() {
+                Some(side) => self.read(side, payload, observer, &mut emit),
+                None => self.context(payload, observer, &mut emit),
+            },
+            LineKind::Record {
+                part: RecordPart::NoNewlineMarker,
+                ..
+            }
+            | LineKind::Text
+            | LineKind::Metadata
+            | LineKind::FileHeader => {}
+        }
+    }
+
+    /// Reads a context line on both sides; it takes the new side's spans when both read
+    /// one language. When both sides stand in the same state, which is usual, it is read
+    /// once.
+    fn context(
+        &mut self,
+        payload: &str,
+        observer: &mut impl Observer,
+        emit: &mut impl FnMut(PayloadSpan, SyntaxClass),
+    ) {
+        if self.shared && self.states.old == self.states.new {
+            self.read(Side::New, payload, observer, emit);
+            self.states.old = self.states.new;
+            return;
+        }
+
+        self.read(Side::Old, payload, observer, &mut |_, _| {});
+        if self.shared {
+            self.read(Side::New, payload, observer, emit);
+        } else {
+            self.read(Side::New, payload, observer, &mut |_, _| {});
+        }
+    }
+
+    /// Reads `payload` as the next line of `side`, giving `emit` its spans; a side
+    /// without a language reads nothing.
+    fn read(
+        &mut self,
+        side: Side,
+        payload: &str,
+        observer: &mut impl Observer,
+        emit: &mut impl FnMut(PayloadSpan, SyntaxClass),
+    ) {
+        let Some(spec) = self.languages.get(side) else {
+            return;
+        };
+
+        let mut segments = 0;
+        let state = self.states.get_mut(side);
+        *state = spec.scan(*state, payload, |bytes, class| {
+            segments += 1;
+            emit(PayloadSpan::within(payload, bytes), class);
+        });
+
+        observer.count(Work::ScannedBytes(payload.len()));
+        observer.count(Work::Segments(segments));
     }
 }
 
@@ -175,40 +193,41 @@ impl Language {
 
 #[cfg(test)]
 mod tests {
-    use super::{SyntaxClass, SyntaxSpan, highlight_file};
+    use super::{DisplayScan, SyntaxClass};
     use crate::{
-        document::{AddressedHunk, FileBody},
         measurement::{Profile, Unobserved},
+        page_rows::PageRows,
         parser::parse_patch,
     };
 
-    /// The syntax spans of each of the `N` records of the first hunk of `patch`'s only
-    /// file, in record order.
-    fn highlights_of<const N: usize>(patch: &[u8]) -> [Vec<SyntaxSpan>; N] {
-        let document = parse_patch(patch).expect("valid diff");
-        let files = document.files().collect::<Vec<_>>();
-        let [file] = files.as_slice() else {
-            panic!("the patch holds one file, not {}", files.len());
+    /// Each displayed line of `patch`'s only file page, as the text and class of each
+    /// syntax span, in display order.
+    fn line_pieces(patch: &str) -> Vec<Vec<(String, SyntaxClass)>> {
+        let document = parse_patch(patch.as_bytes()).expect("valid diff");
+        let views = document.file_views().collect::<Vec<_>>();
+        let [view] = views.as_slice() else {
+            panic!("the patch holds one file, not {}", views.len());
         };
-        let FileBody::Unified(body) = &file.body else {
-            panic!("fixture should contain a unified file");
-        };
-        let highlights = highlight_file(file, &mut Unobserved);
+        let rows = PageRows::of_file_view(*view);
+        let mut scan = DisplayScan::of_file(view.file);
 
-        body.addressed_hunks()
-            .take(1)
-            .flat_map(AddressedHunk::records)
-            .map(|record| highlights.get(record.address).clone())
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("the hunk holds the expected record count")
+        rows.lines()
+            .map(|(_, line)| {
+                let payload = line.payload();
+                let mut pieces = Vec::new();
+                scan.line(line.kind(), payload, &mut Unobserved, |span, class| {
+                    pieces.push((payload[span.start()..span.end()].to_owned(), class));
+                });
+                pieces
+            })
+            .collect()
     }
 
-    /// Each span of a record's `spans` as the text it covers in `payload` and its class.
-    fn pieces<'a>(payload: &'a str, spans: &[SyntaxSpan]) -> Vec<(&'a str, SyntaxClass)> {
-        spans
+    /// `pieces` with owned text, for comparing with [`line_pieces`].
+    fn owned(pieces: &[(&str, SyntaxClass)]) -> Vec<(String, SyntaxClass)> {
+        pieces
             .iter()
-            .map(|span| (&payload[span.bytes.start()..span.bytes.end()], span.class))
+            .map(|(text, class)| ((*text).to_owned(), *class))
             .collect()
     }
 
@@ -217,56 +236,57 @@ mod tests {
     /// close, and context takes the new side's syntax.
     #[test]
     fn highlights_go_across_a_side_s_records() {
-        let [deleted, opening, closing, context] = highlights_of(
-            b"--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,3 @@\n-x := \"old\"\n+/* note\n+end */ y := 1\n return len(y)\n",
+        let lines = line_pieces(
+            "--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,3 @@\n-x := \"old\"\n+/* note\n+end */ y := 1\n return len(y)\n",
         );
 
         assert_eq!(
-            pieces("x := \"old\"", &deleted),
+            lines,
             [
-                ("x", SyntaxClass::Variable),
-                (":=", SyntaxClass::Operator),
-                ("\"old\"", SyntaxClass::String),
-            ]
-        );
-        assert_eq!(
-            pieces("/* note", &opening),
-            [("/* note", SyntaxClass::Comment)]
-        );
-        assert_eq!(
-            pieces("end */ y := 1", &closing),
-            [
-                ("end */", SyntaxClass::Comment),
-                ("y", SyntaxClass::Variable),
-                (":=", SyntaxClass::Operator),
-                ("1", SyntaxClass::Number),
-            ]
-        );
-        assert_eq!(
-            pieces("return len(y)", &context),
-            [
-                ("return", SyntaxClass::Keyword),
-                ("len", SyntaxClass::Function),
-                ("y", SyntaxClass::Variable),
+                vec![],
+                vec![],
+                vec![],
+                owned(&[
+                    ("x", SyntaxClass::Variable),
+                    (":=", SyntaxClass::Operator),
+                    ("\"old\"", SyntaxClass::String),
+                ]),
+                owned(&[("/* note", SyntaxClass::Comment)]),
+                owned(&[
+                    ("end */", SyntaxClass::Comment),
+                    ("y", SyntaxClass::Variable),
+                    (":=", SyntaxClass::Operator),
+                    ("1", SyntaxClass::Number),
+                ]),
+                owned(&[
+                    ("return", SyntaxClass::Keyword),
+                    ("len", SyntaxClass::Function),
+                    ("y", SyntaxClass::Variable),
+                ]),
             ]
         );
     }
 
     /// docs/spec/architecture.md#technology-direction: matching languages take context
-    /// styling from the new side.
+    /// styling from the new side, while the old side keeps its own state.
     #[test]
     fn context_takes_the_new_side_s_syntax_when_the_old_side_is_in_a_comment() {
-        let [opening, _, context, _, _] = highlights_of(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
+        let lines = line_pieces(
+            "--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
         );
 
-        assert_eq!(pieces("/*", &opening), [("/*", SyntaxClass::Comment)]);
         assert_eq!(
-            pieces("let value = 1;", &context),
+            lines[3..],
             [
-                ("let", SyntaxClass::Keyword),
-                ("=", SyntaxClass::Operator),
-                ("1", SyntaxClass::Number),
+                owned(&[("/*", SyntaxClass::Comment)]),
+                owned(&[("// before", SyntaxClass::Comment)]),
+                owned(&[
+                    ("let", SyntaxClass::Keyword),
+                    ("=", SyntaxClass::Operator),
+                    ("1", SyntaxClass::Number),
+                ]),
+                owned(&[("*/", SyntaxClass::Comment)]),
+                owned(&[("// after", SyntaxClass::Comment)]),
             ]
         );
     }
@@ -275,33 +295,45 @@ mod tests {
     /// paths select different languages.
     #[test]
     fn context_stays_textual_when_the_paths_select_different_languages() {
-        let [context, deleted, added] = highlights_of(
-            b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
+        let lines = line_pieces(
+            "--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
         );
 
-        assert_eq!(context, []);
         assert_eq!(
-            pieces("def old(): pass", &deleted),
+            lines[3..],
             [
-                ("def", SyntaxClass::Keyword),
-                ("old", SyntaxClass::Function),
-                ("pass", SyntaxClass::Keyword),
+                vec![],
+                owned(&[
+                    ("def", SyntaxClass::Keyword),
+                    ("old", SyntaxClass::Function),
+                    ("pass", SyntaxClass::Keyword),
+                ]),
+                owned(&[("fn", SyntaxClass::Keyword), ("new", SyntaxClass::Function)]),
             ]
-        );
-        assert_eq!(
-            pieces("fn new() {}", &added),
-            [("fn", SyntaxClass::Keyword), ("new", SyntaxClass::Function)]
         );
     }
 
+    /// docs/spec/architecture.md#technology-direction: each hunk starts on open ground.
     #[test]
-    fn counts_the_bytes_scanned_and_the_segments_given() {
-        let mut profile = Profile::default();
+    fn a_hunk_header_ends_a_region_an_earlier_hunk_left_open() {
+        let lines =
+            line_pieces("--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+/* open\n@@ -9 +9 @@\n-y\n+z\n");
+
+        assert_eq!(lines[7], owned(&[("z", SyntaxClass::Variable)]));
+    }
+
+    #[test]
+    fn counts_hunks_scanned_bytes_and_segments() {
         let document =
             parse_patch(b"--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x := 1\n+y\n").expect("valid diff");
-        let files = document.files().collect::<Vec<_>>();
+        let views = document.file_views().collect::<Vec<_>>();
+        let rows = PageRows::of_file_view(views[0]);
+        let mut scan = DisplayScan::of_file(views[0].file);
+        let mut profile = Profile::default();
 
-        highlight_file(files[0], &mut profile);
+        for (_, line) in rows.lines() {
+            scan.line(line.kind(), line.payload(), &mut profile, |_, _| {});
+        }
 
         assert_eq!(profile.work().hunks, 1);
         assert_eq!(profile.work().scanned_bytes, "x := 1".len() + "y".len());

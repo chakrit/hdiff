@@ -67,12 +67,12 @@ first line uses `diagnostic` in place of `preparation`; its startup line uses th
 schema. It then emits `profile version=1`, stage lines, and a workload line:
 
 ```text
-stage name=NAME parent=preparation|syntax duration_ns=N
+stage name=NAME parent=preparation duration_ns=N
 work hunks=N scanned_bytes=N segments=N
 ```
 
-Preparation children are `labels`, `layout`, `syntax`, `detail`, and `unattributed`.
-Syntax children are `scan`, hdiff's own scanner, and `unattributed`.
+Preparation children are `labels`, `layout`, `detail`, `styling`, and `unattributed`.
+Styling reads each line's syntax with hdiff's scanner and builds its styled segments.
 Child durations partition their parent; parent and child durations are never summed
 together. Unattributed time includes orchestration, destruction, and observer bookkeeping
 outside named spans. Scanned bytes count every payload byte the scanner reads, on each
@@ -431,6 +431,9 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   reading each side's records in order, instead of Tree-sitter.
 - **Every bundled language through hdiff's scanner.** Rust, C, JavaScript and Python
   follow Go onto the scanner, and Tree-sitter leaves the binary.
+- **Styling scans in display order.** Styling reads each line's syntax as it builds the
+  line's segments, from spans that come in order and never overlap, instead of looking
+  up per-record spans and sorting and ranking overlapping ones.
 
 ## Optimization method
 

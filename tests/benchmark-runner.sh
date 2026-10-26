@@ -150,14 +150,11 @@ printf 'startup version=1 input_ns=10 parse_ns=10 preparation_ns=%s ready_ns=%s 
 case "$FAKE_CASE" in malformed) printf 'garbage\n' ;; esac
 if [ "$2" = stages ]; then
     printf 'profile version=1\n'
-    for stage in labels layout syntax detail unattributed; do
+    for stage in labels layout detail styling unattributed; do
         stage_duration=0
         [ "$stage" != unattributed ] || stage_duration=$duration
-        case "$FAKE_CASE:$stage" in invalid-stages:syntax) stage_duration=1 ;; esac
+        case "$FAKE_CASE:$stage" in invalid-stages:styling) stage_duration=1 ;; esac
         printf 'stage name=%s parent=preparation duration_ns=%s\n' "$stage" "$stage_duration"
-    done
-    for stage in scan unattributed; do
-        printf 'stage name=%s parent=syntax duration_ns=0\n' "$stage"
     done
     printf 'work hunks=1 scanned_bytes=2 segments=3\n'
 fi

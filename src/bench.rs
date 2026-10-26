@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     document::DiffDocument,
     input,
-    measurement::{Observer, Parent, Profile, Unobserved},
+    measurement::{Observer, Profile, Stage, Unobserved},
     navigation::{interaction::Command, scroll::Movement},
     preferences::PreferenceChange,
     prepared::PreparedDocument,
@@ -179,6 +179,9 @@ struct Startup {
 
 // Reports
 
+/// The name preparation takes in reports.
+const PREPARATION: &str = "preparation";
+
 /// The first report line's record name: plain preparation, or preparation under a
 /// profile.
 enum PreparationRecord {
@@ -190,7 +193,7 @@ impl PreparationRecord {
     /// The record name the report line opens with.
     fn label(self) -> &'static str {
         match self {
-            Self::Preparation => Parent::Preparation.label(),
+            Self::Preparation => PREPARATION,
             Self::Diagnostic => "diagnostic",
         }
     }
@@ -227,30 +230,22 @@ fn preparation_report(
     report
 }
 
-/// The profile record, each parent's stage records with its unattributed remainder, and
-/// the work counts.
+/// The profile record, each stage record with the unattributed remainder of preparation,
+/// and the work counts.
 fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
     push_line(report, format_args!("profile version=1"));
 
-    for parent in Parent::ALL {
-        let total = match parent.measured_by() {
-            None => preparation,
-            Some(stage) => profile.duration(stage),
-        };
-
-        let attributed = parent
-            .stages()
-            .map(|stage| profile.duration(stage))
-            .sum::<Duration>();
-        for stage in parent.stages() {
-            write_stage(report, stage.label(), parent, profile.duration(stage));
-        }
-
-        let unattributed = total
-            .checked_sub(attributed)
-            .expect("disjoint stage durations fit inside their parent");
-        write_stage(report, "unattributed", parent, unattributed);
+    let attributed = Stage::ALL
+        .into_iter()
+        .map(|stage| profile.duration(stage))
+        .sum::<Duration>();
+    for stage in Stage::ALL {
+        write_stage(report, stage.label(), profile.duration(stage));
     }
+    let unattributed = preparation
+        .checked_sub(attributed)
+        .expect("disjoint stage durations fit inside preparation");
+    write_stage(report, "unattributed", unattributed);
 
     let work = profile.work();
     push_line(
@@ -262,13 +257,12 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
     );
 }
 
-/// One stage record under `parent`.
-fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Duration) {
+/// One stage record of preparation.
+fn write_stage(report: &mut String, name: &str, duration: Duration) {
     push_line(
         report,
         format_args!(
-            "stage name={name} parent={} duration_ns={}",
-            parent.label(),
+            "stage name={name} parent={PREPARATION} duration_ns={}",
             duration.as_nanos()
         ),
     );
