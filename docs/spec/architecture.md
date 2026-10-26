@@ -515,13 +515,15 @@ and lifecycle operations. The backend must support event reads from an explicit
 controlling-terminal handle when stdin contains diff data. Syntax highlighting goes
 through an hdiff-owned boundary with two modes: mainstream languages use hdiff's own
 hand-rolled lexer/parser, built for the fastest diff display; other languages call into
-Tree-sitter. The Tree-sitter parser set and performance rationale are recorded in
-`docs/vendor/syntax-highlighting.md`. Syntax highlighting projects each
-hunk's old and new records into separate bounded virtual source buffers, maps returned
-spans back to sanitized record payloads, and leaves unsupported languages as plain text.
-Every bundled grammar and its highlight query load; the bundled-grammar test checks each
-one. Projection records are ordered by virtual source range, so span mapping visits only
-records that overlap the returned source span. Safe rendering is the single source of
+Tree-sitter. The mainstream languages are Rust, JavaScript, Python, Go, and C.
+Hand-rolled highlighting need only mostly match Tree-sitter's colors. The Tree-sitter
+parser set and performance rationale are recorded in `docs/vendor/syntax-highlighting.md`.
+Syntax highlighting projects each hunk's old and new records into separate bounded
+virtual source buffers, maps returned spans back to sanitized record payloads, and leaves
+unsupported languages as plain text. Every bundled grammar and its highlight query load;
+the bundled-grammar test checks each one. Projection records are ordered by virtual
+source range, so span mapping visits only records that overlap the returned source span.
+Safe rendering is the single source of
 display rows: each rendered record row retains its kind, hunk and record address, and its
 sanitized payload with the cells it covers. Page rows and their scroll extents derive
 geometry and navigation offsets from those rows without syntax state. Preparation computes
