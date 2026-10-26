@@ -29,7 +29,9 @@ pub(super) fn gutter(
             };
             [marker, spacing]
         }
-        RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
+        RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Failure | RowTone::Plain => {
+            [spacing, spacing]
+        }
     }
 }
 
@@ -45,6 +47,7 @@ pub(super) fn whole_row(tone: RowTone, palette: &RowPalette) -> Style {
         }
         RowTone::UnchangedRecord => Style::default().fg(palette.context_body),
         RowTone::HunkHeader => Style::default().fg(palette.hunk_header),
+        RowTone::Failure => Style::default().fg(palette.change.old.marker),
         RowTone::Plain => Style::default(),
     }
 }
@@ -87,6 +90,7 @@ mod tests {
         let tones = Side::BOTH.map(RowTone::Changed).into_iter().chain([
             RowTone::UnchangedRecord,
             RowTone::HunkHeader,
+            RowTone::Failure,
             RowTone::Plain,
         ]);
 

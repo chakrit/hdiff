@@ -2,12 +2,23 @@
 //! the base-85 payload lines each block holds. Rules:
 //! docs/spec/architecture.md#input-contract.
 
-use super::{Error, LineStart, Malformed, SourceLines, header_number, line_start};
+use std::iter;
+
+use super::{SourceLines, header_number, starts_section};
 use crate::{
-    document::{BinaryBlock, BinaryPatch},
+    document::{BinaryBlock, BinaryPatch, Failure},
+    malformed::Malformed,
     non_empty::NonEmpty,
     source_text::SourceLine,
 };
+
+/// A binary patch that broke: every line of it read up to the failure, the failure, and
+/// the failing line when the reader already took it.
+pub(super) struct BrokenBinaryPatch {
+    pub read: Vec<SourceLine>,
+    pub failure: Failure,
+    pub failing: Option<SourceLine>,
+}
 
 /// Whether `text` is the `GIT binary patch` line that opens a binary patch's blocks.
 pub(super) fn is_binary_patch_header(text: &str) -> bool {
@@ -19,36 +30,82 @@ pub(super) fn is_binary_patch_header(text: &str) -> bool {
 pub(super) fn parse_binary_patch(
     header: SourceLine,
     lines: &mut SourceLines<'_>,
-) -> Result<BinaryPatch, Error> {
+) -> Result<BinaryPatch, BrokenBinaryPatch> {
     let mut read_blocks = Vec::new();
     while let Some(block_header) = lines.next_if(starts_binary_block) {
-        read_blocks.push(parse_binary_block(block_header, lines)?);
+        match parse_binary_block(block_header, lines) {
+            Ok(block) => read_blocks.push(block),
+            Err(broken) => {
+                let read = patch_lines(header, read_blocks)
+                    .chain(broken.read)
+                    .collect();
+                return Err(BrokenBinaryPatch { read, ..broken });
+            }
+        }
     }
 
     let Some(blocks) = NonEmpty::of(read_blocks) else {
-        return Err(lines.next_line_error(Malformed::MissingBinaryPatchBlock));
+        return Err(BrokenBinaryPatch {
+            read: vec![header],
+            failure: lines.next_line_failure(Malformed::MissingBinaryPatchBlock),
+            failing: None,
+        });
     };
     Ok(BinaryPatch { header, blocks })
 }
 
+/// The lines of a patch's `header` and its complete `blocks`, in input order.
+fn patch_lines(header: SourceLine, blocks: Vec<BinaryBlock>) -> impl Iterator<Item = SourceLine> {
+    let block_lines = blocks.into_iter().flat_map(|block| {
+        let BinaryBlock {
+            header,
+            payload,
+            end,
+        } = block;
+        iter::once(header).chain(payload).chain(iter::once(end))
+    });
+
+    iter::once(header).chain(block_lines)
+}
+
 /// The block a `literal` or `delta` line `header` opens: its payload lines, then the
-/// blank line that ends it.
+/// blank line that ends it. A line that starts a section cuts the block short.
 fn parse_binary_block(
     header: SourceLine,
     lines: &mut SourceLines<'_>,
-) -> Result<BinaryBlock, Error> {
-    lines.at_last_line(check_binary_block_size(header.sanitized()))?;
+) -> Result<BinaryBlock, BrokenBinaryPatch> {
+    if let Err(reason) = check_binary_block_size(header.sanitized()) {
+        return Err(BrokenBinaryPatch {
+            read: Vec::new(),
+            failure: lines.last_line_failure(reason),
+            failing: Some(header),
+        });
+    }
 
     let mut payload_lines = Vec::new();
-    while let Some(line) = lines.next_if(|text| !text.is_empty()) {
-        lines.at_last_line(check_payload_line(line.sanitized()))?;
+    while let Some(line) = lines.next_if(|text| !text.is_empty() && !starts_section(text)) {
+        if !is_payload_line(line.sanitized()) {
+            return Err(BrokenBinaryPatch {
+                read: block_lines(header, payload_lines),
+                failure: lines.last_line_failure(Malformed::InvalidBinaryPatchPayload),
+                failing: Some(line),
+            });
+        }
         payload_lines.push(line);
     }
     let Some(payload) = NonEmpty::of(payload_lines) else {
-        return Err(lines.next_line_error(Malformed::MissingBinaryPatchPayload));
+        return Err(BrokenBinaryPatch {
+            read: vec![header],
+            failure: lines.next_line_failure(Malformed::MissingBinaryPatchPayload),
+            failing: None,
+        });
     };
     let Some(end) = lines.next_if(str::is_empty) else {
-        return Err(lines.next_line_error(Malformed::TruncatedBinaryPatch));
+        return Err(BrokenBinaryPatch {
+            read: block_lines(header, payload),
+            failure: lines.next_line_failure(Malformed::TruncatedBinaryPatch),
+            failing: None,
+        });
     };
 
     Ok(BinaryBlock {
@@ -56,6 +113,14 @@ fn parse_binary_block(
         payload,
         end,
     })
+}
+
+/// A block's `header` line, then its `payload` lines.
+fn block_lines(
+    header: SourceLine,
+    payload: impl IntoIterator<Item = SourceLine>,
+) -> Vec<SourceLine> {
+    iter::once(header).chain(payload).collect()
 }
 
 /// Whether `text` starts a `literal` or `delta` block, well-formed or not.
@@ -79,19 +144,6 @@ fn check_binary_block_size(header: &str) -> Result<(), Malformed> {
     match stated {
         true => Ok(()),
         false => Err(Malformed::InvalidBinaryPatchHeader),
-    }
-}
-
-/// Checks a binary block payload line: a line that starts a section means the block was
-/// cut short, and any other line must be in Git's payload form.
-fn check_payload_line(text: &str) -> Result<(), Malformed> {
-    if line_start(text)? != LineStart::Text {
-        return Err(Malformed::TruncatedBinaryPatch);
-    }
-
-    match is_payload_line(text) {
-        true => Ok(()),
-        false => Err(Malformed::InvalidBinaryPatchPayload),
     }
 }
 
@@ -138,13 +190,14 @@ fn payload_byte_count(stated: u8) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        document::{DiffDocument, FileBody},
+        document::FileBody,
         finite_output,
-        parser::{Error, Malformed, parse_patch},
+        malformed::Malformed,
+        parser::{failures, parse_patch},
     };
 
-    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, Error> {
-        Err(Error::Malformed { line, reason })
+    fn malformed(line: usize, reason: Malformed) -> Vec<(usize, Malformed)> {
+        vec![(line, reason)]
     }
 
     /// A binary patch whose one `literal` block holds `payload` and its blank line.
@@ -162,7 +215,7 @@ mod tests {
             "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral +12\npayload\n\n";
 
         assert_eq!(
-            parse_patch(binary.as_bytes()),
+            failures(parse_patch(binary.as_bytes())),
             malformed(4, Malformed::InvalidBinaryPatchHeader)
         );
     }
@@ -177,7 +230,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse_patch(binary.as_bytes()),
+            failures(parse_patch(binary.as_bytes())),
             malformed(4, Malformed::InvalidBinaryPatchHeader)
         );
     }
@@ -219,13 +272,16 @@ mod tests {
     }
 
     #[test]
-    fn reads_a_section_start_inside_a_binary_payload_as_truncation() {
-        for section in ["diff --git a/next b/next", "--- a/next"] {
+    fn a_section_start_inside_a_binary_block_cuts_it_short_and_starts_the_next_section() {
+        for (section, next_failure) in [
+            ("diff --git a/next b/next", Malformed::MissingGitMetadata),
+            ("--- a/next", Malformed::ExpectedNewFileHeader),
+        ] {
             let input = binary_patch(section);
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
-                malformed(5, Malformed::TruncatedBinaryPatch),
+                failures(parse_patch(input.as_bytes())),
+                [(5, Malformed::MissingBinaryPatchPayload), (6, next_failure)],
                 "{section}"
             );
         }
@@ -246,7 +302,7 @@ mod tests {
             let input = binary_patch(payload);
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(5, Malformed::InvalidBinaryPatchPayload),
                 "{payload}"
             );
@@ -260,7 +316,7 @@ mod tests {
         let input = "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n";
 
         assert_eq!(
-            parse_patch(input.as_bytes()),
+            failures(parse_patch(input.as_bytes())),
             malformed(6, Malformed::TruncatedBinaryPatch)
         );
     }

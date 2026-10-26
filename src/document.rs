@@ -7,6 +7,7 @@ use crate::{
     compact::Count,
     file_identity::FileIdentity,
     headers::{FileHeader, GitHeader},
+    malformed::Malformed,
     non_empty::NonEmpty,
     side::{BySide, Side},
     source_text::SourceLine,
@@ -108,6 +109,8 @@ pub enum FileBody {
     Metadata(MetadataBody),
     /// A section with `---` / `+++` headers and hunks.
     Unified(Box<UnifiedBody>),
+    /// A section that failed to parse, shown as best it can be read.
+    Broken(Box<BrokenBody>),
 }
 
 /// A Git section's `diff --git` line with at least one extended header after it, which
@@ -163,13 +166,57 @@ pub struct UnifiedBody {
 }
 
 impl UnifiedBody {
-    /// Each hunk with the address of each of its records; the only source of
-    /// [`RecordAddress`]es.
+    /// Each hunk with the address of each of its records.
     pub fn addressed_hunks(&self) -> impl Iterator<Item = AddressedHunk<'_>> {
-        self.hunks
-            .iter()
-            .enumerate()
-            .map(|(index, hunk)| AddressedHunk { index, hunk })
+        addressed(self.hunks.iter())
+    }
+}
+
+/// A section that failed to parse: what was read before the failure, the failure, and
+/// the rest of the section up to the next file header, failing line first, as raw text.
+/// Rules: docs/spec/architecture.md#input-contract.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BrokenBody {
+    pub read: ReadPart,
+    pub failure: Failure,
+    pub rest: Box<[SourceLine]>,
+}
+
+/// What a broken section held before its failure: its Git and binary patch lines, its
+/// file headers in order, and its hunks, the last of which may stop short of its
+/// declared counts.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ReadPart {
+    pub metadata: Box<[SourceLine]>,
+    pub headers: Box<[FileHeader]>,
+    pub hunks: Box<[Hunk]>,
+}
+
+impl ReadPart {
+    /// Each hunk with the address of each of its records.
+    pub fn addressed_hunks(&self) -> impl Iterator<Item = AddressedHunk<'_>> {
+        addressed(self.hunks.iter())
+    }
+}
+
+/// Where and why a section broke: its 1-based input line, the reason, and the row that
+/// reports both.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Failure {
+    pub line: usize,
+    pub reason: Malformed,
+    pub row: SourceLine,
+}
+
+impl Failure {
+    pub fn new(line: usize, reason: Malformed) -> Self {
+        let message = format!("line {line}: {}\n", reason.label());
+
+        Self {
+            line,
+            reason,
+            row: SourceLine::decode(message.as_bytes()),
+        }
     }
 }
 
@@ -188,6 +235,16 @@ impl Hunk {
             .map(Record::ended_sides)
             .fold(BySide::default(), BySide::or)
     }
+}
+
+/// `hunks`, each with its place among them; the only source of [`RecordAddress`]es.
+fn addressed<'a>(
+    hunks: impl IntoIterator<Item = &'a Hunk>,
+) -> impl Iterator<Item = AddressedHunk<'a>> {
+    hunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, hunk)| AddressedHunk { index, hunk })
 }
 
 /// A hunk with its place among its file's hunks.

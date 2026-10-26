@@ -129,7 +129,7 @@ fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
 enum RunError {
     Usage(cli::Error),
     Input(input::Error),
-    Parse(parser::Error),
+    Parse(parser::NoDiff),
     Executable(io::Error),
     Install(actions::Error),
     Bench(io::Error),

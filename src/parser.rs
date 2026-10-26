@@ -1,5 +1,7 @@
 //! Viewer input and `diff` output read into a document: surrounding text, file
-//! sections, hunks and their records. Rules: docs/spec/architecture.md#input-contract.
+//! sections, hunks and their records. A section that breaks the format is kept as a
+//! broken file, and reading resumes at the next file header. Rules:
+//! docs/spec/architecture.md#input-contract.
 
 mod binary_patch;
 mod hunk;
@@ -11,132 +13,71 @@ use self::{
     hunk::{hunk_counts, parse_hunk, starts_combined_hunk_header, starts_hunk_header},
 };
 use crate::{
-    document::{DiffDocument, DiffFile, FileBody, FileSection, MetadataBody, UnifiedBody},
+    document::{
+        BrokenBody, DiffDocument, DiffFile, Failure, FileBody, FileSection, Hunk, MetadataBody,
+        ReadPart, UnifiedBody,
+    },
     file_identity::FileIdentity,
     headers::{
         FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
         is_combined_diff_header,
     },
+    malformed::Malformed,
     non_empty::NonEmpty,
     side::{BySide, Side},
     source_text::SourceLine,
 };
 
-/// Why input was rejected.
+/// Why viewer input was rejected: it is not empty and holds no file diff.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Error {
-    /// Nonempty viewer input holds no file diff.
-    NoDiff,
-    /// A recognized diff section is malformed at a 1-based input line.
-    Malformed { line: usize, reason: Malformed },
-}
+pub struct NoDiff;
 
-impl fmt::Display for Error {
+impl fmt::Display for NoDiff {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoDiff => formatter.write_str("input contains no diff"),
-            Self::Malformed { line, reason } => {
-                write!(formatter, "line {line}: {}", reason.label())
-            }
-        }
+        formatter.write_str("input contains no diff")
     }
 }
 
-impl std::error::Error for Error {}
-
-/// How a recognized diff section breaks the unified diff or Git patch format, grouped by
-/// the part of the input it breaks: section starts, file headers, hunks, Git metadata,
-/// then binary patches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Malformed {
-    CombinedDiff,
-    UnexpectedDiffHeader,
-
-    MissingNewFileHeader,
-    ExpectedNewFileHeader,
-    FileWithoutHunks,
-
-    InvalidHunkHeader,
-    TruncatedHunk,
-    ExcessRecords,
-    UnexpectedGitHeaderInHunk,
-    UnmarkedHunkLine,
-    MisplacedNoNewlineMarker,
-    RecordAfterNoNewlineMarker,
-
-    MissingGitMetadata,
-
-    InvalidBinaryPatchHeader,
-    MissingBinaryPatchBlock,
-    MissingBinaryPatchPayload,
-    InvalidBinaryPatchPayload,
-    TruncatedBinaryPatch,
-}
-
-impl Malformed {
-    /// The reason as error messages state it.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::CombinedDiff => "combined diffs are not supported",
-            Self::UnexpectedDiffHeader => "unexpected diff header",
-
-            Self::MissingNewFileHeader => "missing new file header",
-            Self::ExpectedNewFileHeader => "expected new file header",
-            Self::FileWithoutHunks => "file has no hunks",
-
-            Self::InvalidHunkHeader => "invalid hunk header",
-            Self::TruncatedHunk => "truncated hunk",
-            Self::ExcessRecords => "hunk records exceed declared counts",
-            Self::UnexpectedGitHeaderInHunk => "unexpected Git header in hunk",
-            Self::UnmarkedHunkLine => "unmarked line in hunk",
-            Self::MisplacedNoNewlineMarker => "no-newline marker does not follow a record",
-            Self::RecordAfterNoNewlineMarker => {
-                "record follows the no-newline marker that ended its side"
-            }
-
-            Self::MissingGitMetadata => "Git header has no extended header or file headers",
-
-            Self::InvalidBinaryPatchHeader => "invalid binary patch header",
-            Self::MissingBinaryPatchBlock => "missing binary patch block",
-            Self::MissingBinaryPatchPayload => "missing binary patch payload",
-            Self::InvalidBinaryPatchPayload => "invalid binary patch payload line",
-            Self::TruncatedBinaryPatch => "truncated binary patch",
-        }
-    }
-}
+impl std::error::Error for NoDiff {}
 
 /// Parses viewer input, a patch, rejecting nonempty input that holds no file diff.
-pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, Error> {
-    let document = parse_comparison(input)?;
+pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, NoDiff> {
+    let document = parse_comparison(input);
 
     match (&document, input.is_empty()) {
         (DiffDocument::Files(_), true | false) | (DiffDocument::Text(_), true) => Ok(document),
-        (DiffDocument::Text(_), false) => Err(Error::NoDiff),
+        (DiffDocument::Text(_), false) => Err(NoDiff),
     }
 }
 
 /// Parses `diff` output into its surrounding text and file sections. It may hold only
 /// surrounding text, such as `Binary files … differ`.
-pub fn parse_comparison(input: &[u8]) -> Result<DiffDocument, Error> {
+pub fn parse_comparison(input: &[u8]) -> DiffDocument {
     let mut lines = SourceLines::new(input);
     let mut sections = Vec::new();
     let mut text = Vec::new();
 
     while let Some(line) = lines.next() {
-        match lines.at_last_line(line_start(line.sanitized()))? {
-            LineStart::Text => text.push(line),
-            LineStart::GitHeader => {
-                let file = parse_git_section(line, &mut lines)?;
-                sections.push(section_after(&mut text, file));
+        let parsed = match line_start(line.sanitized()) {
+            Ok(LineStart::Text) => {
+                text.push(line);
+                continue;
             }
-            LineStart::OldFileHeader(path) => {
-                let file = parse_unified(None, FileHeader { line, path }, &mut lines)?;
-                sections.push(section_after(&mut text, file));
+            Ok(LineStart::GitHeader) => parse_git_section(line, &mut lines),
+            Ok(LineStart::OldFileHeader(path)) => {
+                parse_unified(None, FileHeader { line, path }, &mut lines)
             }
-        }
+            Err(reason) => Err(Box::new(Broken {
+                read: ReadPart::default(),
+                failure: lines.last_line_failure(reason),
+                failing: Some(line),
+            })),
+        };
+        let file = parsed.unwrap_or_else(|broken| broken.into_file(&mut lines));
+        sections.push(section_after(&mut text, file));
     }
 
-    Ok(DiffDocument::new(sections, text.into_boxed_slice()))
+    DiffDocument::new(sections, text.into_boxed_slice())
 }
 
 /// `file` with the surrounding text gathered before it, which leaves `text` empty for the
@@ -146,6 +87,61 @@ fn section_after(text: &mut Vec<SourceLine>, file: DiffFile) -> FileSection {
         leading: mem::take(text).into_boxed_slice(),
         file,
     }
+}
+
+// Broken sections
+
+/// A section that broke: what it read, where and why, and the failing line when the
+/// reader already took it.
+struct Broken {
+    read: ReadPart,
+    failure: Failure,
+    failing: Option<SourceLine>,
+}
+
+impl Broken {
+    /// The broken file: the section's read part, its failure, and the rest of the
+    /// section up to the next file header as raw text. A failing line that starts the
+    /// next section is left to start it.
+    fn into_file(self, lines: &mut SourceLines<'_>) -> DiffFile {
+        let Self {
+            read,
+            failure,
+            failing,
+        } = self;
+        let failing_rest = failing.and_then(|line| match starts_section(line.sanitized()) {
+            true => {
+                lines.put_back(line);
+                None
+            }
+            false => Some(line),
+        });
+        let later_rest = iter::from_fn(|| lines.next_if(|text| !starts_section(text)));
+        let rest = failing_rest.into_iter().chain(later_rest).collect();
+        let identity = FileIdentity::of_broken(read.metadata.first(), &read.headers);
+
+        DiffFile {
+            identity,
+            body: FileBody::Broken(Box::new(BrokenBody {
+                read,
+                failure,
+                rest,
+            })),
+        }
+    }
+}
+
+/// Whether `text` starts a file section: a `diff --git` line or a `---` file header.
+fn starts_section(text: &str) -> bool {
+    matches!(
+        line_start(text),
+        Ok(LineStart::GitHeader | LineStart::OldFileHeader(_))
+    )
+}
+
+/// A Git header's lines in order: its `diff --git` line, then its extended headers.
+fn git_lines<H: IntoIterator<Item = SourceLine>>(git: GitHeader<H>) -> Vec<SourceLine> {
+    iter::once(git.line).chain(git.extended_headers).collect()
 }
 
 // Sections
@@ -185,7 +181,10 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 
 /// A `diff --git` section: unified when `---` / `+++` headers follow its metadata, and
 /// otherwise its metadata with the binary patch after it when it has one.
-fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
+fn parse_git_section(
+    header: SourceLine,
+    lines: &mut SourceLines<'_>,
+) -> Result<DiffFile, Box<Broken>> {
     let header_lines = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(old) = lines.next_file_header(Side::Old) {
         let git = GitHeader {
@@ -196,17 +195,37 @@ fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<
     }
 
     let Some(extended_headers) = NonEmpty::of(header_lines) else {
-        return Err(lines.next_line_error(Malformed::MissingGitMetadata));
+        return Err(Box::new(Broken {
+            read: ReadPart {
+                metadata: Box::new([header]),
+                ..ReadPart::default()
+            },
+            failure: lines.next_line_failure(Malformed::MissingGitMetadata),
+            failing: None,
+        }));
     };
-    let binary_patch = lines
-        .next_if(is_binary_patch_header)
-        .map(|binary_header| parse_binary_patch(binary_header, lines).map(Box::new))
-        .transpose()?;
-
     let git = GitHeader {
         line: header,
         extended_headers,
     };
+    let binary_patch = match lines.next_if(is_binary_patch_header) {
+        None => None,
+        Some(binary_header) => match parse_binary_patch(binary_header, lines) {
+            Ok(patch) => Some(Box::new(patch)),
+            Err(broken) => {
+                let metadata = git_lines(git).into_iter().chain(broken.read).collect();
+                return Err(Box::new(Broken {
+                    read: ReadPart {
+                        metadata,
+                        ..ReadPart::default()
+                    },
+                    failure: broken.failure,
+                    failing: broken.failing,
+                }));
+            }
+        },
+    };
+
     let identity = FileIdentity::of_metadata(&git);
     Ok(DiffFile {
         identity,
@@ -224,25 +243,52 @@ fn parse_unified(
     git: Option<GitHeader<Box<[SourceLine]>>>,
     old: FileHeader,
     lines: &mut SourceLines<'_>,
-) -> Result<DiffFile, Error> {
+) -> Result<DiffFile, Box<Broken>> {
     let Some(new) = lines.next_file_header(Side::New) else {
-        let error = match lines.peek() {
-            None => lines.last_line_error(Malformed::MissingNewFileHeader),
-            Some(_) => lines.next_line_error(Malformed::ExpectedNewFileHeader),
+        let failure = match lines.peek() {
+            None => lines.last_line_failure(Malformed::MissingNewFileHeader),
+            Some(_) => lines.next_line_failure(Malformed::ExpectedNewFileHeader),
         };
-        return Err(error);
+        return Err(Box::new(Broken {
+            read: unified_read(git, vec![old], Vec::new()),
+            failure,
+            failing: None,
+        }));
     };
 
     let mut parsed_hunks = Vec::new();
     let mut ended = BySide::default();
     while let Some(header) = lines.next_if(starts_hunk_header) {
-        let expected = lines.at_last_line(hunk_counts(header.sanitized()))?;
-        let hunk = parse_hunk(header, expected, ended, lines)?;
+        let expected = match hunk_counts(header.sanitized()) {
+            Ok(expected) => expected,
+            Err(reason) => {
+                return Err(Box::new(Broken {
+                    read: unified_read(git, vec![old, new], parsed_hunks),
+                    failure: lines.last_line_failure(reason),
+                    failing: Some(header),
+                }));
+            }
+        };
+        let hunk = match parse_hunk(header, expected, ended, lines) {
+            Ok(hunk) => hunk,
+            Err(broken) => {
+                parsed_hunks.push(broken.hunk);
+                return Err(Box::new(Broken {
+                    read: unified_read(git, vec![old, new], parsed_hunks),
+                    failure: broken.failure,
+                    failing: broken.failing,
+                }));
+            }
+        };
         ended = ended.or(hunk.ended_sides());
         parsed_hunks.push(hunk);
     }
     let Some(hunks) = NonEmpty::of(parsed_hunks) else {
-        return Err(lines.next_line_error(Malformed::FileWithoutHunks));
+        return Err(Box::new(Broken {
+            read: unified_read(git, vec![old, new], Vec::new()),
+            failure: lines.next_line_failure(Malformed::FileWithoutHunks),
+            failing: None,
+        }));
     };
 
     let headers = BySide { old, new };
@@ -255,6 +301,20 @@ fn parse_unified(
             hunks,
         })),
     })
+}
+
+/// What a unified section read before it broke: its Git header's lines, its file
+/// `headers`, and its `hunks`.
+fn unified_read(
+    git: Option<GitHeader<Box<[SourceLine]>>>,
+    headers: Vec<FileHeader>,
+    hunks: Vec<Hunk>,
+) -> ReadPart {
+    ReadPart {
+        metadata: git.map(git_lines).unwrap_or_default().into_boxed_slice(),
+        headers: headers.into_boxed_slice(),
+        hunks: hunks.into_boxed_slice(),
+    }
 }
 
 /// The line number or count a header `field` states, when it is one or more ASCII digits
@@ -303,13 +363,21 @@ impl<'a> SourceLines<'a> {
         self.peeked.as_ref()
     }
 
-    /// Takes the next line, counting it so errors can name the line they are at.
+    /// Takes the next line, counting it so failures can name the line they are at.
     fn next(&mut self) -> Option<SourceLine> {
         self.peek();
         let line = self.peeked.take()?;
 
         self.taken += 1;
         Some(line)
+    }
+
+    /// Returns `line`, the line most recently taken, so the next take reads it again.
+    fn put_back(&mut self, line: SourceLine) {
+        assert!(self.peeked.is_none(), "only the line just taken goes back");
+
+        self.taken -= 1;
+        self.peeked = Some(line);
     }
 
     /// Takes the next line when its sanitized text satisfies `accepts`.
@@ -331,38 +399,43 @@ impl<'a> SourceLines<'a> {
         self.next().map(|line| FileHeader { line, path })
     }
 
-    /// `result`, with a malformation located at the line most recently taken.
-    fn at_last_line<T>(&self, result: Result<T, Malformed>) -> Result<T, Error> {
-        result.map_err(|reason| self.last_line_error(reason))
+    /// A failure at the line most recently taken.
+    fn last_line_failure(&self, reason: Malformed) -> Failure {
+        Failure::new(self.taken, reason)
     }
 
-    /// An error at the line most recently taken.
-    fn last_line_error(&self, reason: Malformed) -> Error {
-        Error::Malformed {
-            line: self.taken,
-            reason,
-        }
+    /// A failure at the line that would be taken next, or just past the end.
+    fn next_line_failure(&self, reason: Malformed) -> Failure {
+        Failure::new(self.taken + 1, reason)
     }
+}
 
-    /// An error at the line that would be taken next, or just past the end.
-    fn next_line_error(&self, reason: Malformed) -> Error {
-        Error::Malformed {
-            line: self.taken + 1,
-            reason,
-        }
-    }
+/// Each broken file's failure in `parsed`, as its line and reason, in input order.
+#[cfg(test)]
+fn failures(parsed: Result<DiffDocument, NoDiff>) -> Vec<(usize, Malformed)> {
+    parsed
+        .expect("the input holds a diff")
+        .files()
+        .filter_map(|file| match &file.body {
+            FileBody::Broken(body) => Some((body.failure.line, body.failure.reason)),
+            FileBody::Metadata(_) | FileBody::Unified(_) => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Malformed, parse_comparison, parse_patch};
+    use super::{NoDiff, failures, parse_comparison, parse_patch};
     use crate::{
-        document::{DiffDocument, DiffFile, FileBody, UnifiedBody},
+        document::{BrokenBody, DiffDocument, DiffFile, FileBody, UnifiedBody},
+        file_identity::FileIdentity,
         finite_output,
+        malformed::Malformed,
+        source_text::SourceLine,
     };
 
-    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, Error> {
-        Err(Error::Malformed { line, reason })
+    fn malformed(line: usize, reason: Malformed) -> Vec<(usize, Malformed)> {
+        vec![(line, reason)]
     }
 
     /// Every file's unified body, in input order; each fixture file must be unified.
@@ -371,7 +444,9 @@ mod tests {
             .files()
             .map(|file| match &file.body {
                 FileBody::Unified(body) => body.as_ref(),
-                FileBody::Metadata(_) => panic!("fixture section should be unified"),
+                FileBody::Metadata(_) | FileBody::Broken(_) => {
+                    panic!("fixture section should be unified")
+                }
             })
             .collect()
     }
@@ -405,16 +480,105 @@ mod tests {
     #[test]
     fn rejects_nonempty_text_only_input() {
         for input in [b"ordinary text\n".as_slice(), b" \t\r\n", b"\n"] {
-            assert_eq!(parse_patch(input), Err(Error::NoDiff));
+            assert_eq!(parse_patch(input), Err(NoDiff));
         }
         assert_eq!(parse_patch(b""), Ok(DiffDocument::Text(Box::default())));
+    }
+
+    /// The broken body of `file`, which must have failed to parse.
+    fn broken(file: &DiffFile) -> &BrokenBody {
+        match &file.body {
+            FileBody::Broken(body) => body,
+            FileBody::Metadata(_) | FileBody::Unified(_) => panic!("the file should be broken"),
+        }
+    }
+
+    /// The sanitized text of each of `lines`.
+    fn texts(lines: &[SourceLine]) -> Vec<&str> {
+        lines.iter().map(SourceLine::sanitized).collect()
+    }
+
+    /// docs/spec/architecture.md#input-contract: a broken file shows what was read before
+    /// its failure, its failure, and the rest of its section, and parsing resumes at the
+    /// next file header.
+    #[test]
+    fn keeps_a_broken_file_and_resumes_at_the_next_file_header() {
+        let input = "--- a/one\n+++ b/one\n@@ -1 +1 @@\n-a\n+b\n--- a/two.go\n+++ b/two.go\n@@ -1,3 +1,3 @@\n x\n-y\ngarbage\n z\n--- a/three\n+++ b/three\n@@ -1 +1 @@\n-c\n+d\n";
+        let document = parse_patch(input.as_bytes()).expect("a diff");
+        let files = document.files().collect::<Vec<_>>();
+        let [one, two, three] = files[..] else {
+            panic!("three files, not {}", files.len());
+        };
+        let body = broken(two);
+
+        assert!(matches!(one.body, FileBody::Unified(_)));
+        assert!(matches!(three.body, FileBody::Unified(_)));
+        assert_eq!(
+            (body.failure.line, body.failure.reason),
+            (11, Malformed::UnmarkedHunkLine)
+        );
+        assert_eq!(
+            body.failure.row.sanitized(),
+            "line 11: unmarked line in hunk"
+        );
+        assert_eq!(body.read.headers.len(), 2);
+        assert_eq!(
+            body.read
+                .hunks
+                .iter()
+                .map(|hunk| hunk.records.len())
+                .collect::<Vec<_>>(),
+            [2]
+        );
+        assert_eq!(texts(&body.rest), ["garbage", " z"]);
+        assert_eq!(
+            two.identity,
+            FileIdentity::of_broken(None, &body.read.headers)
+        );
+        assert!(matches!(
+            &two.identity,
+            FileIdentity::Broken { name: Some(name) } if name.as_str() == "two.go"
+        ));
+    }
+
+    /// docs/spec/architecture.md#input-contract: input that ends part-way through a file
+    /// marks that last file broken.
+    #[test]
+    fn marks_a_file_cut_short_by_the_input_s_end_broken() {
+        let input = b"--- a/one\n+++ b/one\n@@ -1,2 +1,2 @@\n-a\n+b\n";
+        let document = parse_patch(input).expect("a diff");
+        let files = document.files().collect::<Vec<_>>();
+        let body = broken(files[0]);
+
+        assert_eq!(
+            (body.failure.line, body.failure.reason),
+            (6, Malformed::TruncatedHunk)
+        );
+        assert_eq!(body.read.hunks[0].records.len(), 2);
+        assert!(body.rest.is_empty());
+    }
+
+    /// docs/spec/architecture.md#file-tree: a broken file whose header gives no name is
+    /// unnamed.
+    #[test]
+    fn reads_a_stray_hunk_header_as_an_unnamed_broken_file() {
+        let document = parse_patch(b"text\n@@ -1 +1 @@\n-a\n+b\n").expect("a diff");
+        let files = document.files().collect::<Vec<_>>();
+        let body = broken(files[0]);
+
+        assert_eq!(files[0].identity, FileIdentity::Broken { name: None });
+        assert_eq!(
+            (body.failure.line, body.failure.reason),
+            (2, Malformed::UnexpectedDiffHeader)
+        );
+        assert_eq!(texts(&body.rest), ["@@ -1 +1 @@", "-a", "+b"]);
     }
 
     #[test]
     fn keeps_comparison_output_that_holds_only_text() {
         let input = b"Binary files before.bin and after.bin differ\n";
 
-        let document = parse_comparison(input).expect("text-only comparison output");
+        let document = parse_comparison(input);
 
         assert_eq!(finite_output::of_document(&document), input);
     }
@@ -436,7 +600,7 @@ mod tests {
         ] {
             let input = format!("{valid}{suffix}");
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(line, reason),
                 "{suffix}"
             );
@@ -449,7 +613,7 @@ mod tests {
     fn rejects_a_git_header_with_nothing_after_it() {
         for input in ["diff --git a/x b/x\n", "diff --git a/x b/x\nhello\n"] {
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(2, Malformed::MissingGitMetadata),
                 "{input}"
             );

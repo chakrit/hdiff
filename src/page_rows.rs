@@ -530,7 +530,8 @@ fn distances_from_previous_change<'a>(
                 LineKind::Text
                 | LineKind::Metadata
                 | LineKind::FileHeader
-                | LineKind::HunkHeader => None,
+                | LineKind::HunkHeader
+                | LineKind::Failure => None,
             };
 
             Some(distance)
@@ -768,9 +769,11 @@ mod tests {
         );
         let address_of = |kind| match kind {
             LineKind::Record { address, .. } => Some(address),
-            LineKind::Text | LineKind::Metadata | LineKind::FileHeader | LineKind::HunkHeader => {
-                None
-            }
+            LineKind::Text
+            | LineKind::Metadata
+            | LineKind::FileHeader
+            | LineKind::HunkHeader
+            | LineKind::Failure => None,
         };
         let (marker, marker_line) = rows
             .lines()

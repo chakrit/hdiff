@@ -6,10 +6,10 @@ use std::iter;
 
 use crate::{
     document::{
-        AddressedRecord, DiffDocument, DiffFile, FileBody, FileView, MetadataBody, RecordAddress,
-        RecordKind, UnifiedBody,
+        AddressedHunk, AddressedRecord, BrokenBody, DiffDocument, DiffFile, FileBody, FileView,
+        MetadataBody, RecordAddress, RecordKind, UnifiedBody,
     },
-    headers::GitHeader,
+    headers::{FileHeader, GitHeader},
     one_of::OneOf,
     side::Side,
     source_text::SourceLine,
@@ -22,6 +22,8 @@ pub enum LineKind {
     Metadata,
     FileHeader,
     HunkHeader,
+    /// The row reporting where and why a broken section failed.
+    Failure,
     /// A line of the record at `address`: its payload, or the no-newline marker after it.
     Record {
         address: RecordAddress,
@@ -46,7 +48,9 @@ impl LineKind {
     pub fn record_kind(self) -> Option<RecordKind> {
         match self {
             Self::Record { kind, .. } => Some(kind),
-            Self::Text | Self::Metadata | Self::FileHeader | Self::HunkHeader => None,
+            Self::Text | Self::Metadata | Self::FileHeader | Self::HunkHeader | Self::Failure => {
+                None
+            }
         }
     }
 
@@ -72,7 +76,8 @@ impl LineKind {
             | Self::Text
             | Self::Metadata
             | Self::FileHeader
-            | Self::HunkHeader => None,
+            | Self::HunkHeader
+            | Self::Failure => None,
         }
     }
 
@@ -141,11 +146,13 @@ pub fn of_text<'a>(
 }
 
 /// The lines of `file`: its Git header and metadata, then either its binary patch or its
-/// file headers and each hunk's header and records.
+/// file headers and each hunk's header and records; a broken file then shows its
+/// failure and the rest of its section.
 fn of_file(file: &DiffFile) -> impl Iterator<Item = DisplayLine<'_>> {
     match &file.body {
         FileBody::Metadata(body) => OneOf::First(metadata_lines(body)),
-        FileBody::Unified(body) => OneOf::Second(unified_lines(body)),
+        FileBody::Unified(body) => OneOf::Second(OneOf::First(unified_lines(body))),
+        FileBody::Broken(body) => OneOf::Second(OneOf::Second(broken_lines(body))),
     }
 }
 
@@ -176,20 +183,46 @@ fn unified_lines(body: &UnifiedBody) -> impl Iterator<Item = DisplayLine<'_>> {
         .iter()
         .flat_map(GitHeader::lines)
         .map(metadata_line);
-    let file_headers = body.headers.iter().map(|file_header| DisplayLine {
-        kind: LineKind::FileHeader,
-        source: &file_header.line,
-    });
-    let hunks = body.addressed_hunks().flat_map(|hunk| {
-        let hunk_header = DisplayLine {
-            kind: LineKind::HunkHeader,
-            source: hunk.header(),
-        };
-        let records = hunk.records().flat_map(record_lines);
-        iter::once(hunk_header).chain(records)
-    });
+    let file_headers = body.headers.iter().map(file_header_line);
+    let hunks = body.addressed_hunks().flat_map(hunk_lines);
 
     git.chain(file_headers).chain(hunks)
+}
+
+/// The lines of a broken section: what was read before its failure, as a whole section
+/// shows it, then the failure row and the rest of the section as text.
+fn broken_lines(body: &BrokenBody) -> impl Iterator<Item = DisplayLine<'_>> {
+    let metadata = body.read.metadata.iter().map(metadata_line);
+    let file_headers = body.read.headers.iter().map(file_header_line);
+    let hunks = body.read.addressed_hunks().flat_map(hunk_lines);
+    let failure = DisplayLine {
+        kind: LineKind::Failure,
+        source: &body.failure.row,
+    };
+
+    metadata
+        .chain(file_headers)
+        .chain(hunks)
+        .chain(iter::once(failure))
+        .chain(of_text(&body.rest))
+}
+
+/// A `---` or `+++` file header line.
+fn file_header_line(file_header: &FileHeader) -> DisplayLine<'_> {
+    DisplayLine {
+        kind: LineKind::FileHeader,
+        source: &file_header.line,
+    }
+}
+
+/// A hunk's header line, then each of its records' lines.
+fn hunk_lines(hunk: AddressedHunk<'_>) -> impl Iterator<Item = DisplayLine<'_>> {
+    let hunk_header = DisplayLine {
+        kind: LineKind::HunkHeader,
+        source: hunk.header(),
+    };
+
+    iter::once(hunk_header).chain(hunk.records().flat_map(record_lines))
 }
 
 /// A record's payload line, then the no-newline marker after it when it has one.

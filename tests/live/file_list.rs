@@ -253,3 +253,28 @@ fn keeps_a_selection_below_its_headings_visible() {
         "the list scrolls past earlier headings"
     );
 }
+
+/// docs/spec/architecture.md#input-contract and docs/spec/architecture.md#file-tree: a
+/// broken file is listed as `X name` and shows what was read, its failure row, and the
+/// rest of its section; the file after it is still listed.
+#[test]
+fn shows_a_broken_file_with_its_failure_and_the_rest_of_its_section() {
+    let patch = "--- a/two.go\n+++ b/two.go\n@@ -1,2 +1,2 @@\n-y\ngarbage\n--- a/three\n+++ b/three\n@@ -1 +1 @@\n-c\n+d\n";
+    let live = Live::load(patch, Mode::line(DiffLayout::Vertical));
+
+    assert!(
+        live.file_column()
+            .iter()
+            .any(|row| row.trim() == "X two.go"),
+        "{:?}",
+        live.file_column()
+    );
+    assert!(live.shows("~ three"), "parsing resumed at the next file");
+    assert!(live.shows("line 5: unmarked line in hunk"));
+    let raw_rest = live
+        .rows()
+        .iter()
+        .map(|row| row.matches("garbage").count())
+        .sum::<usize>();
+    assert_eq!(raw_rest, 2, "the raw rest shows in both split panes");
+}

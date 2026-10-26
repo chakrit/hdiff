@@ -103,8 +103,10 @@ fn metadata_only_input_remains_visible() {
     );
 }
 
+/// docs/spec/architecture.md#input-contract: hdiff never exits because a file is broken;
+/// the file shows what was read, then a row naming the failure.
 #[test]
-fn truncated_patch_is_an_error() {
+fn shows_a_truncated_patch_with_its_failure() {
     let env = TestEnv::new();
     let patch = env.write_file(
         "truncated.patch",
@@ -112,7 +114,10 @@ fn truncated_patch_is_an_error() {
     );
     let output = env.run([patch]);
 
-    assert_error(&output, "line 5: truncated hunk");
+    assert_eq!(
+        success_output(&output),
+        "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\nline 5: truncated hunk\n"
+    );
 }
 
 #[test]

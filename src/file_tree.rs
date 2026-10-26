@@ -22,6 +22,8 @@ pub enum TreeRow {
 pub enum StateMarker {
     State(FileState),
     Unknown,
+    /// The file's section failed to parse.
+    Broken,
 }
 
 impl StateMarker {
@@ -33,9 +35,13 @@ impl StateMarker {
             Self::State(FileState::Deleted) => "-",
             Self::State(FileState::Renamed) => "*",
             Self::Unknown => "?",
+            Self::Broken => "X",
         }
     }
 }
+
+/// The name a broken file's row shows when no readable header names it.
+const UNNAMED: &str = "(unnamed)";
 
 /// The position of one row among a [`FileTree`]'s rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +182,21 @@ impl<'a> Placed<'a> {
                 name: header.as_str(),
                 marker: StateMarker::Unknown,
             },
+            FileIdentity::Broken { name: Some(path) } => {
+                let Grouped { group, name } = Grouped::of(path.as_str());
+                Self {
+                    view,
+                    group,
+                    name,
+                    marker: StateMarker::Broken,
+                }
+            }
+            FileIdentity::Broken { name: None } => Self {
+                view,
+                group: Group::TopLevel,
+                name: UNNAMED,
+                marker: StateMarker::Broken,
+            },
         }
     }
 
@@ -310,6 +331,9 @@ mod tests {
                 let named = match &file.view.file.identity {
                     FileIdentity::Path { path, .. } => path.as_str().to_owned(),
                     FileIdentity::Unknown { header } => header.as_str().to_owned(),
+                    FileIdentity::Broken { name } => {
+                        name.as_ref().map_or("", |name| name.as_str()).to_owned()
+                    }
                 };
                 (named, row_text(&listing.tree.rows()[file.row.get()]))
             })

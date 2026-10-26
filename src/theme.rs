@@ -138,6 +138,7 @@ impl ChromePalette {
             StateMarker::State(FileState::Deleted) => self.deleted_marker,
             StateMarker::State(FileState::Renamed) => self.renamed_marker,
             StateMarker::Unknown => self.file_name,
+            StateMarker::Broken => self.deleted_marker,
         }
     }
 }

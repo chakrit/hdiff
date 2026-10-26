@@ -165,7 +165,7 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
 }
 
 #[test]
-fn malformed_input_never_emits_success_measurements() {
+fn input_without_a_diff_never_emits_success_measurements() {
     for driver in DRIVERS {
         let output = run_bench(driver, "not a patch\n");
 

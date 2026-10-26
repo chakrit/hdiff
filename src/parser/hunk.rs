@@ -2,13 +2,22 @@
 //! counts hold, any of which, the last included, may be followed by one no-newline
 //! marker. Rules: docs/spec/architecture.md#input-contract.
 
-use super::{Error, Malformed, SourceLines, header_number, reject_unsupported_header};
+use super::{SourceLines, header_number, reject_unsupported_header};
 use crate::{
-    document::{ContextMarker, Hunk, Record, RecordKind},
+    document::{ContextMarker, Failure, Hunk, Record, RecordKind},
     headers::{file_header_field, git_header_names},
+    malformed::Malformed,
     side::{BySide, Side},
     source_text::SourceLine,
 };
+
+/// A hunk that broke: the hunk as read up to the failure, the failure, and the failing
+/// line when the reader already took it.
+pub(super) struct BrokenHunk {
+    pub hunk: Hunk,
+    pub failure: Failure,
+    pub failing: Option<SourceLine>,
+}
 
 /// The records after a hunk `header` that declares `expected` counts. Any record, the
 /// last included, may be followed by one no-newline marker, which ends its side of the
@@ -18,36 +27,79 @@ pub(super) fn parse_hunk(
     expected: BySide<usize>,
     earlier: BySide<bool>,
     lines: &mut SourceLines<'_>,
-) -> Result<Hunk, Error> {
+) -> Result<Hunk, Box<BrokenHunk>> {
     let exhausted = BySide::default();
     let mut remaining = expected;
     let mut ended = earlier;
     let mut records = Vec::new();
     while let Some(hunk_line) = next_hunk_line(lines, remaining != exhausted) {
-        match hunk_line {
-            HunkLine::NoNewlineMarker(line) => {
-                let marked = lines.at_last_line(mark_no_newline(&mut records, line))?;
+        let read = match hunk_line {
+            HunkLine::NoNewlineMarker(line) => mark_no_newline(&mut records, line).map(|marked| {
                 ended = ended.or(marked);
-            }
+            }),
             HunkLine::Record(line) => {
-                let record = lines.at_last_line(parse_record(line))?;
-                lines.at_last_line(check_side_open(ended, record.kind))?;
-                remaining = lines.at_last_line(count_record(remaining, record.kind))?;
-                records.push(record);
+                counted_record(line, ended, remaining).map(|(record, counted)| {
+                    remaining = counted;
+                    records.push(record);
+                })
             }
+        };
+        if let Err((reason, line)) = read {
+            return Err(Box::new(BrokenHunk {
+                hunk: Hunk {
+                    header,
+                    records: records.into_boxed_slice(),
+                },
+                failure: lines.last_line_failure(reason),
+                failing: Some(line),
+            }));
         }
     }
 
-    if remaining != exhausted {
-        return Err(lines.next_line_error(Malformed::TruncatedHunk));
-    }
-    if lines.peek().is_some_and(is_excess_record) {
-        return Err(lines.next_line_error(Malformed::ExcessRecords));
-    }
-    Ok(Hunk {
+    let unfinished = if remaining != exhausted {
+        Some(Malformed::TruncatedHunk)
+    } else if lines.peek().is_some_and(is_excess_record) {
+        Some(Malformed::ExcessRecords)
+    } else {
+        None
+    };
+    let hunk = Hunk {
         header,
         records: records.into_boxed_slice(),
-    })
+    };
+    match unfinished {
+        None => Ok(hunk),
+        Some(reason) => Err(Box::new(BrokenHunk {
+            hunk,
+            failure: lines.next_line_failure(reason),
+            failing: None,
+        })),
+    }
+}
+
+/// The record `line` holds, with the counts `remaining` after it: on no side `ended`
+/// before it, and within its side's declared count. A line that holds no such record
+/// comes back with the reason.
+fn counted_record(
+    line: SourceLine,
+    ended: BySide<bool>,
+    remaining: BySide<usize>,
+) -> Result<(Record, BySide<usize>), (Malformed, SourceLine)> {
+    let marked = marked_record(&line);
+    let kind = match &marked {
+        Some(record) => Ok(record.kind),
+        None => unmarked_kind(&line),
+    };
+    let counted = kind.and_then(|kind| {
+        check_side_open(ended, kind)?;
+        count_record(remaining, kind)
+    });
+
+    match (counted, marked) {
+        (Err(reason), _) => Err((reason, line)),
+        (Ok(counted), Some(record)) => Ok((record, counted)),
+        (Ok(counted), None) => Ok((blank_context(line), counted)),
+    }
 }
 
 /// A line inside a hunk, read once as a no-newline marker or as a line holding a record.
@@ -96,40 +148,44 @@ fn check_side_open(ended: BySide<bool>, kind: RecordKind) -> Result<(), Malforme
 
 /// Gives the last of `records` the no-newline `marker` after it, returning the sides of
 /// the file it ends; a marker that follows no record, or a record that already has one,
-/// is misplaced.
-fn mark_no_newline(records: &mut [Record], marker: SourceLine) -> Result<BySide<bool>, Malformed> {
+/// is misplaced, and the marker comes back with the reason.
+fn mark_no_newline(
+    records: &mut [Record],
+    marker: SourceLine,
+) -> Result<BySide<bool>, (Malformed, SourceLine)> {
     let unmarked = records
         .last_mut()
         .filter(|record| record.no_newline.is_none());
     let Some(record) = unmarked else {
-        return Err(Malformed::MisplacedNoNewlineMarker);
+        return Err((Malformed::MisplacedNoNewlineMarker, marker));
     };
 
     record.no_newline = Some(marker);
     Ok(record.ended_sides())
 }
 
-/// The record a hunk line holds: a record marked by its first visible character, or blank
-/// context when the line is empty. A diff header there is unexpected, and any other line
-/// is unmarked.
-fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
-    if let Some(record) = marked_record(&line) {
-        return Ok(record);
-    }
-
+/// The kind of record a hunk line holds when no record marker starts it: blank context
+/// when the line is empty. A diff header there is unexpected, and any other line is
+/// unmarked.
+fn unmarked_kind(line: &SourceLine) -> Result<RecordKind, Malformed> {
     let text = line.sanitized();
     if text.is_empty() {
-        return Ok(Record {
-            kind: RecordKind::Context(ContextMarker::Blank),
-            payload: line,
-            no_newline: None,
-        });
+        return Ok(RecordKind::Context(ContextMarker::Blank));
     }
 
     reject_unsupported_header(text)?;
     match git_header_names(text) {
         Some(_) => Err(Malformed::UnexpectedGitHeaderInHunk),
         None => Err(Malformed::UnmarkedHunkLine),
+    }
+}
+
+/// The blank context record an empty hunk `line` holds.
+fn blank_context(line: SourceLine) -> Record {
+    Record {
+        kind: RecordKind::Context(ContextMarker::Blank),
+        payload: line,
+        no_newline: None,
     }
 }
 
@@ -205,11 +261,12 @@ mod tests {
     use crate::{
         document::{ContextMarker, DiffDocument, FileBody, Hunk, Record, RecordKind},
         finite_output,
-        parser::{Error, Malformed, parse_patch},
+        malformed::Malformed,
+        parser::{failures, parse_patch},
     };
 
-    fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, Error> {
-        Err(Error::Malformed { line, reason })
+    fn malformed(line: usize, reason: Malformed) -> Vec<(usize, Malformed)> {
+        vec![(line, reason)]
     }
 
     /// The first hunk of a document holding one unified file.
@@ -246,7 +303,7 @@ mod tests {
             let input = format!("{files}{header}\n-old\n+new\n");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(3, Malformed::InvalidHunkHeader),
                 "{header}"
             );
@@ -262,12 +319,12 @@ mod tests {
         let long_count = format!("{files}@@ -1,{} +1 @@\n-old\n+new\n", "9".repeat(30));
 
         assert_eq!(
-            parse_patch(long_start.as_bytes()),
+            failures(parse_patch(long_start.as_bytes())),
             malformed(3, Malformed::InvalidHunkHeader),
             "{long_start:?} has a start too large to hold"
         );
         assert_eq!(
-            parse_patch(long_count.as_bytes()),
+            failures(parse_patch(long_count.as_bytes())),
             malformed(3, Malformed::InvalidHunkHeader),
             "{long_count:?} has a count too large to hold"
         );
@@ -285,7 +342,7 @@ mod tests {
             let input = format!("{files}{hunk}");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(line, Malformed::UnmarkedHunkLine),
                 "{hunk}"
             );
@@ -360,7 +417,7 @@ mod tests {
             let input = format!("{files}{hunk}");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(line, Malformed::MisplacedNoNewlineMarker),
                 "{hunk}"
             );
@@ -386,7 +443,7 @@ mod tests {
             let input = format!("{files}{hunks}");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(line, Malformed::RecordAfterNoNewlineMarker),
                 "{hunks}"
             );
@@ -415,7 +472,7 @@ mod tests {
             let input = format!("{files}{header}\n-a\n+b\n");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(3, Malformed::InvalidHunkHeader),
                 "{header:?}"
             );
@@ -431,18 +488,22 @@ mod tests {
     #[test]
     fn rejects_diff_headers_inside_incomplete_hunks() {
         let files = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n";
-        for (header, reason) in [
-            ("@@ malformed", Malformed::UnexpectedDiffHeader),
-            ("diff --git a/g b/g", Malformed::UnexpectedGitHeaderInHunk),
-        ] {
-            let input = format!("{files}{header}\n-old\n+new\n");
+        let malformed_hunk_header = format!("{files}@@ malformed\n-old\n+new\n");
+        // docs/spec/architecture.md#input-contract: parsing resumes at the next file
+        // header, so a `diff --git` line starts a section, which has no metadata.
+        let git_header = format!("{files}diff --git a/g b/g\n-old\n+new\n");
 
-            assert_eq!(
-                parse_patch(input.as_bytes()),
-                malformed(4, reason),
-                "{header}"
-            );
-        }
+        assert_eq!(
+            failures(parse_patch(malformed_hunk_header.as_bytes())),
+            malformed(4, Malformed::UnexpectedDiffHeader)
+        );
+        assert_eq!(
+            failures(parse_patch(git_header.as_bytes())),
+            [
+                (4, Malformed::UnexpectedGitHeaderInHunk),
+                (5, Malformed::MissingGitMetadata)
+            ]
+        );
     }
 
     #[test]
@@ -452,7 +513,7 @@ mod tests {
             let input = format!("{valid}{suffix}");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(6, Malformed::ExcessRecords),
                 "{suffix}"
             );
@@ -466,7 +527,7 @@ mod tests {
             let input = format!("{overfull}{suffix}");
 
             assert_eq!(
-                parse_patch(input.as_bytes()),
+                failures(parse_patch(input.as_bytes())),
                 malformed(5, Malformed::ExcessRecords),
                 "{suffix}"
             );
@@ -478,7 +539,7 @@ mod tests {
         let input = "--- a/readme.txt\n+++ b/readme.txt\n@@ -1,2 +1,2 @@\n-old\n";
 
         assert_eq!(
-            parse_patch(input.as_bytes()),
+            failures(parse_patch(input.as_bytes())),
             malformed(5, Malformed::TruncatedHunk)
         );
     }

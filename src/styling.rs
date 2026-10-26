@@ -100,6 +100,8 @@ pub enum RowTone {
     Changed(Side),
     UnchangedRecord,
     HunkHeader,
+    /// The row reporting a broken section's failure.
+    Failure,
     Plain,
 }
 
@@ -120,6 +122,7 @@ impl RowTone {
                 ..
             } => Self::UnchangedRecord,
             LineKind::HunkHeader => Self::HunkHeader,
+            LineKind::Failure => Self::Failure,
             LineKind::Text | LineKind::Metadata | LineKind::FileHeader => Self::Plain,
         }
     }

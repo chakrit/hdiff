@@ -52,7 +52,7 @@ impl Live {
 
     /// `output` of comparing file operands on the default screen, in `mode`.
     pub fn comparison(output: &str, mode: Mode) -> Self {
-        let document = parse_comparison(output.as_bytes()).expect("valid comparison output");
+        let document = parse_comparison(output.as_bytes());
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
     }
 

@@ -22,8 +22,18 @@ pub enum FileState {
 /// A file located by its path, or a section whose path cannot be determined.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileIdentity {
-    Path { state: FileState, path: DisplayText },
-    Unknown { header: DisplayText },
+    Path {
+        state: FileState,
+        path: DisplayText,
+    },
+    Unknown {
+        header: DisplayText,
+    },
+    /// A section that failed to parse, named from the readable part of its header when
+    /// any names it.
+    Broken {
+        name: Option<DisplayText>,
+    },
 }
 
 impl FileIdentity {
@@ -54,6 +64,30 @@ impl FileIdentity {
         });
 
         located.unwrap_or_else(|| Self::unknown(&git.line))
+    }
+
+    /// A section that failed to parse, named by its `diff --git` line when one names a
+    /// path, and otherwise by the file headers read before the failure.
+    pub fn of_broken(git_line: Option<&SourceLine>, headers: &[FileHeader]) -> Self {
+        let from_git = git_line.and_then(git_header_path);
+        let name = from_git.or_else(|| match headers {
+            [old, new] => {
+                let paths = BySide {
+                    old: &old.path,
+                    new: &new.path,
+                };
+                read_headers(None, paths).map(|located| located.path)
+            }
+            [only] => match &only.path {
+                HeaderPath::Path(path) => Some(path.clone()),
+                HeaderPath::DevNull | HeaderPath::Undecodable => None,
+            },
+            _ => None,
+        });
+
+        Self::Broken {
+            name: name.map(|path| DisplayText::of_decoded(&path)),
+        }
     }
 
     /// A section named by its first line because its path cannot be determined.

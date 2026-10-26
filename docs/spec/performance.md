@@ -36,7 +36,7 @@ Unified and side-by-side layout projections reference those buffers.
 the normal preparation pass, runs the named driver, prints machine-readable result lines,
 and exits without opening the terminal. `--profile` does not exist. Zero-byte input still
 emits valid zero-count reports. Reports are written only after successful preparation,
-and malformed input produces no success record.
+and input that holds no diff produces no success record.
 
 Drivers are variants of one `bench::Driver` enum behind a single entry point: read, parse,
 prepare, run the driver, report. The drivers are `prepare`, `stages`, and `movement`.

@@ -45,6 +45,10 @@ impl DisplayScan {
                 .headers
                 .as_ref()
                 .map(|header| Language::of_header(&header.path)),
+            FileBody::Broken(body) => match &*body.read.headers {
+                [old, new] => BySide { old, new }.map(|header| Language::of_header(&header.path)),
+                _ => BySide::default(),
+            },
             FileBody::Metadata(_) => BySide::default(),
         };
         let shared = languages.merge(|old, new| old.is_some() && old == new);
@@ -93,7 +97,8 @@ impl DisplayScan {
             }
             | LineKind::Text
             | LineKind::Metadata
-            | LineKind::FileHeader => {}
+            | LineKind::FileHeader
+            | LineKind::Failure => {}
         }
     }
 
