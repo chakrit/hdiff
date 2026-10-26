@@ -13,13 +13,12 @@ use hdiff::{
     bench::{self, Driver},
     cli::{self, Invocation},
     exit_status::DiffStatus,
-    file_tree::Arrival,
     finite_output,
     input::{self, Opened, Origin, StdinState},
     loading::{self, Channel, Loaded, Message},
     measurement::Unobserved,
     parser,
-    prepared::{FilePage, PreparedDocument, PreparedFiles, PreparedPage},
+    prepared::{Arrived, PreparedDocument, PreparedFiles, PreparedPage},
     terminal::{self, OutputMode, SessionEnd},
 };
 
@@ -123,7 +122,12 @@ fn stream(source: input::Source, controlling_terminal: File) -> Result<(), RunEr
     let channel = loading::start(input);
 
     let document = match first_loaded(&channel) {
-        Loaded::Files { pages, arrival } => opening_files(pages, arrival),
+        Loaded::Arrived(Arrived::Opened(first) | Arrived::Whole(first)) => {
+            PreparedDocument::Files(PreparedFiles::loading(first))
+        }
+        Loaded::Arrived(Arrived::Grew(_) | Arrived::Closed { .. } | Arrived::Ended(_)) => {
+            unreachable!("the worker opens a file before it grows, closes or ends one")
+        }
         Loaded::NoFiles(text) if text.is_empty() => return Ok(()),
         Loaded::NoFiles(text) => match origin {
             Origin::Stdin | Origin::PatchFile(_) => return Err(RunError::Parse(parser::NoDiff)),
@@ -151,19 +155,6 @@ fn first_loaded(channel: &Channel) -> Loaded {
             Err(_) => unreachable!("the channel holds a sender until the session ends"),
         }
     }
-}
-
-/// The document the first arrived `pages` open, with more files coming unless
-/// `arrival` says the input has ended.
-fn opening_files(pages: Vec<FilePage>, arrival: Arrival) -> PreparedDocument {
-    let mut arrived = pages.into_iter();
-    let first = arrived
-        .next()
-        .expect("the worker sends files with at least one page");
-    let mut files = PreparedFiles::loading(first);
-    files.extend(arrived, arrival);
-
-    PreparedDocument::Files(files)
 }
 
 /// Writes `bytes` to standard output.

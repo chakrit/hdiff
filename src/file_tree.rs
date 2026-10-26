@@ -172,7 +172,12 @@ impl Listing {
     /// Where `view`'s file is listed: by its path's directory, or at the top level under
     /// its header when the path is unknown.
     pub fn of(view: FileView<'_>) -> Self {
-        match &view.file.identity {
+        Self::of_identity(&view.file.identity)
+    }
+
+    /// Where a file of `identity` is listed.
+    pub fn of_identity(identity: &FileIdentity) -> Self {
+        match identity {
             FileIdentity::Path { state, path } => {
                 Self::of_path(path.as_str(), StateMarker::State(*state))
             }

@@ -11,6 +11,7 @@ use crate::{
     },
     headers::{FileHeader, GitHeader},
     one_of::OneOf,
+    parser::Progress,
     side::Side,
     source_text::SourceLine,
 };
@@ -143,6 +144,30 @@ pub fn of_text<'a>(
         kind: LineKind::Text,
         source,
     })
+}
+
+/// The lines a section reader's `progress` reports: for its headers, the text before
+/// the section, its Git header and metadata, and its file headers; for a hunk, the
+/// hunk's header and records. Reported in order, they are the section's lines up to its
+/// last hunk read.
+pub(crate) fn of_progress<'a>(progress: &Progress<'a>) -> impl Iterator<Item = DisplayLine<'a>> {
+    match *progress {
+        Progress::Headers {
+            leading,
+            git,
+            headers,
+        } => {
+            let git_lines = git
+                .into_iter()
+                .flat_map(GitHeader::lines)
+                .map(metadata_line);
+            let file_headers = headers.iter().map(file_header_line);
+            OneOf::First(of_text(leading).chain(git_lines).chain(file_headers))
+        }
+        Progress::Hunk { index, hunk } => {
+            OneOf::Second(hunk_lines(AddressedHunk::new(index, hunk)))
+        }
+    }
 }
 
 /// The lines of `file`: its Git header and metadata, then either its binary patch or its

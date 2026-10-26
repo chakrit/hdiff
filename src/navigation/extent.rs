@@ -180,6 +180,11 @@ impl ScrollExtent {
         }
     }
 
+    /// Rebuilds the rows of this page, which has grown.
+    pub(super) fn rebuild(&mut self, document: &PreparedDocument) {
+        *self = Self::of(document, self.page, self.settings());
+    }
+
     /// Shows this page with `settings`, rebuilding the rows unless they already are
     /// those.
     pub(super) fn reshow(&mut self, document: &PreparedDocument, settings: ExtentSettings) {

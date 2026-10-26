@@ -6,7 +6,7 @@ use std::slice;
 
 use crate::{
     detail::{ChangedDetail, character_details},
-    display_lines::{LineKind, RecordPart},
+    display_lines::{DisplayLine, LineKind, RecordPart},
     document::FileView,
     measurement::{Observer, Stage},
     page_rows::{LineIndex, LineMap, PageRows},
@@ -31,7 +31,26 @@ impl StyledRows {
     pub fn of_file_view(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         let rows = observer.time(Stage::Layout, || PageRows::of_file_view(view));
 
-        Self::styled(rows, DisplayScan::of_file(view.file), observer)
+        Self::styled(rows, &mut DisplayScan::of_file(view.file), observer)
+    }
+
+    /// The rows of `lines`, part of a page whose syntax `scan` reads in display order:
+    /// each part after the first starts at a hunk header, so parts appended in order
+    /// style the page as it would be styled whole.
+    pub fn of_lines<'a>(
+        lines: impl Iterator<Item = DisplayLine<'a>>,
+        scan: &mut DisplayScan,
+        observer: &mut impl Observer,
+    ) -> Self {
+        let rows = observer.time(Stage::Layout, || PageRows::of_lines(lines));
+
+        Self::styled(rows, scan, observer)
+    }
+
+    /// Appends `later`, the next part of the page.
+    pub fn append(&mut self, later: Self) {
+        self.rows.append(later.rows);
+        self.styles.append(later.styles);
     }
 
     /// The rows of surrounding text, which has no syntax; its shared rows carry no
@@ -42,12 +61,12 @@ impl StyledRows {
     ) -> Self {
         let rows = observer.time(Stage::Layout, || PageRows::of_text(lines));
 
-        Self::styled(rows, DisplayScan::textual(), observer)
+        Self::styled(rows, &mut DisplayScan::textual(), observer)
     }
 
     /// The styles of each line of `rows`: the syntax `scan` reads from the lines in
     /// display order, and the character detail derived here from these same rows.
-    fn styled(rows: PageRows, mut scan: DisplayScan, observer: &mut impl Observer) -> Self {
+    fn styled(rows: PageRows, scan: &mut DisplayScan, observer: &mut impl Observer) -> Self {
         let details = observer.time(Stage::Detail, || character_details(&rows));
         let mut scratch = PartitionScratch::default();
 
@@ -310,12 +329,18 @@ impl PartitionBuild<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DetailStyle, Partition, PartitionScratch, RowTone, StyledRow, StyledText, TextStyle,
-        character_partition,
+        DetailStyle, Partition, PartitionScratch, RowTone, StyledRow, StyledRows, StyledText,
+        TextStyle, character_partition,
     };
     use crate::{
-        detail::character_details, page_rows::PageRows, parser::parse_patch, side::Side,
-        span::PayloadSpan, syntax::SyntaxClass,
+        detail::character_details,
+        display_lines::{self, LineKind},
+        measurement::Unobserved,
+        page_rows::PageRows,
+        parser::parse_patch,
+        side::Side,
+        span::PayloadSpan,
+        syntax::{DisplayScan, SyntaxClass},
     };
 
     fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<StyledText<'a, TextStyle>> {
@@ -405,5 +430,33 @@ mod tests {
             segments("same", &partition),
             [styled("same", TextStyle::Plain)]
         );
+    }
+    /// docs/spec/performance.md#preparation-boundary: a page that fills in one hunk at a
+    /// time is the page its whole file prepares.
+    #[test]
+    fn a_page_built_hunk_by_hunk_is_the_page_built_whole() {
+        let patch = "intro\n--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,2 @@\n x := 1\n-/* old\n+// new\n@@ -9,2 +9,3 @@\n y\n-z */ w\n+v\n+u\n";
+        let document = parse_patch(patch.as_bytes()).expect("valid diff");
+        let views = document.file_views().collect::<Vec<_>>();
+        let lines = display_lines::of_file_view(views[0]).collect::<Vec<_>>();
+        let second_hunk = lines
+            .iter()
+            .rposition(|line| line.kind == LineKind::HunkHeader)
+            .expect("two hunks");
+
+        let whole = StyledRows::of_file_view(views[0], &mut Unobserved);
+        let mut scan = DisplayScan::of_file(views[0].file);
+        let mut parts = StyledRows::of_lines(
+            lines[..second_hunk].iter().copied(),
+            &mut scan,
+            &mut Unobserved,
+        );
+        parts.append(StyledRows::of_lines(
+            lines[second_hunk..].iter().copied(),
+            &mut scan,
+            &mut Unobserved,
+        ));
+
+        assert_eq!(parts, whole);
     }
 }

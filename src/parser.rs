@@ -84,6 +84,15 @@ impl<'a> SectionReader<'a> {
     /// ends. A section that breaks the format is kept as a broken file, and reading
     /// resumes at the next file header.
     pub(crate) fn next_section(&mut self) -> Option<FileSection> {
+        self.next_section_reporting(&mut |_| {})
+    }
+
+    /// [`next_section`](Self::next_section), with `progress` hearing of a unified
+    /// section's headers and of each of its hunks as each is read.
+    pub(crate) fn next_section_reporting(
+        &mut self,
+        progress: &mut dyn FnMut(Progress<'_>),
+    ) -> Option<FileSection> {
         let lines = &mut self.lines;
         while let Some(line) = lines.next() {
             let parsed = match line_start(line.sanitized()) {
@@ -91,9 +100,9 @@ impl<'a> SectionReader<'a> {
                     self.text.push(line);
                     continue;
                 }
-                Ok(LineStart::GitHeader) => parse_git_section(line, lines),
+                Ok(LineStart::GitHeader) => parse_git_section(line, lines, &self.text, progress),
                 Ok(LineStart::OldFileHeader(path)) => {
-                    parse_unified(None, FileHeader { line, path }, lines)
+                    parse_unified(None, FileHeader { line, path }, lines, &self.text, progress)
                 }
                 Err(reason) => Err(Box::new(Broken {
                     read: ReadPart::default(),
@@ -125,6 +134,20 @@ fn section_after(text: &mut Vec<SourceLine>, file: DiffFile) -> FileSection {
         leading: mem::take(text).into_boxed_slice(),
         file,
     }
+}
+
+/// What a section reader reports while it reads a unified section, before the section
+/// ends.
+pub(crate) enum Progress<'a> {
+    /// The section's file headers, with the surrounding text before the section and its
+    /// Git header.
+    Headers {
+        leading: &'a [SourceLine],
+        git: Option<&'a GitHeader<Box<[SourceLine]>>>,
+        headers: &'a BySide<FileHeader>,
+    },
+    /// The section's hunk at `index`.
+    Hunk { index: usize, hunk: &'a Hunk },
 }
 
 // Broken sections
@@ -222,6 +245,8 @@ fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
 fn parse_git_section(
     header: SourceLine,
     lines: &mut SourceLines<'_>,
+    leading: &[SourceLine],
+    progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<DiffFile, Box<Broken>> {
     let header_lines = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
     if let Some(old) = lines.next_file_header(Side::Old) {
@@ -229,7 +254,7 @@ fn parse_git_section(
             line: header,
             extended_headers: header_lines.into_boxed_slice(),
         };
-        return parse_unified(Some(git), old, lines);
+        return parse_unified(Some(git), old, lines, leading, progress);
     }
 
     let Some(extended_headers) = NonEmpty::of(header_lines) else {
@@ -276,11 +301,14 @@ fn is_git_metadata(text: &str) -> bool {
     GitMetadata::of(text).is_some()
 }
 
-/// A section with `---` / `+++` headers, after its Git header when it has one.
+/// A section with `---` / `+++` headers, after its Git header when it has one; `leading`
+/// text comes before it. `progress` hears of the headers and of each hunk as each is read.
 fn parse_unified(
     git: Option<GitHeader<Box<[SourceLine]>>>,
     old: FileHeader,
     lines: &mut SourceLines<'_>,
+    leading: &[SourceLine],
+    progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<DiffFile, Box<Broken>> {
     let Some(new) = lines.next_file_header(Side::New) else {
         let failure = match lines.peek() {
@@ -293,6 +321,12 @@ fn parse_unified(
             failing: None,
         }));
     };
+    let headers = BySide { old, new };
+    progress(Progress::Headers {
+        leading,
+        git: git.as_ref(),
+        headers: &headers,
+    });
 
     let mut parsed_hunks = Vec::new();
     let mut ended = BySide::default();
@@ -301,7 +335,7 @@ fn parse_unified(
             Ok(expected) => expected,
             Err(reason) => {
                 return Err(Box::new(Broken {
-                    read: unified_read(git, vec![old, new], parsed_hunks),
+                    read: unified_read(git, headers.into_iter().collect(), parsed_hunks),
                     failure: lines.last_line_failure(reason),
                     failing: Some(header),
                 }));
@@ -312,24 +346,27 @@ fn parse_unified(
             Err(broken) => {
                 parsed_hunks.push(broken.hunk);
                 return Err(Box::new(Broken {
-                    read: unified_read(git, vec![old, new], parsed_hunks),
+                    read: unified_read(git, headers.into_iter().collect(), parsed_hunks),
                     failure: broken.failure,
                     failing: broken.failing,
                 }));
             }
         };
         ended = ended.or(hunk.ended_sides());
+        progress(Progress::Hunk {
+            index: parsed_hunks.len(),
+            hunk: &hunk,
+        });
         parsed_hunks.push(hunk);
     }
     let Some(hunks) = NonEmpty::of(parsed_hunks) else {
         return Err(Box::new(Broken {
-            read: unified_read(git, vec![old, new], Vec::new()),
+            read: unified_read(git, headers.into_iter().collect(), Vec::new()),
             failure: lines.next_line_failure(Malformed::FileWithoutHunks),
             failing: None,
         }));
     };
 
-    let headers = BySide { old, new };
     let identity = FileIdentity::of_unified(git.as_ref(), &headers);
     Ok(DiffFile {
         identity,

@@ -1,4 +1,5 @@
 use crate::{
+    display_lines::DisplayLine,
     document::{DiffDocument, DiffFiles, FileView},
     file_tree::{Arrival, FileSelection, ListedTree, Listing, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
@@ -6,6 +7,7 @@ use crate::{
     preferences::DiffGranularity,
     source_text::SourceLine,
     styling::{StyledRow, StyledRows},
+    syntax::DisplayScan,
 };
 
 /// A document ready to draw: one page per listed file with the file list, or one page of
@@ -115,7 +117,7 @@ impl PreparedDocument {
 
     /// Every page, in input order.
     #[cfg(test)]
-    fn pages(&self) -> Vec<&PreparedPage> {
+    pub(crate) fn pages(&self) -> Vec<&PreparedPage> {
         match self {
             Self::Files(files) => files
                 .pages
@@ -161,13 +163,57 @@ impl PreparedFiles {
         self.listed.rows[page.0]
     }
 
-    /// Lists `arrived` pages after the pages so far, ending the list when `arrival` says
-    /// no more input is coming.
-    pub fn extend(&mut self, arrived: impl IntoIterator<Item = FilePage>, arrival: Arrival) {
-        self.pages.extend(arrived);
-        self.arrival = arrival;
-        self.listed = list(&self.pages, arrival);
+    /// Applies `updates` in order and lists the files once after them; returns the page
+    /// of the file whose page grew, if one did.
+    pub fn receive(&mut self, updates: impl IntoIterator<Item = Arrived>) -> Option<PageIndex> {
+        let mut grown = None;
+        for update in updates {
+            match update {
+                Arrived::Whole(page) | Arrived::Opened(page) => self.pages.push(page),
+                Arrived::Grew(part) => grown = Some(self.grow_last(part)),
+                Arrived::Closed { part, listing } => {
+                    grown = Some(self.grow_last(part));
+                    self.last_mut().listing = listing;
+                }
+                Arrived::Ended(trailing) => {
+                    grown = Some(self.grow_last(trailing));
+                    self.arrival = Arrival::Ended;
+                }
+            }
+        }
+
+        self.listed = list(&self.pages, self.arrival);
+        grown
     }
+
+    /// Appends `part` to the last file's page, and returns that page.
+    fn grow_last(&mut self, part: PreparedPage) -> PageIndex {
+        self.last_mut().page.append(part);
+        PageIndex(self.pages.len() - 1)
+    }
+
+    fn last_mut(&mut self) -> &mut FilePage {
+        self.pages
+            .last_mut()
+            .expect("a document lists files from its first one on")
+    }
+}
+
+/// What arrives for a document whose files are still loading, in input order.
+pub enum Arrived {
+    /// A file that arrived whole.
+    Whole(FilePage),
+    /// A file whose page grows as more of it arrives.
+    Opened(FilePage),
+    /// The next part of the last file's page, from a hunk header on.
+    Grew(PreparedPage),
+    /// The last part of the last file's page, with where the list lists the whole file.
+    Closed {
+        part: PreparedPage,
+        listing: Listing,
+    },
+    /// The text after the last file, which ends the input.
+    Ended(PreparedPage),
 }
 
 /// The file list of `pages`, in input order.
@@ -249,6 +295,14 @@ impl PageOrder<'_> {
 }
 
 impl FilePage {
+    /// A page that starts with `part`, listed as `listing`.
+    pub fn of_part(part: PreparedPage, listing: Listing) -> Self {
+        Self {
+            page: part,
+            listing,
+        }
+    }
+
     /// The prepared page for one file occurrence, with where the file list lists it.
     pub fn prepare(view: FileView<'_>) -> Self {
         Self::prepared(view, &mut Unobserved)
@@ -263,11 +317,33 @@ impl FilePage {
 }
 
 impl PreparedPage {
+    /// The part of a page `lines` make, whose syntax `scan` reads in display order; see
+    /// [`StyledRows::of_lines`].
+    pub fn of_lines<'a>(
+        lines: impl Iterator<Item = DisplayLine<'a>>,
+        scan: &mut DisplayScan,
+        observer: &mut impl Observer,
+    ) -> Self {
+        Self {
+            rows: StyledRows::of_lines(lines, scan, observer),
+        }
+    }
+
+    /// Appends `later`, the next part of the page.
+    fn append(&mut self, later: Self) {
+        self.rows.append(later.rows);
+    }
+
     /// The page of one file occurrence with its surrounding text.
     fn of_file_view(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         Self {
             rows: StyledRows::of_file_view(view, observer),
         }
+    }
+
+    /// A part with no lines, which leaves a page as it is.
+    pub fn empty() -> Self {
+        Self::of_text(&[], &mut Unobserved)
     }
 
     /// The page of a document's text; surrounding text has no syntax or character

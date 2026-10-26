@@ -254,6 +254,12 @@ pub struct AddressedHunk<'a> {
 }
 
 impl<'a> AddressedHunk<'a> {
+    /// `hunk` at `index` among its file's hunks, as a section reader reports it before
+    /// the file is whole.
+    pub(crate) fn new(index: usize, hunk: &'a Hunk) -> Self {
+        Self { index, hunk }
+    }
+
     pub fn header(self) -> &'a SourceLine {
         &self.hunk.header
     }

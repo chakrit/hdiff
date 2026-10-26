@@ -4,7 +4,7 @@
 use crate::{
     display_lines::{LineKind, RecordPart},
     document::{DiffFile, FileBody},
-    headers::HeaderPath,
+    headers::{FileHeader, HeaderPath},
     measurement::{Observer, Work},
     scanner::{ScanState, Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST},
     side::{BySide, Side},
@@ -40,17 +40,19 @@ pub struct DisplayScan {
 impl DisplayScan {
     /// The scan of `file`'s lines, each side in its path's language.
     pub fn of_file(file: &DiffFile) -> Self {
-        let languages = match &file.body {
-            FileBody::Unified(body) => body
-                .headers
-                .as_ref()
-                .map(|header| Language::of_header(&header.path)),
+        match &file.body {
+            FileBody::Unified(body) => Self::of_headers(body.headers.as_ref()),
             FileBody::Broken(body) => match &*body.read.headers {
-                [old, new] => BySide { old, new }.map(|header| Language::of_header(&header.path)),
-                _ => BySide::default(),
+                [old, new] => Self::of_headers(BySide { old, new }),
+                _ => Self::textual(),
             },
-            FileBody::Metadata(_) => BySide::default(),
-        };
+            FileBody::Metadata(_) => Self::textual(),
+        }
+    }
+
+    /// The scan of a file with `headers`, each side in its path's language.
+    pub fn of_headers(headers: BySide<&FileHeader>) -> Self {
+        let languages = headers.map(|header| Language::of_header(&header.path));
         let shared = languages.merge(|old, new| old.is_some() && old == new);
 
         Self {

@@ -17,9 +17,9 @@ use self::{
 };
 use crate::{
     effective_view::EffectiveView,
-    file_tree::{Arrival, FileSelection},
+    file_tree::FileSelection,
     preferences::ViewPreferences,
-    prepared::{FilePage, PreparedDocument},
+    prepared::{Arrived, PreparedDocument},
     screen::ScreenLines,
 };
 
@@ -85,22 +85,25 @@ impl Navigation {
         self.list_line.drawn = selected_line;
     }
 
-    /// Lists `arrived` pages after the document's pages, ending the list when `arrival`
-    /// says the input has ended. The selection stays on its file, and when rows arrive
-    /// above it, on the file-list line it was drawn on.
+    /// Applies `arrived` updates to the document's files. The selection stays on its
+    /// file, and when rows arrive above it, on the file-list line it was drawn on; when
+    /// the shown page grows, its scroll extent grows with it.
     ///
     /// Panics when the document lists no files, which only a complete document can be.
-    pub fn load(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
+    pub fn load(&mut self, arrived: Vec<Arrived>) {
         let PreparedDocument::Files(files) = &mut self.document else {
             panic!("only a document listing files loads more files");
         };
         let page = self.interaction.page();
         let row_before = files.row_of(page);
 
-        files.extend(arrived, arrival);
+        let grown = files.receive(arrived);
 
         if files.row_of(page) != row_before {
             self.list_line.pinned = self.list_line.drawn;
+        }
+        if grown == Some(page) {
+            self.extent.rebuild(&self.document);
         }
     }
 

@@ -1,6 +1,6 @@
 use std::{
     io::{self, IsTerminal},
-    iter,
+    iter, mem,
     sync::mpsc::{Receiver, Sender},
     thread,
     time::Duration,
@@ -10,11 +10,10 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
-    file_tree::Arrival,
     loading::{Loaded, Message},
     navigation::{Navigation, Step},
     preferences::ViewPreferences,
-    prepared::{FilePage, PreparedDocument},
+    prepared::{Arrived, PreparedDocument, PreparedPage},
     theme::{ColorDepth, Theme},
 };
 
@@ -65,10 +64,9 @@ impl Tui {
         }
     }
 
-    /// Lists `arrived` pages after the pages shown so far, ending the list when `arrival`
-    /// says the input has ended; the next draw shows them.
-    pub fn load(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
-        self.navigation.load(arrived, arrival);
+    /// Applies `arrived` updates to the files shown so far; the next draw shows them.
+    pub fn load(&mut self, arrived: Vec<Arrived>) {
+        self.navigation.load(arrived);
     }
 
     pub fn preferences(&self) -> ViewPreferences {
@@ -87,21 +85,26 @@ impl Tui {
         self.draw(terminal)?;
 
         while let Ok(first) = messages.recv() {
+            let mut arrived = Vec::new();
             for message in iter::once(first).chain(messages.try_iter()) {
                 match message {
                     Message::Terminal(event) => {
+                        self.load(mem::take(&mut arrived));
                         if self.respond(terminal, event?)? == Step::Exit {
                             return Ok(SessionEnd::of(input_failure));
                         }
                     }
-                    Message::Loaded(Loaded::Files { pages, arrival }) => self.load(pages, arrival),
+                    Message::Loaded(Loaded::Arrived(update)) => arrived.push(update),
                     Message::Loaded(Loaded::Failed(error)) => {
-                        self.load(Vec::new(), Arrival::Ended);
+                        arrived.push(Arrived::Ended(PreparedPage::empty()));
                         input_failure = Some(error);
                     }
-                    Message::Loaded(Loaded::NoFiles(_)) => self.load(Vec::new(), Arrival::Ended),
+                    Message::Loaded(Loaded::NoFiles(_)) => {
+                        arrived.push(Arrived::Ended(PreparedPage::empty()));
+                    }
                 }
             }
+            self.load(arrived);
             self.draw(terminal)?;
         }
 

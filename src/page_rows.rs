@@ -157,9 +157,9 @@ impl RenderedLine {
 }
 
 /// One value for each line of a page's rows, looked up by [`LineIndex`]; only those rows
-/// build one.
+/// build one. A page that grows as its input arrives grows its maps with it.
 #[derive(Debug, PartialEq, Eq)]
-pub struct LineMap<T>(Box<[T]>);
+pub struct LineMap<T>(Vec<T>);
 
 impl<T> LineMap<T> {
     /// The value of line `index`.
@@ -168,14 +168,19 @@ impl<T> LineMap<T> {
     pub fn get(&self, index: LineIndex) -> &T {
         &self.0[index.get()]
     }
+
+    /// This map followed by `later`, the map of the rows appended after these rows'.
+    pub(crate) fn append(&mut self, later: Self) {
+        self.0.extend(later.0);
+    }
 }
 
 /// A page's retained rows: its rendered lines, their side-by-side pairs, the pair
 /// holding each line, and each line's visibility.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PageRows {
-    lines: Box<[RenderedLine]>,
-    pairs: Box<[SideBySideRow<LineIndex>]>,
+    lines: Vec<RenderedLine>,
+    pairs: Vec<SideBySideRow<LineIndex>>,
     /// The pair holding each line.
     pair_of_line: LineMap<PairIndex>,
     /// Derived once so visibility never rescans the file.
@@ -205,20 +210,48 @@ impl PageRows {
 
     /// The rows of `lines`, with their side-by-side layout and each line's visibility
     /// derived once.
-    fn of_lines<'a>(displayed: impl Iterator<Item = DisplayLine<'a>>) -> Self {
+    pub fn of_lines<'a>(displayed: impl Iterator<Item = DisplayLine<'a>>) -> Self {
         let rendered = displayed.map(RenderedLine::of).collect::<Vec<_>>();
         let SideBySideLayout {
             pairs,
             pair_of_line,
         } = SideBySideLayout::of(&rendered);
-        let visibility = LineMap(row_visibility(&rendered).into_boxed_slice());
+        let visibility = LineMap(row_visibility(&rendered));
 
         Self {
-            lines: rendered.into_boxed_slice(),
+            lines: rendered,
             pairs,
             pair_of_line,
             visibility,
         }
+    }
+
+    /// Appends `later`, the rows of lines that follow these rows' lines from a hunk header
+    /// on. Pairing and visibility never reach across a hunk header, so `later` was derived
+    /// alone exactly as it would have been with these rows before it.
+    pub fn append(&mut self, later: Self) {
+        let line_offset = self.lines.len();
+        let pair_offset = self.pairs.len();
+        let Self {
+            lines,
+            pairs,
+            pair_of_line,
+            visibility,
+        } = later;
+
+        self.lines.extend(lines);
+        self.pairs.extend(
+            pairs
+                .into_iter()
+                .map(|row| row.map(|line| line.offset(line_offset))),
+        );
+        self.pair_of_line.0.extend(
+            pair_of_line
+                .0
+                .into_iter()
+                .map(|pair| pair.offset(pair_offset)),
+        );
+        self.visibility.append(visibility);
     }
 
     /// Each line with its index, in line order.
@@ -362,7 +395,7 @@ fn values_on_lines<T>(
 
 /// The values of `placed`, one per line, in line order. A row holds a line from each of a
 /// changed block's two columns, so values placed row by row need not be in line order.
-fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Box<[T]> {
+fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Vec<T> {
     let mut placed = placed.into_iter().collect::<Vec<_>>();
     placed.sort_by_key(|line_value| line_value.line);
 
@@ -374,7 +407,7 @@ fn in_line_order<T>(placed: impl IntoIterator<Item = LineValue<T>>) -> Box<[T]> 
 
 /// A page's side-by-side rows and the pair holding each of its lines.
 struct SideBySideLayout {
-    pairs: Box<[SideBySideRow<LineIndex>]>,
+    pairs: Vec<SideBySideRow<LineIndex>>,
     pair_of_line: LineMap<PairIndex>,
 }
 
@@ -480,7 +513,7 @@ impl BlockRows {
                 value: first_pair.offset(offset),
             })
         });
-        let pair_of_line = in_line_order(placed_pairs).into_vec();
+        let pair_of_line = in_line_order(placed_pairs);
 
         Self {
             pairs,

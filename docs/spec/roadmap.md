@@ -148,7 +148,7 @@ implementation remains unapproved.
    - [x] hdiff's own scanner with the Go language table, replacing Tree-sitter in the
      styling chain; measured on the Kubernetes benchmark.
    - [x] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
-   - [ ] Streamed loading: worker, key-reader, and main threads over one channel; a
+   - [x] Streamed loading: worker, key-reader, and main threads over one channel; a
      diff parser that accepts input in pieces and resumes after errors; pages that grow
      one change block at a time; the screen opening at the first file header; the
      dynamic file list and `Tab` behavior. Fixed start-up costs are measured early

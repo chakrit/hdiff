@@ -4,11 +4,10 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     effective_view::EffectiveView,
-    file_tree::Arrival,
     navigation::Step,
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout, ViewPreferences},
-    prepared::{FilePage, PreparedDocument, PreparedFiles},
+    prepared::{Arrived, FilePage, PreparedDocument, PreparedFiles, PreparedPage},
     screen::Cells,
     terminal::Tui,
     theme::{ColorDepth, Theme},
@@ -57,9 +56,9 @@ impl Live {
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
     }
 
-    /// Lists `arrived` pages, ending the list when `arrival` says so, and draws.
-    fn receive(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
-        self.tui.load(arrived, arrival);
+    /// Applies `arrived` updates and draws.
+    fn receive(&mut self, arrived: Vec<Arrived>) {
+        self.tui.load(arrived);
         self.tui
             .draw(&mut self.terminal)
             .expect("frame after loading");
@@ -356,13 +355,23 @@ impl Loading {
 
     /// The next `count` files arrive, with more input still coming.
     pub fn arrive(&mut self, count: usize) {
-        let arrived = self.pending.by_ref().take(count).collect();
-        self.live.receive(arrived, Arrival::More);
+        let arrived = self
+            .pending
+            .by_ref()
+            .take(count)
+            .map(Arrived::Whole)
+            .collect();
+        self.live.receive(arrived);
     }
 
     /// The rest of the files arrive and the input ends.
     pub fn end(&mut self) {
-        let arrived = self.pending.by_ref().collect();
-        self.live.receive(arrived, Arrival::Ended);
+        let mut arrived = self
+            .pending
+            .by_ref()
+            .map(Arrived::Whole)
+            .collect::<Vec<_>>();
+        arrived.push(Arrived::Ended(PreparedPage::empty()));
+        self.live.receive(arrived);
     }
 }
