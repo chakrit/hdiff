@@ -1,12 +1,14 @@
 //! The syntax of each displayed line, from hdiff's own scanner. Rules:
 //! docs/spec/architecture.md#technology-direction.
 
+use std::ptr;
+
 use crate::{
     display_lines::{LineKind, RecordPart},
     document::{DiffFile, FileBody},
     headers::{FileHeader, HeaderPath},
     measurement::{Observer, Work},
-    scanner::{ScanState, Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST},
+    scanner::{ScanState, Spec, languages},
     side::{BySide, Side},
     span::PayloadSpan,
 };
@@ -52,11 +54,16 @@ impl DisplayScan {
 
     /// The scan of a file with `headers`, each side in its path's language.
     pub fn of_headers(headers: BySide<&FileHeader>) -> Self {
-        let languages = headers.map(|header| Language::of_header(&header.path));
-        let shared = languages.merge(|old, new| old.is_some() && old == new);
+        let languages = headers.map(|header| match &header.path {
+            HeaderPath::Path(path) => languages::of_path(path),
+            HeaderPath::DevNull | HeaderPath::Undecodable => None,
+        });
+        let shared = languages
+            .merge(|old, new| old.zip(new))
+            .is_some_and(|(old, new)| ptr::eq(old, new));
 
         Self {
-            languages: languages.map(|language| language.map(Language::spec)),
+            languages,
             shared,
             states: BySide::default(),
         }
@@ -149,52 +156,6 @@ impl DisplayScan {
 
         observer.count(Work::ScannedBytes(payload.len()));
         observer.count(Work::Segments(segments));
-    }
-}
-
-/// A language hdiff's scanner reads.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Language {
-    Rust,
-    JavaScript,
-    Python,
-    Go,
-    C,
-}
-
-impl Language {
-    /// The language a header path's extension selects; a path without a known
-    /// extension, or a header without a path, selects none.
-    fn of_header(header_path: &HeaderPath) -> Option<Self> {
-        match header_path {
-            HeaderPath::Path(path) => Self::of_path(path),
-            HeaderPath::DevNull | HeaderPath::Undecodable => None,
-        }
-    }
-
-    /// The language a path's extension selects; a path without a known extension
-    /// selects none.
-    fn of_path(path: &str) -> Option<Self> {
-        let (_, extension) = path.rsplit_once('.')?;
-        match extension {
-            "rs" => Some(Self::Rust),
-            "js" | "jsx" => Some(Self::JavaScript),
-            "py" => Some(Self::Python),
-            "go" => Some(Self::Go),
-            "c" | "h" => Some(Self::C),
-            _ => None,
-        }
-    }
-
-    /// The spec the scanner reads the language with.
-    fn spec(self) -> &'static Spec {
-        match self {
-            Self::Rust => &RUST,
-            Self::JavaScript => &JAVASCRIPT,
-            Self::Python => &PYTHON,
-            Self::Go => &GO,
-            Self::C => &C,
-        }
     }
 }
 

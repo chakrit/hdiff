@@ -4,6 +4,7 @@
 pub mod c;
 pub mod go;
 pub mod javascript;
+pub mod languages;
 pub mod python;
 pub mod rust;
 
