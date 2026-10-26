@@ -428,6 +428,8 @@ An optimization must improve the code as well as its runtime. Prepared and rende
 output remain correct because the design makes them correct. When no clean and measured
 improvement exists, leave the code alone.
 
+A saving of tens of milliseconds on a large file is perceptible and counts.
+
 Each optimization slice reports its measured retired-instruction saving first, then its
 cycle and preparation-time savings, from the benchmark comparison. Savings are derived
 from the authoritative measurements; they are not stored as a second fact. A candidate

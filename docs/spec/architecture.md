@@ -30,6 +30,9 @@ Rust, and no accidental work. A benchmark, milestone, or target never justifies 
 shortcut, a speculative micro-optimization, or a design that a future reader cannot
 understand in one pass.
 
+Do not patch new behavior into an existing chain; rewrite the whole chain properly when
+the end result is cleaner.
+
 The package requires Rust 1.98.0 and uses the Rust 2024 edition.
 
 Shell script filenames use dashes between words.
