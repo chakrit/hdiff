@@ -157,7 +157,7 @@ implementation remains unapproved.
    - [ ] The Tree-sitter second pass through the `tree-sitter` binary in the `PATH`.
      First verify that the binary emits machine-readable captures; if it does not,
      bring the alternatives to the user before building.
-   - [ ] The remaining mainstream language tables, in batches.
+   - [x] The remaining mainstream language tables, in batches.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 

@@ -65,3 +65,40 @@ pub static C: Spec = Spec {
     word_suffixes: b"",
     word_case: WordCase::Sensitive,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::C;
+    use crate::{scanner::ground, syntax::SyntaxClass};
+
+    #[test]
+    fn classifies_c() {
+        assert_eq!(
+            ground(
+                &C,
+                r#"#include <stdio.h> static int f(struct node *n) { return n->next ? 'x' : NULL; }"#
+            ),
+            [
+                ("include", SyntaxClass::Keyword),
+                ("<", SyntaxClass::Operator),
+                ("stdio", SyntaxClass::Variable),
+                ("h", SyntaxClass::Property),
+                (">", SyntaxClass::Operator),
+                ("static", SyntaxClass::Keyword),
+                ("int", SyntaxClass::Type),
+                ("f", SyntaxClass::Function),
+                ("struct", SyntaxClass::Keyword),
+                ("node", SyntaxClass::Type),
+                ("*", SyntaxClass::Operator),
+                ("n", SyntaxClass::Variable),
+                ("return", SyntaxClass::Keyword),
+                ("n", SyntaxClass::Variable),
+                ("->", SyntaxClass::Operator),
+                ("next", SyntaxClass::Property),
+                ("?", SyntaxClass::Operator),
+                ("'x'", SyntaxClass::Number),
+                ("NULL", SyntaxClass::Constant),
+            ]
+        );
+    }
+}

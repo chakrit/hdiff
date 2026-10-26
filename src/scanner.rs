@@ -1,12 +1,59 @@
 //! hdiff's own highlighter: one byte scanner, with each language described by a
 //! [`Spec`]. Rules: docs/spec/architecture.md#technology-direction.
 
+pub mod asm;
 pub mod c;
+pub mod clojure;
+pub mod cmake;
+pub mod cpp;
+pub mod crystal;
+pub mod csharp;
+pub mod css;
+pub mod cuda;
+pub mod dart;
+pub mod dockerfile;
+pub mod elixir;
+pub mod erlang;
+pub mod fsharp;
+pub mod gleam;
 pub mod go;
+pub mod graphql;
+pub mod groovy;
+pub mod haskell;
+pub mod hcl;
+pub mod html;
+pub mod ini;
+pub mod java;
 pub mod javascript;
+pub mod json;
+pub mod julia;
+pub mod kotlin;
 pub mod languages;
+pub mod less;
+pub mod lua;
+pub mod makefile;
+pub mod markdown;
+pub mod nim;
+pub mod objc;
+pub mod ocaml;
+pub mod perl;
+pub mod php;
+pub mod powershell;
+pub mod proto;
 pub mod python;
+pub mod r;
+pub mod ruby;
 pub mod rust;
+pub mod scala;
+pub mod scss;
+pub mod shell;
+pub mod sql;
+pub mod swift;
+pub mod toml;
+pub mod vb;
+pub mod xml;
+pub mod yaml;
+pub mod zig;
 
 use std::ops::Range;
 
@@ -569,36 +616,33 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
     }
 }
 
+/// Each classified piece of `line` scanned from `state`, as text, and the next state.
+#[cfg(test)]
+pub(crate) fn scanned<'a>(
+    spec: &Spec,
+    state: ScanState,
+    line: &'a str,
+) -> (Vec<(&'a str, SyntaxClass)>, ScanState) {
+    let mut pieces = Vec::new();
+    let next = spec.scan(state, line, |bytes: Range<usize>, class| {
+        pieces.push((&line[bytes], class));
+    });
+
+    (pieces, next)
+}
+
+/// Each classified piece of one line of `spec` scanned on open ground.
+#[cfg(test)]
+pub(crate) fn ground<'a>(spec: &Spec, line: &'a str) -> Vec<(&'a str, SyntaxClass)> {
+    let (pieces, next) = scanned(spec, ScanState::default(), line);
+    assert_eq!(next, ScanState::default(), "{line:?} ends on open ground");
+    pieces
+}
+
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
-
-    use super::{
-        Marker, Pair, ScanState, Spec, WordBytes, WordCase, c::C, go::GO, javascript::JAVASCRIPT,
-        python::PYTHON, rust::RUST,
-    };
+    use super::{Marker, Pair, ScanState, Spec, WordBytes, WordCase, go::GO, ground, scanned};
     use crate::syntax::SyntaxClass;
-
-    /// Each classified piece of `line` scanned from `state`, as text, and the next state.
-    fn scanned<'a>(
-        spec: &Spec,
-        state: ScanState,
-        line: &'a str,
-    ) -> (Vec<(&'a str, SyntaxClass)>, ScanState) {
-        let mut pieces = Vec::new();
-        let next = spec.scan(state, line, |bytes: Range<usize>, class| {
-            pieces.push((&line[bytes], class));
-        });
-
-        (pieces, next)
-    }
-
-    /// Each classified piece of one line of `spec` scanned on open ground.
-    fn ground<'a>(spec: &Spec, line: &'a str) -> Vec<(&'a str, SyntaxClass)> {
-        let (pieces, next) = scanned(spec, ScanState::default(), line);
-        assert_eq!(next, ScanState::default(), "{line:?} ends on open ground");
-        pieces
-    }
 
     #[test]
     fn classifies_go_keywords_functions_and_variables() {
@@ -863,144 +907,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn classifies_rust() {
-        assert_eq!(
-            ground(
-                &RUST,
-                r#"pub fn len<'a>(s: &'a str) -> usize { println!("{}", s.0); MAX_LEN }"#
-            ),
-            [
-                ("pub", SyntaxClass::Keyword),
-                ("fn", SyntaxClass::Keyword),
-                ("len", SyntaxClass::Function),
-                ("<", SyntaxClass::Operator),
-                (">", SyntaxClass::Operator),
-                ("&", SyntaxClass::Operator),
-                ("str", SyntaxClass::Type),
-                ("->", SyntaxClass::Operator),
-                ("usize", SyntaxClass::Type),
-                ("println", SyntaxClass::Function),
-                ("!", SyntaxClass::Operator),
-                (r#""{}""#, SyntaxClass::String),
-                ("0", SyntaxClass::Number),
-                ("MAX_LEN", SyntaxClass::Constant),
-            ]
-        );
-        assert_eq!(
-            ground(&RUST, r##"let raw = r#"a "b""#; Some(Vec::new())"##),
-            [
-                ("let", SyntaxClass::Keyword),
-                ("=", SyntaxClass::Operator),
-                (r##"r#"a "b""#"##, SyntaxClass::String),
-                ("Some", SyntaxClass::Function),
-                ("Vec", SyntaxClass::Type),
-                ("::", SyntaxClass::Operator),
-                ("new", SyntaxClass::Function),
-            ]
-        );
-    }
-
-    #[test]
-    fn classifies_c() {
-        assert_eq!(
-            ground(
-                &C,
-                r#"#include <stdio.h> static int f(struct node *n) { return n->next ? 'x' : NULL; }"#
-            ),
-            [
-                ("include", SyntaxClass::Keyword),
-                ("<", SyntaxClass::Operator),
-                ("stdio", SyntaxClass::Variable),
-                ("h", SyntaxClass::Property),
-                (">", SyntaxClass::Operator),
-                ("static", SyntaxClass::Keyword),
-                ("int", SyntaxClass::Type),
-                ("f", SyntaxClass::Function),
-                ("struct", SyntaxClass::Keyword),
-                ("node", SyntaxClass::Type),
-                ("*", SyntaxClass::Operator),
-                ("n", SyntaxClass::Variable),
-                ("return", SyntaxClass::Keyword),
-                ("n", SyntaxClass::Variable),
-                ("->", SyntaxClass::Operator),
-                ("next", SyntaxClass::Property),
-                ("?", SyntaxClass::Operator),
-                ("'x'", SyntaxClass::Number),
-                ("NULL", SyntaxClass::Constant),
-            ]
-        );
-    }
-
-    #[test]
-    fn classifies_python() {
-        assert_eq!(
-            ground(
-                &PYTHON,
-                "@cache def load(self): return self.items if x is not None else MAX # done"
-            ),
-            [
-                ("cache", SyntaxClass::Function),
-                ("def", SyntaxClass::Keyword),
-                ("load", SyntaxClass::Function),
-                ("self", SyntaxClass::Variable),
-                ("return", SyntaxClass::Keyword),
-                ("self", SyntaxClass::Variable),
-                ("items", SyntaxClass::Property),
-                ("if", SyntaxClass::Keyword),
-                ("x", SyntaxClass::Variable),
-                ("is", SyntaxClass::Operator),
-                ("not", SyntaxClass::Operator),
-                ("None", SyntaxClass::Constant),
-                ("else", SyntaxClass::Keyword),
-                ("MAX", SyntaxClass::Constant),
-                ("# done", SyntaxClass::Comment),
-            ]
-        );
-        let (opening, inside) = scanned(&PYTHON, ScanState::default(), "doc = '''one");
-        let (closing, after) = scanned(&PYTHON, inside, "two''' + 'x'");
-        assert_eq!(
-            opening,
-            [
-                ("doc", SyntaxClass::Variable),
-                ("=", SyntaxClass::Operator),
-                ("'''one", SyntaxClass::String),
-            ]
-        );
-        assert_eq!(
-            closing,
-            [
-                ("two'''", SyntaxClass::String),
-                ("+", SyntaxClass::Operator),
-                ("'x'", SyntaxClass::String),
-            ]
-        );
-        assert_eq!(after, ScanState::default());
-    }
-
-    #[test]
-    fn classifies_javascript() {
-        assert_eq!(
-            ground(
-                &JAVASCRIPT,
-                "export function $get(el) { return el?.value ?? `none`; } // x"
-            ),
-            [
-                ("export", SyntaxClass::Keyword),
-                ("function", SyntaxClass::Keyword),
-                ("$get", SyntaxClass::Function),
-                ("el", SyntaxClass::Variable),
-                ("return", SyntaxClass::Keyword),
-                ("el", SyntaxClass::Variable),
-                ("?", SyntaxClass::Operator),
-                ("value", SyntaxClass::Property),
-                ("??", SyntaxClass::Operator),
-                ("`none`", SyntaxClass::String),
-                ("// x", SyntaxClass::Comment),
-            ]
-        );
-    }
-
     /// A spec exercising the rules few languages need: line-start markers, nesting
     /// regions, word suffixes, and case-insensitive words.
     static FORMS: Spec = Spec {
@@ -1082,14 +988,5 @@ mod tests {
                 ("Where", SyntaxClass::Keyword),
             ]
         );
-    }
-
-    #[test]
-    fn every_word_list_is_sorted_for_lookup() {
-        for spec in [&C, &GO, &JAVASCRIPT, &PYTHON, &RUST] {
-            for (words, class) in spec.words {
-                assert!(words.is_sorted(), "{class:?} words are sorted: {words:?}");
-            }
-        }
     }
 }

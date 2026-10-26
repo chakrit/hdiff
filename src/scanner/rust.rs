@@ -46,3 +46,47 @@ pub static RUST: Spec = Spec {
     word_suffixes: b"",
     word_case: WordCase::Sensitive,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::RUST;
+    use crate::{scanner::ground, syntax::SyntaxClass};
+
+    #[test]
+    fn classifies_rust() {
+        assert_eq!(
+            ground(
+                &RUST,
+                r#"pub fn len<'a>(s: &'a str) -> usize { println!("{}", s.0); MAX_LEN }"#
+            ),
+            [
+                ("pub", SyntaxClass::Keyword),
+                ("fn", SyntaxClass::Keyword),
+                ("len", SyntaxClass::Function),
+                ("<", SyntaxClass::Operator),
+                (">", SyntaxClass::Operator),
+                ("&", SyntaxClass::Operator),
+                ("str", SyntaxClass::Type),
+                ("->", SyntaxClass::Operator),
+                ("usize", SyntaxClass::Type),
+                ("println", SyntaxClass::Function),
+                ("!", SyntaxClass::Operator),
+                (r#""{}""#, SyntaxClass::String),
+                ("0", SyntaxClass::Number),
+                ("MAX_LEN", SyntaxClass::Constant),
+            ]
+        );
+        assert_eq!(
+            ground(&RUST, r##"let raw = r#"a "b""#; Some(Vec::new())"##),
+            [
+                ("let", SyntaxClass::Keyword),
+                ("=", SyntaxClass::Operator),
+                (r##"r#"a "b""#"##, SyntaxClass::String),
+                ("Some", SyntaxClass::Function),
+                ("Vec", SyntaxClass::Type),
+                ("::", SyntaxClass::Operator),
+                ("new", SyntaxClass::Function),
+            ]
+        );
+    }
+}

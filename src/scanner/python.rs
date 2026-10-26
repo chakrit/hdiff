@@ -37,3 +37,56 @@ pub static PYTHON: Spec = Spec {
     word_suffixes: b"",
     word_case: WordCase::Sensitive,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::PYTHON;
+    use crate::scanner::{ScanState, scanned};
+    use crate::{scanner::ground, syntax::SyntaxClass};
+
+    #[test]
+    fn classifies_python() {
+        assert_eq!(
+            ground(
+                &PYTHON,
+                "@cache def load(self): return self.items if x is not None else MAX # done"
+            ),
+            [
+                ("cache", SyntaxClass::Function),
+                ("def", SyntaxClass::Keyword),
+                ("load", SyntaxClass::Function),
+                ("self", SyntaxClass::Variable),
+                ("return", SyntaxClass::Keyword),
+                ("self", SyntaxClass::Variable),
+                ("items", SyntaxClass::Property),
+                ("if", SyntaxClass::Keyword),
+                ("x", SyntaxClass::Variable),
+                ("is", SyntaxClass::Operator),
+                ("not", SyntaxClass::Operator),
+                ("None", SyntaxClass::Constant),
+                ("else", SyntaxClass::Keyword),
+                ("MAX", SyntaxClass::Constant),
+                ("# done", SyntaxClass::Comment),
+            ]
+        );
+        let (opening, inside) = scanned(&PYTHON, ScanState::default(), "doc = '''one");
+        let (closing, after) = scanned(&PYTHON, inside, "two''' + 'x'");
+        assert_eq!(
+            opening,
+            [
+                ("doc", SyntaxClass::Variable),
+                ("=", SyntaxClass::Operator),
+                ("'''one", SyntaxClass::String),
+            ]
+        );
+        assert_eq!(
+            closing,
+            [
+                ("two'''", SyntaxClass::String),
+                ("+", SyntaxClass::Operator),
+                ("'x'", SyntaxClass::String),
+            ]
+        );
+        assert_eq!(after, ScanState::default());
+    }
+}
