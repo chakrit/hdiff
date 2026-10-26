@@ -115,6 +115,12 @@ input limits a faithful re-diff. Report feasibility and constraints for watching
 changes and reloading the diff. This task authorizes investigation only; live-watch
 implementation remains unapproved.
 
+### Unicode, CJK, and Asian scripts
+
+- [ ] Assess and complete support for Unicode, CJK, and other Asian scripts, such as Thai
+  with its combining vowel and tone marks. Verify that wide and combining characters
+  measure, wrap, and highlight correctly, and that the side-by-side divider stays aligned.
+
 ### Smooth scrolling
 
 - [ ] Add smooth scrolling. Not yet planned.
