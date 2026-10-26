@@ -3,6 +3,7 @@ use crate::{
     document::{DiffDocument, DiffFiles, FileView},
     file_tree::{Arrival, FileSelection, ListedTree, Listing, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
+    non_empty::Growing,
     page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
     source_text::SourceLine,
@@ -21,8 +22,7 @@ pub enum PreparedDocument {
 /// The pages of the files listed so far, in input order, with the file list they make
 /// and whether more are coming.
 pub struct PreparedFiles {
-    /// Never empty: a document lists files from its first one on.
-    pages: Vec<FilePage>,
+    pages: Growing<FilePage>,
     listed: ListedTree,
     arrival: Arrival,
 }
@@ -85,7 +85,7 @@ impl PreparedDocument {
     /// How many file occurrences the document lists.
     pub fn file_count(&self) -> usize {
         match self {
-            Self::Files(files) => files.pages.len(),
+            Self::Files(files) => files.pages.len().get(),
             Self::Text(_) => 0,
         }
     }
@@ -132,7 +132,7 @@ impl PreparedDocument {
 impl PreparedFiles {
     /// The files of a document that more input follows, starting from its `first` page.
     pub fn loading(first: FilePage) -> Self {
-        let pages = vec![first];
+        let pages = Growing::new(first);
         let listed = list(&pages, Arrival::More);
 
         Self {
@@ -144,11 +144,11 @@ impl PreparedFiles {
 
     /// One page per file of a complete document.
     fn of(files: &DiffFiles, observer: &mut impl Observer) -> Self {
-        let pages = files
-            .views()
-            .iter()
-            .map(|view| FilePage::prepared(*view, observer))
-            .collect::<Vec<_>>();
+        let pages = Growing::from(
+            files
+                .views()
+                .map(|view| FilePage::prepared(*view, observer)),
+        );
         let listed = observer.time(Stage::Labels, || list(&pages, Arrival::Ended));
 
         Self {
@@ -197,13 +197,11 @@ impl PreparedFiles {
     /// Appends `part` to the last file's page, and returns that page.
     fn grow_last(&mut self, part: PreparedPage) -> PageIndex {
         self.last_mut().page.append(part);
-        PageIndex(self.pages.len() - 1)
+        PageIndex(self.pages.len().get() - 1)
     }
 
     fn last_mut(&mut self) -> &mut FilePage {
-        self.pages
-            .last_mut()
-            .expect("a document lists files from its first one on")
+        self.pages.last_mut()
     }
 }
 
@@ -235,7 +233,7 @@ impl Arrived {
 }
 
 /// The file list of `pages`, in input order.
-fn list(pages: &[FilePage], arrival: Arrival) -> ListedTree {
+fn list(pages: &Growing<FilePage>, arrival: Arrival) -> ListedTree {
     let listings = pages
         .iter()
         .map(|file_page| file_page.listing.clone())

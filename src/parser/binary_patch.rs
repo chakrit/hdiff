@@ -58,11 +58,13 @@ pub(super) fn parse_binary_patch(
 fn patch_lines(header: SourceLine, blocks: Vec<BinaryBlock>) -> impl Iterator<Item = SourceLine> {
     let block_lines = blocks.into_iter().flat_map(|block| {
         let BinaryBlock {
-            header,
+            header: block_header,
             payload,
             end,
         } = block;
-        iter::once(header).chain(payload).chain(iter::once(end))
+        iter::once(block_header)
+            .chain(payload)
+            .chain(iter::once(end))
     });
 
     iter::once(header).chain(block_lines)

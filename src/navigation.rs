@@ -96,8 +96,9 @@ impl Navigation {
             return;
         }
 
-        let PreparedDocument::Files(files) = &mut self.document else {
-            panic!("only a document listing files loads more files");
+        let files = match &mut self.document {
+            PreparedDocument::Files(files) => files,
+            PreparedDocument::Text(_) => panic!("only a document listing files loads more files"),
         };
         let page = self.interaction.page();
         let row_before = files.row_of(page);

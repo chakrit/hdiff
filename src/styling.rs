@@ -70,11 +70,11 @@ impl StyledRows {
         let details = observer.time(Stage::Detail, || character_details(&rows));
         let mut scratch = PartitionScratch::default();
 
-        let styles = observer.measure(Stage::Styling, |observer| {
+        let styles = observer.measure(Stage::Styling, |styling| {
             rows.map_lines(|index, line| {
                 let text = line.payload();
                 let mut syntax = scratch.start(text, TextStyle::Plain);
-                scan.line(line.kind(), text, observer, |span, class| {
+                scan.line(line.kind(), text, styling, |span, class| {
                     syntax.push(span, TextStyle::Syntax(class));
                 });
                 let syntax = syntax.finish();
@@ -431,6 +431,7 @@ mod tests {
             [styled("same", TextStyle::Plain)]
         );
     }
+
     /// docs/spec/performance.md#preparation-boundary: a page that fills in one hunk at a
     /// time is the page its whole file prepares.
     #[test]

@@ -60,7 +60,7 @@ pub fn start(input: Box<dyn BufRead + Send>) -> Channel {
 /// What the input opens with, from the worker's first message.
 pub enum Opening {
     /// The first file has arrived; more may follow.
-    Files(PreparedDocument),
+    Files(Box<PreparedDocument>),
     /// The input ended without a file; it held only this text.
     NoFiles(Box<[SourceLine]>),
     /// Reading the input failed before any file arrived.
@@ -76,9 +76,9 @@ impl Channel {
         });
 
         match first.expect("the channel holds a sender while the receiver lives") {
-            Loaded::Arrived(Arrived::Opened(page) | Arrived::Whole(page)) => {
-                Opening::Files(PreparedDocument::Files(PreparedFiles::loading(page)))
-            }
+            Loaded::Arrived(Arrived::Opened(page) | Arrived::Whole(page)) => Opening::Files(
+                Box::new(PreparedDocument::Files(PreparedFiles::loading(page))),
+            ),
             Loaded::Arrived(Arrived::Grew(_) | Arrived::Closed { .. } | Arrived::Ended(_)) => {
                 unreachable!("the worker opens a file before it grows, closes or ends one")
             }

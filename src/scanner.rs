@@ -393,7 +393,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
     fn unopened(&mut self, byte: u8) {
         let start = self.at;
         let class = if self.spec.in_word(byte) && !byte.is_ascii_digit() {
-            self.at = self.end_while(start, |byte| self.spec.in_word(byte));
+            self.at = self.end_while(start, |next| self.spec.in_word(next));
             self.at += usize::from(self.takes_suffix());
             let word = &self.line[start..self.at];
             self.spec

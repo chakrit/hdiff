@@ -90,15 +90,15 @@ fn counted_record(
         Some(record) => Ok(record.kind),
         None => unmarked_kind(&line),
     };
-    let counted = kind.and_then(|kind| {
-        check_side_open(ended, kind)?;
-        count_record(remaining, kind)
+    let counted = kind.and_then(|record_kind| {
+        check_side_open(ended, record_kind)?;
+        count_record(remaining, record_kind)
     });
 
     match (counted, marked) {
         (Err(reason), _) => Err((reason, line)),
-        (Ok(counted), Some(record)) => Ok((record, counted)),
-        (Ok(counted), None) => Ok((blank_context(line), counted)),
+        (Ok(after), Some(record)) => Ok((record, after)),
+        (Ok(after), None) => Ok((blank_context(line), after)),
     }
 }
 

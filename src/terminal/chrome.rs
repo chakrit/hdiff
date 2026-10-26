@@ -59,7 +59,7 @@ pub(super) fn render_file_column(
             .areas(hint_row);
 
     let selected_line =
-        selection.and_then(|selection| render_file_list(frame, list_area, selection, palette));
+        selection.and_then(|chosen| render_file_list(frame, list_area, chosen, palette));
     draw_help_hint(frame.buffer_mut(), hint_area, palette);
     selected_line
 }

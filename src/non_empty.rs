@@ -31,11 +31,6 @@ impl<T> NonEmpty<T> {
         &self.first
     }
 
-    /// The items after the first.
-    pub fn rest(&self) -> &[T] {
-        &self.rest
-    }
-
     pub fn len(&self) -> NonZeroUsize {
         NonZeroUsize::MIN.saturating_add(self.rest.len())
     }
@@ -70,25 +65,6 @@ impl<T> NonEmpty<T> {
 
         NonEmpty::new(first, rest)
     }
-
-    /// The items stably sorted by `key`: reordered with none lost, and items with equal
-    /// keys in their original order.
-    pub fn sorted_by_key<K: Ord>(self, mut key: impl FnMut(&T) -> K) -> Self {
-        let Self { first, rest } = self;
-        let mut sorted_rest = rest.into_vec();
-        sorted_rest.sort_by_key(&mut key);
-
-        // `first` came before every item in `rest`, so it leads the items its key ties.
-        let first_key = key(&first);
-        let before_first = sorted_rest.partition_point(|item| key(item) < first_key);
-        let behind = sorted_rest.split_off(before_first);
-        let mut ahead = sorted_rest.into_iter();
-
-        match ahead.next() {
-            None => Self::new(first, behind),
-            Some(head) => Self::new(head, ahead.chain(iter::once(first)).chain(behind)),
-        }
-    }
 }
 
 /// Panics when `index` is not below [`len`](NonEmpty::len), as a slice does.
@@ -121,6 +97,60 @@ impl<T> IntoIterator for NonEmpty<T> {
     }
 }
 
+/// One or more items in order, to which more can be appended, such as the pages of a
+/// document whose files are still arriving.
+pub struct Growing<T> {
+    first: T,
+    rest: Vec<T>,
+}
+
+impl<T> Growing<T> {
+    /// `first`, with more to come.
+    pub fn new(first: T) -> Self {
+        Self {
+            first,
+            rest: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        self.rest.push(item);
+    }
+
+    pub fn len(&self) -> NonZeroUsize {
+        NonZeroUsize::MIN.saturating_add(self.rest.len())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        iter::once(&self.first).chain(&self.rest)
+    }
+
+    pub fn last_mut(&mut self) -> &mut T {
+        self.rest.last_mut().unwrap_or(&mut self.first)
+    }
+}
+
+impl<T> From<NonEmpty<T>> for Growing<T> {
+    fn from(items: NonEmpty<T>) -> Self {
+        Self {
+            first: items.first,
+            rest: items.rest.into_vec(),
+        }
+    }
+}
+
+/// Panics when `index` is not below [`len`](Growing::len), as a slice does.
+impl<T> Index<usize> for Growing<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &T {
+        match index {
+            0 => &self.first,
+            later => &self.rest[later - 1],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::NonEmpty;
@@ -135,19 +165,6 @@ mod tests {
 
         assert_eq!(mapped.iter().collect::<Vec<_>>(), [&'A', &'B', &'c']);
         assert_eq!(only.iter().collect::<Vec<_>>(), [&'a']);
-    }
-
-    #[test]
-    fn sorts_stably_whether_or_not_the_first_item_moves() {
-        let by_tens = |item: &u8| item / 10;
-
-        let first_stays = NonEmpty::new(1, [21, 2, 11]).sorted_by_key(by_tens);
-        let first_moves = NonEmpty::new(21, [3, 22, 4]).sorted_by_key(by_tens);
-        let ties_keep_order = NonEmpty::new(5, [6, 7]).sorted_by_key(by_tens);
-
-        assert_eq!(first_stays.iter().collect::<Vec<_>>(), [&1, &2, &11, &21]);
-        assert_eq!(first_moves.iter().collect::<Vec<_>>(), [&3, &4, &21, &22]);
-        assert_eq!(ties_keep_order.iter().collect::<Vec<_>>(), [&5, &6, &7]);
     }
 
     #[test]

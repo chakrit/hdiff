@@ -139,7 +139,7 @@ fn stream(source: input::Source, controlling_terminal: File) -> Result<(), RunEr
     let channel = loading::start(input);
 
     let document = match channel.opening() {
-        Opening::Files(document) => document,
+        Opening::Files(document) => *document,
         Opening::NoFiles(text) if text.is_empty() => return Ok(()),
         Opening::NoFiles(text) => match origin {
             Origin::Stdin | Origin::PatchFile(_) => return Err(RunError::Parse(parser::NoDiff)),

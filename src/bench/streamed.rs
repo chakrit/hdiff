@@ -82,7 +82,7 @@ fn open(source: input::Source) -> Result<(Channel, PreparedDocument, usize), Fai
     let channel = loading::start(input);
 
     let document = match channel.opening() {
-        Opening::Files(document) => document,
+        Opening::Files(document) => *document,
         Opening::NoFiles(text) => match (text.is_empty(), origin) {
             (false, Origin::Stdin | Origin::PatchFile(_)) => return Err(Failure::NoDiff),
             (true, _) | (false, Origin::Comparison) => {
@@ -127,9 +127,7 @@ fn press_keys(sender: Sender<Message>, sent: Arc<Mutex<Vec<Instant>>>, ended: Ar
 struct Watch {
     sent: Arc<Mutex<Vec<Instant>>>,
     ended: Arc<AtomicBool>,
-    /// The keys answered so far.
     keys_answered: usize,
-    /// Whether the input has ended.
     input_ended: bool,
     keys_waiting: Vec<usize>,
     updates_waiting: Vec<Instant>,
