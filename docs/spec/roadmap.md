@@ -78,16 +78,11 @@ Git history.
 
 ## Preparation optimization
 
-The performance pass (product slice 2) resumes preparation optimization: streamed input,
-the first file shown first, and the remaining files prepared on one background thread,
-per the [preparation boundary](performance.md#preparation-boundary).
-
-The eager-preparation contract, benchmark mode, retained prepared-file representation,
-whole-document preparation, and pinned-corpus measurements are complete. Remaining
-preparation work is to remove only measured redundant work, including inactive layouts,
-rows outside the viewport, allocations, cloning, palette construction, and span ordering.
-Each resumed slice requires its specification amendment, tests, verification, audit, and
-commit under the [performance contract](performance.md).
+The performance pass (product slice 2) replaces eager preparation with streamed loading
+and hdiff's own highlighter, per the
+[preparation boundary](performance.md#preparation-boundary) and the build order under
+product slice 2. Each slice requires its specification amendment, tests, verification,
+audit, and commit under the [performance contract](performance.md).
 
 ## Deferred work
 
@@ -148,15 +143,21 @@ implementation remains unapproved.
    Build order, per [technology direction](architecture.md#technology-direction) and the
    [preparation boundary](performance.md#preparation-boundary):
 
+   - [x] The streamed-loading, file-list, `X` file, and target decisions written into
+     the [architecture](architecture.md) and [performance](performance.md) specs.
    - [ ] hdiff's own scanner with the Go language table, replacing Tree-sitter in the
      styling chain; measured on the Kubernetes benchmark.
    - [ ] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
    - [ ] Streamed loading: worker, key-reader, and main threads over one channel; a
-     diff parser that accepts input in pieces; pages that grow one change block at a
-     time; the screen drawn at the first byte; the dynamic file list.
-   - [ ] Measurements: time to the first screen and key latency while loading.
+     diff parser that accepts input in pieces and resumes after errors; pages that grow
+     one change block at a time; the screen opening at the first file header; the
+     dynamic file list and `Tab` behavior. Fixed start-up costs are measured early
+     against the 4 ms budget.
+   - [ ] Measurement drivers for the three loading [targets](performance.md#targets).
    - [ ] The Tree-sitter second pass through the `tree-sitter` binary in the `PATH`.
-   - [ ] The remaining mainstream language tables.
+     First verify that the binary emits machine-readable captures; if it does not,
+     bring the alternatives to the user before building.
+   - [ ] The remaining mainstream language tables, in batches.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 

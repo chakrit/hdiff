@@ -201,7 +201,8 @@ once and share its row index across split panes. Text receives no source syntax 
 character-detail spans.
 
 An immediate record-looking continuation after a hunk's declared counts is an error.
-Surrounding text does not provide recovery from malformed recognized diff sections.
+Surrounding text does not provide recovery inside a malformed recognized diff section;
+parsing resumes at the next file header.
 
 A hunk header is `@@ -<range> +<range> @@` with single spaces between its fields,
 optionally followed by a space and a section heading; each range is a start, optionally
@@ -225,9 +226,24 @@ produces `-r requires two comparison operands`. A `-` comparison operand is pass
 `diff`, which reads hdiff's standard input. Other dash-leading arguments are paths.
 
 Structural parsing is strict. Valid unknown lines are preserved where they can be attached
-unambiguously, but malformed or truncated input is rejected with a contextual non-zero
-error before the interactive TUI starts. The first release does not model partial
-documents in the TUI.
+unambiguously. hdiff never exits because a file is broken:
+
+| Input                                        | Behavior                                                             |
+|----------------------------------------------|----------------------------------------------------------------------|
+| Zero bytes                                   | exits silently, status 0; the screen never opens                     |
+| Not empty, no diff                           | the screen never opens; the error is reported                        |
+| A valid diff                                 | shown as it streams                                                  |
+| A broken file in the middle                  | that file shows as `X name`; parsing resumes at the next file header |
+| Input that ends part-way through a file      | that last file shows as `X name`                                     |
+| A first file whose content is broken         | `X first_file`, selected, with its error in the diff pane            |
+| Comparison output with only surrounding text | shown when the input ends                                            |
+
+An `X` file shows a best-guess display:
+
+1. Everything parsed before the error, displayed normally.
+2. An error row at the failure point, giving the reason.
+3. The rest of the broken section, up to the next file header, as raw text. It renders
+   like surrounding text: in both split panes, and once in unified view.
 
 Git extended headers beginning with `diff --git` are ordered per-file metadata and render
 before that file's unified headers. ANSI control sequences are ignored for structural
@@ -287,8 +303,8 @@ unrecognized arguments are treated as paths, subject to the operand-count limit.
 
 Errors write their message to standard error with every line prefixed `hdiff: ` and exit
 with status 2, `diff`'s status for trouble. Unreadable files are named in the message;
-a failed comparison reports `diff`'s own standard error. A malformed diff section names
-its 1-based input line; input that holds no diff names no line. A failed error report
+a failed comparison reports `diff`'s own standard error. Input that holds no diff names no
+line. An `X` file's error row names its 1-based input line. A failed error report
 still exits with status 2.
 
 ## Interaction model
@@ -330,10 +346,16 @@ it has no file-system navigation and no collapse or expansion.
   rotation and the file list follow this order.
 - Directory rows are headings only. Selection and `Tab` / `Shift-Tab` rotation move
   between files and never stop on a heading.
-- The file list is dynamic: it grows as files arrive, with a parsing status. A file shows
-  a "parsing" icon while it is parsed and an "error" icon when its input fails; there is
-  no loading icon. Files added to the list never shift the user's focus, and `Tab` /
-  `Shift-Tab` work intuitively during the load.
+- The file list is dynamic: files join it as their headers arrive, with their normal state
+  markers and no parsing indicator.
+- While more input is coming, the list ends with a `(parsing...)` line. It is never
+  selected, and it disappears when the input ends.
+- Arriving files insert above `(parsing...)` without moving the selection. The selection
+  follows its file, not a row number, and keeps its screen line when rows are inserted
+  above it.
+- While input is loading, `Tab` on the last file stops: it does not wrap, does not wait
+  for a next file, and nothing switches by itself when a file arrives. `Tab` never lands
+  on the `(parsing...)` line. Once input ends, `Tab` wraps as usual.
 - Rows have no indentation. A directory heading shows the directory's full path with a
   trailing `/`, such as `src/terminal/`. A directory whose only content is one
   subdirectory shares that subdirectory's heading. A heading appears wherever a file's
@@ -348,6 +370,7 @@ it has no file-system navigation and no collapse or expansion.
   | `-`    | deleted                                    |
   | `*`    | renamed; the row shows the new name        |
   | `?`    | ambiguous or erroneous entry               |
+  | `X`    | the file's section failed to parse         |
 
 - Each marker takes a light per-state color: modified amber, added green, deleted red,
   renamed blue, and `?` in the name's neutral tone. File names stay neutral.
@@ -360,6 +383,8 @@ it has no file-system navigation and no collapse or expansion.
   and a `/dev/null` new header means deleted; differing header paths never mean a rename.
 - A `?` entry has no directory; it is a top-level file labelled with its raw header
   line.
+- An `X` entry is named from the readable part of its header; when none gives a name, it
+  reads `X (unnamed)`.
 - Nerd Font glyphs are not used.
 
 ## View model
@@ -563,9 +588,11 @@ and detail modes. Tests never assert timing and never start the `hdiff` executab
 
 ## Input and terminal boundary
 
-The first release reads the complete input before entering raw mode. Input selection
-distinguishes standard input, one existing patch file, and two comparison operands;
-combining piped standard input with file arguments must produce an explicit usage error.
+The screen opens at the first file header; text before it joins the first page. Input
+that ends with no file header reports its error without opening the screen. Input
+selection distinguishes standard input, one existing patch file, and two comparison
+operands; combining piped standard input with file arguments must produce an explicit
+usage error.
 Standard input is piped when it is a pipe or socket; file arguments are accepted with
 piped standard input only when a `-` operand reads it. Interactive mode requires a
 controlling terminal independent of the data source, so `stdin` supplies diff bytes while
@@ -659,7 +686,7 @@ partial input, draw errors, Ctrl-C, and broken pipes.
 
 - Never modify the input files.
 - Preserve unknown diff lines rather than silently dropping them.
-- Reject malformed or truncated input with context before entering the interactive TUI.
+- Never exit because a file is broken; mark it `X` and show it as best it can be read.
 - Provide a rich built-in semantic palette with 256-color support and truecolor/RGB when
   the terminal supports it, falling back by capability. The color depth is decided once
   per session, and one `Theme` per depth owns every syntax, row, and chrome color, so
