@@ -68,17 +68,15 @@ schema. It then emits `profile version=1`, stage lines, and a workload line:
 
 ```text
 stage name=NAME parent=preparation|syntax duration_ns=N
-work hunks=N parse_calls=N captures=N projected_bytes=N
+work hunks=N scanned_bytes=N segments=N
 ```
 
 Preparation children are `labels`, `layout`, `syntax`, `detail`, and `unattributed`.
-Syntax children are `language`, `projection`, `parse`, `query`, `scan`, and
-`unattributed`. Parse includes incremental-tree editing; query includes capture traversal
-and mapping; scan is hdiff's own scanner.
+Syntax children are `scan`, hdiff's own scanner, and `unattributed`.
 Child durations partition their parent; parent and child durations are never summed
 together. Unattributed time includes orchestration, destruction, and observer bookkeeping
-outside named spans. Counts include attempted parse calls and all returned captures.
-Projected bytes count the old and new virtual source buffers, including separators.
+outside named spans. Scanned bytes count every payload byte the scanner reads, on each
+side it reads; segments count the syntax spans it gives styled records.
 
 Normal rendering, `prepare`, and `movement` have no per-hunk clock reads or counters.
 Static dispatch selects observation at preparation entry. `stages` runs are diagnostic;
@@ -431,6 +429,8 @@ preserved in `.ace/spec-cleanup-performance-before.md`.
   and peak memory regressed on one range; it is rejected.
 - **Go through hdiff's scanner.** Go hunks are highlighted by hdiff's own scanner,
   reading each side's records in order, instead of Tree-sitter.
+- **Every bundled language through hdiff's scanner.** Rust, C, JavaScript and Python
+  follow Go onto the scanner, and Tree-sitter leaves the binary.
 
 ## Optimization method
 

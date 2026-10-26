@@ -256,8 +256,8 @@ fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) 
     push_line(
         report,
         format_args!(
-            "work hunks={} parse_calls={} captures={} projected_bytes={}",
-            work.hunks, work.parse_calls, work.captures, work.projected_bytes
+            "work hunks={} scanned_bytes={} segments={}",
+            work.hunks, work.scanned_bytes, work.segments
         ),
     );
 }

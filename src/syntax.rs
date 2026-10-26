@@ -1,17 +1,16 @@
-use std::ops::Range;
-
-use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
+//! The syntax spans of each record, from hdiff's own scanner. Rules:
+//! docs/spec/architecture.md#technology-direction.
 
 use crate::{
-    document::{DiffFile, HunkRecords, Record, RecordEntry, RecordMap, RecordPosition},
+    document::{DiffFile, HunkRecords, Record, RecordEntry, RecordMap},
     headers::{FileHeader, HeaderPath},
     measurement::{Observer, Stage, Work},
-    scanner::{ScanState, Spec, go::GO},
+    scanner::{ScanState, Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST},
     side::{BySide, Side},
     span::PayloadSpan,
 };
 
-/// The kind of syntax a highlight capture marks, which picks its color.
+/// The kind of syntax a span marks, which picks its color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyntaxClass {
     Keyword,
@@ -26,222 +25,109 @@ pub enum SyntaxClass {
     Variable,
 }
 
-impl SyntaxClass {
-    /// The class a highlight capture named `name` marks, by its first dotted part; a
-    /// capture of any other kind marks none.
-    fn of_capture_name(name: &str) -> Option<Self> {
-        match name.split('.').next()? {
-            "keyword" => Some(Self::Keyword),
-            "string" => Some(Self::String),
-            "comment" => Some(Self::Comment),
-            "number" => Some(Self::Number),
-            "function" => Some(Self::Function),
-            "type" => Some(Self::Type),
-            "constant" => Some(Self::Constant),
-            "operator" => Some(Self::Operator),
-            "property" => Some(Self::Property),
-            "variable" => Some(Self::Variable),
-            _ => None,
-        }
-    }
-}
-
-/// One syntax class over part of a record's payload, with the length of the capture it
-/// came from.
+/// One syntax class over part of a record's payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxSpan {
     /// The payload bytes the class covers.
     pub bytes: PayloadSpan,
-    /// The bytes of the whole capture, which can span several records.
-    pub capture_length: usize,
-    /// The kind of syntax the capture marks.
+    /// The kind of syntax the span marks.
     pub class: SyntaxClass,
 }
 
-/// Highlights files, keeping each language's highlighter across files.
-#[derive(Default)]
-pub struct SyntaxHighlighter {
-    /// Each language's highlighter once first used.
-    languages: ByLanguage<Option<LanguageHighlighter>>,
+/// The syntax spans of each record of `file`.
+pub fn highlight_file(file: &DiffFile, observer: &mut impl Observer) -> RecordMap<Vec<SyntaxSpan>> {
+    file.record_map(|headers, hunk| highlight_hunk(headers, hunk, observer))
 }
 
-impl SyntaxHighlighter {
-    /// The syntax spans of each record of `file`.
-    pub fn highlight_file(
-        &mut self,
-        file: &DiffFile,
-        observer: &mut impl Observer,
-    ) -> RecordMap<Vec<SyntaxSpan>> {
-        file.record_map(|headers, hunk| self.highlight_hunk(headers, hunk, observer))
-    }
+/// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the record it
+/// styles. Each side reads in its path's language; context takes the new side's spans,
+/// and stays textual when the paths select different languages.
+fn highlight_hunk<'h>(
+    headers: &BySide<FileHeader>,
+    hunk: HunkRecords<'_, 'h>,
+    observer: &mut impl Observer,
+) -> Vec<RecordEntry<'h, SyntaxSpan>> {
+    observer.count(Work::Hunk);
+    let languages = headers
+        .as_ref()
+        .map(|header| Language::of_header(&header.path));
+    let shared_language = languages.merge(|old, new| old.filter(|language| new == Some(*language)));
+    let styled_records = BySide {
+        old: StyledRecords::Changes,
+        new: match shared_language {
+            Some(_) => StyledRecords::ChangesAndContext,
+            None => StyledRecords::Changes,
+        },
+    };
 
-    /// The syntax spans of `hunk`, a hunk of the file with `headers`, each with the
-    /// record it styles. Context stays textual when the paths select different languages.
-    /// Rules: docs/spec/architecture.md#technology-direction.
-    fn highlight_hunk<'h>(
-        &mut self,
-        headers: &BySide<FileHeader>,
-        hunk: HunkRecords<'_, 'h>,
-        observer: &mut impl Observer,
-    ) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-        observer.count(Work::Hunk);
-        let languages = headers
-            .as_ref()
-            .map(|header| Language::of_header(&header.path));
-        let shared_language =
-            languages.merge(|old, new| old.filter(|language| new == Some(*language)));
-        let styled_records = BySide {
-            old: StyledRecords::Changes,
-            new: match shared_language {
-                Some(_) => StyledRecords::ChangesAndContext,
-                None => StyledRecords::Changes,
-            },
-        };
-        let side_spans = match shared_language.map(Language::engine) {
-            Some(Engine::Scanner(spec)) => observer.time(Stage::Scan, || {
-                styled_records.map_sides(|side, styled| scan_side(spec, hunk, side, styled))
-            }),
-            Some(Engine::TreeSitter(language)) => {
-                let projections = observer.measure(Stage::Projection, |observer| {
-                    styled_records.map_sides(|side, styled| {
-                        Projection::observed(hunk, side, styled, observer)
-                    })
+    let side_spans = observer.measure(Stage::Scan, |observer| {
+        languages
+            .zip(styled_records)
+            .map_sides(|side, (language, styled)| {
+                language.map_or_else(Vec::new, |language| {
+                    scan_side(language.spec(), hunk, side, styled, observer)
+                })
+            })
+    });
+
+    side_spans.into_iter().flatten().collect()
+}
+
+/// The spans the scanner gives `side`'s `styled` records of `hunk`, reading every record
+/// of the side in order from open ground so a region carries across records.
+fn scan_side<'h>(
+    spec: &Spec,
+    hunk: HunkRecords<'_, 'h>,
+    side: Side,
+    styled: StyledRecords,
+    observer: &mut impl Observer,
+) -> Vec<RecordEntry<'h, SyntaxSpan>> {
+    let mut spans = Vec::new();
+    let side_records = hunk
+        .positioned()
+        .filter(|entry| entry.value.kind.on_side(side));
+
+    side_records.fold(ScanState::default(), |state, entry| {
+        let payload = entry.value.payload.sanitized();
+        let shows = styled.includes(entry.value);
+        observer.count(Work::ScannedBytes(payload.len()));
+        spec.scan(state, payload, |bytes, class| {
+            if shows {
+                spans.push(RecordEntry {
+                    position: entry.position,
+                    value: SyntaxSpan {
+                        bytes: PayloadSpan::within(payload, bytes),
+                        class,
+                    },
                 });
-                let old_highlighted =
-                    self.highlight_projection(language, &projections.old, None, observer);
-                let old_pass = OldPass::of(old_highlighted, &projections.old);
-                let new_highlighted =
-                    self.highlight_projection(language, &projections.new, old_pass.base, observer);
-                BySide {
-                    old: old_pass.spans,
-                    new: new_highlighted.spans,
-                }
             }
-            None => languages
-                .zip(styled_records)
-                .map_sides(|side, (selected, styled)| {
-                    self.highlight_side(selected, hunk, side, styled, observer)
-                }),
-        };
+        })
+    });
 
-        side_spans.into_iter().flatten().collect()
-    }
-
-    /// The spans of `side`'s `styled` records of `hunk` in the `selected` language,
-    /// highlighted on their own; a side without a language has none.
-    fn highlight_side<'h>(
-        &mut self,
-        selected: Option<Language>,
-        hunk: HunkRecords<'_, 'h>,
-        side: Side,
-        styled: StyledRecords,
-        observer: &mut impl Observer,
-    ) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-        match selected.map(Language::engine) {
-            Some(Engine::Scanner(spec)) => {
-                observer.time(Stage::Scan, || scan_side(spec, hunk, side, styled))
-            }
-            Some(Engine::TreeSitter(language)) => {
-                let projection = observer.measure(Stage::Projection, |observer| {
-                    Projection::observed(hunk, side, styled, observer)
-                });
-                self.highlight_projection(language, &projection, None, observer)
-                    .spans
-            }
-            None => Vec::new(),
-        }
-    }
-
-    /// Highlights `projection`, parsing it as an edit of `base`'s tree when given. A
-    /// projection without styled records is not parsed.
-    fn highlight_projection<'h>(
-        &mut self,
-        language: Language,
-        projection: &Projection<'h>,
-        base: Option<ParseBase<'_, 'h>>,
-        observer: &mut impl Observer,
-    ) -> Highlighted<'h> {
-        if projection.records.is_empty() {
-            return Highlighted::unparsed();
-        }
-
-        let highlighter = observer.time(Stage::Language, || self.highlighter_for(language));
-
-        let tree = observer.measure(Stage::Parse, |observer| {
-            let edited_base = base.map(
-                |ParseBase {
-                     projection: from,
-                     mut tree,
-                 }| {
-                    tree.edit(&from.edit_to(projection));
-                    tree
-                },
-            );
-            observer.count(Work::ParseCall);
-            highlighter.parse(projection.source.as_bytes(), edited_base.as_ref())
-        });
-        let spans = observer.measure(Stage::Query, |observer| {
-            highlighter.highlight(projection, &tree, observer)
-        });
-
-        Highlighted {
-            tree: Some(tree),
-            spans,
-        }
-    }
-
-    /// The highlighter for `language`, loaded on first use.
-    fn highlighter_for(&mut self, language: Language) -> &mut LanguageHighlighter {
-        self.languages
-            .get_mut(language)
-            .get_or_insert_with(|| LanguageHighlighter::of(language))
-    }
+    observer.count(Work::Segments(spans.len()));
+    spans
 }
 
-/// One projection's parse tree and the spans its captures give its records; a projection
-/// that was not parsed has neither.
-struct Highlighted<'h> {
-    tree: Option<Tree>,
-    spans: Vec<RecordEntry<'h, SyntaxSpan>>,
+/// Which records on a side take its syntax spans.
+#[derive(Clone, Copy)]
+enum StyledRecords {
+    /// Only the side's own changes.
+    Changes,
+    /// The side's changes and the context it shares with the other side.
+    ChangesAndContext,
 }
 
-impl Highlighted<'_> {
-    /// A projection that was not parsed: no tree, and no spans for its records.
-    fn unparsed() -> Self {
-        Self {
-            tree: None,
-            spans: Vec::new(),
+impl StyledRecords {
+    /// Whether `record`, a record on the side, takes the side's spans.
+    fn includes(self, record: &Record) -> bool {
+        match self {
+            Self::Changes => record.kind.changed_side().is_some(),
+            Self::ChangesAndContext => true,
         }
     }
 }
 
-/// The tree an edited parse starts from, with the projection it was parsed from.
-struct ParseBase<'p, 'h> {
-    projection: &'p Projection<'h>,
-    tree: Tree,
-}
-
-/// The old side's pass when both sides share a language: its spans, and the tree the
-/// new side's parse edits when the old side was parsed.
-struct OldPass<'p, 'h> {
-    spans: Vec<RecordEntry<'h, SyntaxSpan>>,
-    base: Option<ParseBase<'p, 'h>>,
-}
-
-impl<'p, 'h> OldPass<'p, 'h> {
-    /// The old side's pass from its highlighting of `projection`.
-    fn of(highlighted: Highlighted<'h>, projection: &'p Projection<'h>) -> Self {
-        let Highlighted { tree, spans } = highlighted;
-        Self {
-            spans,
-            base: tree.map(|tree| ParseBase { projection, tree }),
-        }
-    }
-}
-
-// Languages
-
-/// A language with a bundled grammar.
+/// A language hdiff's scanner reads.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Language {
     Rust,
@@ -275,414 +161,30 @@ impl Language {
         }
     }
 
-    /// What highlights the language.
-    fn engine(self) -> Engine {
+    /// The spec the scanner reads the language with.
+    fn spec(self) -> &'static Spec {
         match self {
-            Self::Go => Engine::Scanner(&GO),
-            Self::Rust | Self::JavaScript | Self::Python | Self::C => Engine::TreeSitter(self),
+            Self::Rust => &RUST,
+            Self::JavaScript => &JAVASCRIPT,
+            Self::Python => &PYTHON,
+            Self::Go => &GO,
+            Self::C => &C,
         }
     }
-}
-
-/// What highlights a language: hdiff's own scanner with the language's spec, or its
-/// bundled Tree-sitter grammar.
-enum Engine {
-    Scanner(&'static Spec),
-    TreeSitter(Language),
-}
-
-/// The spans hdiff's scanner gives `side`'s `styled` records of `hunk`, reading every
-/// record of the side in order from open ground so a region carries across records.
-fn scan_side<'h>(
-    spec: &Spec,
-    hunk: HunkRecords<'_, 'h>,
-    side: Side,
-    styled: StyledRecords,
-) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-    let mut spans = Vec::new();
-    let side_records = hunk
-        .positioned()
-        .filter(|entry| entry.value.kind.on_side(side));
-
-    side_records.fold(ScanState::default(), |state, entry| {
-        let payload = entry.value.payload.sanitized();
-        let shows = styled.includes(entry.value);
-        spec.scan(state, payload, |bytes, class| {
-            if shows {
-                spans.push(RecordEntry {
-                    position: entry.position,
-                    value: SyntaxSpan {
-                        capture_length: bytes.len(),
-                        bytes: PayloadSpan::within(payload, bytes),
-                        class,
-                    },
-                });
-            }
-        })
-    });
-
-    spans
-}
-
-/// One value for each language.
-#[derive(Default)]
-struct ByLanguage<T> {
-    rust: T,
-    javascript: T,
-    python: T,
-    go: T,
-    c: T,
-}
-
-impl<T> ByLanguage<T> {
-    /// A table holding `value` of every language; naming each field means a new
-    /// language cannot be left out.
-    #[cfg(test)]
-    fn from_fn(mut value: impl FnMut(Language) -> T) -> Self {
-        Self {
-            rust: value(Language::Rust),
-            javascript: value(Language::JavaScript),
-            python: value(Language::Python),
-            go: value(Language::Go),
-            c: value(Language::C),
-        }
-    }
-
-    /// The value of `language`.
-    fn get_mut(&mut self, language: Language) -> &mut T {
-        match language {
-            Language::Rust => &mut self.rust,
-            Language::JavaScript => &mut self.javascript,
-            Language::Python => &mut self.python,
-            Language::Go => &mut self.go,
-            Language::C => &mut self.c,
-        }
-    }
-}
-
-/// One language's parser and highlight query, with the cursor that runs the query.
-struct LanguageHighlighter {
-    parser: Parser,
-    query: Query,
-    cursor: QueryCursor,
-}
-
-impl LanguageHighlighter {
-    /// The highlighter of a bundled grammar and its highlight query.
-    ///
-    /// Panics when the bundled grammar or query does not load, which the bundled-grammar
-    /// test rules out for every language.
-    fn of(language: Language) -> Self {
-        let BundledGrammar {
-            grammar,
-            highlights,
-        } = BundledGrammar::of(language);
-
-        let mut parser = Parser::new();
-        parser
-            .set_language(&grammar)
-            .expect("a bundled grammar matches the linked tree-sitter");
-        let query = Query::new(&grammar, highlights).expect("a bundled highlight query is valid");
-
-        Self {
-            parser,
-            query,
-            cursor: QueryCursor::new(),
-        }
-    }
-
-    /// The tree of `source`, reusing the unchanged parts of `old_tree` when given.
-    fn parse(&mut self, source: &[u8], old_tree: Option<&Tree>) -> Tree {
-        self.parser
-            .parse(source, old_tree)
-            .expect("a parser with a language, no timeout, and no cancellation returns a tree")
-    }
-
-    /// The spans the query's captures over `tree` give `projection`'s records.
-    fn highlight<'h>(
-        &mut self,
-        projection: &Projection<'h>,
-        tree: &Tree,
-        observer: &mut impl Observer,
-    ) -> Vec<RecordEntry<'h, SyntaxSpan>> {
-        let capture_names = self.query.capture_names();
-        let mut captures =
-            self.cursor
-                .captures(&self.query, tree.root_node(), projection.source.as_bytes());
-        let mut spans = Vec::new();
-
-        while let Some((query_match, index)) = captures.next() {
-            observer.count(Work::Capture);
-            let capture = query_match.captures()[*index];
-            let name_index = usize::try_from(capture.index).expect("capture indexes fit in usize");
-            let Some(class) = SyntaxClass::of_capture_name(capture_names[name_index]) else {
-                continue;
-            };
-            let node = capture.node;
-            spans.extend(projection.map_span(node.byte_range(), class));
-        }
-
-        spans
-    }
-}
-
-/// A bundled language's grammar and the highlight query that ships with it.
-struct BundledGrammar {
-    grammar: tree_sitter::Language,
-    highlights: &'static str,
-}
-
-impl BundledGrammar {
-    /// The grammar and highlight query bundled for `language`.
-    fn of(language: Language) -> Self {
-        match language {
-            Language::Rust => Self {
-                grammar: tree_sitter_rust::LANGUAGE.into(),
-                highlights: tree_sitter_rust::HIGHLIGHTS_QUERY,
-            },
-            Language::JavaScript => Self {
-                grammar: tree_sitter_javascript::LANGUAGE.into(),
-                highlights: tree_sitter_javascript::HIGHLIGHT_QUERY,
-            },
-            Language::Python => Self {
-                grammar: tree_sitter_python::LANGUAGE.into(),
-                highlights: tree_sitter_python::HIGHLIGHTS_QUERY,
-            },
-            Language::Go => Self {
-                grammar: tree_sitter_go::LANGUAGE.into(),
-                highlights: tree_sitter_go::HIGHLIGHTS_QUERY,
-            },
-            Language::C => Self {
-                grammar: tree_sitter_c::LANGUAGE.into(),
-                highlights: tree_sitter_c::HIGHLIGHT_QUERY,
-            },
-        }
-    }
-}
-
-// Projections
-
-/// Which records on a side take its syntax spans.
-#[derive(Clone, Copy)]
-enum StyledRecords {
-    /// Only the side's own changes.
-    Changes,
-    /// The side's changes and the context it shares with the other side.
-    ChangesAndContext,
-}
-
-impl StyledRecords {
-    /// Whether `record`, a record on the side, takes the side's spans.
-    fn includes(self, record: &Record) -> bool {
-        match self {
-            Self::Changes => record.kind.changed_side().is_some(),
-            Self::ChangesAndContext => true,
-        }
-    }
-}
-
-/// One side's records of a hunk joined into a virtual source buffer.
-struct Projection<'h> {
-    source: String,
-    /// The records that take this projection's spans, in source order.
-    records: Vec<ProjectedRecord<'h>>,
-}
-
-/// A record's payload range in its projection's source.
-struct ProjectedRecord<'h> {
-    position: RecordPosition<'h>,
-    payload_bytes: Range<usize>,
-}
-
-impl<'h> Projection<'h> {
-    /// `side`'s records of `hunk`, with the projected bytes counted to `observer`.
-    fn observed(
-        hunk: HunkRecords<'_, 'h>,
-        side: Side,
-        styled_records: StyledRecords,
-        observer: &mut impl Observer,
-    ) -> Self {
-        let projection = Self::of_hunk(hunk, side, styled_records);
-        observer.count(Work::ProjectedBytes(projection.source.len()));
-        projection
-    }
-
-    /// `side`'s records of `hunk`; a side without records projects no source.
-    fn of_hunk(hunk: HunkRecords<'_, 'h>, side: Side, styled_records: StyledRecords) -> Self {
-        let mut source = String::new();
-        let mut records = Vec::new();
-        let side_records = hunk
-            .positioned()
-            .filter(|entry| entry.value.kind.on_side(side));
-
-        for RecordEntry {
-            position,
-            value: record,
-        } in side_records
-        {
-            let start = source.len();
-            source.push_str(record.payload.sanitized());
-            if styled_records.includes(record) {
-                records.push(ProjectedRecord {
-                    position,
-                    payload_bytes: start..source.len(),
-                });
-            }
-            source.push('\n');
-        }
-
-        Self { source, records }
-    }
-
-    /// The spans the `capture` range gives the records it overlaps, clipped to each
-    /// record's payload.
-    fn map_span(
-        &self,
-        capture: Range<usize>,
-        class: SyntaxClass,
-    ) -> impl Iterator<Item = RecordEntry<'h, SyntaxSpan>> + '_ {
-        let capture_length = capture.len();
-        let Range {
-            start: capture_start,
-            end: capture_end,
-        } = capture;
-        let first_record = self.first_overlapping_record(capture_start);
-
-        self.records
-            .iter()
-            .skip(first_record)
-            .take_while(move |record| record.payload_bytes.start < capture_end)
-            .filter_map(move |record| {
-                let offset = record.payload_bytes.start;
-                let clipped_start = capture_start.max(offset) - offset;
-                let clipped_end = capture_end.min(record.payload_bytes.end) - offset;
-                let clipped = clipped_start..clipped_end;
-                if clipped.is_empty() {
-                    return None;
-                }
-
-                let payload = &self.source[record.payload_bytes.clone()];
-                let span = SyntaxSpan {
-                    bytes: PayloadSpan::within(payload, clipped),
-                    capture_length,
-                    class,
-                };
-                Some(RecordEntry {
-                    position: record.position,
-                    value: span,
-                })
-            })
-    }
-
-    /// The edit that turns this projection's source into `newer`'s: the span between
-    /// their common prefix and common suffix.
-    fn edit_to(&self, newer: &Self) -> InputEdit {
-        let common_prefix = self
-            .source
-            .bytes()
-            .zip(newer.source.bytes())
-            .take_while(|(old, new)| old == new)
-            .count();
-        let shared_limit = self.source.len().min(newer.source.len()) - common_prefix;
-        let common_suffix = self
-            .source
-            .bytes()
-            .rev()
-            .zip(newer.source.bytes().rev())
-            .take(shared_limit)
-            .take_while(|(old, new)| old == new)
-            .count();
-        let start_byte = common_prefix;
-        let old_end_byte = self.source.len() - common_suffix;
-        let new_end_byte = newer.source.len() - common_suffix;
-
-        InputEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-            start_position: point_at(self.source.as_bytes(), start_byte),
-            old_end_position: point_at(self.source.as_bytes(), old_end_byte),
-            new_end_position: point_at(newer.source.as_bytes(), new_end_byte),
-        }
-    }
-
-    /// The index of the first styled record whose payload ends after source byte `start`.
-    fn first_overlapping_record(&self, start: usize) -> usize {
-        self.records
-            .partition_point(|record| record.payload_bytes.end <= start)
-    }
-}
-
-/// The row and byte column of `offset` in `source`.
-fn point_at(source: &[u8], offset: usize) -> Point {
-    let prefix = &source[..offset];
-    let row = prefix.iter().filter(|&&b| b == b'\n').count();
-    let column = prefix
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .map_or(offset, |newline| offset - newline - 1);
-
-    Point::new(row, column)
 }
 
 #[cfg(test)]
 mod tests {
-    use tree_sitter::{InputEdit, Point};
-
-    use super::{
-        ByLanguage, Language, LanguageHighlighter, Projection, StyledRecords, SyntaxClass,
-        SyntaxHighlighter, SyntaxSpan,
-    };
+    use super::{SyntaxClass, SyntaxSpan, highlight_file};
     use crate::{
-        document::{
-            AddressedHunk, DiffFile, FileBody, HunkRecords, RecordEntry, RecordKind, UnifiedBody,
-        },
-        measurement::{Observer, Profile, Unobserved},
+        document::{AddressedHunk, FileBody},
+        measurement::{Profile, Unobserved},
         parser::parse_patch,
-        side::Side,
-        span::PayloadSpan,
     };
-
-    /// The classes of `spans`, in order.
-    fn classes(spans: &[SyntaxSpan]) -> Vec<SyntaxClass> {
-        spans.iter().map(|span| span.class).collect()
-    }
 
     /// The syntax spans of each of the `N` records of the first hunk of `patch`'s only
     /// file, in record order.
     fn highlights_of<const N: usize>(patch: &[u8]) -> [Vec<SyntaxSpan>; N] {
-        observed_highlights_of(patch, &mut Unobserved)
-            .try_into()
-            .expect("the hunk holds the expected record count")
-    }
-
-    /// The first span of a record's `spans`.
-    fn first(spans: &[SyntaxSpan]) -> &SyntaxSpan {
-        spans.first().expect("the record has a syntax span")
-    }
-
-    /// The syntax spans of each record of the first hunk of `patch`'s only file, in
-    /// record order, highlighted under `observer`.
-    fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
-        with_only_unified(patch, |file, body| {
-            let highlights = SyntaxHighlighter::default().highlight_file(file, observer);
-
-            body.addressed_hunks()
-                .take(1)
-                .flat_map(AddressedHunk::records)
-                .map(|record| highlights.get(record.address).clone())
-                .collect()
-        })
-    }
-
-    /// `test` applied to the records of the first hunk of `patch`'s only file, which
-    /// must be unified.
-    fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
-        with_only_unified(patch, |_, body| body.hunks.first().with_records(test))
-    }
-
-    /// `test` applied to `patch`'s only file and its body, which must be unified.
-    fn with_only_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
         let document = parse_patch(patch).expect("valid diff");
         let files = document.files().collect::<Vec<_>>();
         let [file] = files.as_slice() else {
@@ -691,190 +193,15 @@ mod tests {
         let FileBody::Unified(body) = &file.body else {
             panic!("fixture should contain a unified file");
         };
+        let highlights = highlight_file(file, &mut Unobserved);
 
-        test(file, body)
-    }
-
-    /// `test` applied to the new-side projection of a hunk adding `lines`.
-    fn with_added_projection<T>(lines: &[&str], test: impl FnOnce(&Projection) -> T) -> T {
-        let added = lines
-            .iter()
-            .map(|line| format!("+{line}\n"))
-            .collect::<String>();
-        let patch = format!("--- a/x\n+++ b/x\n@@ -0,0 +1,{} @@\n{added}", lines.len());
-
-        with_first_hunk(patch.as_bytes(), |hunk| {
-            test(&Projection::of_hunk(
-                hunk,
-                Side::New,
-                StyledRecords::Changes,
-            ))
-        })
-    }
-
-    #[test]
-    fn describes_the_changed_projection_range_for_incremental_parsing() {
-        let old = Projection {
-            source: "let old = 1;\n".to_owned(),
-            records: Vec::new(),
-        };
-        let new = Projection {
-            source: "let new = 2;\n".to_owned(),
-            records: Vec::new(),
-        };
-
-        assert_eq!(
-            old.edit_to(&new),
-            InputEdit {
-                start_byte: 4,
-                old_end_byte: 11,
-                new_end_byte: 11,
-                start_position: Point::new(0, 4),
-                old_end_position: Point::new(0, 11),
-                new_end_position: Point::new(0, 11),
-            }
-        );
-    }
-
-    #[test]
-    fn highlights_added_rust_keywords_in_the_new_side() {
-        let [_, added] =
-            highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
-
-        let keyword = first(&added);
-        assert_eq!(keyword.class, SyntaxClass::Keyword);
-        assert_eq!(keyword.bytes, PayloadSpan::within("fn added() {}", 0..2));
-    }
-
-    /// docs/spec/architecture.md#technology-direction: matching languages use the new
-    /// projection for context styling.
-    #[test]
-    fn context_uses_new_projection_syntax_when_old_context_is_a_comment() {
-        let [comment_opening, _, context, comment_closing, _] = highlights_of(
-            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
-        );
-
-        let context_classes = classes(&context);
-        assert!(
-            context_classes.contains(&SyntaxClass::Keyword),
-            "{context_classes:?}"
-        );
-        assert!(
-            !context_classes.contains(&SyntaxClass::Comment),
-            "{context_classes:?}"
-        );
-        let opening_classes = classes(&comment_opening);
-        assert!(
-            opening_classes.contains(&SyntaxClass::Comment),
-            "{opening_classes:?}"
-        );
-        let closing_classes = classes(&comment_closing);
-        assert!(
-            closing_classes.contains(&SyntaxClass::Comment),
-            "{closing_classes:?}"
-        );
-    }
-
-    #[test]
-    fn incremental_new_projection_matches_a_full_query_pass() {
-        let patch = b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
-        let [_, incremental_spans] = highlights_of(patch);
-
-        let full_spans = with_first_hunk(patch, |hunk| {
-            let addition = hunk
-                .positioned()
-                .find(|entry| entry.value.kind == RecordKind::Addition)
-                .expect("the added record")
-                .position;
-            let new_projection =
-                Projection::of_hunk(hunk, Side::New, StyledRecords::ChangesAndContext);
-            let full_highlighted = SyntaxHighlighter::default().highlight_projection(
-                Language::Rust,
-                &new_projection,
-                None,
-                &mut Unobserved,
-            );
-            let addition_spans = full_highlighted
-                .spans
-                .into_iter()
-                .filter(|entry| entry.position == addition)
-                .map(|entry| entry.value)
-                .collect::<Vec<_>>();
-            full_highlighted.tree.is_some().then_some(addition_spans)
-        })
-        .expect("the new side has styled records, so it is parsed");
-
-        assert_eq!(incremental_spans, full_spans);
-        assert_eq!(first(&incremental_spans).class, SyntaxClass::Keyword);
-    }
-
-    #[test]
-    fn finds_the_first_record_overlapping_a_source_span() {
-        with_added_projection(&["aaaa", "bbbb", "cccc"], |projection| {
-            assert_eq!(projection.source, "aaaa\nbbbb\ncccc\n");
-            assert_eq!(projection.first_overlapping_record(0), 0);
-            assert_eq!(projection.first_overlapping_record(4), 1);
-            assert_eq!(projection.first_overlapping_record(9), 2);
-        });
-    }
-
-    #[test]
-    fn maps_only_records_overlapping_a_source_span() {
-        let spans = with_added_projection(&["aaaa", "bbbb", "cccc"], |projection| {
-            projection
-                .map_span(2..12, SyntaxClass::Keyword)
-                .map(
-                    |RecordEntry {
-                         position,
-                         value: span,
-                     }| {
-                        let projected_index = projection
-                            .records
-                            .iter()
-                            .position(|projected| projected.position == position)
-                            .expect("a mapped span names a projected record");
-                        (projected_index, span.bytes)
-                    },
-                )
-                .collect::<Vec<_>>()
-        });
-
-        assert_eq!(
-            spans,
-            [
-                (0, PayloadSpan::within("aaaa", 2..4)),
-                (1, PayloadSpan::within("bbbb", 0..4)),
-                (2, PayloadSpan::within("cccc", 0..2)),
-            ]
-        );
-    }
-
-    #[test]
-    fn does_not_map_a_source_span_in_a_record_separator() {
-        with_added_projection(&["aaaa", "bbbb"], |projection| {
-            assert_eq!(projection.map_span(4..5, SyntaxClass::Keyword).count(), 0);
-        });
-    }
-
-    /// docs/spec/architecture.md#technology-direction: context remains textual when the
-    /// paths select different languages.
-    #[test]
-    fn context_stays_textual_when_the_paths_select_different_languages() {
-        let [context, deleted, added] = highlights_of(
-            b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
-        );
-
-        assert_eq!(context, []);
-        let deleted_classes = classes(&deleted);
-        assert!(
-            deleted_classes.contains(&SyntaxClass::Keyword),
-            "{deleted_classes:?}"
-        );
-        let added_classes = classes(&added);
-        assert!(
-            added_classes.contains(&SyntaxClass::Keyword),
-            "{added_classes:?}"
-        );
+        body.addressed_hunks()
+            .take(1)
+            .flat_map(AddressedHunk::records)
+            .map(|record| highlights.get(record.address).clone())
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("the hunk holds the expected record count")
     }
 
     /// Each span of a record's `spans` as the text it covers in `payload` and its class.
@@ -925,20 +252,59 @@ mod tests {
         );
     }
 
+    /// docs/spec/architecture.md#technology-direction: matching languages take context
+    /// styling from the new side.
     #[test]
-    fn every_bundled_language_loads_its_grammar_and_highlight_query() {
-        ByLanguage::from_fn(LanguageHighlighter::of);
+    fn context_takes_the_new_side_s_syntax_when_the_old_side_is_in_a_comment() {
+        let [opening, _, context, _, _] = highlights_of(
+            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
+        );
+
+        assert_eq!(pieces("/*", &opening), [("/*", SyntaxClass::Comment)]);
+        assert_eq!(
+            pieces("let value = 1;", &context),
+            [
+                ("let", SyntaxClass::Keyword),
+                ("=", SyntaxClass::Operator),
+                ("1", SyntaxClass::Number),
+            ]
+        );
+    }
+
+    /// docs/spec/architecture.md#technology-direction: context remains textual when the
+    /// paths select different languages.
+    #[test]
+    fn context_stays_textual_when_the_paths_select_different_languages() {
+        let [context, deleted, added] = highlights_of(
+            b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
+        );
+
+        assert_eq!(context, []);
+        assert_eq!(
+            pieces("def old(): pass", &deleted),
+            [
+                ("def", SyntaxClass::Keyword),
+                ("old", SyntaxClass::Function),
+                ("pass", SyntaxClass::Keyword),
+            ]
+        );
+        assert_eq!(
+            pieces("fn new() {}", &added),
+            [("fn", SyntaxClass::Keyword), ("new", SyntaxClass::Function)]
+        );
     }
 
     #[test]
-    fn a_side_with_only_context_is_not_parsed() {
+    fn counts_the_bytes_scanned_and_the_segments_given() {
         let mut profile = Profile::default();
+        let document =
+            parse_patch(b"--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x := 1\n+y\n").expect("valid diff");
+        let files = document.files().collect::<Vec<_>>();
 
-        observed_highlights_of(
-            b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",
-            &mut profile,
-        );
+        highlight_file(files[0], &mut profile);
 
-        assert_eq!(profile.work().parse_calls, 1);
+        assert_eq!(profile.work().hunks, 1);
+        assert_eq!(profile.work().scanned_bytes, "x := 1".len() + "y".len());
+        assert_eq!(profile.work().segments, 4);
     }
 }

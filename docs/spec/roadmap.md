@@ -145,9 +145,9 @@ implementation remains unapproved.
 
    - [x] The streamed-loading, file-list, `X` file, and target decisions written into
      the [architecture](architecture.md) and [performance](performance.md) specs.
-   - [ ] hdiff's own scanner with the Go language table, replacing Tree-sitter in the
+   - [x] hdiff's own scanner with the Go language table, replacing Tree-sitter in the
      styling chain; measured on the Kubernetes benchmark.
-   - [ ] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
+   - [x] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
    - [ ] Streamed loading: worker, key-reader, and main threads over one channel; a
      diff parser that accepts input in pieces and resumes after errors; pages that grow
      one change block at a time; the screen opening at the first file header; the

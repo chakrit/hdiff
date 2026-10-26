@@ -2,8 +2,8 @@
 
 hdiff is an interactive terminal diff viewer written in Rust 2024 (Rust 1.98.0).
 It reads unified diffs from stdin or a patch file and compares file/directory operands.
-It uses Crossterm and Ratatui for the terminal, similar for comparisons, and Tree-sitter
-for syntax and semantic processing.
+It uses Crossterm and Ratatui for the terminal, similar for comparisons, and its own
+data-driven scanner for syntax highlighting.
 
 ## Project orientation
 

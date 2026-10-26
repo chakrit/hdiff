@@ -1,6 +1,6 @@
 //! Go's lexical pieces.
 
-use super::{Marker, Pair, Spec};
+use super::{Marker, Pair, Spec, WordBytes};
 use crate::syntax::SyntaxClass;
 
 pub static GO: Spec = Spec {
@@ -11,9 +11,10 @@ pub static GO: Spec = Spec {
     delimited: &[
         Pair::spanning("/*", "*/", SyntaxClass::Comment),
         Pair::escaped("\"", SyntaxClass::String),
-        Pair::escaped("'", SyntaxClass::String),
+        Pair::character("'", SyntaxClass::String),
         Pair::spanning("`", "`", SyntaxClass::String),
     ],
+    word_bytes: WordBytes::with(b""),
     words: &[
         (
             &[
@@ -74,9 +75,13 @@ pub static GO: Spec = Spec {
         ),
         (&["false", "iota", "nil", "true"], SyntaxClass::Constant),
     ],
+    before: &[("(", SyntaxClass::Function)],
     after: &[
         ("func", SyntaxClass::Function),
         ("type", SyntaxClass::Type),
         (".", SyntaxClass::Property),
     ],
+    upper_case: None,
+    capitalized: None,
+    other_words: Some(SyntaxClass::Variable),
 };

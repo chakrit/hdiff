@@ -1,7 +1,11 @@
 //! hdiff's own highlighter: one byte scanner, with each language described by a
 //! [`Spec`]. Rules: docs/spec/architecture.md#technology-direction.
 
+pub mod c;
 pub mod go;
+pub mod javascript;
+pub mod python;
+pub mod rust;
 
 use std::ops::Range;
 
@@ -13,10 +17,44 @@ pub struct Spec {
     pub line_markers: &'static [Marker],
     /// Regions between an opening and a closing delimiter, such as strings.
     pub delimited: &'static [Pair],
+    /// The bytes words hold: ASCII letters, digits and `_`, and any the language adds.
+    pub word_bytes: WordBytes,
     /// Word lists, each sorted, with the class of its words.
     pub words: &'static [(&'static [&'static str], SyntaxClass)],
-    /// The class of the identifier that follows a given token.
+    /// The class of a word that the given text follows on its line, after any spaces,
+    /// such as a call's `(`.
+    pub before: &'static [(&'static str, SyntaxClass)],
+    /// The class of the word that follows a given token.
     pub after: &'static [(&'static str, SyntaxClass)],
+    /// The class of an unlisted ALL_CAPS word of two or more bytes, if any.
+    pub upper_case: Option<SyntaxClass>,
+    /// The class of another unlisted word that starts with a capital letter, if any.
+    pub capitalized: Option<SyntaxClass>,
+    /// The class of every other word, if any.
+    pub other_words: Option<SyntaxClass>,
+}
+
+/// Which bytes can be part of a word, looked up by byte.
+pub struct WordBytes([bool; 256]);
+
+impl WordBytes {
+    /// ASCII letters, digits and `_`, with the `extra` bytes a language adds, such as `$`.
+    pub const fn with(extra: &[u8]) -> Self {
+        let mut table = [false; 256];
+        let mut byte = 0;
+        while byte < 256 {
+            let ascii = byte as u8;
+            table[byte] = ascii.is_ascii_alphanumeric() || ascii == b'_';
+            byte += 1;
+        }
+        let mut index = 0;
+        while index < extra.len() {
+            table[extra[index] as usize] = true;
+            index += 1;
+        }
+
+        Self(table)
+    }
 }
 
 /// A marker that makes the rest of its line one class.
@@ -38,26 +76,44 @@ pub enum Body {
     /// Raw text that can span lines; only the closing delimiter ends it.
     Raw,
     /// One line, where a backslash escapes the character after it.
-    Escaped,
+    EscapedLine,
+    /// Text that can span lines, where a backslash escapes the character after it.
+    EscapedBlock,
+    /// One character or one escape sequence; an opener not closed right after it is no
+    /// region, as with a Rust lifetime.
+    Character,
 }
 
 impl Pair {
     /// A region from `open` to `close` that can span lines.
     pub const fn spanning(open: &'static str, close: &'static str, class: SyntaxClass) -> Self {
-        Self {
-            open,
-            close,
-            body: Body::Raw,
-            class,
-        }
+        Self::of(open, close, Body::Raw, class)
     }
 
     /// A one-line region quoted by `quote` on both ends, with backslash escapes.
     pub const fn escaped(quote: &'static str, class: SyntaxClass) -> Self {
+        Self::of(quote, quote, Body::EscapedLine, class)
+    }
+
+    /// A region from `open` to `close` that can span lines, with backslash escapes.
+    pub const fn escaped_spanning(
+        open: &'static str,
+        close: &'static str,
+        class: SyntaxClass,
+    ) -> Self {
+        Self::of(open, close, Body::EscapedBlock, class)
+    }
+
+    /// One character or escape sequence quoted by `quote` on both ends.
+    pub const fn character(quote: &'static str, class: SyntaxClass) -> Self {
+        Self::of(quote, quote, Body::Character, class)
+    }
+
+    const fn of(open: &'static str, close: &'static str, body: Body, class: SyntaxClass) -> Self {
         Self {
-            open: quote,
-            close: quote,
-            body: Body::Escaped,
+            open,
+            close,
+            body,
             class,
         }
     }
@@ -88,21 +144,59 @@ impl Spec {
     }
 
     /// The class of the word `text`, preceded by the token `previous` and followed on its
-    /// line by the byte `next`.
-    fn word_class(&self, text: &str, previous: &str, next: Option<u8>) -> SyntaxClass {
-        let listed = self
-            .words
+    /// line by `rest`; a word no rule classifies has none.
+    fn word_class(&self, text: &str, previous: &str, rest: &str) -> Option<SyntaxClass> {
+        self.words
             .iter()
-            .find(|(words, _)| words.binary_search(&text).is_ok());
-        let after = self.after.iter().find(|(token, _)| *token == previous);
+            .find(|(words, _)| words.binary_search(&text).is_ok())
+            .map(|(_, class)| *class)
+            .or_else(|| {
+                class_of(self.before, |token| {
+                    rest.trim_ascii_start().starts_with(token)
+                })
+            })
+            .or_else(|| class_of(self.after, |token| token == previous))
+            .or_else(|| self.capitals_class(text))
+            .or(self.other_words)
+    }
 
-        match (listed, next, after) {
-            (Some((_, class)), _, _) => *class,
-            (None, Some(b'('), _) => SyntaxClass::Function,
-            (None, _, Some((_, class))) => *class,
-            (None, _, None) => SyntaxClass::Variable,
+    /// The class `word`'s capitals give it: ALL_CAPS, or a leading capital.
+    fn capitals_class(&self, word: &str) -> Option<SyntaxClass> {
+        if !word.starts_with(|first: char| first.is_ascii_uppercase()) {
+            return None;
+        }
+
+        if is_upper_case(word) {
+            self.upper_case
+        } else {
+            self.capitalized
         }
     }
+
+    /// Whether `byte` can be part of a word.
+    fn in_word(&self, byte: u8) -> bool {
+        self.word_bytes.0[usize::from(byte)]
+    }
+}
+
+/// The class of the first of `rules` whose token `matches`.
+fn class_of(
+    rules: &[(&'static str, SyntaxClass)],
+    matches: impl Fn(&str) -> bool,
+) -> Option<SyntaxClass> {
+    rules
+        .iter()
+        .find(|(token, _)| matches(token))
+        .map(|(_, class)| *class)
+}
+
+/// Whether `word`, which starts with a capital, is ALL_CAPS: two or more bytes of
+/// capitals, digits and `_`.
+fn is_upper_case(word: &str) -> bool {
+    word.len() >= 2
+        && word
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 /// The bytes that make up operators. A lone `:` is a label or case separator, not an
@@ -187,17 +281,12 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
     /// opens.
     fn unopened(&mut self, byte: u8) {
         let start = self.at;
-        let class = if byte.is_ascii_alphabetic() || byte == b'_' {
-            self.at = self.end_while(start, |byte| byte.is_ascii_alphanumeric() || byte == b'_');
-            let next = self.line.as_bytes()[self.at..]
-                .iter()
-                .copied()
-                .find(|byte| !byte.is_ascii_whitespace());
-            Some(
-                self.spec
-                    .word_class(&self.line[start..self.at], self.previous, next),
-            )
-        } else if byte.is_ascii_digit() || (byte == b'.' && self.next_is_digit(start + 1)) {
+        let class = if self.spec.in_word(byte) && !byte.is_ascii_digit() {
+            self.at = self.end_while(start, |byte| self.spec.in_word(byte));
+            let word = &self.line[start..self.at];
+            self.spec
+                .word_class(word, self.previous, &self.line[self.at..])
+        } else if byte.is_ascii_digit() || self.starts_fraction(start) {
             self.at = self.number_end(start);
             Some(SyntaxClass::Number)
         } else if OPERATOR_BYTES.contains(&byte) {
@@ -222,8 +311,30 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
 
         markers
             .chain(regions)
-            .filter(|opener| rest.starts_with(opener.text(self.spec)))
+            .filter(|opener| self.opens(opener, rest))
             .max_by_key(|opener| opener.text(self.spec).len())
+    }
+
+    /// Whether `opener` opens at the scan position, where `rest` starts: a character
+    /// region opens only when it closes right after one character or escape.
+    fn opens(&self, opener: &Opener<'_>, rest: &str) -> bool {
+        let text = opener.text(self.spec);
+        if !rest.starts_with(text) {
+            return false;
+        }
+
+        match opener {
+            Opener::Marker(_) => true,
+            Opener::Region(region) => {
+                let pair = &self.spec.delimited[*region];
+                match pair.body {
+                    Body::Raw | Body::EscapedLine | Body::EscapedBlock => true,
+                    Body::Character => self
+                        .character_close(self.at + text.len(), pair.close)
+                        .is_some(),
+                }
+            }
+        }
     }
 
     /// Reads the body of `region`, which opened at `start`, through its closing
@@ -235,7 +346,8 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
             Body::Raw => self.line[self.at..]
                 .find(pair.close)
                 .map(|offset| self.at + offset + pair.close.len()),
-            Body::Escaped => self.escaped_close(pair.close),
+            Body::EscapedLine | Body::EscapedBlock => self.escaped_close(self.at, pair.close),
+            Body::Character => self.character_close(self.at, pair.close),
         };
 
         self.at = closed.unwrap_or(self.line.len());
@@ -244,16 +356,15 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         }
         match (closed, &pair.body) {
             (Some(_), _) => None,
-            (None, Body::Raw) => Some(ScanState(Some(region))),
-            (None, Body::Escaped) => Some(ScanState::default()),
+            (None, Body::Raw | Body::EscapedBlock) => Some(ScanState(Some(region))),
+            (None, Body::EscapedLine | Body::Character) => Some(ScanState::default()),
         }
     }
 
-    /// The end of `close` after the scan position, skipping each backslash-escaped
-    /// character.
-    fn escaped_close(&self, close: &str) -> Option<usize> {
+    /// The end of `close` from byte `from` on, skipping each backslash-escaped character.
+    fn escaped_close(&self, from: usize, close: &str) -> Option<usize> {
         let bytes = self.line.as_bytes();
-        let mut at = self.at;
+        let mut at = from;
 
         while at < bytes.len() {
             if bytes[at..].starts_with(close.as_bytes()) {
@@ -263,6 +374,20 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         }
 
         None
+    }
+
+    /// The end of `close` right after the one character or backslash escape at byte
+    /// `from`.
+    fn character_close(&self, from: usize, close: &str) -> Option<usize> {
+        let rest = &self.line[from..];
+        let body = match rest.chars().next()? {
+            '\\' => return self.escaped_close(from, close),
+            single => single.len_utf8(),
+        };
+
+        rest[body..]
+            .starts_with(close)
+            .then_some(from + body + close.len())
     }
 
     /// The end of the number starting at `start`: digits, letters, `_`, a `.` before a
@@ -291,6 +416,17 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         at
     }
 
+    /// Whether a number like `.5` starts at `start`: a `.` before a digit, with no operand
+    /// such as `s` or `)` right before it, where it would be a field access like `s.0`.
+    fn starts_fraction(&self, start: usize) -> bool {
+        let bytes = self.line.as_bytes();
+        let after_operand = start.checked_sub(1).is_some_and(|before| {
+            self.spec.in_word(bytes[before]) || b")]".contains(&bytes[before])
+        });
+
+        bytes[start] == b'.' && self.next_is_digit(start + 1) && !after_operand
+    }
+
     /// Whether the byte at `at` is a digit.
     fn next_is_digit(&self, at: usize) -> bool {
         self.line.as_bytes().get(at).is_some_and(u8::is_ascii_digit)
@@ -311,7 +447,10 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
 mod tests {
     use std::ops::Range;
 
-    use super::{ScanState, Spec, go::GO};
+    use super::{
+        Marker, Pair, ScanState, Spec, WordBytes, c::C, go::GO, javascript::JAVASCRIPT,
+        python::PYTHON, rust::RUST,
+    };
     use crate::syntax::SyntaxClass;
 
     /// Each classified piece of `line` scanned from `state`, as text, and the next state.
@@ -328,9 +467,9 @@ mod tests {
         (pieces, next)
     }
 
-    /// Each classified piece of one Go line scanned on open ground.
-    fn go_line(line: &str) -> Vec<(&str, SyntaxClass)> {
-        let (pieces, next) = scanned(&GO, ScanState::default(), line);
+    /// Each classified piece of one line of `spec` scanned on open ground.
+    fn ground<'a>(spec: &Spec, line: &'a str) -> Vec<(&'a str, SyntaxClass)> {
+        let (pieces, next) = scanned(spec, ScanState::default(), line);
         assert_eq!(next, ScanState::default(), "{line:?} ends on open ground");
         pieces
     }
@@ -338,7 +477,7 @@ mod tests {
     #[test]
     fn classifies_go_keywords_functions_and_variables() {
         assert_eq!(
-            go_line("func main() { return value }"),
+            ground(&GO, "func main() { return value }"),
             [
                 ("func", SyntaxClass::Keyword),
                 ("main", SyntaxClass::Function),
@@ -351,7 +490,7 @@ mod tests {
     #[test]
     fn classifies_go_calls_properties_and_types() {
         assert_eq!(
-            go_line("type Pod struct { spec.Name = fmt.Sprintf(x) }"),
+            ground(&GO, "type Pod struct { spec.Name = fmt.Sprintf(x) }"),
             [
                 ("type", SyntaxClass::Keyword),
                 ("Pod", SyntaxClass::Type),
@@ -369,7 +508,7 @@ mod tests {
     #[test]
     fn classifies_go_builtin_types_constants_numbers_and_operators() {
         assert_eq!(
-            go_line("var n int = 0x1F + 2.5e-3 != nil"),
+            ground(&GO, "var n int = 0x1F + 2.5e-3 != nil"),
             [
                 ("var", SyntaxClass::Keyword),
                 ("n", SyntaxClass::Variable),
@@ -387,7 +526,7 @@ mod tests {
     #[test]
     fn a_lone_colon_is_not_an_operator() {
         assert_eq!(
-            go_line("case x: y := 1"),
+            ground(&GO, "case x: y := 1"),
             [
                 ("case", SyntaxClass::Keyword),
                 ("x", SyntaxClass::Variable),
@@ -401,7 +540,7 @@ mod tests {
     #[test]
     fn strings_keep_escaped_quotes_and_comments_run_to_the_line_end() {
         assert_eq!(
-            go_line(r#"s := "a \"b\" c" + 'x' // done "here""#),
+            ground(&GO, r#"s := "a \"b\" c" + 'x' // done "here""#),
             [
                 ("s", SyntaxClass::Variable),
                 (":=", SyntaxClass::Operator),
@@ -416,7 +555,7 @@ mod tests {
     #[test]
     fn an_unterminated_escaped_string_ends_with_its_line() {
         assert_eq!(
-            go_line(r#"x := "open"#),
+            ground(&GO, r#"x := "open"#),
             [
                 ("x", SyntaxClass::Variable),
                 (":=", SyntaxClass::Operator),
@@ -477,7 +616,7 @@ mod tests {
     #[test]
     fn non_ascii_text_splits_identifiers_on_character_boundaries() {
         assert_eq!(
-            go_line("naïve := \"ü\""),
+            ground(&GO, "naïve := \"ü\""),
             [
                 ("na", SyntaxClass::Variable),
                 ("ve", SyntaxClass::Variable),
@@ -487,10 +626,247 @@ mod tests {
         );
     }
 
+    /// A spec exercising each scanner rule apart from any language's table.
+    static RULES: Spec = Spec {
+        line_markers: &[Marker {
+            text: "#",
+            class: SyntaxClass::Comment,
+        }],
+        delimited: &[
+            Pair::escaped_spanning("\"\"\"", "\"\"\"", SyntaxClass::String),
+            Pair::escaped("\"", SyntaxClass::String),
+            Pair::character("'", SyntaxClass::String),
+        ],
+        word_bytes: WordBytes::with(b"$"),
+        words: &[(&["let"], SyntaxClass::Keyword)],
+        before: &[("(", SyntaxClass::Function), ("!(", SyntaxClass::Function)],
+        after: &[(".", SyntaxClass::Property)],
+        upper_case: Some(SyntaxClass::Constant),
+        capitalized: Some(SyntaxClass::Type),
+        other_words: Some(SyntaxClass::Variable),
+    };
+
     #[test]
-    fn every_go_word_list_is_sorted_for_lookup() {
-        for (words, class) in GO.words {
-            assert!(words.is_sorted(), "{class:?} words are sorted: {words:?}");
+    fn an_escaped_block_carries_across_lines_past_an_escaped_closer() {
+        let (first, inside) = scanned(&RULES, ScanState::default(), r#"x = """one \""""#);
+        let (second, after) = scanned(&RULES, inside, r#"two""" y"#);
+
+        assert_eq!(
+            first,
+            [
+                ("x", SyntaxClass::Variable),
+                ("=", SyntaxClass::Operator),
+                (r#""""one \""""#, SyntaxClass::String),
+            ]
+        );
+        assert_eq!(
+            second,
+            [
+                (r#"two""""#, SyntaxClass::String),
+                ("y", SyntaxClass::Variable)
+            ]
+        );
+        assert_eq!(after, ScanState::default());
+    }
+
+    #[test]
+    fn a_character_quote_not_closed_after_one_character_is_no_region() {
+        assert_eq!(
+            ground(&RULES, r"'a' '\n' 'b x"),
+            [
+                ("'a'", SyntaxClass::String),
+                (r"'\n'", SyntaxClass::String),
+                ("b", SyntaxClass::Variable),
+                ("x", SyntaxClass::Variable),
+            ]
+        );
+    }
+
+    #[test]
+    fn words_hold_the_spec_s_extra_bytes() {
+        assert_eq!(
+            ground(&RULES, "$el.val"),
+            [
+                ("$el", SyntaxClass::Variable),
+                ("val", SyntaxClass::Property)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_text_after_a_word_can_classify_it() {
+        assert_eq!(
+            ground(&RULES, "show!(x) f (y) a != b"),
+            [
+                ("show", SyntaxClass::Function),
+                ("!", SyntaxClass::Operator),
+                ("x", SyntaxClass::Variable),
+                ("f", SyntaxClass::Function),
+                ("y", SyntaxClass::Variable),
+                ("a", SyntaxClass::Variable),
+                ("!=", SyntaxClass::Operator),
+                ("b", SyntaxClass::Variable),
+            ]
+        );
+    }
+
+    #[test]
+    fn capitals_classify_unlisted_words() {
+        assert_eq!(
+            ground(&RULES, "MAX_LEN Vec X let"),
+            [
+                ("MAX_LEN", SyntaxClass::Constant),
+                ("Vec", SyntaxClass::Type),
+                ("X", SyntaxClass::Type),
+                ("let", SyntaxClass::Keyword),
+            ]
+        );
+    }
+
+    #[test]
+    fn classifies_rust() {
+        assert_eq!(
+            ground(
+                &RUST,
+                r#"pub fn len<'a>(s: &'a str) -> usize { println!("{}", s.0); MAX_LEN }"#
+            ),
+            [
+                ("pub", SyntaxClass::Keyword),
+                ("fn", SyntaxClass::Keyword),
+                ("len", SyntaxClass::Function),
+                ("<", SyntaxClass::Operator),
+                (">", SyntaxClass::Operator),
+                ("&", SyntaxClass::Operator),
+                ("str", SyntaxClass::Type),
+                ("->", SyntaxClass::Operator),
+                ("usize", SyntaxClass::Type),
+                ("println", SyntaxClass::Function),
+                ("!", SyntaxClass::Operator),
+                (r#""{}""#, SyntaxClass::String),
+                ("0", SyntaxClass::Number),
+                ("MAX_LEN", SyntaxClass::Constant),
+            ]
+        );
+        assert_eq!(
+            ground(&RUST, r##"let raw = r#"a "b""#; Some(Vec::new())"##),
+            [
+                ("let", SyntaxClass::Keyword),
+                ("=", SyntaxClass::Operator),
+                (r##"r#"a "b""#"##, SyntaxClass::String),
+                ("Some", SyntaxClass::Function),
+                ("Vec", SyntaxClass::Type),
+                ("::", SyntaxClass::Operator),
+                ("new", SyntaxClass::Function),
+            ]
+        );
+    }
+
+    #[test]
+    fn classifies_c() {
+        assert_eq!(
+            ground(
+                &C,
+                r#"#include <stdio.h> static int f(struct node *n) { return n->next ? 'x' : NULL; }"#
+            ),
+            [
+                ("include", SyntaxClass::Keyword),
+                ("<", SyntaxClass::Operator),
+                ("stdio", SyntaxClass::Variable),
+                ("h", SyntaxClass::Property),
+                (">", SyntaxClass::Operator),
+                ("static", SyntaxClass::Keyword),
+                ("int", SyntaxClass::Type),
+                ("f", SyntaxClass::Function),
+                ("struct", SyntaxClass::Keyword),
+                ("node", SyntaxClass::Type),
+                ("*", SyntaxClass::Operator),
+                ("n", SyntaxClass::Variable),
+                ("return", SyntaxClass::Keyword),
+                ("n", SyntaxClass::Variable),
+                ("->", SyntaxClass::Operator),
+                ("next", SyntaxClass::Property),
+                ("?", SyntaxClass::Operator),
+                ("'x'", SyntaxClass::Number),
+                ("NULL", SyntaxClass::Constant),
+            ]
+        );
+    }
+
+    #[test]
+    fn classifies_python() {
+        assert_eq!(
+            ground(
+                &PYTHON,
+                "@cache def load(self): return self.items if x is not None else MAX # done"
+            ),
+            [
+                ("cache", SyntaxClass::Function),
+                ("def", SyntaxClass::Keyword),
+                ("load", SyntaxClass::Function),
+                ("self", SyntaxClass::Variable),
+                ("return", SyntaxClass::Keyword),
+                ("self", SyntaxClass::Variable),
+                ("items", SyntaxClass::Property),
+                ("if", SyntaxClass::Keyword),
+                ("x", SyntaxClass::Variable),
+                ("is", SyntaxClass::Operator),
+                ("not", SyntaxClass::Operator),
+                ("None", SyntaxClass::Constant),
+                ("else", SyntaxClass::Keyword),
+                ("MAX", SyntaxClass::Constant),
+                ("# done", SyntaxClass::Comment),
+            ]
+        );
+        let (opening, inside) = scanned(&PYTHON, ScanState::default(), "doc = '''one");
+        let (closing, after) = scanned(&PYTHON, inside, "two''' + 'x'");
+        assert_eq!(
+            opening,
+            [
+                ("doc", SyntaxClass::Variable),
+                ("=", SyntaxClass::Operator),
+                ("'''one", SyntaxClass::String),
+            ]
+        );
+        assert_eq!(
+            closing,
+            [
+                ("two'''", SyntaxClass::String),
+                ("+", SyntaxClass::Operator),
+                ("'x'", SyntaxClass::String),
+            ]
+        );
+        assert_eq!(after, ScanState::default());
+    }
+
+    #[test]
+    fn classifies_javascript() {
+        assert_eq!(
+            ground(
+                &JAVASCRIPT,
+                "export function $get(el) { return el?.value ?? `none`; } // x"
+            ),
+            [
+                ("export", SyntaxClass::Keyword),
+                ("function", SyntaxClass::Keyword),
+                ("$get", SyntaxClass::Function),
+                ("el", SyntaxClass::Variable),
+                ("return", SyntaxClass::Keyword),
+                ("el", SyntaxClass::Variable),
+                ("?", SyntaxClass::Operator),
+                ("value", SyntaxClass::Property),
+                ("??", SyntaxClass::Operator),
+                ("`none`", SyntaxClass::String),
+                ("// x", SyntaxClass::Comment),
+            ]
+        );
+    }
+
+    #[test]
+    fn every_word_list_is_sorted_for_lookup() {
+        for spec in [&C, &GO, &JAVASCRIPT, &PYTHON, &RUST] {
+            for (words, class) in spec.words {
+                assert!(words.is_sorted(), "{class:?} words are sorted: {words:?}");
+            }
         }
     }
 }

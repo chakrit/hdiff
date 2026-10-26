@@ -9,7 +9,6 @@ use crate::{
     preferences::DiffGranularity,
     source_text::SourceLine,
     styling::{StyledRow, StyledRows},
-    syntax::SyntaxHighlighter,
 };
 
 /// A document ready to draw: one page per listed file with the file list, or one page of
@@ -121,9 +120,8 @@ impl PreparedDocument {
             files: listed,
         } = observer.time(Stage::Labels, || ListedTree::build(files));
 
-        let mut syntax = SyntaxHighlighter::default();
         Self::Files {
-            pages: listed.map(|file| FilePage::of(*file, &mut syntax, observer)),
+            pages: listed.map(|file| FilePage::of(*file, observer)),
             file_tree,
         }
     }
@@ -169,13 +167,9 @@ impl PageCount {
 
 impl FilePage {
     /// The prepared page for a listed file, beside the file-list row that names it.
-    fn of(
-        listed: ListedFile<'_>,
-        syntax: &mut SyntaxHighlighter,
-        observer: &mut impl Observer,
-    ) -> Self {
+    fn of(listed: ListedFile<'_>, observer: &mut impl Observer) -> Self {
         Self {
-            page: PreparedPage::of_file_view(listed.view, syntax, observer),
+            page: PreparedPage::of_file_view(listed.view, observer),
             row: listed.row,
         }
     }
@@ -183,13 +177,9 @@ impl FilePage {
 
 impl PreparedPage {
     /// The page of one file occurrence with its surrounding text.
-    fn of_file_view(
-        view: FileView<'_>,
-        syntax: &mut SyntaxHighlighter,
-        observer: &mut impl Observer,
-    ) -> Self {
+    fn of_file_view(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         Self {
-            rows: StyledRows::of_file_view(view, syntax, observer),
+            rows: StyledRows::of_file_view(view, observer),
         }
     }
 

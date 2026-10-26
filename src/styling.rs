@@ -14,7 +14,7 @@ use crate::{
     side::Side,
     source_text::SourceLine,
     span::PayloadSpan,
-    syntax::{SyntaxClass, SyntaxHighlighter, SyntaxSpan},
+    syntax::{self, SyntaxClass, SyntaxSpan},
 };
 
 /// A page's rows kept with the styles of each line, so a line can only be styled with
@@ -28,14 +28,10 @@ pub struct StyledRows {
 impl StyledRows {
     /// The rows of one file occurrence, each line styled with the syntax spans of its
     /// record and its character detail.
-    pub fn of_file_view(
-        view: FileView<'_>,
-        highlighter: &mut SyntaxHighlighter,
-        observer: &mut impl Observer,
-    ) -> Self {
+    pub fn of_file_view(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         let rows = observer.time(Stage::Layout, || PageRows::of_file_view(view));
         let syntax = observer.measure(Stage::Syntax, |observer| {
-            highlighter.highlight_file(view.file, observer)
+            syntax::highlight_file(view.file, observer)
         });
 
         Self::styled(rows, &syntax, observer)
@@ -204,7 +200,7 @@ fn syntax_partition(text: &str, syntax: &[SyntaxSpan]) -> Partition {
         .iter()
         .map(|span| Annotation {
             span: span.bytes,
-            priority_length: span.capture_length,
+            priority_length: span.bytes.len(),
             style: TextStyle::Syntax(span.class),
         })
         .collect::<Vec<_>>();
@@ -353,10 +349,9 @@ mod tests {
         StyledText { text, style }
     }
 
-    fn syntax(text: &str, bytes: Range<usize>, length: usize, class: SyntaxClass) -> SyntaxSpan {
+    fn syntax(text: &str, bytes: Range<usize>, class: SyntaxClass) -> SyntaxSpan {
         SyntaxSpan {
             bytes: PayloadSpan::within(text, bytes),
-            capture_length: length,
             class,
         }
     }
@@ -370,9 +365,9 @@ mod tests {
         let call_start = text.find("call").expect("the text holds call");
         let call = call_start..call_start + "call".len();
         let spans = [
-            syntax(text, whole.clone(), whole.len(), SyntaxClass::String),
-            syntax(text, call.clone(), call.len(), SyntaxClass::Property),
-            syntax(text, call.clone(), call.len(), SyntaxClass::Function),
+            syntax(text, whole.clone(), SyntaxClass::String),
+            syntax(text, call.clone(), SyntaxClass::Property),
+            syntax(text, call.clone(), SyntaxClass::Function),
         ];
         let partition = syntax_partition(text, &spans);
 
@@ -416,23 +411,6 @@ mod tests {
                 styled("e", new_detail(DetailStyle::Changed)),
                 styled("ll!", new_detail(DetailStyle::Unchanged)),
             ]
-        );
-    }
-
-    #[test]
-    fn capture_precedence_retains_specificity_after_multiline_clipping() {
-        let text = "word";
-        let whole = 0..text.len();
-        let multiline_comment = "word\nacross three\nlines";
-        let spans = [
-            syntax(text, whole.clone(), whole.len(), SyntaxClass::Keyword),
-            syntax(text, whole, multiline_comment.len(), SyntaxClass::Comment),
-        ];
-        let partition = syntax_partition(text, &spans);
-
-        assert_eq!(
-            segments(text, &partition),
-            [styled("word", TextStyle::Syntax(SyntaxClass::Keyword))]
         );
     }
 

@@ -170,7 +170,7 @@ EOF
 
     [ "$report_line" -gt 0 ] || fail 'empty benchmark result'
     if [ "$report_kind" = diagnostic ]; then
-        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:language syntax:projection syntax:parse syntax:query syntax:scan syntax:unattributed work'
+        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:scan syntax:unattributed work'
         [ "$stage_names" = "$expected" ] || fail 'incomplete or reordered profile stages'
         [ "$preparation_stage_sum" -eq "$duration" ] || fail 'preparation stages do not partition their parent'
         [ "$syntax_stage_sum" -eq "$syntax_duration" ] || fail 'syntax stages do not partition their parent'
@@ -178,7 +178,7 @@ EOF
 }
 
 validate_profile_line() {
-    IFS=' ' read -r label first second third fourth _extra <<EOF
+    IFS=' ' read -r label first second third _extra <<EOF
 $1
 EOF
     case "$label" in
@@ -201,14 +201,12 @@ EOF
             ;;
         work)
             hunks=${first#hunks=}
-            parse_calls=${second#parse_calls=}
-            captures=${third#captures=}
-            projected_bytes=${fourth#projected_bytes=}
+            scanned_bytes=${second#scanned_bytes=}
+            segments=${third#segments=}
             require_unsigned hunks "$hunks"
-            require_unsigned parse_calls "$parse_calls"
-            require_unsigned captures "$captures"
-            require_unsigned projected_bytes "$projected_bytes"
-            canonical="work hunks=$hunks parse_calls=$parse_calls captures=$captures projected_bytes=$projected_bytes"
+            require_unsigned scanned_bytes "$scanned_bytes"
+            require_unsigned segments "$segments"
+            canonical="work hunks=$hunks scanned_bytes=$scanned_bytes segments=$segments"
             [ "$1" = "$canonical" ] || fail "invalid work counters: $1"
             stage_names="$stage_names work"
             ;;

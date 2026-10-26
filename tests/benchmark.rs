@@ -36,15 +36,7 @@ fn patch_bytes() -> u128 {
 fn expected_stages() -> BTreeSet<(&'static str, &'static str)> {
     let preparation =
         ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));
-    let syntax = [
-        "language",
-        "projection",
-        "parse",
-        "query",
-        "scan",
-        "unattributed",
-    ]
-    .map(|name| ("syntax", name));
+    let syntax = ["scan", "unattributed"].map(|name| ("syntax", name));
 
     preparation.into_iter().chain(syntax).collect()
 }
@@ -171,11 +163,10 @@ fn stages_partitions_parent_costs_and_counts_real_work() {
         .unwrap_or_else(|| panic!("a preparation/syntax stage record: {text}"));
     assert_eq!(parent_sum("syntax"), *syntax_stage, "{text}");
     assert_eq!(work.integer("hunks"), 1, "{text}");
-    assert_eq!(work.integer("parse_calls"), 2, "{text}");
-    // docs/spec/performance.md#stages: the old buffer "fn old() {}\n" and the new buffer
-    // "fn new() {}\n" hold 12 bytes each.
-    assert_eq!(work.integer("projected_bytes"), 24, "{text}");
-    assert!(work.integer("captures") > 0, "{text}");
+    // docs/spec/performance.md#stages: the scanner reads "fn old() {}" and "fn new() {}",
+    // 11 bytes each, and gives each a keyword and a function name.
+    assert_eq!(work.integer("scanned_bytes"), 22, "{text}");
+    assert_eq!(work.integer("segments"), 4, "{text}");
 }
 
 #[test]
@@ -261,7 +252,7 @@ fn movement_times_each_key_in_every_layout_detail_and_wrapping_mode() {
 }
 
 #[test]
-fn unsupported_language_has_no_syntax_parser_work() {
+fn unsupported_language_has_no_scanner_work() {
     let text = success_output(&run_bench("stages", &PATCH.replace("a.rs", "a.txt")));
     let records = records_of(&text);
     let [.., work] = &records[..] else {
@@ -269,8 +260,8 @@ fn unsupported_language_has_no_syntax_parser_work() {
     };
 
     assert_eq!(work.integer("hunks"), 1, "{text}");
-    assert_eq!(work.integer("parse_calls"), 0, "{text}");
-    assert_eq!(work.integer("captures"), 0, "{text}");
+    assert_eq!(work.integer("scanned_bytes"), 0, "{text}");
+    assert_eq!(work.integer("segments"), 0, "{text}");
 }
 
 #[test]

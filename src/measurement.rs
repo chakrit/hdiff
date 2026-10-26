@@ -7,17 +7,13 @@ pub enum Stage {
     Layout,
     Syntax,
     Detail,
-    Language,
-    Projection,
-    Parse,
-    Query,
     Scan,
 }
 
 impl Stage {
     /// Every stage, in report order, read from the one field each stage has in
     /// [`ByStage`], so a stage cannot exist without appearing here.
-    pub const ALL: [Self; 9] = ByStage::STAGES.into_array();
+    pub const ALL: [Self; 5] = ByStage::STAGES.into_array();
 
     /// The stage's name in profile reports.
     pub const fn label(self) -> &'static str {
@@ -26,10 +22,6 @@ impl Stage {
             Self::Layout => "layout",
             Self::Syntax => "syntax",
             Self::Detail => "detail",
-            Self::Language => "language",
-            Self::Projection => "projection",
-            Self::Parse => "parse",
-            Self::Query => "query",
             Self::Scan => "scan",
         }
     }
@@ -38,9 +30,7 @@ impl Stage {
     pub const fn parent(self) -> Parent {
         match self {
             Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
-            Self::Language | Self::Projection | Self::Parse | Self::Query | Self::Scan => {
-                Parent::Syntax
-            }
+            Self::Scan => Parent::Syntax,
         }
     }
 }
@@ -86,9 +76,10 @@ impl Parent {
 /// One unit of counted work done during preparation.
 pub enum Work {
     Hunk,
-    ParseCall,
-    Capture,
-    ProjectedBytes(usize),
+    /// Payload bytes the scanner read.
+    ScannedBytes(usize),
+    /// Syntax spans the scanner gave styled records.
+    Segments(usize),
 }
 
 /// What preparation reports its stages and work to.
@@ -169,9 +160,8 @@ impl Observer for Profile {
     fn count(&mut self, work: Work) {
         match work {
             Work::Hunk => self.work.hunks += 1,
-            Work::ParseCall => self.work.parse_calls += 1,
-            Work::Capture => self.work.captures += 1,
-            Work::ProjectedBytes(bytes) => self.work.projected_bytes += bytes,
+            Work::ScannedBytes(bytes) => self.work.scanned_bytes += bytes,
+            Work::Segments(segments) => self.work.segments += segments,
         }
     }
 }
@@ -180,9 +170,8 @@ impl Observer for Profile {
 #[derive(Default)]
 pub struct WorkCounts {
     pub hunks: usize,
-    pub parse_calls: usize,
-    pub captures: usize,
-    pub projected_bytes: usize,
+    pub scanned_bytes: usize,
+    pub segments: usize,
 }
 
 /// One value per stage. A new stage does not compile until it has a field here, a
@@ -193,10 +182,6 @@ struct ByStage<T> {
     layout: T,
     syntax: T,
     detail: T,
-    language: T,
-    projection: T,
-    parse: T,
-    query: T,
     scan: T,
 }
 
@@ -207,32 +192,22 @@ impl ByStage<Stage> {
         layout: Stage::Layout,
         syntax: Stage::Syntax,
         detail: Stage::Detail,
-        language: Stage::Language,
-        projection: Stage::Projection,
-        parse: Stage::Parse,
-        query: Stage::Query,
         scan: Stage::Scan,
     };
 }
 
 impl<T: Copy> ByStage<T> {
     /// The values in report order.
-    const fn into_array(self) -> [T; 9] {
+    const fn into_array(self) -> [T; 5] {
         let Self {
             labels,
             layout,
             syntax,
             detail,
-            language,
-            projection,
-            parse,
-            query,
             scan,
         } = self;
 
-        [
-            labels, layout, syntax, detail, language, projection, parse, query, scan,
-        ]
+        [labels, layout, syntax, detail, scan]
     }
 }
 
@@ -243,10 +218,6 @@ impl<T> ByStage<T> {
             Stage::Layout => &self.layout,
             Stage::Syntax => &self.syntax,
             Stage::Detail => &self.detail,
-            Stage::Language => &self.language,
-            Stage::Projection => &self.projection,
-            Stage::Parse => &self.parse,
-            Stage::Query => &self.query,
             Stage::Scan => &self.scan,
         }
     }
@@ -257,10 +228,6 @@ impl<T> ByStage<T> {
             Stage::Layout => &mut self.layout,
             Stage::Syntax => &mut self.syntax,
             Stage::Detail => &mut self.detail,
-            Stage::Language => &mut self.language,
-            Stage::Projection => &mut self.projection,
-            Stage::Parse => &mut self.parse,
-            Stage::Query => &mut self.query,
             Stage::Scan => &mut self.scan,
         }
     }

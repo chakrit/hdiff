@@ -156,10 +156,10 @@ if [ "$2" = stages ]; then
         case "$FAKE_CASE:$stage" in invalid-stages:syntax) stage_duration=1 ;; esac
         printf 'stage name=%s parent=preparation duration_ns=%s\n' "$stage" "$stage_duration"
     done
-    for stage in language projection parse query scan unattributed; do
+    for stage in scan unattributed; do
         printf 'stage name=%s parent=syntax duration_ns=0\n' "$stage"
     done
-    printf 'work hunks=1 parse_calls=2 captures=3 projected_bytes=4\n'
+    printf 'work hunks=1 scanned_bytes=2 segments=3\n'
 fi
 EOF
 chmod +x "$suite/tools/"* "$suite/binary"

@@ -556,15 +556,12 @@ Clojure, Zig, Nim, Objective-C, Groovy, PowerShell, Visual Basic, Svelte, Vue, C
 Gleam, Assembly, and CUDA.
 Hand-rolled highlighting need only mostly match Tree-sitter's colors. Highlighting works
 fully out of the box; it never requires the user to download grammars or other binaries.
-The Tree-sitter parser set and performance rationale are recorded in
+The earlier Tree-sitter parser set and its performance record are in
 `docs/vendor/syntax-highlighting.md`.
-hdiff's scanner reads each side's records of a hunk in order from open ground, so a
-region an earlier record opens carries into the next. Tree-sitter highlighting projects
-each hunk's old and new records into separate bounded virtual source buffers and maps
-returned spans back to sanitized record payloads. Unsupported languages stay plain text.
-Every bundled grammar and its highlight query load; the bundled-grammar test checks each
-one. Projection records are ordered by virtual source range, so span mapping visits only
-records that overlap the returned source span.
+Each language hdiff highlights is a data table that one scanner reads. The scanner reads
+each side's records of a hunk in order from open ground, so a region an earlier record
+opens carries into the next; its spans never overlap. Unsupported languages stay plain
+text.
 Safe rendering is the single source of
 display rows: each rendered record row retains its kind, hunk and record address, and its
 sanitized payload with the cells it covers. Page rows and their scroll extents derive
@@ -575,10 +572,8 @@ deletions use the old path's language; context records remain textual when the p
 select different languages. Headers, metadata, no-newline markers, and diff markers remain
 textual.
 
-When both paths select the same language, only the new projection supplies context
-styling. Both projections retain context text for parsing. Overlapping syntax captures
-use the shortest covering capture; later capture encounter order breaks equal-length
-ties. Capture length is measured before row clipping.
+When both paths select the same language, only the new side supplies context styling.
+Both sides read context text, so each side's regions stay right.
 
 The first test boundary is terminal-independent: parser fixtures, state-transition tests,
 layout snapshots, and renderer output tests. Live interaction tests run the `Tui`
