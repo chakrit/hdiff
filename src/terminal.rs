@@ -113,6 +113,7 @@ impl Tui {
                         arrived.push(update);
                     }
                     Message::Loaded(Loaded::Failed(error)) => {
+                        observer.answered(Answered::Arrived(Arrival::Ended));
                         arrived.push(Arrived::Ended(PreparedPage::empty()));
                         input_failure = Some(error);
                     }
@@ -269,5 +270,91 @@ impl TtyEvents {
         }
 
         Ok(latest_resize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io, sync::mpsc};
+
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, TerminalOptions, Viewport, backend::CrosstermBackend, layout::Rect};
+
+    use super::{Answered, RunObserver, SessionEnd, Tui};
+    use crate::{
+        file_tree::Arrival,
+        loading::{Loaded, Message},
+        parser::{parse_comparison, parse_patch},
+        prepared::{FilePage, PreparedDocument, PreparedFiles},
+        theme::ColorDepth,
+    };
+
+    const AREA: Rect = Rect::new(0, 0, 80, 10);
+
+    /// A terminal of [`AREA`] writing to nowhere.
+    fn sink_terminal() -> Terminal<CrosstermBackend<io::Sink>> {
+        let options = TerminalOptions {
+            viewport: Viewport::Fixed(AREA),
+        };
+        Terminal::with_options(CrosstermBackend::new(io::sink()), options).expect("sink terminal")
+    }
+
+    /// Whether the run told its observer the input had ended.
+    #[derive(Default)]
+    struct HeardEnd(bool);
+
+    impl RunObserver for HeardEnd {
+        fn answered(&mut self, answered: Answered) {
+            if let Answered::Arrived(Arrival::Ended) = answered {
+                self.0 = true;
+            }
+        }
+
+        fn drew(&mut self) {}
+    }
+
+    /// docs/spec/architecture.md#input-contract: comparison output that holds only text
+    /// is shown, and the session answers keys over the channel like any other.
+    #[test]
+    fn a_text_only_session_answers_keys_over_the_channel() {
+        let document =
+            PreparedDocument::prepare(&parse_comparison(b"Binary files a and b differ\n"));
+        let mut tui = Tui::start(document, AREA.as_size(), ColorDepth::TrueColor);
+        let (sender, receiver) = mpsc::channel();
+        for key in ['j', 'q'] {
+            let event = Event::Key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+            sender
+                .send(Message::Terminal(Ok(event)))
+                .expect("the run receives");
+        }
+
+        let ended = tui
+            .run(&mut sink_terminal(), &receiver)
+            .expect("the run draws");
+
+        assert!(matches!(ended, SessionEnd::Quit), "{ended:?}");
+    }
+
+    /// docs/spec/performance.md#loading: a read failure ends the input, and the run says
+    /// so to its observer as it does for the input's own end.
+    #[test]
+    fn a_read_failure_tells_the_observer_the_input_ended() {
+        let document = parse_patch(b"--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n").expect("a diff");
+        let first = FilePage::prepare(document.file_views().next().expect("a file"));
+        let prepared = PreparedDocument::Files(PreparedFiles::loading(first));
+        let mut tui = Tui::start(prepared, AREA.as_size(), ColorDepth::TrueColor);
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(Message::Loaded(Loaded::Failed(io::Error::other("gone"))))
+            .expect("the run receives");
+        drop(sender);
+        let mut heard = HeardEnd::default();
+
+        let ended = tui
+            .run_observed(&mut sink_terminal(), &receiver, &mut heard)
+            .expect("the run draws");
+
+        assert!(heard.0, "the observer hears the input end");
+        assert!(matches!(ended, SessionEnd::InputFailed(_)), "{ended:?}");
     }
 }

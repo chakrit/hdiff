@@ -126,12 +126,18 @@ impl DisplayScan {
             return;
         }
 
-        self.read(Side::Old, payload, observer, &mut |_, _| {});
+        self.advance(Side::Old, payload, observer);
         if self.shared {
             self.read(Side::New, payload, observer, emit);
         } else {
-            self.read(Side::New, payload, observer, &mut |_, _| {});
+            self.advance(Side::New, payload, observer);
         }
+    }
+
+    /// Reads `payload` as the next line of `side` only to keep the side's state; its
+    /// spans go nowhere.
+    fn advance(&mut self, side: Side, payload: &str, observer: &mut impl Observer) {
+        self.scan_side(side, payload, observer, |_, _| {});
     }
 
     /// Reads `payload` as the next line of `side`, giving `emit` its spans; a side
@@ -143,19 +149,33 @@ impl DisplayScan {
         observer: &mut impl Observer,
         emit: &mut impl FnMut(PayloadSpan, SyntaxClass),
     ) {
+        let mut segments = 0;
+        self.scan_side(side, payload, observer, |span, class| {
+            segments += 1;
+            emit(span, class);
+        });
+
+        observer.count(Work::Segments(segments));
+    }
+
+    /// Scans `payload` as the next line of `side` from the side's state, giving `spans`
+    /// each span; a side without a language reads nothing.
+    fn scan_side(
+        &mut self,
+        side: Side,
+        payload: &str,
+        observer: &mut impl Observer,
+        mut spans: impl FnMut(PayloadSpan, SyntaxClass),
+    ) {
         let Some(spec) = self.languages.get(side) else {
             return;
         };
 
-        let mut segments = 0;
         let state = self.states.get_mut(side);
         *state = spec.scan(*state, payload, |bytes, class| {
-            segments += 1;
-            emit(PayloadSpan::within(payload, bytes), class);
+            spans(PayloadSpan::within(payload, bytes), class);
         });
-
         observer.count(Work::ScannedBytes(payload.len()));
-        observer.count(Work::Segments(segments));
     }
 }
 
@@ -288,6 +308,26 @@ mod tests {
             line_pieces("--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+/* open\n@@ -9 +9 @@\n-y\n+z\n");
 
         assert_eq!(lines[7], owned(&[("z", SyntaxClass::Variable)]));
+    }
+
+    /// docs/spec/performance.md#stages: segments count the spans given to styled
+    /// records, not the spans of a side read only to keep its state.
+    #[test]
+    fn counts_only_the_segments_given_to_styled_records() {
+        let document = parse_patch(b"--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,1 @@\n-/* x\n y\n")
+            .expect("valid diff");
+        let views = document.file_views().collect::<Vec<_>>();
+        let rows = PageRows::of_file_view(views[0]);
+        let mut scan = DisplayScan::of_file(views[0].file);
+        let mut profile = Profile::default();
+        let mut given = 0;
+
+        for (_, line) in rows.lines() {
+            scan.line(line.kind(), line.payload(), &mut profile, |_, _| given += 1);
+        }
+
+        assert_eq!(given, 2);
+        assert_eq!(profile.work().segments, given);
     }
 
     #[test]

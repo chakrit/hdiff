@@ -49,7 +49,13 @@ pub fn run_interactive(
 
     match (result, session.finish()) {
         (Ok(end), Ok(())) => Ok(end),
-        (Ok(_), Err(failures)) => Err(Error::Restore(failures)),
+        (Ok(end), Err(failures)) => Err(Error::Restore {
+            failures,
+            input_failure: match end {
+                SessionEnd::Quit => None,
+                SessionEnd::InputFailed(error) => Some(error),
+            },
+        }),
         (Err(error), restored) => Err(Error::Failed {
             stage: SessionStage::Run,
             error,
@@ -81,8 +87,12 @@ pub enum Error {
         error: io::Error,
         restored: Result<(), RestoreFailures>,
     },
-    /// The loop finished, but the terminal was not fully restored.
-    Restore(RestoreFailures),
+    /// The loop finished, but the terminal was not fully restored; the input may have
+    /// failed while it ran.
+    Restore {
+        failures: RestoreFailures,
+        input_failure: Option<io::Error>,
+    },
 }
 
 impl fmt::Display for Error {
@@ -102,7 +112,14 @@ impl fmt::Display for Error {
                 error,
                 restored,
             } => write!(formatter, "{error}{}", CleanupSuffix(restored)),
-            Self::Restore(failures) => write!(formatter, "{failures}"),
+            Self::Restore {
+                failures,
+                input_failure: None,
+            } => write!(formatter, "{failures}"),
+            Self::Restore {
+                failures,
+                input_failure: Some(error),
+            } => write!(formatter, "{failures}; reading the input failed: {error}"),
         }
     }
 }
