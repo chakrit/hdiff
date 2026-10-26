@@ -1,13 +1,10 @@
 //! C's lexical pieces. A preprocessor directive is the word after `#`.
 
-use super::{Marker, Pair, Spec, WordBytes};
+use super::{Marker, Pair, Spec, WordBytes, WordCase};
 use crate::syntax::SyntaxClass;
 
 pub static C: Spec = Spec {
-    line_markers: &[Marker {
-        text: "//",
-        class: SyntaxClass::Comment,
-    }],
+    line_markers: &[Marker::anywhere("//", SyntaxClass::Comment)],
     delimited: &[
         Pair::spanning("/*", "*/", SyntaxClass::Comment),
         Pair::escaped("\"", SyntaxClass::String),
@@ -65,4 +62,6 @@ pub static C: Spec = Spec {
     upper_case: Some(SyntaxClass::Constant),
     capitalized: None,
     other_words: Some(SyntaxClass::Variable),
+    word_suffixes: b"",
+    word_case: WordCase::Sensitive,
 };

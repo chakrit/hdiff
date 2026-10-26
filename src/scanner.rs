@@ -32,6 +32,17 @@ pub struct Spec {
     pub capitalized: Option<SyntaxClass>,
     /// The class of every other word, if any.
     pub other_words: Option<SyntaxClass>,
+    /// Bytes that may end a word, such as Ruby's `?` and `!`, when no `=` follows them.
+    pub word_suffixes: &'static [u8],
+    /// Whether the word lists match words in any case.
+    pub word_case: WordCase,
+}
+
+/// Whether a spec's word lists match words as written or in any case.
+pub enum WordCase {
+    Sensitive,
+    /// Lists hold lowercase words, matched whatever the case of the word read.
+    Insensitive,
 }
 
 /// Which bytes can be part of a word, looked up by byte.
@@ -61,6 +72,34 @@ impl WordBytes {
 pub struct Marker {
     pub text: &'static str,
     pub class: SyntaxClass,
+    pub placement: Placement,
+}
+
+/// Where on a line a marker counts.
+pub enum Placement {
+    Anywhere,
+    /// Only as the first text of the line, after any leading whitespace.
+    LineStart,
+}
+
+impl Marker {
+    /// A marker that counts anywhere on its line, such as `//`.
+    pub const fn anywhere(text: &'static str, class: SyntaxClass) -> Self {
+        Self {
+            text,
+            class,
+            placement: Placement::Anywhere,
+        }
+    }
+
+    /// A marker that counts only at the start of its line, such as a Markdown `#`.
+    pub const fn at_line_start(text: &'static str, class: SyntaxClass) -> Self {
+        Self {
+            text,
+            class,
+            placement: Placement::LineStart,
+        }
+    }
 }
 
 /// A region of one class between an opening and a closing delimiter.
@@ -79,6 +118,9 @@ pub enum Body {
     EscapedLine,
     /// Text that can span lines, where a backslash escapes the character after it.
     EscapedBlock,
+    /// Raw text that can span lines, where each opener inside opens a nested region the
+    /// next closer ends.
+    Nested,
     /// One character or one escape sequence; an opener not closed right after it is no
     /// region, as with a Rust lifetime.
     Character,
@@ -104,6 +146,11 @@ impl Pair {
         Self::of(open, close, Body::EscapedBlock, class)
     }
 
+    /// A region from `open` to `close` that can span lines and nests.
+    pub const fn nesting(open: &'static str, close: &'static str, class: SyntaxClass) -> Self {
+        Self::of(open, close, Body::Nested, class)
+    }
+
     /// One character or escape sequence quoted by `quote` on both ends.
     pub const fn character(quote: &'static str, class: SyntaxClass) -> Self {
         Self::of(quote, quote, Body::Character, class)
@@ -119,10 +166,18 @@ impl Pair {
     }
 }
 
-/// Where a line starts: on open ground, or inside the delimited region at an index of
-/// the spec's [`Spec::delimited`] that an earlier line opened.
+/// Where a line starts: on open ground, or inside a delimited region an earlier line
+/// opened.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ScanState(Option<usize>);
+pub struct ScanState(Option<Inside>);
+
+/// An open region: its index in the spec's [`Spec::delimited`], and how many of its
+/// openers are still open, which only a nesting region counts past one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Inside {
+    region: usize,
+    depth: usize,
+}
 
 impl Spec {
     /// Scans `line` starting in `state`, giving `emit` each classified byte range in
@@ -148,7 +203,15 @@ impl Spec {
     fn word_class(&self, text: &str, previous: &str, rest: &str) -> Option<SyntaxClass> {
         self.words
             .iter()
-            .find(|(words, _)| words.binary_search(&text).is_ok())
+            .find(|(words, _)| match self.word_case {
+                WordCase::Sensitive => words.binary_search(&text).is_ok(),
+                WordCase::Insensitive => words
+                    .binary_search_by(|word| {
+                        word.bytes()
+                            .cmp(text.bytes().map(|byte| byte.to_ascii_lowercase()))
+                    })
+                    .is_ok(),
+            })
             .map(|(_, class)| *class)
             .or_else(|| {
                 class_of(self.before, |token| {
@@ -233,8 +296,8 @@ struct LineScan<'a, E> {
 impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
     /// Scans the whole line from `state` and returns the state the next line starts in.
     fn run(mut self, state: ScanState) -> ScanState {
-        if let ScanState(Some(region)) = state
-            && let Some(unclosed) = self.region(region, 0)
+        if let ScanState(Some(Inside { region, depth })) = state
+            && let Some(unclosed) = self.region(region, depth, 0)
         {
             return unclosed;
         }
@@ -268,7 +331,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
             Some(Opener::Region(region)) => {
                 self.at += self.spec.delimited[region].open.len();
                 self.previous = "";
-                self.region(region, start)
+                self.region(region, 1, start)
             }
             None => {
                 self.unopened(byte);
@@ -283,6 +346,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         let start = self.at;
         let class = if self.spec.in_word(byte) && !byte.is_ascii_digit() {
             self.at = self.end_while(start, |byte| self.spec.in_word(byte));
+            self.at += usize::from(self.takes_suffix());
             let word = &self.line[start..self.at];
             self.spec
                 .word_class(word, self.previous, &self.line[self.at..])
@@ -324,11 +388,16 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         }
 
         match opener {
-            Opener::Marker(_) => true,
+            Opener::Marker(marker) => match marker.placement {
+                Placement::Anywhere => true,
+                Placement::LineStart => self.line.as_bytes()[..self.at]
+                    .iter()
+                    .all(u8::is_ascii_whitespace),
+            },
             Opener::Region(region) => {
                 let pair = &self.spec.delimited[*region];
                 match pair.body {
-                    Body::Raw | Body::EscapedLine | Body::EscapedBlock => true,
+                    Body::Raw | Body::Nested | Body::EscapedLine | Body::EscapedBlock => true,
                     Body::Character => self
                         .character_close(self.at + text.len(), pair.close)
                         .is_some(),
@@ -337,17 +406,21 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         }
     }
 
-    /// Reads the body of `region`, which opened at `start`, through its closing
-    /// delimiter or the line's end; returns the next line's state when the line ends
-    /// first.
-    fn region(&mut self, region: usize, start: usize) -> Option<ScanState> {
+    /// Reads the body of `region`, which opened at `start` and has `depth` openers open,
+    /// through its closing delimiter or the line's end; returns the next line's state
+    /// when the line ends first.
+    fn region(&mut self, region: usize, depth: usize, start: usize) -> Option<ScanState> {
         let pair = &self.spec.delimited[region];
         let closed = match pair.body {
             Body::Raw => self.line[self.at..]
                 .find(pair.close)
-                .map(|offset| self.at + offset + pair.close.len()),
-            Body::EscapedLine | Body::EscapedBlock => self.escaped_close(self.at, pair.close),
-            Body::Character => self.character_close(self.at, pair.close),
+                .map(|offset| self.at + offset + pair.close.len())
+                .ok_or(depth),
+            Body::Nested => self.nested_close(pair, depth),
+            Body::EscapedLine | Body::EscapedBlock => {
+                self.escaped_close(self.at, pair.close).ok_or(depth)
+            }
+            Body::Character => self.character_close(self.at, pair.close).ok_or(depth),
         };
 
         self.at = closed.unwrap_or(self.line.len());
@@ -355,10 +428,38 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
             (self.emit)(start..self.at, pair.class);
         }
         match (closed, &pair.body) {
-            (Some(_), _) => None,
-            (None, Body::Raw | Body::EscapedBlock) => Some(ScanState(Some(region))),
-            (None, Body::EscapedLine | Body::Character) => Some(ScanState::default()),
+            (Ok(_), _) => None,
+            (Err(depth), Body::Raw | Body::Nested | Body::EscapedBlock) => {
+                Some(ScanState(Some(Inside { region, depth })))
+            }
+            (Err(_), Body::EscapedLine | Body::Character) => Some(ScanState::default()),
         }
+    }
+
+    /// The end of the closer that closes the nesting `pair` with `depth` openers open,
+    /// counting each opener and closer after the scan position; the openers still open
+    /// when the line ends first.
+    fn nested_close(&self, pair: &Pair, depth: usize) -> Result<usize, usize> {
+        let bytes = self.line.as_bytes();
+        let mut at = self.at;
+        let mut open = depth;
+
+        while at < bytes.len() {
+            if bytes[at..].starts_with(pair.close.as_bytes()) {
+                at += pair.close.len();
+                open -= 1;
+                if open == 0 {
+                    return Ok(at);
+                }
+            } else if bytes[at..].starts_with(pair.open.as_bytes()) {
+                at += pair.open.len();
+                open += 1;
+            } else {
+                at += 1;
+            }
+        }
+
+        Err(open)
     }
 
     /// The end of `close` from byte `from` on, skipping each backslash-escaped character.
@@ -427,6 +528,17 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         bytes[start] == b'.' && self.next_is_digit(start + 1) && !after_operand
     }
 
+    /// Whether the word ending at the scan position takes the suffix byte after it: one of
+    /// the spec's [`Spec::word_suffixes`], with no `=` after it.
+    fn takes_suffix(&self) -> bool {
+        let bytes = self.line.as_bytes();
+        let suffix = bytes
+            .get(self.at)
+            .is_some_and(|byte| self.spec.word_suffixes.contains(byte));
+
+        suffix && bytes.get(self.at + 1) != Some(&b'=')
+    }
+
     /// Whether the byte at `at` is a digit.
     fn next_is_digit(&self, at: usize) -> bool {
         self.line.as_bytes().get(at).is_some_and(u8::is_ascii_digit)
@@ -448,7 +560,7 @@ mod tests {
     use std::ops::Range;
 
     use super::{
-        Marker, Pair, ScanState, Spec, WordBytes, c::C, go::GO, javascript::JAVASCRIPT,
+        Marker, Pair, ScanState, Spec, WordBytes, WordCase, c::C, go::GO, javascript::JAVASCRIPT,
         python::PYTHON, rust::RUST,
     };
     use crate::syntax::SyntaxClass;
@@ -628,10 +740,7 @@ mod tests {
 
     /// A spec exercising each scanner rule apart from any language's table.
     static RULES: Spec = Spec {
-        line_markers: &[Marker {
-            text: "#",
-            class: SyntaxClass::Comment,
-        }],
+        line_markers: &[Marker::anywhere("#", SyntaxClass::Comment)],
         delimited: &[
             Pair::escaped_spanning("\"\"\"", "\"\"\"", SyntaxClass::String),
             Pair::escaped("\"", SyntaxClass::String),
@@ -644,6 +753,8 @@ mod tests {
         upper_case: Some(SyntaxClass::Constant),
         capitalized: Some(SyntaxClass::Type),
         other_words: Some(SyntaxClass::Variable),
+        word_suffixes: b"",
+        word_case: WordCase::Sensitive,
     };
 
     #[test]
@@ -857,6 +968,89 @@ mod tests {
                 ("??", SyntaxClass::Operator),
                 ("`none`", SyntaxClass::String),
                 ("// x", SyntaxClass::Comment),
+            ]
+        );
+    }
+
+    /// A spec exercising the rules few languages need: line-start markers, nesting
+    /// regions, word suffixes, and case-insensitive words.
+    static FORMS: Spec = Spec {
+        line_markers: &[Marker::at_line_start("#", SyntaxClass::Comment)],
+        delimited: &[Pair::nesting("{-", "-}", SyntaxClass::Comment)],
+        word_bytes: WordBytes::with(b""),
+        words: &[(&["select", "where"], SyntaxClass::Keyword)],
+        before: &[],
+        after: &[],
+        upper_case: None,
+        capitalized: None,
+        other_words: Some(SyntaxClass::Variable),
+        word_suffixes: b"?!",
+        word_case: WordCase::Insensitive,
+    };
+
+    #[test]
+    fn a_line_start_marker_counts_only_at_the_start_of_a_line() {
+        assert_eq!(
+            ground(&FORMS, "  # note"),
+            [("# note", SyntaxClass::Comment)]
+        );
+        assert_eq!(
+            ground(&FORMS, "x # y"),
+            [("x", SyntaxClass::Variable), ("y", SyntaxClass::Variable)]
+        );
+    }
+
+    #[test]
+    fn a_nesting_region_closes_only_at_its_own_depth() {
+        assert_eq!(
+            ground(&FORMS, "{- a {- b -} c -} d"),
+            [
+                ("{- a {- b -} c -}", SyntaxClass::Comment),
+                ("d", SyntaxClass::Variable)
+            ]
+        );
+
+        let (first, deep) = scanned(&FORMS, ScanState::default(), "x {- a {-");
+        let (second, shallow) = scanned(&FORMS, deep, "-} b");
+        let (third, after) = scanned(&FORMS, shallow, "-} c");
+
+        assert_eq!(
+            first,
+            [
+                ("x", SyntaxClass::Variable),
+                ("{- a {-", SyntaxClass::Comment)
+            ]
+        );
+        assert_eq!(second, [("-} b", SyntaxClass::Comment)]);
+        assert_eq!(
+            third,
+            [("-}", SyntaxClass::Comment), ("c", SyntaxClass::Variable)]
+        );
+        assert_eq!(after, ScanState::default());
+    }
+
+    #[test]
+    fn a_word_takes_a_suffix_byte_unless_an_operator_follows() {
+        assert_eq!(
+            ground(&FORMS, "empty? save! a != b"),
+            [
+                ("empty?", SyntaxClass::Variable),
+                ("save!", SyntaxClass::Variable),
+                ("a", SyntaxClass::Variable),
+                ("!=", SyntaxClass::Operator),
+                ("b", SyntaxClass::Variable),
+            ]
+        );
+    }
+
+    #[test]
+    fn case_insensitive_words_match_in_any_case() {
+        assert_eq!(
+            ground(&FORMS, "SELECT x Where"),
+            [
+                ("SELECT", SyntaxClass::Keyword),
+                ("x", SyntaxClass::Variable),
+                ("Where", SyntaxClass::Keyword),
             ]
         );
     }

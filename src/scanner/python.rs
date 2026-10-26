@@ -1,13 +1,10 @@
 //! Python's lexical pieces.
 
-use super::{Marker, Pair, Spec, WordBytes};
+use super::{Marker, Pair, Spec, WordBytes, WordCase};
 use crate::syntax::SyntaxClass;
 
 pub static PYTHON: Spec = Spec {
-    line_markers: &[Marker {
-        text: "#",
-        class: SyntaxClass::Comment,
-    }],
+    line_markers: &[Marker::anywhere("#", SyntaxClass::Comment)],
     delimited: &[
         Pair::escaped_spanning("\"\"\"", "\"\"\"", SyntaxClass::String),
         Pair::escaped_spanning("'''", "'''", SyntaxClass::String),
@@ -37,4 +34,6 @@ pub static PYTHON: Spec = Spec {
     upper_case: Some(SyntaxClass::Constant),
     capitalized: None,
     other_words: Some(SyntaxClass::Variable),
+    word_suffixes: b"",
+    word_case: WordCase::Sensitive,
 };

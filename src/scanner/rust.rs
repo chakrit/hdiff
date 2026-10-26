@@ -1,15 +1,12 @@
 //! Rust's lexical pieces.
 
-use super::{Marker, Pair, Spec, WordBytes};
+use super::{Marker, Pair, Spec, WordBytes, WordCase};
 use crate::syntax::SyntaxClass;
 
 pub static RUST: Spec = Spec {
-    line_markers: &[Marker {
-        text: "//",
-        class: SyntaxClass::Comment,
-    }],
+    line_markers: &[Marker::anywhere("//", SyntaxClass::Comment)],
     delimited: &[
-        Pair::spanning("/*", "*/", SyntaxClass::Comment),
+        Pair::nesting("/*", "*/", SyntaxClass::Comment),
         Pair::escaped_spanning("\"", "\"", SyntaxClass::String),
         Pair::spanning("r\"", "\"", SyntaxClass::String),
         Pair::spanning("r#\"", "\"#", SyntaxClass::String),
@@ -46,4 +43,6 @@ pub static RUST: Spec = Spec {
     upper_case: Some(SyntaxClass::Constant),
     capitalized: Some(SyntaxClass::Type),
     other_words: None,
+    word_suffixes: b"",
+    word_case: WordCase::Sensitive,
 };
