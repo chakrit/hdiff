@@ -1,7 +1,7 @@
 //! The parsed document: file diffs in input order with their surrounding text. Rules:
 //! docs/spec/architecture.md#core-model.
 
-use std::{iter, marker::PhantomData};
+use std::iter;
 
 use crate::{
     compact::Count,
@@ -100,23 +100,6 @@ pub struct DiffFile {
     pub body: FileBody,
 }
 
-impl DiffFile {
-    /// The values `entries` gives each of the file's records, gathered hunk by hunk: a
-    /// record no entry names maps to no values, and a metadata-only file maps no records.
-    ///
-    /// Each call of `entries` receives one hunk's [`HunkRecords`] under a fresh brand, so
-    /// the positions it returns can only name records of that hunk.
-    pub fn record_map<E>(
-        &self,
-        entries: impl for<'h> FnMut(&BySide<FileHeader>, HunkRecords<'_, 'h>) -> Vec<RecordEntry<'h, E>>,
-    ) -> RecordMap<Vec<E>> {
-        match &self.body {
-            FileBody::Metadata(_) => RecordMap::empty(),
-            FileBody::Unified(body) => body.record_map(entries),
-        }
-    }
-}
-
 /// What a file section holds after its identity.
 #[derive(Debug, PartialEq, Eq)]
 pub enum FileBody {
@@ -188,33 +171,6 @@ impl UnifiedBody {
             .enumerate()
             .map(|(index, hunk)| AddressedHunk { index, hunk })
     }
-
-    /// The values `entries` gives each record of each hunk; see [`DiffFile::record_map`].
-    fn record_map<E>(
-        &self,
-        mut entries: impl for<'h> FnMut(
-            &BySide<FileHeader>,
-            HunkRecords<'_, 'h>,
-        ) -> Vec<RecordEntry<'h, E>>,
-    ) -> RecordMap<Vec<E>> {
-        let hunks = self
-            .hunks
-            .iter()
-            .map(|hunk| {
-                hunk.with_records(|records| {
-                    let mut values = iter::repeat_with(Vec::new)
-                        .take(hunk.records.len())
-                        .collect::<Box<[_]>>();
-                    for RecordEntry { position, value } in entries(&self.headers, records) {
-                        values[position.index].push(value);
-                    }
-                    values
-                })
-            })
-            .collect();
-
-        RecordMap { hunks }
-    }
 }
 
 /// An `@@` header line and the records it declares.
@@ -225,12 +181,6 @@ pub struct Hunk {
 }
 
 impl Hunk {
-    /// `visit` applied to the hunk's records under a fresh brand, so the positions it
-    /// sees can only name records of this hunk and cannot leave the call.
-    pub fn with_records<T>(&self, visit: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
-        visit(HunkRecords::of(self))
-    }
-
     /// The sides of the file the no-newline markers among the hunk's records end.
     pub fn ended_sides(&self) -> BySide<bool> {
         self.records
@@ -271,58 +221,6 @@ pub struct AddressedRecord<'a> {
     pub address: RecordAddress,
     pub record: &'a Record,
 }
-
-/// One hunk's records under the brand `'h` of a single [`Hunk::with_records`] call.
-#[derive(Clone, Copy)]
-pub struct HunkRecords<'a, 'h> {
-    hunk: &'a Hunk,
-    brand: Brand<'h>,
-}
-
-impl<'a, 'h> HunkRecords<'a, 'h> {
-    /// The records of `hunk` under a fresh brand `'h`, which no other call shares.
-    fn of(hunk: &'a Hunk) -> Self {
-        Self {
-            hunk,
-            brand: Brand(PhantomData),
-        }
-    }
-
-    /// The hunk's records, each at its branded position among them.
-    pub fn positioned(self) -> impl Iterator<Item = RecordEntry<'h, &'a Record>> {
-        self.hunk
-            .records
-            .iter()
-            .enumerate()
-            .map(move |(index, value)| RecordEntry {
-                position: RecordPosition {
-                    index,
-                    brand: self.brand,
-                },
-                value,
-            })
-    }
-}
-
-/// A record's position among the records of the hunk whose [`HunkRecords`] carries the
-/// brand `'h`; positions from another hunk carry another brand and do not type-check.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct RecordPosition<'h> {
-    index: usize,
-    brand: Brand<'h>,
-}
-
-/// A value at a record's `position`: the record itself, as [`HunkRecords::positioned`]
-/// yields it, or a value [`DiffFile::record_map`] gathers for it.
-pub struct RecordEntry<'h, E> {
-    pub position: RecordPosition<'h>,
-    pub value: E,
-}
-
-/// An invariant lifetime marker: `'h` can neither grow nor shrink, so two brands unify
-/// only when they are the same brand.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Brand<'h>(PhantomData<fn(&'h ()) -> &'h ()>);
 
 /// One hunk record: its kind, the line after its marker, and the no-newline marker after
 /// it when the record's line ends its file without a line ending. A marker belongs to
@@ -440,27 +338,5 @@ impl RecordAddress {
     /// different hunks have no distance.
     pub fn records_from(self, other: Self) -> Option<Count> {
         (self.hunk == other.hunk).then(|| self.record.abs_diff(other.record))
-    }
-}
-
-/// One value for each record of a file, looked up by [`RecordAddress`]. Only
-/// [`DiffFile::record_map`] builds a map with records, so a map always matches its file.
-pub struct RecordMap<T> {
-    hunks: Box<[Box<[T]>]>,
-}
-
-impl<T> RecordMap<T> {
-    /// The map of a page without records, such as surrounding text.
-    pub fn empty() -> Self {
-        Self {
-            hunks: Box::new([]),
-        }
-    }
-
-    /// The value of the record at `address`.
-    ///
-    /// Panics when `address` names no record of the map's file.
-    pub fn get(&self, address: RecordAddress) -> &T {
-        &self.hunks[address.hunk.get()][address.record.get()]
     }
 }
