@@ -1,5 +1,8 @@
 use std::{
     io::{self, IsTerminal},
+    iter,
+    sync::mpsc::{Receiver, Sender},
+    thread,
     time::Duration,
 };
 
@@ -8,6 +11,7 @@ use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
     file_tree::Arrival,
+    loading::{Loaded, Message},
     navigation::{Navigation, Step},
     preferences::ViewPreferences,
     prepared::{FilePage, PreparedDocument},
@@ -71,26 +75,57 @@ impl Tui {
         self.navigation.interaction().preferences()
     }
 
-    /// Draws the first frame, then steps through `events` until one exits or they end.
+    /// Draws the first frame, then answers `messages` until an event exits or every
+    /// sender is gone. Each batch of waiting messages is answered in order and drawn
+    /// once. Rules: docs/spec/performance.md#preparation-boundary.
     pub fn run<B: Backend<Error = io::Error>>(
         &mut self,
         terminal: &mut Terminal<B>,
-        events: impl Iterator<Item = io::Result<TerminalEvent>>,
-    ) -> io::Result<()> {
+        messages: &Receiver<Message>,
+    ) -> io::Result<SessionEnd> {
+        let mut input_failure = None;
         self.draw(terminal)?;
 
-        for event in events {
-            if self.step(terminal, event?)? == Step::Exit {
-                break;
+        while let Ok(first) = messages.recv() {
+            for message in iter::once(first).chain(messages.try_iter()) {
+                match message {
+                    Message::Terminal(event) => {
+                        if self.respond(terminal, event?)? == Step::Exit {
+                            return Ok(SessionEnd::of(input_failure));
+                        }
+                    }
+                    Message::Loaded(Loaded::Files { pages, arrival }) => self.load(pages, arrival),
+                    Message::Loaded(Loaded::Failed(error)) => {
+                        self.load(Vec::new(), Arrival::Ended);
+                        input_failure = Some(error);
+                    }
+                    Message::Loaded(Loaded::NoFiles(_)) => self.load(Vec::new(), Arrival::Ended),
+                }
             }
+            self.draw(terminal)?;
         }
 
-        Ok(())
+        Ok(SessionEnd::of(input_failure))
     }
 
     /// Answers one terminal event at the terminal's current size, drawing the result
     /// unless it exits; an event no binding names changes nothing.
     pub fn step<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        event: TerminalEvent,
+    ) -> Result<Step, B::Error> {
+        let step = self.respond(terminal, event)?;
+        match step {
+            Step::Exit => {}
+            Step::Continue => self.draw(terminal)?,
+        }
+        Ok(step)
+    }
+
+    /// Answers one terminal event at the terminal's current size without drawing; an
+    /// event no binding names changes nothing.
+    fn respond<B: Backend>(
         &mut self,
         terminal: &mut Terminal<B>,
         event: TerminalEvent,
@@ -101,13 +136,7 @@ impl Tui {
         let screen = autoresize_to_frame_size(terminal)?;
         self.navigation.adopt_screen(screen);
 
-        match self.navigation.respond(session_event) {
-            Step::Exit => Ok(Step::Exit),
-            Step::Continue => {
-                self.draw(terminal)?;
-                Ok(Step::Continue)
-            }
-        }
+        Ok(self.navigation.respond(session_event))
     }
 
     /// Draws the interaction, first adopting the size of the frame it draws, so bounds
@@ -125,6 +154,31 @@ impl Tui {
         navigation.drew_file_list(selected_line);
         Ok(())
     }
+}
+
+/// How an interactive session ended: the user left, or the input failed while it ran.
+#[derive(Debug)]
+pub enum SessionEnd {
+    Quit,
+    InputFailed(io::Error),
+}
+
+impl SessionEnd {
+    fn of(input_failure: Option<io::Error>) -> Self {
+        input_failure.map_or(Self::Quit, Self::InputFailed)
+    }
+}
+
+/// Reads terminal events on their own thread and sends them to the main thread, until it
+/// stops receiving.
+pub(crate) fn read_terminal_events(sender: Sender<Message>) {
+    thread::spawn(move || {
+        for event in TtyEvents::default() {
+            if sender.send(Message::Terminal(event)).is_err() {
+                break;
+            }
+        }
+    });
 }
 
 /// Resizes `terminal` to its backend's current size, which may clear the screen, and

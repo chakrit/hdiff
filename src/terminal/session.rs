@@ -15,9 +15,10 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
-use super::{TtyEvents, Tui};
+use super::{SessionEnd, Tui, read_terminal_events};
 use crate::{
     actions::{report_error::ReportError, write_output::OutputContext},
+    loading::Channel,
     non_empty::NonEmpty,
     prepared::PreparedDocument,
     theme::ColorDepth,
@@ -40,14 +41,15 @@ pub fn open_controlling_terminal() -> io::Result<File> {
 pub fn run_interactive(
     controlling_terminal: File,
     document: PreparedDocument,
-) -> Result<(), Error> {
+    channel: Channel,
+) -> Result<SessionEnd, Error> {
     let mut session = TerminalSession::start(controlling_terminal)?;
 
-    let result = run_loop(session.terminal_mut(), document);
+    let result = run_loop(session.terminal_mut(), document, channel);
 
     match (result, session.finish()) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Ok(()), Err(failures)) => Err(Error::Restore(failures)),
+        (Ok(end), Ok(())) => Ok(end),
+        (Ok(_), Err(failures)) => Err(Error::Restore(failures)),
         (Err(error), restored) => Err(Error::Failed {
             stage: SessionStage::Run,
             error,
@@ -56,15 +58,18 @@ pub fn run_interactive(
     }
 }
 
-/// Runs the interactive loop on `terminal` at its size and color depth.
+/// Runs the interactive loop on `terminal` at its size and color depth, reading terminal
+/// events on their own thread into `channel` beside the worker's files.
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<File>>,
     document: PreparedDocument,
-) -> io::Result<()> {
+    Channel { sender, receiver }: Channel,
+) -> io::Result<SessionEnd> {
     let screen = terminal.size()?;
     let color_depth = ColorDepth::of_color_count(crossterm::style::available_color_count());
+    read_terminal_events(sender);
 
-    Tui::start(document, screen, color_depth).run(terminal, TtyEvents::default())
+    Tui::start(document, screen, color_depth).run(terminal, &receiver)
 }
 
 /// Why an interactive session failed, with every terminal restore step that failed too.

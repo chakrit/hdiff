@@ -18,6 +18,7 @@ pub mod geometry;
 pub mod headers;
 pub mod input;
 pub mod line_breaks;
+pub mod loading;
 pub mod malformed;
 pub mod measurement;
 pub mod navigation;

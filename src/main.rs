@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use std::{env, fmt, io, process::ExitCode};
+use std::{env, fmt, fs::File, io, process::ExitCode};
 
 use hdiff::{
     actions::{
@@ -12,13 +12,15 @@ use hdiff::{
     },
     bench::{self, Driver},
     cli::{self, Invocation},
-    document::DiffDocument,
     exit_status::DiffStatus,
+    file_tree::Arrival,
     finite_output,
-    input::{self, StdinState},
+    input::{self, Opened, Origin, StdinState},
+    loading::{self, Channel, Loaded, Message},
+    measurement::Unobserved,
     parser,
-    prepared::PreparedDocument,
-    terminal::{self, OutputMode},
+    prepared::{FilePage, PreparedDocument, PreparedFiles, PreparedPage},
+    terminal::{self, OutputMode, SessionEnd},
 };
 
 /// Runs hdiff; a failure is reported on standard error and exits with the trouble
@@ -86,34 +88,82 @@ fn install() -> Result<(), RunError> {
     write_stdout(output.as_bytes())
 }
 
-/// Reads, parses, and draws `source`; empty input shows nothing.
+/// Shows `source` on the controlling terminal as it streams in, or as finite text when
+/// output is not a terminal; empty input shows nothing. Whatever keeps `/dev/tty` from
+/// opening, the output falls back to finite text.
+/// Rules: docs/spec/architecture.md#input-and-terminal-boundary.
 fn view(source: input::Source) -> Result<(), RunError> {
-    let content = source.read().map_err(RunError::Input)?;
-    if content.bytes().is_empty() {
-        return Ok(());
-    }
-
-    let document = content.parse().map_err(RunError::Parse)?;
-    render_document(document)
-}
-
-/// Draws `document`, releasing it once prepared: the prepared document keeps every
-/// line it draws. Whatever keeps `/dev/tty` from opening, the output falls back to
-/// finite text. Rules: docs/spec/architecture.md#input-and-terminal-boundary.
-fn render_document(document: DiffDocument) -> Result<(), RunError> {
     let controlling_terminal = match OutputMode::of_stdout() {
         OutputMode::Finite => None,
         OutputMode::Interactive => terminal::open_controlling_terminal().ok(),
     };
 
     match controlling_terminal {
-        None => write_stdout(&finite_output::of_document(&document)),
-        Some(controlling_terminal) => {
-            let prepared = PreparedDocument::prepare(&document);
-            drop(document);
-            terminal::run_interactive(controlling_terminal, prepared).map_err(RunError::Terminal)
+        None => write_finite(source),
+        Some(controlling_terminal) => stream(source, controlling_terminal),
+    }
+}
+
+/// Reads and parses all of `source`, then writes it as finite text.
+fn write_finite(source: input::Source) -> Result<(), RunError> {
+    let content = source.read().map_err(RunError::Input)?;
+    if content.bytes().is_empty() {
+        return Ok(());
+    }
+
+    let document = content.parse().map_err(RunError::Parse)?;
+    write_stdout(&finite_output::of_document(&document))
+}
+
+/// Reads `source` on a worker thread and opens the screen once its first file has
+/// arrived; input that ends without a file never opens it. Rules:
+/// docs/spec/performance.md#preparation-boundary.
+fn stream(source: input::Source, controlling_terminal: File) -> Result<(), RunError> {
+    let Opened { input, origin } = source.open().map_err(RunError::Input)?;
+    let channel = loading::start(input);
+
+    let document = match first_loaded(&channel) {
+        Loaded::Files { pages, arrival } => opening_files(pages, arrival),
+        Loaded::NoFiles(text) if text.is_empty() => return Ok(()),
+        Loaded::NoFiles(text) => match origin {
+            Origin::Stdin | Origin::PatchFile(_) => return Err(RunError::Parse(parser::NoDiff)),
+            Origin::Comparison => {
+                PreparedDocument::Text(PreparedPage::of_text(&text, &mut Unobserved))
+            }
+        },
+        Loaded::Failed(error) => return Err(RunError::Input(origin.read_failure(error))),
+    };
+
+    match terminal::run_interactive(controlling_terminal, document, channel)
+        .map_err(RunError::Terminal)?
+    {
+        SessionEnd::Quit => Ok(()),
+        SessionEnd::InputFailed(error) => Err(RunError::Input(origin.read_failure(error))),
+    }
+}
+
+/// What the worker read first; before the screen opens, only the worker sends.
+fn first_loaded(channel: &Channel) -> Loaded {
+    loop {
+        match channel.receiver.recv() {
+            Ok(Message::Loaded(loaded)) => return loaded,
+            Ok(Message::Terminal(_)) => {}
+            Err(_) => unreachable!("the channel holds a sender until the session ends"),
         }
     }
+}
+
+/// The document the first arrived `pages` open, with more files coming unless
+/// `arrival` says the input has ended.
+fn opening_files(pages: Vec<FilePage>, arrival: Arrival) -> PreparedDocument {
+    let mut arrived = pages.into_iter();
+    let first = arrived
+        .next()
+        .expect("the worker sends files with at least one page");
+    let mut files = PreparedFiles::loading(first);
+    files.extend(arrived, arrival);
+
+    PreparedDocument::Files(files)
 }
 
 /// Writes `bytes` to standard output.

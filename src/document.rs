@@ -84,7 +84,7 @@ impl DiffFiles {
 
 impl FileSection {
     /// The section's file with its leading text and `trailing` text.
-    fn view<'a>(&'a self, trailing: &'a [SourceLine]) -> FileView<'a> {
+    pub(crate) fn view<'a>(&'a self, trailing: &'a [SourceLine]) -> FileView<'a> {
         FileView {
             file: &self.file,
             leading: &self.leading,

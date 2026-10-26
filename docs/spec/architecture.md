@@ -93,20 +93,23 @@ path.
 document; it owns neither the terminal nor the input source.
 
 ```text
-Tui::start(document, screen, color depth)  starts at the first page
-tui.run(&mut terminal, events)             draws, then steps each event until Exit
+Tui::start(document, screen, color depth)  starts at the first listed page
+tui.run(&mut terminal, &messages)          draws, then answers each batch of messages and
+                                           draws once, until Exit
 tui.step(&mut terminal, event)             event -> Event -> Exit | Redraw | Effect -> draw
+tui.load(pages, arrival)                   lists arrived files; the next draw shows them
 ```
 
-Output is Ratatui's `Terminal<B: Backend>`. Input is any
-`Iterator<Item = io::Result<crossterm::event::Event>>`.
+Output is Ratatui's `Terminal<B: Backend>`. The interactive run's input is one
+standard-library channel of `loading::Message`: terminal events from the key-reader
+thread, and prepared files from the worker thread.
 
-| Caller          | Terminal                                         | Events                         | Drives       |
-|-----------------|--------------------------------------------------|--------------------------------|--------------|
-| interactive run | `CrosstermBackend<File>` on `/dev/tty`, through  | `TtyEvents` (coalesces resize) | `tui.run`    |
-|                 | `TerminalSession`                                |                                |              |
-| live tests      | `TestBackend`                                    | one key per call               | `tui.step`   |
-| `movement`      | `CrosstermBackend<io::Sink>`                     | fixed key sequence             | timed `step` |
+| Caller          | Terminal                                         | Events                          | Drives       |
+|-----------------|--------------------------------------------------|---------------------------------|--------------|
+| interactive run | `CrosstermBackend<File>` on `/dev/tty`, through  | the channel; the key reader     | `tui.run`    |
+|                 | `TerminalSession`                                | coalesces resizes               |              |
+| live tests      | `TestBackend`                                    | one key per call                | `tui.step`   |
+| `movement`      | `CrosstermBackend<io::Sink>`                     | fixed key sequence              | timed `step` |
 
 `TerminalSession` restores the terminal as the
 [input and terminal boundary](#input-and-terminal-boundary) describes.

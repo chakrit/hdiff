@@ -3,7 +3,7 @@
 use std::{
     fmt,
     fs::{self, File},
-    io::{self, Read},
+    io::{self, BufRead, BufReader, Read},
     os::{fd::AsFd, unix::fs::FileTypeExt},
     path::PathBuf,
 };
@@ -50,6 +50,58 @@ impl Source {
             .run(&mut CompareFilesContext)
             .map(Content::Comparison)
             .map_err(Error::Comparison),
+        }
+    }
+
+    /// The source opened to be read as its bytes arrive, running `diff` to its end for
+    /// a comparison.
+    pub fn open(self) -> Result<Opened, Error> {
+        match self {
+            Self::Stdin => Ok(Opened {
+                input: Box::new(BufReader::new(io::stdin())),
+                origin: Origin::Stdin,
+            }),
+            Self::PatchFile(path) => match File::open(&path) {
+                Ok(file) => Ok(Opened {
+                    input: Box::new(BufReader::new(file)),
+                    origin: Origin::PatchFile(path),
+                }),
+                Err(source) => Err(Error::PatchFile { path, source }),
+            },
+            Self::Comparison(comparison) => CompareFiles {
+                comparison: &comparison,
+            }
+            .run(&mut CompareFilesContext)
+            .map(|output| Opened {
+                input: Box::new(io::Cursor::new(output)),
+                origin: Origin::Comparison,
+            })
+            .map_err(Error::Comparison),
+        }
+    }
+}
+
+/// A source opened to be read as its bytes arrive, with where they come from.
+pub struct Opened {
+    pub input: Box<dyn BufRead + Send>,
+    pub origin: Origin,
+}
+
+/// Where opened input comes from, which decides whether it must hold a diff and how a
+/// read failure is named.
+pub enum Origin {
+    Stdin,
+    PatchFile(PathBuf),
+    /// `diff` output, which may hold only surrounding text.
+    Comparison,
+}
+
+impl Origin {
+    /// The input error a failed read of this origin reports.
+    pub fn read_failure(self, source: io::Error) -> Error {
+        match self {
+            Self::Stdin | Self::Comparison => Error::Stdin(source),
+            Self::PatchFile(path) => Error::PatchFile { path, source },
         }
     }
 }
