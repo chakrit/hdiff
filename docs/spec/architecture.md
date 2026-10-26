@@ -512,9 +512,11 @@ separator tone.
 Rust is the implementation language. `ratatui` owns layout and rendering; CROSSTERM 0.29
 with `use-dev-tty` owns terminal I/O, events, resize, raw mode, alternate-screen handling,
 and lifecycle operations. The backend must support event reads from an explicit
-controlling-terminal handle when stdin contains diff data. Syntax highlighting is assigned
-to Tree-sitter through an hdiff-owned boundary; the parser set and performance rationale
-are recorded in `docs/vendor/syntax-highlighting.md`. Syntax highlighting projects each
+controlling-terminal handle when stdin contains diff data. Syntax highlighting goes
+through an hdiff-owned boundary with two modes: mainstream languages use hdiff's own
+hand-rolled lexer/parser, built for the fastest diff display; other languages call into
+Tree-sitter. The Tree-sitter parser set and performance rationale are recorded in
+`docs/vendor/syntax-highlighting.md`. Syntax highlighting projects each
 hunk's old and new records into separate bounded virtual source buffers, maps returned
 spans back to sanitized record payloads, and leaves unsupported languages as plain text.
 Every bundled grammar and its highlight query load; the bundled-grammar test checks each

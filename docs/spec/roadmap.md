@@ -140,6 +140,10 @@ implementation remains unapproved.
 2. Performance pass covering movement and preparation, under the
    [performance contract](performance.md).
 
+   - [ ] Hand-rolled highlighting for mainstream languages, per
+     [technology direction](architecture.md#technology-direction); other languages keep
+     Tree-sitter.
+
 3. Add implicit Tree-sitter semantic strategies with textual fallback.
 
    Human check: open supported and unsupported source files in the same diff. Supported
