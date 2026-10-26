@@ -6,7 +6,11 @@
 mod binary_patch;
 mod hunk;
 
-use std::{fmt, iter, mem};
+use std::{
+    fmt,
+    io::{self, BufRead},
+    iter, mem,
+};
 
 use self::{
     binary_patch::{is_binary_patch_header, parse_binary_patch},
@@ -53,31 +57,65 @@ pub fn parse_patch(input: &[u8]) -> Result<DiffDocument, NoDiff> {
 /// Parses `diff` output into its surrounding text and file sections. It may hold only
 /// surrounding text, such as `Binary files … differ`.
 pub fn parse_comparison(input: &[u8]) -> DiffDocument {
-    let mut lines = SourceLines::new(input);
-    let mut sections = Vec::new();
-    let mut text = Vec::new();
+    let mut bytes = input;
+    let mut reader = SectionReader::new(&mut bytes);
+    let sections = iter::from_fn(|| reader.next_section()).collect();
+    let trailing = reader.finish().expect("reading a byte slice never fails");
 
-    while let Some(line) = lines.next() {
-        let parsed = match line_start(line.sanitized()) {
-            Ok(LineStart::Text) => {
-                text.push(line);
-                continue;
-            }
-            Ok(LineStart::GitHeader) => parse_git_section(line, &mut lines),
-            Ok(LineStart::OldFileHeader(path)) => {
-                parse_unified(None, FileHeader { line, path }, &mut lines)
-            }
-            Err(reason) => Err(Box::new(Broken {
-                read: ReadPart::default(),
-                failure: lines.last_line_failure(reason),
-                failing: Some(line),
-            })),
-        };
-        let file = parsed.unwrap_or_else(|broken| broken.into_file(&mut lines));
-        sections.push(section_after(&mut text, file));
+    DiffDocument::new(sections, trailing)
+}
+
+/// A diff read from its input one file section at a time, as its lines arrive.
+pub struct SectionReader<'a> {
+    lines: SourceLines<'a>,
+    /// Surrounding text read since the last section.
+    text: Vec<SourceLine>,
+}
+
+impl<'a> SectionReader<'a> {
+    pub fn new(input: &'a mut dyn BufRead) -> Self {
+        Self {
+            lines: SourceLines::new(input),
+            text: Vec::new(),
+        }
     }
 
-    DiffDocument::new(sections, text.into_boxed_slice())
+    /// The next file section with the surrounding text before it; none once the input
+    /// ends. A section that breaks the format is kept as a broken file, and reading
+    /// resumes at the next file header.
+    pub(crate) fn next_section(&mut self) -> Option<FileSection> {
+        let lines = &mut self.lines;
+        while let Some(line) = lines.next() {
+            let parsed = match line_start(line.sanitized()) {
+                Ok(LineStart::Text) => {
+                    self.text.push(line);
+                    continue;
+                }
+                Ok(LineStart::GitHeader) => parse_git_section(line, lines),
+                Ok(LineStart::OldFileHeader(path)) => {
+                    parse_unified(None, FileHeader { line, path }, lines)
+                }
+                Err(reason) => Err(Box::new(Broken {
+                    read: ReadPart::default(),
+                    failure: lines.last_line_failure(reason),
+                    failing: Some(line),
+                })),
+            };
+            let file = parsed.unwrap_or_else(|broken| broken.into_file(lines));
+            return Some(section_after(&mut self.text, file));
+        }
+
+        None
+    }
+
+    /// The surrounding text after the last section, or the read error that ended the
+    /// input.
+    pub fn finish(self) -> io::Result<Box<[SourceLine]>> {
+        match self.lines.error {
+            Some(error) => Err(error),
+            None => Ok(self.text.into_boxed_slice()),
+        }
+    }
 }
 
 /// `file` with the surrounding text gathered before it, which leaves `text` empty for the
@@ -331,36 +369,62 @@ fn header_number(field: &str) -> Option<usize> {
 
 // Reading lines
 
-/// The input's lines, each decoded once when first read.
+/// The input's lines, each decoded once when first read, as they arrive. A read error
+/// ends the input and is kept for [`SectionReader::finish`].
 struct SourceLines<'a> {
-    rest: &'a [u8],
+    input: &'a mut dyn BufRead,
     peeked: Option<SourceLine>,
     taken: usize,
+    /// A line's bytes when a read splits it across the input's buffer.
+    partial: Vec<u8>,
+    error: Option<io::Error>,
 }
 
 impl<'a> SourceLines<'a> {
-    fn new(input: &'a [u8]) -> Self {
+    fn new(input: &'a mut dyn BufRead) -> Self {
         Self {
-            rest: input,
+            input,
             peeked: None,
             taken: 0,
+            partial: Vec::new(),
+            error: None,
         }
     }
 
     /// The next line without taking it, decoded the first time it is read.
     fn peek(&mut self) -> Option<&SourceLine> {
-        if self.peeked.is_none() && !self.rest.is_empty() {
-            let end = self
-                .rest
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map_or(self.rest.len(), |line_feed| line_feed + 1);
-            let (line, rest) = self.rest.split_at(end);
-            self.rest = rest;
-            self.peeked = Some(SourceLine::decode(line));
+        if self.peeked.is_none() && self.error.is_none() {
+            match self.read_line() {
+                Ok(line) => self.peeked = line,
+                Err(error) => self.error = Some(error),
+            }
         }
 
         self.peeked.as_ref()
+    }
+
+    /// Reads the next line from the input: decoded straight from the input's buffer when
+    /// the whole line is there, and gathered across reads otherwise. None at the end.
+    fn read_line(&mut self) -> io::Result<Option<SourceLine>> {
+        let buffered = loop {
+            match self.input.fill_buf() {
+                Ok(buffered) => break buffered,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        };
+        if buffered.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(line_feed) = buffered.iter().position(|byte| *byte == b'\n') {
+            let line = SourceLine::decode(&buffered[..=line_feed]);
+            self.input.consume(line_feed + 1);
+            return Ok(Some(line));
+        }
+        self.partial.clear();
+        self.input.read_until(b'\n', &mut self.partial)?;
+        Ok(Some(SourceLine::decode(&self.partial)))
     }
 
     /// Takes the next line, counting it so failures can name the line they are at.
@@ -425,9 +489,14 @@ fn failures(parsed: Result<DiffDocument, NoDiff>) -> Vec<(usize, Malformed)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NoDiff, failures, parse_comparison, parse_patch};
+    use std::{
+        io::{self, BufReader, Read},
+        iter,
+    };
+
+    use super::{NoDiff, SectionReader, failures, parse_comparison, parse_patch};
     use crate::{
-        document::{BrokenBody, DiffDocument, DiffFile, FileBody, UnifiedBody},
+        document::{BrokenBody, DiffDocument, DiffFile, FileBody, FileSection, UnifiedBody},
         file_identity::FileIdentity,
         finite_output,
         malformed::Malformed,
@@ -466,6 +535,61 @@ mod tests {
             .iter()
             .map(|body| body.hunks.first().records.len())
             .collect()
+    }
+
+    /// Input that arrives a few bytes per read, then fails when `fails` is set.
+    struct Trickle<'a> {
+        input: &'a [u8],
+        fails: bool,
+    }
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.input.is_empty() && self.fails {
+                return Err(io::Error::other("the producer went away"));
+            }
+
+            let count = buffer.len().min(self.input.len()).min(3);
+            buffer[..count].copy_from_slice(&self.input[..count]);
+            self.input = &self.input[count..];
+            Ok(count)
+        }
+    }
+
+    /// The sections `input` yields when it arrives a few bytes per read, and how reading
+    /// it ended.
+    fn trickled(input: &[u8], fails: bool) -> (Vec<FileSection>, io::Result<Box<[SourceLine]>>) {
+        let mut buffered = BufReader::with_capacity(4, Trickle { input, fails });
+        let mut reader = SectionReader::new(&mut buffered);
+        let sections = iter::from_fn(|| reader.next_section()).collect();
+
+        (sections, reader.finish())
+    }
+
+    const STREAMED: &[u8] = b"intro\n--- a/one\n+++ b/one\n@@ -1 +1 @@\n-a\n+b\n--- a/two\n+++ b/two\n@@ -1,2 +1,2 @@\n-c\nbroken\n--- a/three\n+++ b/three\n@@ -1 +1 @@\n-d\n+e\ntrailer";
+
+    /// docs/spec/performance.md#preparation-boundary: input is parsed as it streams in, so
+    /// lines split across reads read as the whole input does.
+    #[test]
+    fn reads_input_that_arrives_in_pieces_as_the_whole_input() {
+        let (sections, trailing) = trickled(STREAMED, false);
+        let streamed = DiffDocument::new(sections, trailing.expect("the input reads"));
+
+        assert_eq!(streamed, parse_comparison(STREAMED));
+        assert_eq!(streamed.files().count(), 3);
+    }
+
+    /// docs/spec/architecture.md#lossless-and-safe-rendering: a read error after partial
+    /// input keeps the sections read before it and is reported.
+    #[test]
+    fn keeps_the_sections_read_before_a_read_error() {
+        let (sections, ended) = trickled(STREAMED, true);
+
+        assert_eq!(sections.len(), 3);
+        assert_eq!(
+            ended.map_err(|error| error.to_string()),
+            Err("the producer went away".to_owned())
+        );
     }
 
     #[test]
