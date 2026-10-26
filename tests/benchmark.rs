@@ -9,7 +9,7 @@ use std::{
 use common::{TestEnv, assert_error, success_output};
 
 /// docs/spec/performance.md#benchmark-drivers: the drivers `--bench` accepts.
-const DRIVERS: [&str; 3] = ["prepare", "stages", "movement"];
+const DRIVERS: [&str; 5] = ["prepare", "stages", "movement", "first-frame", "loading"];
 
 const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
 
@@ -290,4 +290,44 @@ fn operand_comparisons_report_their_records_and_the_size_of_diffs_output() {
     };
     assert_eq!(diagnostic.integer("records"), 2, "{text}");
     assert!(startup.integer("bytes") > 0, "{text}");
+}
+
+/// docs/spec/performance.md#first-frame: the time from launch to the first frame, with
+/// the files the first frame lists.
+#[test]
+fn first_frame_reports_the_time_to_the_first_frame() {
+    let text = success_output(&run_bench("first-frame", PATCH));
+    let records = records_of(&text);
+
+    let [first_frame] = &records[..] else {
+        panic!("one first-frame record: {text}");
+    };
+    assert_eq!(first_frame.kind, "first_frame", "{text}");
+    assert_eq!(first_frame.integer("version"), 1, "{text}");
+    assert_eq!(first_frame.integer("files"), 1, "{text}");
+}
+
+/// docs/spec/performance.md#loading: a summary, then one record per key answered while
+/// files arrived and one per update shown.
+#[test]
+fn loading_reports_each_key_and_update_wait() {
+    let text = success_output(&run_bench("loading", &PATCH.repeat(3)));
+    let records = records_of(&text);
+
+    let [summary, samples @ ..] = &records[..] else {
+        panic!("a loading summary: {text}");
+    };
+    let count = |kind| samples.iter().filter(|record| record.kind == kind).count();
+    assert_eq!(summary.kind, "loading", "{text}");
+    assert_eq!(
+        count("loading_key") as u128,
+        summary.integer("keys"),
+        "{text}"
+    );
+    assert_eq!(
+        count("update_frame") as u128,
+        summary.integer("updates"),
+        "{text}"
+    );
+    assert!(summary.integer("updates") > 0, "{text}");
 }

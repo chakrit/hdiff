@@ -16,7 +16,7 @@ use crate::{
     file_tree::Listing,
     measurement::Unobserved,
     parser::{Progress, SectionReader},
-    prepared::{Arrived, FilePage, PreparedPage},
+    prepared::{Arrived, FilePage, PreparedDocument, PreparedFiles, PreparedPage},
     source_text::SourceLine,
     syntax::DisplayScan,
 };
@@ -55,6 +55,37 @@ pub fn start(input: Box<dyn BufRead + Send>) -> Channel {
     thread::spawn(move || worker.read_files(input));
 
     Channel { sender, receiver }
+}
+
+/// What the input opens with, from the worker's first message.
+pub enum Opening {
+    /// The first file has arrived; more may follow.
+    Files(PreparedDocument),
+    /// The input ended without a file; it held only this text.
+    NoFiles(Box<[SourceLine]>),
+    /// Reading the input failed before any file arrived.
+    Failed(io::Error),
+}
+
+impl Channel {
+    /// What the input opens with; before a session starts, only the worker sends.
+    pub fn opening(&self) -> Opening {
+        let first = self.receiver.iter().find_map(|message| match message {
+            Message::Loaded(loaded) => Some(loaded),
+            Message::Terminal(_) => None,
+        });
+
+        match first.expect("the channel holds a sender while the receiver lives") {
+            Loaded::Arrived(Arrived::Opened(page) | Arrived::Whole(page)) => {
+                Opening::Files(PreparedDocument::Files(PreparedFiles::loading(page)))
+            }
+            Loaded::Arrived(Arrived::Grew(_) | Arrived::Closed { .. } | Arrived::Ended(_)) => {
+                unreachable!("the worker opens a file before it grows, closes or ends one")
+            }
+            Loaded::NoFiles(text) => Opening::NoFiles(text),
+            Loaded::Failed(error) => Opening::Failed(error),
+        }
+    }
 }
 
 /// The worker's side of the channel, and whether the main thread has stopped receiving.

@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use std::{env, fmt, fs::File, io, process::ExitCode};
+use std::{env, fmt, fs::File, io, process::ExitCode, time::Instant};
 
 use hdiff::{
     actions::{
@@ -10,15 +10,15 @@ use hdiff::{
         report_error::ReportError,
         write_output::{OutputContext, WriteOutput},
     },
-    bench::{self, Driver},
+    bench::{self, Driver, StreamedFailure, WholeDriver},
     cli::{self, Invocation},
     exit_status::DiffStatus,
     finite_output,
     input::{self, Opened, Origin, StdinState},
-    loading::{self, Channel, Loaded, Message},
+    loading::{self, Opening},
     measurement::Unobserved,
     parser,
-    prepared::{Arrived, PreparedDocument, PreparedFiles, PreparedPage},
+    prepared::{PreparedDocument, PreparedPage},
     terminal::{self, OutputMode, SessionEnd},
 };
 
@@ -56,20 +56,37 @@ fn run() -> Result<(), RunError> {
     }
 }
 
-/// Reads and parses the input like [`view`], but parses empty input too so the driver
-/// reports zero counts, timing each phase for the driver's report. Rules:
+/// Runs `driver` over `source` and writes its report. Rules:
 /// docs/spec/performance.md#benchmark-drivers.
 fn bench(driver: Driver, source: input::Source) -> Result<(), RunError> {
+    let report = match driver {
+        Driver::Whole(whole) => bench_whole(whole, source)?,
+        Driver::Streamed(streamed) => {
+            streamed
+                .run(Instant::now(), source)
+                .map_err(|failure| match failure {
+                    StreamedFailure::Input(error) => RunError::Input(error),
+                    StreamedFailure::NoDiff => RunError::Parse(parser::NoDiff),
+                    StreamedFailure::Draw(error) => RunError::Bench(error),
+                })?
+        }
+    };
+
+    write_stdout(report.as_bytes())
+}
+
+/// Reads and parses the input like [`view`], but parses empty input too so the driver
+/// reports zero counts, timing each phase for the driver's report, then runs `driver`.
+fn bench_whole(driver: WholeDriver, source: input::Source) -> Result<String, RunError> {
     let input_clock = bench::InputClock::start();
     let content = source.read().map_err(RunError::Input)?;
     let parse_clock = input_clock.input_read(&content);
     let document = content.parse().map_err(RunError::Parse)?;
     let preparation_clock = parse_clock.parsed();
 
-    let report = driver
+    driver
         .run(preparation_clock, &document)
-        .map_err(RunError::Bench)?;
-    write_stdout(report.as_bytes())
+        .map_err(RunError::Bench)
 }
 
 /// Registers this executable as the global Git diff pager and prints the commands it
@@ -121,21 +138,16 @@ fn stream(source: input::Source, controlling_terminal: File) -> Result<(), RunEr
     let Opened { input, origin } = source.open().map_err(RunError::Input)?;
     let channel = loading::start(input);
 
-    let document = match first_loaded(&channel) {
-        Loaded::Arrived(Arrived::Opened(first) | Arrived::Whole(first)) => {
-            PreparedDocument::Files(PreparedFiles::loading(first))
-        }
-        Loaded::Arrived(Arrived::Grew(_) | Arrived::Closed { .. } | Arrived::Ended(_)) => {
-            unreachable!("the worker opens a file before it grows, closes or ends one")
-        }
-        Loaded::NoFiles(text) if text.is_empty() => return Ok(()),
-        Loaded::NoFiles(text) => match origin {
+    let document = match channel.opening() {
+        Opening::Files(document) => document,
+        Opening::NoFiles(text) if text.is_empty() => return Ok(()),
+        Opening::NoFiles(text) => match origin {
             Origin::Stdin | Origin::PatchFile(_) => return Err(RunError::Parse(parser::NoDiff)),
             Origin::Comparison => {
                 PreparedDocument::Text(PreparedPage::of_text(&text, &mut Unobserved))
             }
         },
-        Loaded::Failed(error) => return Err(RunError::Input(origin.read_failure(error))),
+        Opening::Failed(error) => return Err(RunError::Input(origin.read_failure(error))),
     };
 
     match terminal::run_interactive(controlling_terminal, document, channel)
@@ -143,17 +155,6 @@ fn stream(source: input::Source, controlling_terminal: File) -> Result<(), RunEr
     {
         SessionEnd::Quit => Ok(()),
         SessionEnd::InputFailed(error) => Err(RunError::Input(origin.read_failure(error))),
-    }
-}
-
-/// What the worker read first; before the screen opens, only the worker sends.
-fn first_loaded(channel: &Channel) -> Loaded {
-    loop {
-        match channel.receiver.recv() {
-            Ok(Message::Loaded(loaded)) => return loaded,
-            Ok(Message::Terminal(_)) => {}
-            Err(_) => unreachable!("the channel holds a sender until the session ends"),
-        }
     }
 }
 

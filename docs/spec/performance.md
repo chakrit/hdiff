@@ -32,14 +32,18 @@ Unified and side-by-side layout projections reference those buffers.
 
 ## Benchmark drivers
 
-`hdiff --bench <driver>` accepts the normal diff input after the driver name, completes
-the normal preparation pass, runs the named driver, prints machine-readable result lines,
-and exits without opening the terminal. `--profile` does not exist. Zero-byte input still
+`hdiff --bench <driver>` accepts the normal diff input after the driver name, runs the
+named driver, prints machine-readable result lines, and exits without opening the
+terminal. The whole-input drivers `prepare`, `stages` and `movement` complete the normal
+preparation pass first; the streamed drivers `first-frame` and `loading` read the input as
+the viewer does, through the worker thread, and draw to a 120-by-36 terminal writing to
+nowhere. `--profile` does not exist. Zero-byte input still
 emits valid zero-count reports. Reports are written only after successful preparation,
 and input that holds no diff produces no success record.
 
-Drivers are variants of one `bench::Driver` enum behind a single entry point: read, parse,
-prepare, run the driver, report. The drivers are `prepare`, `stages`, and `movement`.
+Drivers are variants of one `bench::Driver` enum, a whole-input or a streamed driver,
+behind a single entry point that runs the driver and reports. The drivers are `prepare`,
+`stages`, `movement`, `first-frame`, and `loading`.
 
 ### `prepare`
 
@@ -97,15 +101,42 @@ Step time covers input mapping, interaction transition, frame rendering, and esc
 encoding into the sink. It excludes terminal event reads, PTY transport, and
 terminal-emulator painting.
 
+### `first-frame`
+
+`first-frame` reports the time from before the input opens until the first frame is
+written, and how many files that frame lists:
+
+```text
+first_frame version=1 ns=N files=N
+```
+
+### `loading`
+
+`loading` opens the viewer on the input while a key thread presses `j` every millisecond
+until the input ends. It reports a summary, then one line per key answered while files
+were still arriving, from the key's send to the frame that answered it, and one line per
+update from the worker, from its arrival on the main thread to the frame that showed it:
+
+```text
+loading version=1 keys=N updates=N
+loading_key wait_ns=N
+update_frame wait_ns=N
+```
+
+An update's wait starts when the main thread takes it from the channel, so time it spent
+queued behind earlier messages is outside it.
+
 ## Targets
 
 Targets are recorded here and reviewed from script output. Tests never assert timing.
 
 | Measurement                                       | Target                          |
 |---------------------------------------------------|---------------------------------|
-| Launch to the first frame written                 | 4 ms, one 240 Hz frame          |
+| Launch to the first frame written (`first-frame`) | 4 ms, one 240 Hz frame          |
 | Key press to redraw while the worker is busy      | 1 ms                            |
+| (`loading` keys)                                  |                                 |
 | A change block's last byte to its frame written   | 4 ms                            |
+| (`loading` updates)                               |                                 |
 | `movement` step, worst case                       | 1 ms                            |
 | Total preparation time                            | no target; a diagnostic only    |
 

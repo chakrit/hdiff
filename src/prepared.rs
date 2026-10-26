@@ -72,7 +72,7 @@ impl PreparedDocument {
     pub fn page_order(&self) -> PageOrder<'_> {
         match self {
             Self::Files(files) => PageOrder {
-                order: &files.listed.order,
+                order: files.listed.order(),
                 arrival: files.arrival,
             },
             Self::Text(_) => PageOrder {
@@ -108,7 +108,7 @@ impl PreparedDocument {
         match self {
             Self::Files(files) => Some(FileSelection {
                 tree: &files.listed.tree,
-                selected: files.listed.rows[page.0],
+                selected: files.listed.row_of(page.0),
                 pinned_line: None,
             }),
             Self::Text(_) => None,
@@ -160,29 +160,37 @@ impl PreparedFiles {
 
     /// The file-list row of the file `page` shows.
     pub fn row_of(&self, page: PageIndex) -> TreeRowIndex {
-        self.listed.rows[page.0]
+        self.listed.row_of(page.0)
     }
 
-    /// Applies `updates` in order and lists the files once after them; returns the page
-    /// of the file whose page grew, if one did.
+    /// Applies `updates` in order, listing each arrived file as it comes; returns the page
+    /// of the file whose page grew, if one did. A file whose whole section lists it
+    /// elsewhere than its headers did, such as one that turned out broken, relists every
+    /// file.
     pub fn receive(&mut self, updates: impl IntoIterator<Item = Arrived>) -> Option<PageIndex> {
         let mut grown = None;
         for update in updates {
             match update {
-                Arrived::Whole(page) | Arrived::Opened(page) => self.pages.push(page),
+                Arrived::Whole(page) | Arrived::Opened(page) => {
+                    self.listed.push(&page.listing);
+                    self.pages.push(page);
+                }
                 Arrived::Grew(part) => grown = Some(self.grow_last(part)),
                 Arrived::Closed { part, listing } => {
                     grown = Some(self.grow_last(part));
-                    self.last_mut().listing = listing;
+                    if self.last_mut().listing != listing {
+                        self.last_mut().listing = listing;
+                        self.listed = list(&self.pages, self.arrival);
+                    }
                 }
                 Arrived::Ended(trailing) => {
                     grown = Some(self.grow_last(trailing));
                     self.arrival = Arrival::Ended;
+                    self.listed.end();
                 }
             }
         }
 
-        self.listed = list(&self.pages, self.arrival);
         grown
     }
 
@@ -214,6 +222,16 @@ pub enum Arrived {
     },
     /// The text after the last file, which ends the input.
     Ended(PreparedPage),
+}
+
+impl Arrived {
+    /// Whether more input follows this update.
+    pub fn arrival(&self) -> Arrival {
+        match self {
+            Self::Ended(_) => Arrival::Ended,
+            Self::Whole(_) | Self::Opened(_) | Self::Grew(_) | Self::Closed { .. } => Arrival::More,
+        }
+    }
 }
 
 /// The file list of `pages`, in input order.

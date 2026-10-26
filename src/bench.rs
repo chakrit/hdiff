@@ -25,24 +25,52 @@ use crate::{
     theme::ColorDepth,
 };
 
-/// What a `--bench` run measures: preparation, preparation by stage, or movement.
+mod streamed;
+
+pub use streamed::Failure as StreamedFailure;
+
+/// What a `--bench` run measures: a driver over the whole input, read and parsed first,
+/// or a driver over the input as it streams in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Driver {
+    Whole(WholeDriver),
+    Streamed(StreamedDriver),
+}
+
+/// A driver over the whole input: preparation, preparation by stage, or movement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WholeDriver {
     Prepare,
     Stages,
     Movement,
 }
 
+/// A driver over the input as it streams in: launch to the first frame, or keys and
+/// updates while the worker loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamedDriver {
+    FirstFrame,
+    Loading,
+}
+
 impl Driver {
     /// Every driver, in the order usage messages list them.
-    pub const ALL: [Self; 3] = [Self::Prepare, Self::Stages, Self::Movement];
+    pub const ALL: [Self; 5] = [
+        Self::Whole(WholeDriver::Prepare),
+        Self::Whole(WholeDriver::Stages),
+        Self::Whole(WholeDriver::Movement),
+        Self::Streamed(StreamedDriver::FirstFrame),
+        Self::Streamed(StreamedDriver::Loading),
+    ];
 
     /// The name `--bench` takes for the driver.
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Prepare => "prepare",
-            Self::Stages => "stages",
-            Self::Movement => "movement",
+            Self::Whole(WholeDriver::Prepare) => "prepare",
+            Self::Whole(WholeDriver::Stages) => "stages",
+            Self::Whole(WholeDriver::Movement) => "movement",
+            Self::Streamed(StreamedDriver::FirstFrame) => "first-frame",
+            Self::Streamed(StreamedDriver::Loading) => "loading",
         }
     }
 
@@ -59,7 +87,9 @@ impl Driver {
 
         format!("{}, or {last}", leading.join(", "))
     }
+}
 
+impl WholeDriver {
     /// Prepares `document`, runs the driver, and returns its report. `clock` has timed
     /// reading and parsing the input the document came from.
     pub fn run(self, clock: PreparationClock, document: &DiffDocument) -> io::Result<String> {
@@ -86,6 +116,17 @@ impl Driver {
                 let Ready { prepared, .. } = clock.prepare(document, &mut Unobserved);
                 movement(prepared)
             }
+        }
+    }
+}
+
+impl StreamedDriver {
+    /// Reads `source` as the viewer does, runs the driver, and returns its report;
+    /// `started` is when the run began, before the input opened.
+    pub fn run(self, started: Instant, source: input::Source) -> Result<String, StreamedFailure> {
+        match self {
+            Self::FirstFrame => streamed::first_frame(started, source),
+            Self::Loading => streamed::loading(source),
         }
     }
 }

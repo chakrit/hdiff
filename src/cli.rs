@@ -178,6 +178,8 @@ fn operand(argument: &OsStr) -> Operand {
 mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
+    use crate::bench::WholeDriver;
+
     use super::{
         BySide, Comparison, Depth, Driver, Error, Invocation, Operand, Source, StdinState,
         select_input, select_invocation,
@@ -248,7 +250,7 @@ mod tests {
         assert_eq!(
             select_invocation_unpiped(&["--bench", "stages"]).expect("bench invocation"),
             Invocation::Bench {
-                driver: Driver::Stages,
+                driver: Driver::Whole(WholeDriver::Stages),
                 source: Source::Stdin,
             }
         );
@@ -257,7 +259,7 @@ mod tests {
             select_invocation_unpiped(&["--bench", "movement", "change.patch"])
                 .expect("bench invocation"),
             Invocation::Bench {
-                driver: Driver::Movement,
+                driver: Driver::Whole(WholeDriver::Movement),
                 source: Source::PatchFile(PathBuf::from("change.patch")),
             }
         );

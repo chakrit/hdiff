@@ -89,7 +89,7 @@ pub struct RowWindow {
 /// The file-list rows of a document with files.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileTree {
-    rows: Box<[TreeRow]>,
+    rows: Vec<TreeRow>,
 }
 
 /// A file list with the row of the file a page shows.
@@ -113,8 +113,13 @@ pub enum Arrival {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ListedTree {
     pub tree: FileTree,
-    pub rows: Box<[TreeRowIndex]>,
-    pub order: Box<[usize]>,
+    rows: Vec<TreeRowIndex>,
+    order: Vec<usize>,
+    /// How many top-level files the list starts with.
+    top_level: usize,
+    /// The directory of the last file listed under a heading, which the next file in that
+    /// directory joins.
+    last_directory: Option<Box<str>>,
 }
 
 impl ListedTree {
@@ -133,12 +138,83 @@ impl ListedTree {
             Arrival::More => tree_rows.rows.push(TreeRow::Parsing),
             Arrival::Ended => {}
         }
+        let top_level = listings
+            .iter()
+            .filter(|listing| listing.is_top_level())
+            .count();
+        let last_directory = tree_rows.directory.map(Box::from);
 
         Self {
             tree: tree_rows.finish(),
-            rows: rows.into_boxed_slice(),
-            order: order.into_boxed_slice(),
+            rows,
+            order,
+            top_level,
+            last_directory,
         }
+    }
+
+    /// Lists `listing`'s file, the next in input order, where a rebuilt list would list
+    /// it: after the top-level files when it is one, and otherwise last, under a new
+    /// heading when its directory differs from the last file's. Rows after an inserted
+    /// row move down.
+    pub fn push(&mut self, listing: &Listing) {
+        let position = self.rows.len();
+
+        let row = if listing.is_top_level() {
+            let row = TreeRowIndex(self.top_level);
+            for later in self.rows.iter_mut().filter(|later| later.0 >= row.0) {
+                later.0 += 1;
+            }
+            self.tree.rows.insert(row.0, TreeRow::of_file(listing));
+            self.order.insert(self.top_level, position);
+            self.top_level += 1;
+            row
+        } else {
+            let parsing = usize::from(matches!(self.tree.rows.last(), Some(TreeRow::Parsing)));
+            let mut end = self.tree.rows.len() - parsing;
+            if listing.directory != self.last_directory {
+                let heading = TreeRow::heading(listing.directory.as_deref().unwrap_or_default());
+                self.tree.rows.insert(end, heading);
+                end += 1;
+                self.last_directory.clone_from(&listing.directory);
+            }
+            self.tree.rows.insert(end, TreeRow::of_file(listing));
+            self.order.push(position);
+            TreeRowIndex(end)
+        };
+        self.rows.push(row);
+    }
+
+    /// Ends the list: no more files are coming, so the `(parsing...)` line goes.
+    pub fn end(&mut self) {
+        if matches!(self.tree.rows.last(), Some(TreeRow::Parsing)) {
+            self.tree.rows.pop();
+        }
+    }
+
+    /// The row of the file at input position `position`.
+    pub fn row_of(&self, position: usize) -> TreeRowIndex {
+        self.rows[position]
+    }
+
+    /// Each file's input position, in list order.
+    pub fn order(&self) -> &[usize] {
+        &self.order
+    }
+}
+
+impl TreeRow {
+    /// The row of `listing`'s file: its state marker and its name.
+    fn of_file(listing: &Listing) -> Self {
+        Self::File {
+            marker: listing.marker,
+            name: listing.name.clone(),
+        }
+    }
+
+    /// The heading of `directory`, with its trailing `/`.
+    fn heading(directory: &str) -> Self {
+        Self::Directory(format!("{directory}/").into())
     }
 }
 
@@ -233,25 +309,19 @@ impl<'a> TreeRows<'a> {
         let directory = listing.directory.as_deref();
         if directory != self.directory {
             if let Some(directory) = directory {
-                let heading = format!("{directory}/");
-                self.rows.push(TreeRow::Directory(heading.into()));
+                self.rows.push(TreeRow::heading(directory));
             }
             self.directory = directory;
         }
 
         let row = TreeRowIndex(self.rows.len());
-        self.rows.push(TreeRow::File {
-            marker: listing.marker,
-            name: listing.name.clone(),
-        });
+        self.rows.push(TreeRow::of_file(listing));
         row
     }
 
     /// The rows listed so far, as the finished file list.
     fn finish(self) -> FileTree {
-        FileTree {
-            rows: self.rows.into_boxed_slice(),
-        }
+        FileTree { rows: self.rows }
     }
 }
 
@@ -307,7 +377,7 @@ mod tests {
         let views = document.file_views().collect::<Vec<FileView<'_>>>();
 
         listing
-            .order
+            .order()
             .iter()
             .map(|&position| {
                 let named = match &views[position].file.identity {
@@ -317,7 +387,7 @@ mod tests {
                         name.as_ref().map_or("", |name| name.as_str()).to_owned()
                     }
                 };
-                let row = listing.rows[position];
+                let row = listing.row_of(position);
                 (named, row_text(&listing.tree.rows()[row.get()]))
             })
             .collect()
@@ -348,6 +418,27 @@ mod tests {
                 selected_offset: 2,
             }
         );
+    }
+
+    /// docs/spec/architecture.md#file-tree: files listed as they arrive are listed as the
+    /// whole input lists them.
+    #[test]
+    fn listing_files_as_they_arrive_lists_them_as_the_whole_input_does() {
+        let input = [
+            "src/b.rs", "z.md", "lib/a.rs", "a.md", "src/c.rs", "src/d.rs",
+        ]
+        .map(modified)
+        .concat();
+        let document = parsed(&input);
+        let listings = document.file_views().map(Listing::of).collect::<Vec<_>>();
+
+        let mut arrived = ListedTree::build(&listings[..1], Arrival::More);
+        for listing in &listings[1..] {
+            arrived.push(listing);
+        }
+        arrived.end();
+
+        assert_eq!(arrived, ListedTree::build(&listings, Arrival::Ended));
     }
 
     /// docs/spec/architecture.md#file-tree: root-level files first.

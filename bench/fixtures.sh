@@ -4,7 +4,7 @@
 set -eu
 
 readonly movement_hunks=1024
-readonly drivers='prepare stages movement'
+readonly drivers='prepare stages movement first-frame loading'
 
 fail() {
     printf '%s\n' "$1" >&2
@@ -47,6 +47,16 @@ preparation_ns() {
     sed -n 's/^preparation duration_ns=\([0-9]*\) .*/\1/p' "$1"
 }
 
+first_frame_ns() {
+    sed -n 's/^first_frame version=1 ns=\([0-9]*\) .*/\1/p' "$1"
+}
+
+# The longest wait among the `loading` records named $2, or none when there are none.
+worst_wait_ns() {
+    worst=$(sed -n "s/^$2 wait_ns=\\([0-9]*\\)$/\\1/p" "$1" | sort -n | tail -n 1)
+    printf '%s' "${worst:-none}"
+}
+
 repo_root=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 run_id=$(date -u '+%Y%m%dT%H%M%SZ')-$(git -C "$repo_root" rev-parse --short HEAD)-$$
 run_root="$repo_root/.ace/bench/fixtures/$run_id"
@@ -66,9 +76,14 @@ for fixture in "$repo_root"/tests/fixtures/*.patch "$run_root/movement-$movement
         "$binary" --bench "$driver" "$fixture" < /dev/null > "$output" ||
             fail "--bench $driver failed on $fixture"
     done
-    printf 'fixture=%s preparation_ns=%s movement_worst_step_ns=%s\n' "$name" \
+    printf 'fixture=%s preparation_ns=%s movement_worst_step_ns=%s first_frame_ns=%s' \
+        "$name" \
         "$(preparation_ns "$run_root/$name.prepare.txt")" \
-        "$(worst_step_ns "$run_root/$name.movement.txt")" >> "$summary"
+        "$(worst_step_ns "$run_root/$name.movement.txt")" \
+        "$(first_frame_ns "$run_root/$name.first-frame.txt")" >> "$summary"
+    printf ' loading_worst_key_ns=%s loading_worst_update_ns=%s\n' \
+        "$(worst_wait_ns "$run_root/$name.loading.txt" loading_key)" \
+        "$(worst_wait_ns "$run_root/$name.loading.txt" update_frame)" >> "$summary"
 done
 
 cat "$summary"

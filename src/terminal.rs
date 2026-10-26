@@ -10,6 +10,7 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
+    file_tree::Arrival,
     loading::{Loaded, Message},
     navigation::{Navigation, Step},
     preferences::ViewPreferences,
@@ -81,8 +82,20 @@ impl Tui {
         terminal: &mut Terminal<B>,
         messages: &Receiver<Message>,
     ) -> io::Result<SessionEnd> {
+        self.run_observed(terminal, messages, &mut Unwatched)
+    }
+
+    /// [`run`](Self::run), telling `observer` of each message it answers and each frame
+    /// it draws, for the measurement drivers.
+    pub fn run_observed<B: Backend<Error = io::Error>>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        messages: &Receiver<Message>,
+        observer: &mut impl RunObserver,
+    ) -> io::Result<SessionEnd> {
         let mut input_failure = None;
         self.draw(terminal)?;
+        observer.drew();
 
         while let Ok(first) = messages.recv() {
             let mut arrived = Vec::new();
@@ -90,11 +103,15 @@ impl Tui {
                 match message {
                     Message::Terminal(event) => {
                         self.load(mem::take(&mut arrived));
+                        observer.answered(Answered::Terminal);
                         if self.respond(terminal, event?)? == Step::Exit {
                             return Ok(SessionEnd::of(input_failure));
                         }
                     }
-                    Message::Loaded(Loaded::Arrived(update)) => arrived.push(update),
+                    Message::Loaded(Loaded::Arrived(update)) => {
+                        observer.answered(Answered::Arrived(update.arrival()));
+                        arrived.push(update);
+                    }
                     Message::Loaded(Loaded::Failed(error)) => {
                         arrived.push(Arrived::Ended(PreparedPage::empty()));
                         input_failure = Some(error);
@@ -106,6 +123,7 @@ impl Tui {
             }
             self.load(arrived);
             self.draw(terminal)?;
+            observer.drew();
         }
 
         Ok(SessionEnd::of(input_failure))
@@ -157,6 +175,31 @@ impl Tui {
         navigation.drew_file_list(selected_line);
         Ok(())
     }
+}
+
+/// What a run tells its observer.
+pub trait RunObserver {
+    /// The run answered a message.
+    fn answered(&mut self, answered: Answered);
+    /// The run wrote a frame, which shows every message answered before it.
+    fn drew(&mut self);
+}
+
+/// A message a run answered: a terminal event, or an update from the worker.
+pub enum Answered {
+    Terminal,
+    Arrived(Arrival),
+}
+
+/// A run observer that records nothing, for interactive sessions.
+struct Unwatched;
+
+impl RunObserver for Unwatched {
+    #[inline]
+    fn answered(&mut self, _: Answered) {}
+
+    #[inline]
+    fn drew(&mut self) {}
 }
 
 /// How an interactive session ended: the user left, or the input failed while it ran.

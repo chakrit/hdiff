@@ -153,7 +153,7 @@ implementation remains unapproved.
      one change block at a time; the screen opening at the first file header; the
      dynamic file list and `Tab` behavior. Fixed start-up costs are measured early
      against the 4 ms budget.
-   - [ ] Measurement drivers for the three loading [targets](performance.md#targets).
+   - [x] Measurement drivers for the three loading [targets](performance.md#targets).
    - [ ] The Tree-sitter second pass through the `tree-sitter` binary in the `PATH`.
      First verify that the binary emits machine-readable captures; if it does not,
      bring the alternatives to the user before building.
