@@ -323,7 +323,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
             return None;
         }
 
-        match self.opener() {
+        match self.opener_at(start) {
             Some(Opener::Marker(marker)) => {
                 self.at = self.line.len();
                 (self.emit)(start..self.at, marker.class);
@@ -355,7 +355,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
             self.at = self.number_end(start);
             Some(SyntaxClass::Number)
         } else if OPERATOR_BYTES.contains(&byte) {
-            self.at = self.end_while(start, |byte| OPERATOR_BYTES.contains(&byte));
+            self.at = self.operator_end(start);
             (&self.line[start..self.at] != ":").then_some(SyntaxClass::Operator)
         } else {
             self.at += self.line[start..].chars().next().map_or(1, char::len_utf8);
@@ -368,30 +368,29 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         }
     }
 
-    /// The longest line marker or region opener at the scan position.
-    fn opener(&self) -> Option<Opener<'a>> {
-        let rest = &self.line[self.at..];
+    /// The longest line marker or region opener at byte `at`.
+    fn opener_at(&self, at: usize) -> Option<Opener<'a>> {
         let markers = self.spec.line_markers.iter().map(Opener::Marker);
         let regions = (0..self.spec.delimited.len()).map(Opener::Region);
 
         markers
             .chain(regions)
-            .filter(|opener| self.opens(opener, rest))
+            .filter(|opener| self.opens(opener, at))
             .max_by_key(|opener| opener.text(self.spec).len())
     }
 
-    /// Whether `opener` opens at the scan position, where `rest` starts: a character
-    /// region opens only when it closes right after one character or escape.
-    fn opens(&self, opener: &Opener<'_>, rest: &str) -> bool {
+    /// Whether `opener` opens at byte `at`: a character region opens only when it closes
+    /// right after one character or escape.
+    fn opens(&self, opener: &Opener<'_>, at: usize) -> bool {
         let text = opener.text(self.spec);
-        if !rest.starts_with(text) {
+        if !self.line.as_bytes()[at..].starts_with(text.as_bytes()) {
             return false;
         }
 
         match opener {
             Opener::Marker(marker) => match marker.placement {
                 Placement::Anywhere => true,
-                Placement::LineStart => self.line.as_bytes()[..self.at]
+                Placement::LineStart => self.line.as_bytes()[..at]
                     .iter()
                     .all(u8::is_ascii_whitespace),
             },
@@ -399,9 +398,7 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
                 let pair = &self.spec.delimited[*region];
                 match pair.body {
                     Body::Raw | Body::Nested | Body::EscapedLine | Body::EscapedBlock => true,
-                    Body::Character => self
-                        .character_close(self.at + text.len(), pair.close)
-                        .is_some(),
+                    Body::Character => self.character_close(at + text.len(), pair.close).is_some(),
                 }
             }
         }
@@ -540,6 +537,22 @@ impl<'a, E: FnMut(Range<usize>, SyntaxClass)> LineScan<'a, E> {
         suffix && bytes.get(self.at + 1) != Some(&b'=')
     }
 
+    /// The end of the run of operator bytes from `start`, which stops where a marker or
+    /// region opens, such as the `/*` in `=/*`.
+    fn operator_end(&self, start: usize) -> usize {
+        let bytes = self.line.as_bytes();
+        let mut at = start + 1;
+
+        while at < bytes.len()
+            && OPERATOR_BYTES.contains(&bytes[at])
+            && self.opener_at(at).is_none()
+        {
+            at += 1;
+        }
+
+        at
+    }
+
     /// Whether the byte at `at` is a digit.
     fn next_is_digit(&self, at: usize) -> bool {
         self.line.as_bytes().get(at).is_some_and(u8::is_ascii_digit)
@@ -632,6 +645,21 @@ mod tests {
                 ("2.5e-3", SyntaxClass::Number),
                 ("!=", SyntaxClass::Operator),
                 ("nil", SyntaxClass::Constant),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_operator_run_stops_where_a_comment_or_string_opens() {
+        assert_eq!(
+            ground(&GO, "a=/*x*/b+\"s\""),
+            [
+                ("a", SyntaxClass::Variable),
+                ("=", SyntaxClass::Operator),
+                ("/*x*/", SyntaxClass::Comment),
+                ("b", SyntaxClass::Variable),
+                ("+", SyntaxClass::Operator),
+                ("\"s\"", SyntaxClass::String),
             ]
         );
     }
