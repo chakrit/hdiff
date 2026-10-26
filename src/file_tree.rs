@@ -1,20 +1,22 @@
 //! The file list: top-level files first, then files under directory headings, each part
-//! in input order. Rules: docs/spec/architecture.md#file-tree.
+//! in input order; while more input is coming, a `(parsing...)` line ends it. Rules:
+//! docs/spec/architecture.md#file-tree.
 
 use std::num::NonZeroUsize;
 
 use crate::{
-    document::{DiffFiles, FileView},
+    document::FileView,
     file_identity::{FileIdentity, FileState},
-    non_empty::NonEmpty,
     screen::ScreenLines,
 };
 
-/// One line of the file list: a directory heading, or a file with its change mark.
+/// One line of the file list: a directory heading, a file with its change mark, or the
+/// line saying more files are coming.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TreeRow {
     Directory(Box<str>),
     File { marker: StateMarker, name: Box<str> },
+    Parsing,
 }
 
 /// The mark a file row shows for how its file changed.
@@ -40,6 +42,9 @@ impl StateMarker {
     }
 }
 
+/// The text of the line that ends the file list while more input is coming.
+pub const PARSING: &str = "(parsing...)";
+
 /// The name a broken file's row shows when no readable header names it.
 const UNNAMED: &str = "(unnamed)";
 
@@ -59,10 +64,12 @@ impl TreeRowIndex {
         ScreenLines::new(self.0)
     }
 
-    /// The `height`-row window that ends at this row, or starts at the list's top when
-    /// this row is within the first `height` rows.
-    pub fn window(self, height: NonZeroUsize) -> RowWindow {
-        let selected_offset = self.0.min(height.get() - 1);
+    /// The `height`-row window that shows this row on the `pinned` line of the window
+    /// when one is pinned and fits; otherwise the window ends at this row, or starts at
+    /// the list's top when this row is within the first `height` rows.
+    pub fn window(self, height: NonZeroUsize, pinned: Option<usize>) -> RowWindow {
+        let unpinned = self.0.min(height.get() - 1);
+        let selected_offset = pinned.map_or(unpinned, |line| line.min(unpinned));
 
         RowWindow {
             first: Self(self.0 - selected_offset),
@@ -79,13 +86,6 @@ pub struct RowWindow {
     pub selected_offset: usize,
 }
 
-/// A file in list order, with the tree row that shows it.
-#[derive(Clone, Copy)]
-pub struct ListedFile<'a> {
-    pub view: FileView<'a>,
-    pub row: TreeRowIndex,
-}
-
 /// The file-list rows of a document with files.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileTree {
@@ -97,31 +97,47 @@ pub struct FileTree {
 pub struct FileSelection<'a> {
     pub tree: &'a FileTree,
     pub selected: TreeRowIndex,
+    /// The window line the selected row keeps while files arrive above it, if pinned.
+    pub pinned_line: Option<usize>,
 }
 
-/// A built file tree and its files in list order. A file's list position is its
-/// selection index.
-pub struct ListedTree<'a> {
+/// Whether more input is coming after the files listed so far.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Arrival {
+    More,
+    Ended,
+}
+
+/// The file list of files given in input order: its rows, the row of each file in input
+/// order, and the input positions of the files in list order.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListedTree {
     pub tree: FileTree,
-    pub files: NonEmpty<ListedFile<'a>>,
+    pub rows: Box<[TreeRowIndex]>,
+    pub order: Box<[usize]>,
 }
 
-impl<'a> ListedTree<'a> {
-    /// The file list of `files`, top-level files first, with each file's row.
-    pub fn build(files: &'a DiffFiles) -> Self {
-        let placed = files.views().map(|view| Placed::of(*view));
-        let ordered = list_order(placed);
+impl ListedTree {
+    /// The file list of `listings`, given in input order, top-level files first; it ends
+    /// with a `(parsing...)` line while `arrival` says more input is coming.
+    pub fn build(listings: &[Listing], arrival: Arrival) -> Self {
+        let mut order = (0..listings.len()).collect::<Vec<_>>();
+        order.sort_by_key(|&position| !listings[position].is_top_level());
 
-        let mut rows = TreeRows::default();
-        let first = rows.push(ordered.first());
-        let mut rest = Vec::new();
-        for file in ordered.rest() {
-            rest.push(rows.push(file));
+        let mut tree_rows = TreeRows::default();
+        let mut rows = vec![TreeRowIndex::FIRST; listings.len()];
+        for &position in &order {
+            rows[position] = tree_rows.push(&listings[position]);
+        }
+        match arrival {
+            Arrival::More => tree_rows.rows.push(TreeRow::Parsing),
+            Arrival::Ended => {}
         }
 
         Self {
-            tree: rows.finish(),
-            files: NonEmpty::new(first, rest),
+            tree: tree_rows.finish(),
+            rows: rows.into_boxed_slice(),
+            order: order.into_boxed_slice(),
         }
     }
 }
@@ -142,127 +158,88 @@ impl FileTree {
     }
 }
 
-// Rows
-
-/// The group a file's row is listed in.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum Group<'a> {
-    #[default]
-    TopLevel,
-    /// Files under one directory, listed after its heading.
-    Directory(&'a str),
-}
-
-/// A file view with where its row goes and what it shows.
-#[derive(Clone, Copy)]
-struct Placed<'a> {
-    view: FileView<'a>,
-    group: Group<'a>,
-    name: &'a str,
+/// Where a file is listed and what its row shows, kept apart from the file so the list
+/// can be rebuilt as files arrive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listing {
+    /// The directory the file is listed under; none for a top-level file.
+    directory: Option<Box<str>>,
+    name: Box<str>,
     marker: StateMarker,
 }
 
-impl<'a> Placed<'a> {
-    /// Where `view`'s file is listed: by its path's directory, or at the top level
-    /// under its header when the path is unknown.
-    fn of(view: FileView<'a>) -> Self {
+impl Listing {
+    /// Where `view`'s file is listed: by its path's directory, or at the top level under
+    /// its header when the path is unknown.
+    pub fn of(view: FileView<'_>) -> Self {
         match &view.file.identity {
             FileIdentity::Path { state, path } => {
-                let Grouped { group, name } = Grouped::of(path.as_str());
-                Self {
-                    view,
-                    group,
-                    name,
-                    marker: StateMarker::State(*state),
-                }
+                Self::of_path(path.as_str(), StateMarker::State(*state))
             }
-            FileIdentity::Unknown { header } => Self {
-                view,
-                group: Group::TopLevel,
-                name: header.as_str(),
-                marker: StateMarker::Unknown,
-            },
+            FileIdentity::Unknown { header } => {
+                Self::top_level(header.as_str(), StateMarker::Unknown)
+            }
             FileIdentity::Broken { name: Some(path) } => {
-                let Grouped { group, name } = Grouped::of(path.as_str());
-                Self {
-                    view,
-                    group,
-                    name,
-                    marker: StateMarker::Broken,
-                }
+                Self::of_path(path.as_str(), StateMarker::Broken)
             }
-            FileIdentity::Broken { name: None } => Self {
-                view,
-                group: Group::TopLevel,
-                name: UNNAMED,
-                marker: StateMarker::Broken,
+            FileIdentity::Broken { name: None } => Self::top_level(UNNAMED, StateMarker::Broken),
+        }
+    }
+
+    /// `path` split at its last `/` into its directory and its file name.
+    fn of_path(path: &str, marker: StateMarker) -> Self {
+        match path.rsplit_once('/') {
+            Some(("", name)) => Self::top_level(name, marker),
+            Some((directory, name)) => Self {
+                directory: Some(directory.into()),
+                name: name.into(),
+                marker,
             },
+            None => Self::top_level(path, marker),
+        }
+    }
+
+    fn top_level(name: &str, marker: StateMarker) -> Self {
+        Self {
+            directory: None,
+            name: name.into(),
+            marker,
         }
     }
 
     /// Whether the file is listed at the top level, before every directory heading.
     fn is_top_level(&self) -> bool {
-        self.group == Group::TopLevel
+        self.directory.is_none()
     }
 }
 
-/// The group a path is listed in and the name its row shows.
-struct Grouped<'a> {
-    group: Group<'a>,
-    name: &'a str,
-}
-
-impl<'a> Grouped<'a> {
-    /// `path` split at its last `/` into its directory's group and its file name.
-    fn of(path: &'a str) -> Self {
-        match path.rsplit_once('/') {
-            Some(("", name)) => Self {
-                group: Group::TopLevel,
-                name,
-            },
-            Some((directory, name)) => Self {
-                group: Group::Directory(directory),
-                name,
-            },
-            None => Self {
-                group: Group::TopLevel,
-                name: path,
-            },
-        }
-    }
-}
-
-/// File-list rows built in list order, with the group being listed.
+/// File-list rows built in list order, with the directory being listed.
 #[derive(Default)]
 struct TreeRows<'a> {
     rows: Vec<TreeRow>,
-    group: Group<'a>,
+    /// The directory of the last file listed; none while listing top-level files.
+    directory: Option<&'a str>,
 }
 
 impl<'a> TreeRows<'a> {
-    /// Lists `file` after the rows so far, under its directory's heading when it opens a
-    /// new group.
-    fn push(&mut self, file: &Placed<'a>) -> ListedFile<'a> {
-        if file.group != self.group {
-            match file.group {
-                Group::Directory(directory) => {
-                    let heading = format!("{directory}/");
-                    self.rows.push(TreeRow::Directory(heading.into()));
-                }
-                Group::TopLevel => {}
+    /// Lists `listing`'s file after the rows so far, under its directory's heading when
+    /// it opens a new group, and returns its row.
+    fn push(&mut self, listing: &'a Listing) -> TreeRowIndex {
+        let directory = listing.directory.as_deref();
+        if directory != self.directory {
+            if let Some(directory) = directory {
+                let heading = format!("{directory}/");
+                self.rows.push(TreeRow::Directory(heading.into()));
             }
-            self.group = file.group;
+            self.directory = directory;
         }
 
         let row = TreeRowIndex(self.rows.len());
         self.rows.push(TreeRow::File {
-            marker: file.marker,
-            name: file.name.into(),
+            marker: listing.marker,
+            name: listing.name.clone(),
         });
-        ListedFile {
-            view: file.view,
-            row,
-        }
+        row
     }
 
     /// The rows listed so far, as the finished file list.
@@ -273,28 +250,26 @@ impl<'a> TreeRows<'a> {
     }
 }
 
-/// `placed` in list order: top-level files come first, so a directory heading never needs
-/// to be closed, and each group keeps input order.
-fn list_order(placed: NonEmpty<Placed<'_>>) -> NonEmpty<Placed<'_>> {
-    placed.sorted_by_key(|file| !file.is_top_level())
-}
-
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
 
-    use super::{ListedTree, RowWindow, TreeRow, TreeRowIndex};
-    use crate::{document::DiffDocument, file_identity::FileIdentity, parser::parse_patch};
+    use super::{Arrival, ListedTree, Listing, RowWindow, TreeRow, TreeRowIndex};
+    use crate::{
+        document::{DiffDocument, FileView},
+        file_identity::FileIdentity,
+        parser::parse_patch,
+    };
 
     fn parsed(input: &str) -> DiffDocument {
         parse_patch(input.as_bytes()).expect("valid diff")
     }
 
-    fn listing_of(document: &DiffDocument) -> ListedTree<'_> {
-        let DiffDocument::Files(files) = document else {
-            panic!("a document with files");
-        };
-        ListedTree::build(files)
+    /// The file list of `document`'s files, which holds the whole input.
+    fn listing_of(document: &DiffDocument) -> ListedTree {
+        let listings = document.file_views().map(Listing::of).collect::<Vec<_>>();
+
+        ListedTree::build(&listings, Arrival::Ended)
     }
 
     fn modified(path: &str) -> String {
@@ -305,6 +280,7 @@ mod tests {
         match row {
             TreeRow::Directory(heading) => heading.to_string(),
             TreeRow::File { marker, name } => format!("{} {name}", marker.label()),
+            TreeRow::Parsing => super::PARSING.to_owned(),
         }
     }
 
@@ -323,19 +299,21 @@ mod tests {
     fn selections(input: &str) -> Vec<(String, String)> {
         let document = parsed(input);
         let listing = listing_of(&document);
+        let views = document.file_views().collect::<Vec<FileView<'_>>>();
 
         listing
-            .files
+            .order
             .iter()
-            .map(|file| {
-                let named = match &file.view.file.identity {
+            .map(|&position| {
+                let named = match &views[position].file.identity {
                     FileIdentity::Path { path, .. } => path.as_str().to_owned(),
                     FileIdentity::Unknown { header } => header.as_str().to_owned(),
                     FileIdentity::Broken { name } => {
                         name.as_ref().map_or("", |name| name.as_str()).to_owned()
                     }
                 };
-                (named, row_text(&listing.tree.rows()[file.row.get()]))
+                let row = listing.rows[position];
+                (named, row_text(&listing.tree.rows()[row.get()]))
             })
             .collect()
     }
@@ -352,14 +330,14 @@ mod tests {
         let height = NonZeroUsize::new(3).expect("nonzero height");
 
         assert_eq!(
-            TreeRowIndex(1).window(height),
+            TreeRowIndex(1).window(height, None),
             RowWindow {
                 first: TreeRowIndex(0),
                 selected_offset: 1,
             }
         );
         assert_eq!(
-            TreeRowIndex(7).window(height),
+            TreeRowIndex(7).window(height, None),
             RowWindow {
                 first: TreeRowIndex(5),
                 selected_offset: 2,

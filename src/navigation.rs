@@ -16,8 +16,11 @@ use self::{
     scroll::{ScrollBounds, ScrollPosition},
 };
 use crate::{
-    effective_view::EffectiveView, file_tree::FileSelection, preferences::ViewPreferences,
-    prepared::PreparedDocument, screen::ScreenLines,
+    effective_view::EffectiveView,
+    file_tree::{Arrival, FileSelection},
+    preferences::ViewPreferences,
+    prepared::{FilePage, PreparedDocument},
+    screen::ScreenLines,
 };
 
 /// Whether the session goes on after an event.
@@ -36,13 +39,23 @@ pub struct Navigation {
     interaction: Interaction,
     view: EffectiveView,
     extent: ScrollExtent,
+    list_line: ListLine,
+}
+
+/// Where the selected file sits in the file list's window: the line it was last drawn on,
+/// and the line it keeps while files arrive above it. A page turn lets it go.
+/// Rules: docs/spec/architecture.md#file-tree.
+#[derive(Clone, Copy, Default)]
+struct ListLine {
+    drawn: Option<usize>,
+    pinned: Option<usize>,
 }
 
 impl Navigation {
     /// The first page of `document` with `preferences` on a `screen`-sized terminal, at
     /// its start.
     pub fn start(document: PreparedDocument, preferences: ViewPreferences, screen: Size) -> Self {
-        let interaction = Interaction::start(preferences, screen);
+        let interaction = Interaction::start(document.page_order().first(), preferences, screen);
         let view = EffectiveView::of(preferences, screen);
         let settings = settings_of(preferences, &view);
         let extent = ScrollExtent::of(&document, interaction.page(), settings);
@@ -52,13 +65,43 @@ impl Navigation {
             interaction,
             view,
             extent,
+            list_line: ListLine::default(),
         }
     }
 
     /// The file list with the row of the file the interaction is at; a document without
     /// files lists none.
     pub fn file_selection(&self) -> Option<FileSelection<'_>> {
-        self.document.file_selection(self.interaction.page())
+        let selection = self.document.file_selection(self.interaction.page())?;
+
+        Some(FileSelection {
+            pinned_line: self.list_line.pinned,
+            ..selection
+        })
+    }
+
+    /// Records the file-list window line the selected file was drawn on, if any.
+    pub fn drew_file_list(&mut self, selected_line: Option<usize>) {
+        self.list_line.drawn = selected_line;
+    }
+
+    /// Lists `arrived` pages after the document's pages, ending the list when `arrival`
+    /// says the input has ended. The selection stays on its file, and when rows arrive
+    /// above it, on the file-list line it was drawn on.
+    ///
+    /// Panics when the document lists no files, which only a complete document can be.
+    pub fn load(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
+        let PreparedDocument::Files(files) = &mut self.document else {
+            panic!("only a document listing files loads more files");
+        };
+        let page = self.interaction.page();
+        let row_before = files.row_of(page);
+
+        files.extend(arrived, arrival);
+
+        if files.row_of(page) != row_before {
+            self.list_line.pinned = self.list_line.drawn;
+        }
     }
 
     pub fn interaction(&self) -> &Interaction {
@@ -88,7 +131,7 @@ impl Navigation {
     /// Leads the interaction where `event` asks among the document's pages: the session
     /// exits, or goes on to draw what it leads to.
     pub fn respond(&mut self, event: Event) -> Step {
-        match self.interaction.respond(event, self.document.page_count()) {
+        match self.interaction.respond(event, self.document.page_order()) {
             Outcome::Exit => Step::Exit,
             Outcome::Redraw => Step::Continue,
             Outcome::Effect(effect) => {
@@ -124,6 +167,7 @@ impl Navigation {
             Effect::TurnPage(page) => {
                 self.extent.turn_to(&self.document, page);
                 self.interaction = interaction.turned_to(page);
+                self.list_line.pinned = None;
             }
             Effect::Redisplay {
                 preferences,

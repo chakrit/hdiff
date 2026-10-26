@@ -1,10 +1,7 @@
-use std::num::NonZeroUsize;
-
 use crate::{
     document::{DiffDocument, DiffFiles, FileView},
-    file_tree::{FileSelection, FileTree, ListedFile, ListedTree, TreeRowIndex},
+    file_tree::{Arrival, FileSelection, ListedTree, Listing, TreeRowIndex},
     measurement::{Observer, Stage, Unobserved},
-    non_empty::NonEmpty,
     page_rows::{LineIndex, PageRows},
     preferences::DiffGranularity,
     source_text::SourceLine,
@@ -15,17 +12,23 @@ use crate::{
 /// the text of a document that lists no file. Rules:
 /// docs/spec/architecture.md#core-model.
 pub enum PreparedDocument {
-    Files {
-        pages: NonEmpty<FilePage>,
-        file_tree: FileTree,
-    },
+    Files(PreparedFiles),
     Text(PreparedPage),
 }
 
-/// A file occurrence's page, with the file-list row that selects it.
+/// The pages of the files listed so far, in input order, with the file list they make
+/// and whether more are coming.
+pub struct PreparedFiles {
+    /// Never empty: a document lists files from its first one on.
+    pages: Vec<FilePage>,
+    listed: ListedTree,
+    arrival: Arrival,
+}
+
+/// A file occurrence's page, with where the file list lists it.
 pub struct FilePage {
     page: PreparedPage,
-    row: TreeRowIndex,
+    listing: Listing,
 }
 
 /// What one selection shows: a file occurrence with its surrounding text, or all the
@@ -45,17 +48,17 @@ impl PreparedDocument {
     /// `observer`.
     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
         match document {
-            DiffDocument::Files(files) => Self::of_files(files, observer),
-            DiffDocument::Text(text) => Self::of_text(text, observer),
+            DiffDocument::Files(files) => Self::Files(PreparedFiles::of(files, observer)),
+            DiffDocument::Text(text) => Self::Text(PreparedPage::of_text(text, observer)),
         }
     }
 
     /// The page at `index`.
     ///
-    /// Panics when `index` is not below [`page_count`](Self::page_count).
+    /// Panics when `index` names no page of the document.
     pub fn page(&self, index: PageIndex) -> &PreparedPage {
         match self {
-            Self::Files { pages, .. } => &pages[index.0].page,
+            Self::Files(files) => &files.pages[index.0].page,
             Self::Text(page) => {
                 assert_eq!(index, PageIndex::FIRST, "a text document has one page");
                 page
@@ -63,18 +66,24 @@ impl PreparedDocument {
         }
     }
 
-    /// How many pages the document holds: one per listed file, or the one text page.
-    pub fn page_count(&self) -> PageCount {
+    /// The order file rotation visits the pages in.
+    pub fn page_order(&self) -> PageOrder<'_> {
         match self {
-            Self::Files { pages, .. } => PageCount(pages.len()),
-            Self::Text(_) => PageCount(NonZeroUsize::MIN),
+            Self::Files(files) => PageOrder {
+                order: &files.listed.order,
+                arrival: files.arrival,
+            },
+            Self::Text(_) => PageOrder {
+                order: &[0],
+                arrival: Arrival::Ended,
+            },
         }
     }
 
     /// How many file occurrences the document lists.
     pub fn file_count(&self) -> usize {
         match self {
-            Self::Files { pages, .. } => pages.len().get(),
+            Self::Files(files) => files.pages.len(),
             Self::Text(_) => 0,
         }
     }
@@ -82,7 +91,8 @@ impl PreparedDocument {
     /// How many hunk records every page holds together.
     pub fn record_count(&self) -> usize {
         match self {
-            Self::Files { pages, .. } => pages
+            Self::Files(files) => files
+                .pages
                 .iter()
                 .map(|file_page| file_page.page.record_count())
                 .sum(),
@@ -94,83 +104,160 @@ impl PreparedDocument {
     /// lists none.
     pub fn file_selection(&self, page: PageIndex) -> Option<FileSelection<'_>> {
         match self {
-            Self::Files { pages, file_tree } => Some(FileSelection {
-                tree: file_tree,
-                selected: pages[page.0].row,
+            Self::Files(files) => Some(FileSelection {
+                tree: &files.listed.tree,
+                selected: files.listed.rows[page.0],
+                pinned_line: None,
             }),
             Self::Text(_) => None,
         }
     }
 
-    /// Every page, in page order.
+    /// Every page, in input order.
     #[cfg(test)]
     fn pages(&self) -> Vec<&PreparedPage> {
         match self {
-            Self::Files { pages, .. } => pages.iter().map(|file_page| &file_page.page).collect(),
+            Self::Files(files) => files
+                .pages
+                .iter()
+                .map(|file_page| &file_page.page)
+                .collect(),
             Self::Text(page) => vec![page],
         }
     }
+}
 
-    // Preparation
+impl PreparedFiles {
+    /// The files of a document that more input follows, starting from its `first` page.
+    pub fn loading(first: FilePage) -> Self {
+        let pages = vec![first];
+        let listed = list(&pages, Arrival::More);
 
-    /// One page per listed file, in list order.
-    fn of_files(files: &DiffFiles, observer: &mut impl Observer) -> Self {
-        let ListedTree {
-            tree: file_tree,
-            files: listed,
-        } = observer.time(Stage::Labels, || ListedTree::build(files));
-
-        Self::Files {
-            pages: listed.map(|file| FilePage::of(*file, observer)),
-            file_tree,
+        Self {
+            pages,
+            listed,
+            arrival: Arrival::More,
         }
     }
 
-    /// One page of all the text.
-    fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
-        Self::Text(PreparedPage::of_text(text, observer))
+    /// One page per file of a complete document.
+    fn of(files: &DiffFiles, observer: &mut impl Observer) -> Self {
+        let pages = files
+            .views()
+            .iter()
+            .map(|view| FilePage::prepared(*view, observer))
+            .collect::<Vec<_>>();
+        let listed = observer.time(Stage::Labels, || list(&pages, Arrival::Ended));
+
+        Self {
+            pages,
+            listed,
+            arrival: Arrival::Ended,
+        }
+    }
+
+    /// The file-list row of the file `page` shows.
+    pub fn row_of(&self, page: PageIndex) -> TreeRowIndex {
+        self.listed.rows[page.0]
+    }
+
+    /// Lists `arrived` pages after the pages so far, ending the list when `arrival` says
+    /// no more input is coming.
+    pub fn extend(&mut self, arrived: impl IntoIterator<Item = FilePage>, arrival: Arrival) {
+        self.pages.extend(arrived);
+        self.arrival = arrival;
+        self.listed = list(&self.pages, arrival);
     }
 }
 
-/// The position of one page in a prepared document's page order, which is the file
-/// list's order.
+/// The file list of `pages`, in input order.
+fn list(pages: &[FilePage], arrival: Arrival) -> ListedTree {
+    let listings = pages
+        .iter()
+        .map(|file_page| file_page.listing.clone())
+        .collect::<Vec<_>>();
+
+    ListedTree::build(&listings, arrival)
+}
+
+/// The position of one page among a prepared document's pages, in input order. A file
+/// keeps its page as files arrive around it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageIndex(usize);
 
 impl PageIndex {
     pub const FIRST: Self = Self(0);
+}
 
-    /// The page after this one among `pages`, wrapping to the first.
-    pub fn next(self, pages: PageCount) -> Self {
-        Self((self.0 + 1) % pages.0)
-    }
+/// The order file rotation visits a document's pages in, which is the file list's, and
+/// whether more pages are coming. Only a document issues one, so steps stay among its
+/// pages.
+#[derive(Clone, Copy)]
+pub struct PageOrder<'a> {
+    /// Each page's input position, in list order.
+    order: &'a [usize],
+    arrival: Arrival,
+}
 
-    /// The page before this one among `pages`, wrapping to the last.
-    pub fn previous(self, pages: PageCount) -> Self {
-        let last = pages.0.get() - 1;
-
-        Self(self.0.checked_sub(1).unwrap_or(last))
+impl<'a> PageOrder<'a> {
+    /// Pages visited in `order`, all arrived, for tests that step through pages without a
+    /// document.
+    #[cfg(test)]
+    pub const fn of_test(order: &'a [usize]) -> Self {
+        Self {
+            order,
+            arrival: Arrival::Ended,
+        }
     }
 }
 
-/// How many pages a prepared document holds; only the document issues one, so page steps
-/// stay among its pages.
-pub struct PageCount(NonZeroUsize);
+impl PageOrder<'_> {
+    /// The page listed first.
+    pub fn first(self) -> PageIndex {
+        PageIndex(self.order[0])
+    }
 
-impl PageCount {
-    /// `count` pages, for tests that step through pages without a document.
-    #[cfg(test)]
-    pub const fn of_test(count: usize) -> Self {
-        Self(NonZeroUsize::new(count).expect("a test page count is nonzero"))
+    /// The page after `page` in list order, wrapping to the first once the input has
+    /// ended. While more files are coming, the last page stays where it is.
+    /// Rules: docs/spec/architecture.md#file-tree.
+    pub fn next(self, page: PageIndex) -> PageIndex {
+        let position = self.position(page);
+        let last = position + 1 == self.order.len();
+
+        match (last, self.arrival) {
+            (true, Arrival::More) => page,
+            (true, Arrival::Ended) => PageIndex(self.order[0]),
+            (false, Arrival::More | Arrival::Ended) => PageIndex(self.order[position + 1]),
+        }
+    }
+
+    /// The page before `page` in list order, wrapping to the last.
+    pub fn previous(self, page: PageIndex) -> PageIndex {
+        let position = self.position(page);
+        let before = position.checked_sub(1).unwrap_or(self.order.len() - 1);
+
+        PageIndex(self.order[before])
+    }
+
+    /// Where `page` sits in list order.
+    fn position(self, page: PageIndex) -> usize {
+        self.order
+            .iter()
+            .position(|&input_position| input_position == page.0)
+            .expect("a page step starts at a listed page")
     }
 }
 
 impl FilePage {
-    /// The prepared page for a listed file, beside the file-list row that names it.
-    fn of(listed: ListedFile<'_>, observer: &mut impl Observer) -> Self {
+    /// The prepared page for one file occurrence, with where the file list lists it.
+    pub fn prepare(view: FileView<'_>) -> Self {
+        Self::prepared(view, &mut Unobserved)
+    }
+
+    fn prepared(view: FileView<'_>, observer: &mut impl Observer) -> Self {
         Self {
-            page: PreparedPage::of_file_view(listed.view, observer),
-            row: listed.row,
+            page: PreparedPage::of_file_view(view, observer),
+            listing: Listing::of(view),
         }
     }
 }
@@ -185,7 +272,7 @@ impl PreparedPage {
 
     /// The page of a document's text; surrounding text has no syntax or character
     /// detail.
-    fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
+    pub fn of_text(text: &[SourceLine], observer: &mut impl Observer) -> Self {
         Self {
             rows: StyledRows::of_text(text, observer),
         }

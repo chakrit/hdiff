@@ -7,7 +7,7 @@ use ratatui::layout::Size;
 use super::scroll::{BoundedScroll, Movement};
 use crate::{
     preferences::{PreferenceChange, ViewPreferences},
-    prepared::{PageCount, PageIndex},
+    prepared::{PageIndex, PageOrder},
 };
 
 /// The selected page, the view preferences, the screen size, the scroll position within
@@ -23,10 +23,10 @@ pub struct Interaction {
 }
 
 impl Interaction {
-    /// The first page of a document on a `screen`-sized terminal, scrolled to its start.
-    pub(super) fn start(preferences: ViewPreferences, screen: Size) -> Self {
+    /// A document's `first` page on a `screen`-sized terminal, scrolled to its start.
+    pub(super) fn start(first: PageIndex, preferences: ViewPreferences, screen: Size) -> Self {
         Self {
-            page: PageIndex::FIRST,
+            page: first,
             preferences,
             screen,
             scroll: BoundedScroll::START,
@@ -54,9 +54,9 @@ impl Interaction {
         self.keymap
     }
 
-    /// What `event` asks of the session among `pages` pages, once the keymap popup has
-    /// filtered its command.
-    pub(super) fn respond(&self, event: Event, pages: PageCount) -> Outcome {
+    /// What `event` asks of the session among pages in `pages` order, once the keymap
+    /// popup has filtered its command.
+    pub(super) fn respond(&self, event: Event, pages: PageOrder<'_>) -> Outcome {
         match event {
             Event::Interrupt => Outcome::Exit,
             // The terminal is the one source of the screen size, which every step adopts
@@ -66,9 +66,9 @@ impl Interaction {
         }
     }
 
-    /// What `requested` asks of the session among `pages` pages, once the keymap popup
-    /// has filtered it.
-    fn respond_to(&self, requested: Command, pages: PageCount) -> Outcome {
+    /// What `requested` asks of the session among pages in `pages` order, once the keymap
+    /// popup has filtered it.
+    fn respond_to(&self, requested: Command, pages: PageOrder<'_>) -> Outcome {
         // A command the popup filters out changes nothing, so the step only draws again.
         let Some(admitted) = self.keymap.admit(requested) else {
             return Outcome::Redraw;
@@ -215,12 +215,11 @@ pub enum PageStep {
 }
 
 impl PageStep {
-    /// The page this step reaches from `page` among `pages` pages, wrapping around the
-    /// ends.
-    fn applied(self, page: PageIndex, pages: PageCount) -> PageIndex {
+    /// The page this step reaches from `page` in `pages` order.
+    fn applied(self, page: PageIndex, pages: PageOrder<'_>) -> PageIndex {
         match self {
-            Self::Next => page.next(pages),
-            Self::Previous => page.previous(pages),
+            Self::Next => pages.next(page),
+            Self::Previous => pages.previous(page),
         }
     }
 }
@@ -279,14 +278,14 @@ mod tests {
             ContextRecords, DiffGranularity, DiffLayout, FileList, PreferenceChange,
             ViewPreferences, Wrapping,
         },
-        prepared::{PageCount, PageIndex},
+        prepared::{PageIndex, PageOrder},
     };
 
-    const TWO_PAGES: PageCount = PageCount::of_test(2);
+    const TWO_PAGES: PageOrder<'static> = PageOrder::of_test(&[0, 1]);
     const SCREEN: Size = Size::new(80, 9);
 
     fn second_page() -> PageIndex {
-        PageIndex::FIRST.next(TWO_PAGES)
+        TWO_PAGES.next(PageIndex::FIRST)
     }
 
     /// An interaction showing `page` in `layout` on an 80-by-9 screen.
@@ -298,7 +297,7 @@ mod tests {
 
         Interaction {
             page,
-            ..Interaction::start(preferences, SCREEN)
+            ..Interaction::start(PageIndex::FIRST, preferences, SCREEN)
         }
     }
 

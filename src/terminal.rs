@@ -7,9 +7,10 @@ use crossterm::event::{self, Event as TerminalEvent};
 use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
+    file_tree::Arrival,
     navigation::{Navigation, Step},
     preferences::ViewPreferences,
-    prepared::PreparedDocument,
+    prepared::{FilePage, PreparedDocument},
     theme::{ColorDepth, Theme},
 };
 
@@ -60,6 +61,12 @@ impl Tui {
         }
     }
 
+    /// Lists `arrived` pages after the pages shown so far, ending the list when `arrival`
+    /// says the input has ended; the next draw shows them.
+    pub fn load(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
+        self.navigation.load(arrived, arrival);
+    }
+
     pub fn preferences(&self) -> ViewPreferences {
         self.navigation.interaction().preferences()
     }
@@ -108,12 +115,14 @@ impl Tui {
     pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
         let Self { navigation, theme } = self;
 
+        let mut selected_line = None;
         terminal.draw(|frame| {
             navigation.adopt_screen(frame.area().as_size());
 
-            view::render_prepared_frame(frame, navigation, theme)
+            selected_line = view::render_prepared_frame(frame, navigation, theme);
         })?;
 
+        navigation.drew_file_list(selected_line);
         Ok(())
     }
 }

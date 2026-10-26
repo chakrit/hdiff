@@ -14,7 +14,7 @@ use ratatui::{
 
 use super::row_writer::Clip;
 use crate::{
-    file_tree::{FileSelection, TreeRow},
+    file_tree::{FileSelection, PARSING, TreeRow},
     geometry::{AxisSpan, FrameEdges, FramedArea, SplitDirection},
     screen::{Cells, ScreenLines},
     theme::ChromePalette,
@@ -36,13 +36,14 @@ const FLOATING_BOX_BORDER: u16 = 1;
 const FLOATING_BOX_PADDING: u16 = 1;
 
 /// Draws the file list above the help hint in the file-list column, selecting the row of
-/// the page's file; a document without files lists nothing.
+/// the page's file, and returns the window line the selected row is drawn on; a document
+/// without files lists nothing.
 pub(super) fn render_file_column(
     frame: &mut Frame,
     area: Rect,
     selection: Option<FileSelection<'_>>,
     palette: &ChromePalette,
-) {
+) -> Option<usize> {
     let list_height = FrameEdges::FILE_LIST.rows_around(MINIMUM_FILE_LIST_HEIGHT);
     let hint_height = area
         .height
@@ -57,10 +58,10 @@ pub(super) fn render_file_column(
         Layout::horizontal([Constraint::Length(HELP_HINT_INDENT), Constraint::Fill(1)])
             .areas(hint_row);
 
-    if let Some(selection) = selection {
-        render_file_list(frame, list_area, selection, palette);
-    }
+    let selected_line =
+        selection.and_then(|selection| render_file_list(frame, list_area, selection, palette));
     draw_help_hint(frame.buffer_mut(), hint_area, palette);
+    selected_line
 }
 
 /// The help hint in a box floating over the bottom-left corner of `area`, while the file
@@ -257,20 +258,23 @@ pub(super) struct LineWindow {
 }
 
 /// Lists only the rows that fit: a fresh `ListState` scrolls just far enough to keep
-/// the selected row on the last row, so listing that window draws the same frame.
+/// the selected row on the last row, or on its pinned line, so listing that window draws
+/// the same frame. Returns the window line the selected row is drawn on.
 fn render_file_list(
     frame: &mut Frame,
     area: Rect,
-    FileSelection { tree, selected }: FileSelection<'_>,
+    FileSelection {
+        tree,
+        selected,
+        pinned_line,
+    }: FileSelection<'_>,
     palette: &ChromePalette,
-) {
+) -> Option<usize> {
     let list_frame = ContinuityFrame::file_list(area);
     let content = list_frame.content();
-    let Some(height) = NonZeroUsize::new(usize::from(content.height)) else {
-        return;
-    };
+    let height = NonZeroUsize::new(usize::from(content.height))?;
 
-    let row_window = selected.window(height);
+    let row_window = selected.window(height, pinned_line);
     let line_window = LineWindow {
         first: row_window.first.screen_line(),
         total: tree.line_count(),
@@ -290,6 +294,7 @@ fn render_file_list(
 
     frame.render_stateful_widget(file_list, content, &mut state);
     list_frame.draw_window_markers(frame.buffer_mut(), line_window, palette);
+    Some(row_window.selected_offset)
 }
 
 /// The file-list item for `row`: a bold directory heading, or a file's colored marker and
@@ -308,6 +313,7 @@ fn tree_item<'a>(row: &'a TreeRow, palette: &ChromePalette) -> ListItem<'a> {
             Span::raw(&**name),
         ])
         .style(Style::default().fg(palette.file_name)),
+        TreeRow::Parsing => Line::styled(PARSING, Style::default().fg(palette.hint)),
     };
 
     ListItem::new(line)
@@ -354,7 +360,9 @@ mod tests {
         let palette = &Theme::of_depth(ColorDepth::TrueColor).chrome;
 
         terminal
-            .draw(|frame| render_file_column(frame, frame.area(), selection, palette))
+            .draw(|frame| {
+                render_file_column(frame, frame.area(), selection, palette);
+            })
             .expect("render file column");
 
         let buffer = terminal.backend().buffer();

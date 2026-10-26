@@ -31,8 +31,13 @@ use super::{
 };
 
 /// Draws the document as `navigation` shows its interaction: the page of its scroll
-/// extent through its effective view, beside the file list.
-pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, theme: &Theme) {
+/// extent through its effective view, beside the file list. Returns the file-list window
+/// line the selected file is drawn on, when the file list is drawn.
+pub(super) fn render_prepared_frame(
+    frame: &mut Frame,
+    navigation: &Navigation,
+    theme: &Theme,
+) -> Option<usize> {
     let interaction = navigation.interaction();
     let view = navigation.view();
     let geometry = view.geometry();
@@ -40,7 +45,7 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
 
     if let Some(too_small) = geometry.too_small() {
         frame.render_widget(Paragraph::new(too_small_message(too_small)), screen);
-        return;
+        return None;
     }
 
     let extent = navigation.extent();
@@ -70,18 +75,23 @@ pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, 
         }
     }
 
-    match geometry.file_column() {
+    let selected_line = match geometry.file_column() {
         Some(column) => {
             let selection = navigation.file_selection();
-            render_file_column(frame, column.list, selection, &theme.chrome);
+            let selected_line = render_file_column(frame, column.list, selection, &theme.chrome);
             draw_outer_separator(frame.buffer_mut(), column.separator, &theme.chrome);
+            selected_line
         }
-        None => render_help_box(frame, diff, &theme.chrome),
-    }
+        None => {
+            render_help_box(frame, diff, &theme.chrome);
+            None
+        }
+    };
     match interaction.keymap() {
         KeymapPopup::Open => render_keymap_popup(frame, diff, theme),
         KeymapPopup::Closed => {}
     }
+    selected_line
 }
 
 /// The only content a screen too small for the minimum layout renders. Rules:

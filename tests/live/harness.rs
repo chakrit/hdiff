@@ -4,10 +4,11 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     effective_view::EffectiveView,
+    file_tree::Arrival,
     navigation::Step,
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout, ViewPreferences},
-    prepared::PreparedDocument,
+    prepared::{FilePage, PreparedDocument, PreparedFiles},
     screen::Cells,
     terminal::Tui,
     theme::{ColorDepth, Theme},
@@ -54,6 +55,14 @@ impl Live {
     pub fn comparison(output: &str, mode: Mode) -> Self {
         let document = parse_comparison(output.as_bytes());
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
+    }
+
+    /// Lists `arrived` pages, ending the list when `arrival` says so, and draws.
+    fn receive(&mut self, arrived: Vec<FilePage>, arrival: Arrival) {
+        self.tui.load(arrived, arrival);
+        self.tui
+            .draw(&mut self.terminal)
+            .expect("frame after loading");
     }
 
     /// `prepared` on a terminal of `size` with its first frame drawn, then in `mode`.
@@ -320,4 +329,40 @@ pub fn right_of_first_separator(row: &str) -> String {
         .map_or(row, |(_, pane)| pane)
         .trim_start_matches(' ')
         .to_owned()
+}
+
+/// A session whose input is still arriving: it opens on the first file of a patch, and
+/// the rest of the patch's files arrive when a test says so.
+pub struct Loading {
+    pub live: Live,
+    pending: std::vec::IntoIter<FilePage>,
+}
+
+impl Loading {
+    /// The first file of `patch` on the default screen, in unified line mode, with more
+    /// input coming.
+    pub fn start(patch: &str) -> Self {
+        let document = parse_patch(patch.as_bytes()).expect("valid fixture patch");
+        let mut pages = document.file_views().map(FilePage::prepare);
+        let first = pages.next().expect("the patch holds a file");
+        let pending = pages.collect::<Vec<_>>().into_iter();
+        let prepared = PreparedDocument::Files(PreparedFiles::loading(first));
+
+        Self {
+            live: Live::start(prepared, Mode::line(DiffLayout::Unified), SCREEN),
+            pending,
+        }
+    }
+
+    /// The next `count` files arrive, with more input still coming.
+    pub fn arrive(&mut self, count: usize) {
+        let arrived = self.pending.by_ref().take(count).collect();
+        self.live.receive(arrived, Arrival::More);
+    }
+
+    /// The rest of the files arrive and the input ends.
+    pub fn end(&mut self) {
+        let arrived = self.pending.by_ref().collect();
+        self.live.receive(arrived, Arrival::Ended);
+    }
 }

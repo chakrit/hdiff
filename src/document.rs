@@ -61,7 +61,6 @@ impl DiffDocument {
     }
 
     /// Each file with its surrounding text; a text document has none.
-    #[cfg(test)]
     pub fn file_views(&self) -> impl Iterator<Item = FileView<'_>> {
         let views = match self {
             Self::Files(files) => Some(files.views()),

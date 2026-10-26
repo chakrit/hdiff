@@ -44,6 +44,7 @@ macro_rules! matrix {
 mod file_list;
 mod fixtures;
 mod harness;
+mod loading;
 mod navigation;
 mod panes;
 mod rendering;
