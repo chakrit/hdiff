@@ -519,8 +519,10 @@ controlling-terminal handle when stdin contains diff data. Syntax highlighting g
 through an hdiff-owned boundary with two modes: mainstream languages use hdiff's own
 hand-rolled lexer/parser, built for the fastest diff display; other languages call into
 Tree-sitter. The mainstream languages are Rust, JavaScript, Python, Go, and C.
-Hand-rolled highlighting need only mostly match Tree-sitter's colors. The Tree-sitter
-parser set and performance rationale are recorded in `docs/vendor/syntax-highlighting.md`.
+Hand-rolled highlighting need only mostly match Tree-sitter's colors. Highlighting works
+fully out of the box; it never requires the user to download grammars or other binaries.
+The Tree-sitter parser set and performance rationale are recorded in
+`docs/vendor/syntax-highlighting.md`.
 Syntax highlighting projects each hunk's old and new records into separate bounded
 virtual source buffers, maps returned spans back to sanitized record payloads, and leaves
 unsupported languages as plain text. Every bundled grammar and its highlight query load;
