@@ -117,6 +117,36 @@ the 167 MB Kubernetes projection from 25 s to under 1 s.
 The scanner should be about 700 lines. The specs should be about 1,500 lines, mostly
 word lists.
 
+## Rewriting `src/syntax.rs`
+
+The current highlighter is built around Tree-sitter, so it is rewritten rather than
+extended.
+
+- **Kept:**
+  - `SyntaxClass`.
+  - `SyntaxSpan`, used by `src/styling.rs`.
+  - The `SyntaxHighlighter::highlight_file` entry point, used by `src/prepared.rs` and
+    `src/styling.rs`.
+- **Removed:**
+  - `Projection`, the per-hunk virtual source buffer, and `map_span`.
+  - `ParseBase`, `OldPass` and the incremental old-to-new reparse.
+  - `LanguageHighlighter` (parser, query and query cursor), `BundledGrammar`, and the
+    capture-name mapping.
+- **Replaced:**
+  - Extension-only language selection becomes a lookup from extension or whole file
+    name to a `Spec`.
+- **Revisited:**
+  - `SyntaxSpan::capture_length` breaks ties between overlapping captures in
+    `src/styling.rs`. Spans from the scanner never overlap, so that tie-breaking may go.
+- **Measurement:**
+  - The `language`, `projection`, `parse` and `query` stages, and the `parse_calls`,
+    `captures` and `projected_bytes` counters (`src/measurement.rs`), become one `scan`
+    stage with scanned-byte and span counts.
+  - `bench/kubernetes.sh`, its runner tests and `docs/spec/performance.md` follow that
+    change.
+- **Tests:** the tests in `src/syntax.rs` are rewritten as spec-driven tests, with one
+  sample per language.
+
 ## Consequence for Tree-sitter
 
 Once all five bundled languages move, no language left uses Tree-sitter for
