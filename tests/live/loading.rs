@@ -2,6 +2,18 @@
 //! loading, and a selection that stays on its file. Rules:
 //! docs/spec/architecture.md#file-tree.
 
+use std::{io, sync::mpsc};
+
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use hdiff::{
+    loading::Message,
+    parser::parse_comparison,
+    prepared::PreparedDocument,
+    terminal::{SessionEnd, Tui},
+    theme::ColorDepth,
+};
+use ratatui::{Terminal, TerminalOptions, Viewport, backend::CrosstermBackend, layout::Rect};
+
 use crate::harness::Loading;
 
 /// A modified file at `path` whose one record reads `line`.
@@ -92,4 +104,32 @@ fn a_file_arriving_above_the_selection_keeps_it_on_its_file_and_its_line() {
         loading.live.file_column()
     );
     assert!(loading.live.shows("new top.md"));
+}
+
+/// docs/spec/architecture.md#input-contract: comparison output that holds only text is
+/// shown, and the session answers keys over the channel like any other.
+#[test]
+fn a_text_only_session_answers_keys_over_the_channel() {
+    let document = PreparedDocument::prepare(&parse_comparison(b"Binary files a and b differ\n"));
+    let area = Rect::new(0, 0, 80, 10);
+    let backend = CrosstermBackend::new(io::sink());
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Fixed(area),
+        },
+    )
+    .expect("sink terminal");
+    let mut tui = Tui::start(document, area.as_size(), ColorDepth::TrueColor);
+    let (sender, receiver) = mpsc::channel();
+    for key in ['j', 'q'] {
+        let event = Event::Key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+        sender
+            .send(Message::Terminal(Ok(event)))
+            .expect("the run receives");
+    }
+
+    let ended = tui.run(&mut terminal, &receiver).expect("the run draws");
+
+    assert!(matches!(ended, SessionEnd::Quit), "{ended:?}");
 }

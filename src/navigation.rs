@@ -89,8 +89,13 @@ impl Navigation {
     /// file, and when rows arrive above it, on the file-list line it was drawn on; when
     /// the shown page grows, its scroll extent grows with it.
     ///
-    /// Panics when the document lists no files, which only a complete document can be.
+    /// Panics when updates arrive for a document that lists no files, which only a
+    /// complete document can be.
     pub fn load(&mut self, arrived: Vec<Arrived>) {
+        if arrived.is_empty() {
+            return;
+        }
+
         let PreparedDocument::Files(files) = &mut self.document else {
             panic!("only a document listing files loads more files");
         };
