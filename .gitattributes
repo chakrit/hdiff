@@ -1,0 +1,4 @@
+# Written by src/languages/generate.lua; not hand-authored source.
+src/languages/file_types.rs linguist-generated=true
+src/languages/grammars.rs linguist-generated=true
+src/languages/queries/*.scm linguist-generated=true
