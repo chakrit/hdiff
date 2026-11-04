@@ -553,7 +553,9 @@ controlling-terminal handle when stdin contains diff data. Syntax highlighting g
 through an hdiff-owned boundary. Mainstream languages use hdiff's own hand-rolled
 lexer/parser, built for the fastest diff display. Once hdiff's own highlighter is done,
 hdiff highlights each hunk again with Tree-sitter grammars compiled into its binary,
-loaded in process through the `tree-sitter` crate, and applies their colors. Built-in
+loaded in process through the `tree-sitter` crate with its default features off, and
+applies their colors. Each grammar is a Cargo path dependency on its `vendor/`
+submodule, built by the grammar's own Rust bindings. Built-in
 defaults need no configuration; advanced users can configure Tree-sitter highlighting
 afterwards through hdiff's own config.
 nvim-treesitter is the source of the Tree-sitter language list. A maintainer-run Neovim

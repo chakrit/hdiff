@@ -76,6 +76,32 @@ Triage verdict: **GO** for `tree-sitter 0.27.0` with the default `std` feature a
 disabled.  The unchanged grammar crates retain the previous standard-audit evidence; this
 triage does not extend that evidence to newly resolved transitive versions.
 
+### Compiled-in second pass closure
+
+Audit date: 2026-11-04. Covers the packages `tree-sitter =0.27.0` (default features off)
+and the vendored `tree-sitter-go` path dependency add to `Cargo.lock`, and the submodule
+`vendor/tree-sitter-go` at `2346a3a`. Verdict: **GO**, provided `Cargo.lock` stays pinned,
+builds pass `--locked`, and each grammar submodule stays at its pinned commit.
+
+- aho-corasick 1.1.5, regex 1.13.1, regex-automata 0.4.18, regex-syntax 0.8.11, shlex
+  2.0.1, streaming-iterator 0.1.9 and zmij 1.0.23 are byte-identical to the 2026-08-20
+  audited lockfile. (aho-corasick later left the closure with tree-sitter's default
+  features.)
+- cc 1.10.0, find-msvc-tools 0.1.15, indexmap 2.14.2, serde_json 1.0.154 and
+  tree-sitter-language 0.1.9 are newer than audited. Version-to-version diffs match their
+  changelogs, and capability scans found no networking, secret reads, persistence writes,
+  dynamic loading (except a Windows-only `kernel32.dll` lookup in find-msvc-tools), or
+  encoded payloads. cc, indexmap, serde_json and zmij are build-time only.
+- tree-sitter 0.27.0 matches the checksum the 0.27.0 triage recorded.
+- `2346a3a` is tag `v0.25.0` plus two dependabot CI-workflow commits; every file the
+  audited crates.io 0.25.0 crate ships is byte-identical in the submodule. Cargo runs only
+  `bindings/rust/build.rs`, which compiles `src/parser.c` through cc.
+- Checksums matched the crates.io index, published crates matched their tagged source
+  (shlex 2.0.1 has no tag; its commit is on `master`), and OSV and the GitHub Advisory
+  Database returned no advisories.
+- Not verified: cc's changes line by line, `unsafe` soundness, tag signatures, and the
+  `vendor/nvim-treesitter` submodule, which the build never reads.
+
 ## Sources
 
 - [Tree-sitter Rust bindings](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_rust)

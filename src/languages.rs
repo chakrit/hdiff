@@ -1,10 +1,22 @@
-//! The file type a path selects, from the table `languages/generate.lua` writes from
-//! Neovim's filetype detection. A file type names both the scanner's language and the
-//! compiled Tree-sitter grammar. Rules: docs/spec/architecture.md#technology-direction.
+//! The languages hdiff highlights, from the data `languages/generate.lua` writes from
+//! Neovim and nvim-treesitter: the file type a path selects, and the Tree-sitter grammars
+//! compiled in. A file type names both the scanner's language and the compiled grammar.
+//! Rules: docs/spec/architecture.md#technology-direction.
 
 mod file_types;
+pub mod grammars;
 
 use file_types::{EXTENSIONS, FILE_NAMES, PATTERNS_AFTER_EXTENSIONS, PATTERNS_BEFORE_EXTENSIONS};
+use tree_sitter::Language;
+
+/// A Tree-sitter grammar compiled into hdiff: the file types it highlights, its language,
+/// and its highlight query translated for the `tree-sitter` crate.
+pub struct Grammar {
+    pub name: &'static str,
+    pub file_types: &'static [&'static str],
+    pub language: fn() -> Language,
+    pub highlights: &'static str,
+}
 
 /// A literal a file name matches at its start, at its end, or anywhere.
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +68,9 @@ fn first_match(patterns: &[(NamePattern, &'static str)], file_name: &str) -> Opt
 
 #[cfg(test)]
 mod tests {
-    use super::{EXTENSIONS, FILE_NAMES, file_type};
+    use tree_sitter::Query;
+
+    use super::{EXTENSIONS, FILE_NAMES, file_type, grammars::GRAMMARS};
 
     #[test]
     fn selects_by_file_name_pattern_and_extension_in_neovims_order() {
@@ -67,6 +81,19 @@ mod tests {
         assert_eq!(file_type("include/list.h"), Some("c"));
         assert_eq!(file_type("README"), Some("text"));
         assert_eq!(file_type("notes.hdiff-unknown"), None);
+    }
+
+    #[test]
+    fn every_highlight_query_compiles_against_its_grammar() {
+        for grammar in GRAMMARS {
+            let compiled = Query::new(&(grammar.language)(), grammar.highlights);
+            assert!(
+                compiled.is_ok(),
+                "{} query: {:?}",
+                grammar.name,
+                compiled.err()
+            );
+        }
     }
 
     #[test]

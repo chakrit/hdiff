@@ -590,6 +590,9 @@ local function grammar(name, parsers, filetypes)
     note(('grammar %s: %s has no Cargo manifest; scanner only'):format(name, directory))
     return nil
   end
+  if not read('Cargo.toml'):find('path = "' .. directory .. '"', 1, true) then
+    note(('grammar %s: run `cargo add --path %s`'):format(name, directory))
+  end
 
   local selected = {}
   for _, filetype in ipairs(filetypes) do
