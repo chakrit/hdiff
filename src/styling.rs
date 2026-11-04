@@ -90,6 +90,15 @@ impl StyledRows {
         Self { rows, styles }
     }
 
+    /// Replaces the syntax of each line in `restyled`, given by its position among the
+    /// rows' lines; character detail and the rows themselves stay as they are.
+    pub fn restyle(&mut self, restyled: Vec<(usize, LineSyntax)>) {
+        for (position, LineSyntax(syntax)) in restyled {
+            let index = self.rows.line_index(position);
+            self.styles.get_mut(index).syntax = syntax;
+        }
+    }
+
     pub fn rows(&self) -> &PageRows {
         &self.rows
     }
@@ -204,6 +213,28 @@ pub enum DetailStyle {
     Changed,
     /// Text between the changed spans.
     Unchanged,
+}
+
+/// The syntax of one line's payload, built away from the rows it replaces a line's syntax
+/// in.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LineSyntax(Partition);
+
+impl LineSyntax {
+    /// `payload` styled by `spans`, which come in order and never overlap; text no span
+    /// covers is plain.
+    pub fn of_spans(
+        payload: &str,
+        spans: impl IntoIterator<Item = (PayloadSpan, SyntaxClass)>,
+    ) -> Self {
+        let mut scratch = PartitionScratch::default();
+        let mut syntax = scratch.start(payload, TextStyle::Plain);
+        for (span, class) in spans {
+            syntax.push(span, TextStyle::Syntax(class));
+        }
+
+        Self(syntax.finish())
+    }
 }
 
 /// A row's syntax partition, and its character-detail partition when it has detail.
@@ -329,8 +360,8 @@ impl PartitionBuild<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DetailStyle, Partition, PartitionScratch, RowTone, StyledRow, StyledRows, StyledText,
-        TextStyle, character_partition,
+        DetailStyle, LineSyntax, Partition, PartitionScratch, RowTone, StyledRow, StyledRows,
+        StyledText, TextStyle, character_partition,
     };
     use crate::{
         detail::character_details,
@@ -338,6 +369,7 @@ mod tests {
         measurement::Unobserved,
         page_rows::PageRows,
         parser::parse_patch,
+        preferences::DiffGranularity,
         side::Side,
         span::PayloadSpan,
         syntax::{DisplayScan, SyntaxClass},
@@ -459,5 +491,41 @@ mod tests {
         ));
 
         assert_eq!(parts, whole);
+    }
+
+    /// docs/spec/performance.md#preparation-boundary: the second pass replaces a line's
+    /// syntax in place; its character detail and the rows stay as they are.
+    #[test]
+    fn restyling_replaces_only_a_line_s_syntax() {
+        let document = parse_patch(b"--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-hello\n+hallo\n")
+            .expect("valid diff");
+        let views = document.file_views().collect::<Vec<_>>();
+        let mut page = StyledRows::of_file_view(views[0], &mut Unobserved);
+        let added = page.rows().line_index(4);
+        let owned_segments = |page: &StyledRows, granularity| {
+            page.row(added, granularity)
+                .segments()
+                .map(|segment| (segment.text.to_owned(), segment.style))
+                .collect::<Vec<_>>()
+        };
+        let character_before = owned_segments(&page, DiffGranularity::Character);
+
+        page.restyle(vec![(
+            4,
+            LineSyntax::of_spans(
+                "hallo",
+                [(PayloadSpan::within("hallo", 0..5), SyntaxClass::Keyword)],
+            ),
+        )]);
+
+        assert_eq!(
+            owned_segments(&page, DiffGranularity::Line),
+            [("hallo".to_owned(), TextStyle::Syntax(SyntaxClass::Keyword))]
+        );
+        assert_eq!(
+            owned_segments(&page, DiffGranularity::Character),
+            character_before
+        );
+        assert_eq!(page.rows(), &PageRows::of_file_view(views[0]));
     }
 }

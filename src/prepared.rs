@@ -2,6 +2,7 @@ use crate::{
     display_lines::DisplayLine,
     document::{DiffDocument, DiffFiles, FileView},
     file_tree::{Arrival, FileSelection, ListedTree, Listing, TreeRowIndex},
+    highlighter::Restyled,
     measurement::{Observer, Stage, Unobserved},
     non_empty::Growing,
     page_rows::{LineIndex, PageRows},
@@ -194,6 +195,15 @@ impl PreparedFiles {
         grown
     }
 
+    /// Replaces the syntax of the lines `restyled` names on its page; the page's rows, and
+    /// so its geometry and scroll extents, stay as they are.
+    pub fn restyle(&mut self, restyled: Restyled) {
+        self.pages[restyled.page.0]
+            .page
+            .rows
+            .restyle(restyled.lines);
+    }
+
     /// Appends `part` to the last file's page, and returns that page.
     fn grow_last(&mut self, part: PreparedPage) -> PageIndex {
         self.last_mut().page.append(part);
@@ -249,6 +259,11 @@ pub struct PageIndex(usize);
 
 impl PageIndex {
     pub const FIRST: Self = Self(0);
+
+    /// The page of the file at `position` in input order.
+    pub const fn at(position: usize) -> Self {
+        Self(position)
+    }
 }
 
 /// The order file rotation visits a document's pages in, which is the file list's, and

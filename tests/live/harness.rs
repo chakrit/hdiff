@@ -1,9 +1,12 @@
 //! The live-test harness: a `Tui` on a test terminal, and the layout and detail modes the
 //! scenario matrix runs.
 
+use std::io;
+
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use hdiff::{
     effective_view::EffectiveView,
+    loading::{self, Channel, Message},
     navigation::Step,
     parser::{parse_comparison, parse_patch},
     preferences::{DiffGranularity, DiffLayout, ViewPreferences},
@@ -54,6 +57,24 @@ impl Live {
     pub fn comparison(output: &str, mode: Mode) -> Self {
         let document = parse_comparison(output.as_bytes());
         Self::start(PreparedDocument::prepare(&document), mode, SCREEN)
+    }
+
+    /// Streams `patch` through the worker and the highlighter, applies every restyle the
+    /// highlighter sends to the session, and draws; the session already shows `patch`.
+    pub fn highlight(&mut self, patch: &str) {
+        let Channel { sender, receiver } =
+            loading::start(Box::new(io::Cursor::new(patch.as_bytes().to_vec())));
+        drop(sender);
+        for message in receiver {
+            match message {
+                Message::Restyled(restyled) => self.tui.restyle(restyled),
+                Message::Loaded(_) | Message::Terminal(_) => {}
+            }
+        }
+
+        self.tui
+            .draw(&mut self.terminal)
+            .expect("frame after restyling");
     }
 
     /// Applies `arrived` updates and draws.

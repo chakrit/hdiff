@@ -151,6 +151,7 @@ impl RunObserver for Watch {
                     self.ended.store(true, Ordering::Release);
                 }
             }
+            Answered::Restyled => {}
         }
     }
 

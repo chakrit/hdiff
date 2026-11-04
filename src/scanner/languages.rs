@@ -2,7 +2,6 @@
 //! docs/spec/architecture.md#technology-direction.
 
 use super::{Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST};
-use crate::languages;
 
 /// A language the scanner reads, with the file types that select it.
 struct Language {
@@ -229,25 +228,25 @@ static LANGUAGES: &[Language] = &[
     },
 ];
 
-/// The spec of the language `path`'s file type selects; none for any other path.
-pub fn of_path(path: &str) -> Option<&'static Spec> {
-    let file_type = languages::file_type(path)?;
+/// The spec of the language `file_type` names; none for a file type the scanner does not
+/// read.
+pub fn of_file_type(file_type: &str) -> Option<&'static Spec> {
     LANGUAGES
         .iter()
         .find(|language| language.file_types.contains(&file_type))
         .map(|language| language.spec)
 }
+
 #[cfg(test)]
 mod tests {
     use std::ptr;
 
-    use super::{super::go::GO, LANGUAGES, of_path};
+    use super::{super::go::GO, LANGUAGES, of_file_type};
 
     #[test]
-    fn selects_a_language_by_file_name_then_by_extension() {
-        assert!(of_path("cmd/main.go").is_some_and(|spec| ptr::eq(spec, &GO)));
-        assert!(of_path("README").is_none());
-        assert!(of_path("archive.tar").is_none());
+    fn selects_a_language_by_file_type() {
+        assert!(of_file_type("go").is_some_and(|spec| ptr::eq(spec, &GO)));
+        assert!(of_file_type("text").is_none());
     }
 
     #[test]

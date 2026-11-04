@@ -1,6 +1,7 @@
 //! Streamed loading: a worker thread reads and prepares the input's files as they arrive,
-//! one hunk at a time, and the main thread receives them with the terminal's
-//! events over one channel. Rules: docs/spec/performance.md#preparation-boundary.
+//! one hunk at a time, and hands each finished hunk to the highlighter thread; the main
+//! thread receives both threads' results with the terminal's events over one channel.
+//! Rules: docs/spec/performance.md#preparation-boundary.
 
 use std::{
     io::{self, BufRead},
@@ -14,18 +15,22 @@ use crate::{
     display_lines::{self, DisplayLine},
     file_identity::FileIdentity,
     file_tree::Listing,
+    highlighter::{self, Hunk, Restyled},
+    languages,
     measurement::Unobserved,
     parser::{Progress, SectionReader},
-    prepared::{Arrived, FilePage, PreparedDocument, PreparedFiles, PreparedPage},
+    prepared::{Arrived, FilePage, PageIndex, PreparedDocument, PreparedFiles, PreparedPage},
+    side::BySide,
     source_text::SourceLine,
     syntax::DisplayScan,
 };
 
-/// What the main thread receives: a terminal event from the key reader, or what the
-/// worker read.
+/// What the main thread receives: a terminal event from the key reader, what the worker
+/// read, or lines the highlighter re-colored.
 pub enum Message {
     Terminal(io::Result<TerminalEvent>),
     Loaded(Loaded),
+    Restyled(Restyled),
 }
 
 /// What the worker read from the input.
@@ -44,14 +49,20 @@ pub struct Channel {
     pub receiver: Receiver<Message>,
 }
 
-/// Starts the worker reading `input` on its own thread; its files and its end arrive on
-/// the returned channel.
+/// Starts the worker reading `input` and the highlighter re-coloring its hunks, each on
+/// its own thread; the files, their end and their restyled lines arrive on the returned
+/// channel.
 pub fn start(input: Box<dyn BufRead + Send>) -> Channel {
     let (sender, receiver) = mpsc::channel();
+    let (hunks, hunks_received) = mpsc::channel();
+    let highlighted = sender.clone();
     let worker = Worker {
         sender: sender.clone(),
+        hunks: Some(hunks),
+        pages: 0,
         stopped: false,
     };
+    thread::spawn(move || highlighter::run(hunks_received, highlighted));
     thread::spawn(move || worker.read_files(input));
 
     Channel { sender, receiver }
@@ -72,7 +83,7 @@ impl Channel {
     pub fn opening(&self) -> Opening {
         let first = self.receiver.iter().find_map(|message| match message {
             Message::Loaded(loaded) => Some(loaded),
-            Message::Terminal(_) => None,
+            Message::Terminal(_) | Message::Restyled(_) => None,
         });
 
         match first.expect("the channel holds a sender while the receiver lives") {
@@ -88,15 +99,20 @@ impl Channel {
     }
 }
 
-/// The worker's side of the channel, and whether the main thread has stopped receiving.
+/// The worker's side of the channel, its channel to the highlighter while the highlighter
+/// receives, how many pages it has sent, and whether the main thread has stopped
+/// receiving.
 struct Worker {
     sender: Sender<Message>,
+    hunks: Option<Sender<Hunk>>,
+    pages: usize,
     stopped: bool,
 }
 
-/// The page of the file being read, with the syntax scan its lines continue and how many
-/// of its lines are already sent.
+/// The page of the file being read, with the file type each side selects, the syntax
+/// scan its lines continue, and how many of its lines are already sent.
 struct OpenPage {
+    file_types: BySide<Option<&'static str>>,
     scan: DisplayScan,
     sent: usize,
 }
@@ -124,20 +140,28 @@ impl Worker {
             let view = section.view(&[]);
             let all_lines = display_lines::of_file_view(view);
             let listing = Listing::of(view);
-            let update = match open {
-                Some(OpenPage { mut scan, sent }) => {
+            let (update, hunks) = match open {
+                Some(OpenPage {
+                    file_types,
+                    mut scan,
+                    sent,
+                }) => {
                     let part = part_of(all_lines.skip(sent), &mut scan);
+                    let hunks = Hunk::of_part(self.last_page(), file_types, sent, &part);
                     last_scan = Some(scan);
-                    Arrived::Closed { part, listing }
+                    (Arrived::Closed { part, listing }, hunks)
                 }
                 None => {
-                    let mut scan = DisplayScan::of_file(view.file);
+                    let file_types = languages::of_file(view.file);
+                    let mut scan = DisplayScan::of_file_types(file_types);
                     let part = part_of(all_lines, &mut scan);
+                    let hunks = Hunk::of_part(self.next_page(), file_types, 0, &part);
                     last_scan = Some(scan);
-                    Arrived::Whole(FilePage::of_part(part, listing))
+                    (Arrived::Whole(FilePage::of_part(part, listing)), hunks)
                 }
             };
             self.send(Loaded::Arrived(update));
+            self.highlight(hunks);
         }
 
         let ended = match (reader.finish(), last_scan) {
@@ -160,26 +184,62 @@ impl Worker {
 
         let mut count = 0;
         let lines = display_lines::of_progress(progress).inspect(|_| count += 1);
-        let update = match (progress, open.as_mut()) {
+        let (update, hunks) = match (progress, open.as_mut()) {
             (Progress::Headers { git, headers, .. }, _) => {
-                let mut scan = DisplayScan::of_headers(headers.as_ref());
+                let file_types = languages::of_headers(headers.as_ref());
+                let mut scan = DisplayScan::of_file_types(file_types);
                 let part = part_of(lines, &mut scan);
                 let listing = Listing::of_identity(&FileIdentity::of_unified(*git, headers));
-                *open = Some(OpenPage { scan, sent: 0 });
-                Arrived::Opened(FilePage::of_part(part, listing))
+                let hunks = Hunk::of_part(self.next_page(), file_types, 0, &part);
+                *open = Some(OpenPage {
+                    file_types,
+                    scan,
+                    sent: 0,
+                });
+                (Arrived::Opened(FilePage::of_part(part, listing)), hunks)
             }
-            (Progress::Hunk { .. }, Some(page)) => Arrived::Grew(part_of(lines, &mut page.scan)),
+            (Progress::Hunk { .. }, Some(page)) => {
+                let part = part_of(lines, &mut page.scan);
+                let hunks = Hunk::of_part(self.last_page(), page.file_types, page.sent, &part);
+                (Arrived::Grew(part), hunks)
+            }
             (Progress::Hunk { .. }, None) => unreachable!("a section reports its headers first"),
         };
         if let Some(page) = open.as_mut() {
             page.sent += count;
         }
         self.send(Loaded::Arrived(update));
+        self.highlight(hunks);
+    }
+
+    /// The page of the next file to arrive, which the worker now counts as sent.
+    fn next_page(&mut self) -> PageIndex {
+        self.pages += 1;
+        self.last_page()
+    }
+
+    /// The page of the last file sent.
+    fn last_page(&self) -> PageIndex {
+        PageIndex::at(self.pages - 1)
     }
 
     /// Sends `loaded` to the main thread, noting when it has stopped receiving.
     fn send(&mut self, loaded: Loaded) {
         self.stopped = self.sender.send(Message::Loaded(loaded)).is_err();
+    }
+
+    /// Hands `hunks` to the highlighter, after the part they are in went to the main
+    /// thread; once the highlighter stops receiving, hunks are no longer made for it.
+    fn highlight(&mut self, hunks: Vec<Hunk>) {
+        let Some(highlighter) = &self.hunks else {
+            return;
+        };
+        if hunks
+            .into_iter()
+            .any(|hunk| highlighter.send(hunk).is_err())
+        {
+            self.hunks = None;
+        }
     }
 }
 
@@ -195,10 +255,10 @@ fn part_of<'a>(
 mod tests {
     use std::io;
 
-    use super::{Loaded, Message, start};
+    use super::{Channel, Loaded, Message, start};
     use crate::{
         parser::parse_patch,
-        prepared::{Arrived, PreparedDocument, PreparedFiles},
+        prepared::{Arrived, PageIndex, PreparedDocument, PreparedFiles},
     };
 
     /// docs/spec/performance.md#preparation-boundary: pages that fill in as the input
@@ -208,8 +268,9 @@ mod tests {
     fn streamed_pages_are_the_pages_of_the_whole_input() {
         let patch = "intro\n--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,2 @@\n x\n-/* y\n+z\n@@ -9 +9 @@\n-w */\n+v\nbetween\ndiff --git a/b.bin b/b.bin\nindex 1..2 100644\nBinary files a/b.bin and b/b.bin differ\n--- a/c.rs\n+++ b/c.rs\n@@ -1,2 +1,2 @@\n-fn c() {}\nbroken\ntrailer\n";
         let channel = start(Box::new(io::Cursor::new(patch.as_bytes().to_vec())));
-        let mut updates = channel.receiver.iter().map(|message| match message {
-            Message::Loaded(Loaded::Arrived(update)) => update,
+        let mut updates = channel.receiver.iter().filter_map(|message| match message {
+            Message::Loaded(Loaded::Arrived(update)) => Some(update),
+            Message::Restyled(_) => None,
             Message::Loaded(Loaded::NoFiles(_) | Loaded::Failed(_)) | Message::Terminal(_) => {
                 panic!("the worker sends file updates")
             }
@@ -233,5 +294,44 @@ mod tests {
             streamed.file_selection(whole.page_order().first()),
             whole.file_selection(whole.page_order().first())
         );
+    }
+
+    /// docs/spec/performance.md#preparation-boundary: the highlighter re-colors each
+    /// finished hunk's record lines, and its lines arrive after the lines they restyle.
+    #[test]
+    fn the_highlighter_restyles_each_streamed_hunk_after_it_arrives() {
+        let patch =
+            "--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,2 @@\n x\n-/* y\n+z\n@@ -9 +9 @@\n-w */\n+v\n";
+        let Channel { sender, receiver } =
+            start(Box::new(io::Cursor::new(patch.as_bytes().to_vec())));
+        drop(sender);
+        let mut files = None;
+        let mut restyled_positions = Vec::new();
+
+        for message in receiver {
+            match (message, files.as_mut()) {
+                (
+                    Message::Loaded(Loaded::Arrived(
+                        Arrived::Opened(first) | Arrived::Whole(first),
+                    )),
+                    None,
+                ) => {
+                    files = Some(PreparedFiles::loading(first));
+                }
+                (Message::Loaded(Loaded::Arrived(update)), Some(files)) => {
+                    files.receive([update]);
+                }
+                (Message::Restyled(restyled), Some(files)) => {
+                    assert_eq!(restyled.page, PageIndex::FIRST);
+                    restyled_positions.extend(restyled.lines.iter().map(|(position, _)| *position));
+                    files.restyle(restyled);
+                }
+                (Message::Restyled(_), None) | (Message::Loaded(_) | Message::Terminal(_), _) => {
+                    panic!("the worker opens a file, then sends its updates")
+                }
+            }
+        }
+
+        assert_eq!(restyled_positions, [4, 3, 5, 7, 8]);
     }
 }

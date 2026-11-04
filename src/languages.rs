@@ -9,6 +9,12 @@ pub mod grammars;
 use file_types::{EXTENSIONS, FILE_NAMES, PATTERNS_AFTER_EXTENSIONS, PATTERNS_BEFORE_EXTENSIONS};
 use tree_sitter::Language;
 
+use crate::{
+    document::{DiffFile, FileBody},
+    headers::{FileHeader, HeaderPath},
+    side::BySide,
+};
+
 /// A Tree-sitter grammar compiled into hdiff: the file types it highlights, its language,
 /// and its highlight query translated for the `tree-sitter` crate.
 pub struct Grammar {
@@ -52,6 +58,27 @@ pub fn file_type(path: &str) -> Option<&'static str> {
         .or_else(by_early_pattern)
         .or_else(by_extension)
         .or_else(by_late_pattern)
+}
+
+/// The file type each side of `file` selects by its path; a side without a path, and a
+/// file without headers, selects none.
+pub fn of_file(file: &DiffFile) -> BySide<Option<&'static str>> {
+    match &file.body {
+        FileBody::Unified(body) => of_headers(body.headers.as_ref()),
+        FileBody::Broken(body) => match &*body.read.headers {
+            [old, new] => of_headers(BySide { old, new }),
+            _ => BySide::default(),
+        },
+        FileBody::Metadata(_) => BySide::default(),
+    }
+}
+
+/// The file type each side's header path selects.
+pub fn of_headers(headers: BySide<&FileHeader>) -> BySide<Option<&'static str>> {
+    headers.map(|header| match &header.path {
+        HeaderPath::Path(path) => file_type(path),
+        HeaderPath::DevNull | HeaderPath::Undecodable => None,
+    })
 }
 
 fn look_up(table: &[(&str, &'static str)], key: &str) -> Option<&'static str> {

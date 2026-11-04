@@ -5,10 +5,10 @@ use std::ptr;
 
 use crate::{
     display_lines::{LineKind, RecordPart},
-    document::{DiffFile, FileBody},
-    headers::{FileHeader, HeaderPath},
+    document::DiffFile,
+    languages,
     measurement::{Observer, Work},
-    scanner::{ScanState, Spec, languages},
+    scanner::{ScanState, Spec, languages as scanner_languages},
     side::{BySide, Side},
     span::PayloadSpan,
 };
@@ -42,22 +42,14 @@ pub struct DisplayScan {
 impl DisplayScan {
     /// The scan of `file`'s lines, each side in its path's language.
     pub fn of_file(file: &DiffFile) -> Self {
-        match &file.body {
-            FileBody::Unified(body) => Self::of_headers(body.headers.as_ref()),
-            FileBody::Broken(body) => match &*body.read.headers {
-                [old, new] => Self::of_headers(BySide { old, new }),
-                _ => Self::textual(),
-            },
-            FileBody::Metadata(_) => Self::textual(),
-        }
+        Self::of_file_types(languages::of_file(file))
     }
 
-    /// The scan of a file with `headers`, each side in its path's language.
-    pub fn of_headers(headers: BySide<&FileHeader>) -> Self {
-        let languages = headers.map(|header| match &header.path {
-            HeaderPath::Path(path) => languages::of_path(path),
-            HeaderPath::DevNull | HeaderPath::Undecodable => None,
-        });
+    /// The scan of a file whose sides select `file_types`, each side in its file type's
+    /// language.
+    pub fn of_file_types(file_types: BySide<Option<&'static str>>) -> Self {
+        let languages =
+            file_types.map(|file_type| file_type.and_then(scanner_languages::of_file_type));
         let shared = languages
             .merge(|old, new| old.zip(new))
             .is_some_and(|(old, new)| ptr::eq(old, new));

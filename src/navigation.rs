@@ -18,6 +18,7 @@ use self::{
 use crate::{
     effective_view::EffectiveView,
     file_tree::FileSelection,
+    highlighter::Restyled,
     preferences::ViewPreferences,
     prepared::{Arrived, PreparedDocument},
     screen::ScreenLines,
@@ -110,6 +111,17 @@ impl Navigation {
         }
         if grown == Some(page) {
             self.extent.rebuild(&self.document);
+        }
+    }
+
+    /// Replaces the syntax of the lines `restyled` names; rows, extents and the scroll
+    /// position stay as they are.
+    ///
+    /// Panics for a document that lists no files, which no highlighter restyles.
+    pub fn restyle(&mut self, restyled: Restyled) {
+        match &mut self.document {
+            PreparedDocument::Files(files) => files.restyle(restyled),
+            PreparedDocument::Text(_) => panic!("only a document listing files is restyled"),
         }
     }
 

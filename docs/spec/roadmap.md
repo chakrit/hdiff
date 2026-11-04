@@ -162,7 +162,7 @@ implementation remains unapproved.
      - [x] Language selection on the generated table; scanner tests stay green
        unchanged.
      - [x] Go compiled in as a Cargo path dependency; clean build time measured.
-     - [ ] The highlighter thread, in-place syntax replacement, and capture fold; Go end
+     - [x] The highlighter thread, in-place syntax replacement, and capture fold; Go end
        to end.
      - [ ] The remaining starter languages in batches, with build time and binary size
        per batch.

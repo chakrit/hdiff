@@ -1,7 +1,11 @@
 //! A sequence that holds at least one item, so its first and last items, its length, and
 //! a walk over it need no empty case.
 
-use std::{iter, num::NonZeroUsize, ops::Index};
+use std::{
+    iter,
+    num::NonZeroUsize,
+    ops::{Index, IndexMut},
+};
 
 /// One or more items in order.
 #[derive(Debug, PartialEq, Eq)]
@@ -147,6 +151,16 @@ impl<T> Index<usize> for Growing<T> {
         match index {
             0 => &self.first,
             later => &self.rest[later - 1],
+        }
+    }
+}
+
+/// Panics when `index` is not below [`len`](Growing::len), as a slice does.
+impl<T> IndexMut<usize> for Growing<T> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        match index {
+            0 => &mut self.first,
+            later => &mut self.rest[later - 1],
         }
     }
 }

@@ -169,6 +169,13 @@ impl<T> LineMap<T> {
         &self.0[index.get()]
     }
 
+    /// The value of line `index`, to change.
+    ///
+    /// Panics when `index` names no line of the rows this map was built from.
+    pub(crate) fn get_mut(&mut self, index: LineIndex) -> &mut T {
+        &mut self.0[index.get()]
+    }
+
     /// This map followed by `later`, the map of the rows appended after these rows'.
     pub(crate) fn append(&mut self, later: Self) {
         self.0.extend(later.0);
@@ -340,10 +347,7 @@ impl PageRows {
     pub(crate) fn measured_text(&self, index: LineIndex) -> MeasuredTextRef<'_> {
         self.line(index).measured_text()
     }
-}
 
-#[cfg(test)]
-impl PageRows {
     /// The index of the line at `position`.
     ///
     /// Panics when `position` is not below the line count.
@@ -355,7 +359,10 @@ impl PageRows {
 
         LineIndex::at(position)
     }
+}
 
+#[cfg(test)]
+impl PageRows {
     /// The index of the side-by-side row at `position`.
     ///
     /// Panics when `position` is not below the pair count.

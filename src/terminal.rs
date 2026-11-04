@@ -11,6 +11,7 @@ use ratatui::{Terminal, backend::Backend, layout::Size};
 
 use crate::{
     file_tree::Arrival,
+    highlighter::Restyled,
     loading::{Loaded, Message},
     navigation::{Navigation, Step},
     preferences::ViewPreferences,
@@ -70,6 +71,11 @@ impl Tui {
         self.navigation.load(arrived);
     }
 
+    /// Replaces the syntax of the lines `restyled` names; the next draw shows them.
+    pub fn restyle(&mut self, restyled: Restyled) {
+        self.navigation.restyle(restyled);
+    }
+
     pub fn preferences(&self) -> ViewPreferences {
         self.navigation.interaction().preferences()
     }
@@ -119,6 +125,11 @@ impl Tui {
                     }
                     Message::Loaded(Loaded::NoFiles(_)) => {
                         arrived.push(Arrived::Ended(PreparedPage::empty()));
+                    }
+                    Message::Restyled(restyled) => {
+                        self.load(mem::take(&mut arrived));
+                        observer.answered(Answered::Restyled);
+                        self.restyle(restyled);
                     }
                 }
             }
@@ -186,10 +197,12 @@ pub trait RunObserver {
     fn drew(&mut self);
 }
 
-/// A message a run answered: a terminal event, or an update from the worker.
+/// A message a run answered: a terminal event, an update from the worker, or lines the
+/// highlighter re-colored.
 pub enum Answered {
     Terminal,
     Arrived(Arrival),
+    Restyled,
 }
 
 /// A run observer that records nothing, for interactive sessions.

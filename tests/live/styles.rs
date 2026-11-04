@@ -13,6 +13,33 @@ use crate::{
     harness::{Live, Mode, THEME, columns, positions},
 };
 
+matrix!(second_pass_recolors_in_place);
+
+/// docs/spec/performance.md#preparation-boundary: once the Tree-sitter pass lands, a Go
+/// constant on a context line takes the constant color, and the screen's text, and so its
+/// scroll position, stays as it was.
+fn second_pass_recolors_in_place(mode: Mode) {
+    let patch = "--- a/pi.go\n+++ b/pi.go\n@@ -1,2 +1,2 @@\n const Pi = 3\n-x\n+y\n";
+    let mut live = Live::load(patch, mode);
+    let rows_before = live.rows();
+    let constant = live.find("const Pi");
+    let pi = (constant.x + columns("const "), constant.y);
+    let scanned = live.buffer()[pi].fg;
+
+    live.highlight(patch);
+
+    assert_eq!(live.rows(), rows_before);
+    assert_ne!(
+        scanned, THEME.syntax.keyword,
+        "the scanner reads `Pi` as a variable"
+    );
+    assert_eq!(
+        live.buffer()[pi].fg,
+        THEME.syntax.keyword,
+        "Tree-sitter reads a constant"
+    );
+}
+
 /// An 80-column screen eight rows tall.
 const EIGHT_ROWS: Size = Size::new(80, 8);
 /// An 80-column screen nine rows tall.

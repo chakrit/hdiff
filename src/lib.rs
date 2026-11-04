@@ -16,6 +16,7 @@ pub mod file_tree;
 pub mod finite_output;
 pub mod geometry;
 pub mod headers;
+pub mod highlighter;
 pub mod input;
 pub mod languages;
 pub mod line_breaks;
