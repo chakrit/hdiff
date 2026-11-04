@@ -1,5 +1,5 @@
 //! Streamed loading: a worker thread reads and prepares the input's files as they arrive,
-//! one change block at a time, and the main thread receives them with the terminal's
+//! one hunk at a time, and the main thread receives them with the terminal's
 //! events over one channel. Rules: docs/spec/performance.md#preparation-boundary.
 
 use std::{
@@ -103,7 +103,7 @@ struct OpenPage {
 
 impl Worker {
     /// Reads `input` section by section, sending each file's page as its headers arrive
-    /// and each change block after them, then the text after the last file. Stops early
+    /// and each hunk after them, then the text after the last file. Stops early
     /// when the main thread has stopped receiving.
     fn read_files(mut self, mut input: Box<dyn BufRead + Send>) {
         let mut reader = SectionReader::new(&mut input);
@@ -152,7 +152,7 @@ impl Worker {
     }
 
     /// Sends the part of the open page `progress` reports: the page itself when the
-    /// section's headers arrive, and the next change block after them.
+    /// section's headers arrive, and the next hunk after them.
     fn report(&mut self, progress: &Progress<'_>, open: &mut Option<OpenPage>) {
         if self.stopped {
             return;

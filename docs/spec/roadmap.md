@@ -150,13 +150,25 @@ implementation remains unapproved.
    - [x] Rust, C, JavaScript, and Python tables; Tree-sitter leaves the binary.
    - [x] Streamed loading: worker, key-reader, and main threads over one channel; a
      diff parser that accepts input in pieces and resumes after errors; pages that grow
-     one change block at a time; the screen opening at the first file header; the
+     one hunk at a time; the screen opening at the first file header; the
      dynamic file list and `Tab` behavior. Fixed start-up costs are measured early
      against the 4 ms budget.
    - [x] Measurement drivers for the three loading [targets](performance.md#targets).
-   - [ ] The Tree-sitter second pass through the `tree-sitter` binary in the `PATH`.
-     First verify that the binary emits machine-readable captures; if it does not,
-     bring the alternatives to the user before building.
+   - [ ] The Tree-sitter second pass with compiled-in grammars, in this order:
+     - [x] The second-pass decisions written into the [architecture](architecture.md)
+       and [performance](performance.md) specs.
+     - [ ] The `vendor/nvim-treesitter/` submodule, the Neovim generator, and its first
+       output for Go with the `vendor/tree-sitter-go/` submodule.
+     - [ ] Language selection on the generated table; scanner tests stay green
+       unchanged.
+     - [ ] `build.rs` compiles Go; clean build time and binary size measured.
+     - [ ] The highlighter thread, in-place syntax replacement, and capture fold; Go end
+       to end.
+     - [ ] The remaining starter languages in batches, with build time and binary size
+       per batch.
+     - [ ] `first-frame` and `loading` within targets with the pass on; a diagnostic
+       for hunk-to-restyle latency; Kubernetes retired instructions for the first pass
+       unchanged.
    - [x] The remaining mainstream language tables, in batches.
 
 3. Add implicit Tree-sitter semantic strategies with textual fallback.

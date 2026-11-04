@@ -10,20 +10,25 @@ This file is authoritative for preparation, measurement, and performance optimiz
 
 Speed is about user perception, not about finishing a batch quickly.
 
-`hdiff` opens its screen at the first file header and fills in content one change block
-at a time as it arrives; the file list grows as files arrive. Three threads share nothing
-and send messages over one standard-library channel:
+`hdiff` opens its screen at the first file header and fills in content one hunk at a time
+as it arrives; the file list grows as files arrive. Four threads share nothing and send
+messages over standard-library channels:
 
 - **Worker:** reads input, parses, and prepares.
 - **Key reader:** reads keys and resizes.
 - **Main:** owns the file list and pages, and draws, once per batch of messages.
+- **Highlighter:** re-colors each finished hunk with Tree-sitter.
 
-The highlighter colors each line as it arrives. Character detail and side-by-side pairing
-wait for the end of their change block. Keys never wait on loading. No async runtime is
-part of this boundary.
+The scanner colors each line as it arrives. Character detail and side-by-side pairing
+wait for the end of their hunk. Keys never wait on loading. No async runtime is part of
+this boundary.
 
-The Tree-sitter second pass runs the `tree-sitter` binary as a separate process, in
-batches, so a slow grammar never delays the screen or keys. hdiff links no Tree-sitter.
+The Tree-sitter second pass runs on the highlighter thread. The worker sends it each
+finished hunk's two sides as owned text; it sends the restyled lines' syntax spans to the
+main thread, which replaces those lines' syntax in place, and the next frame shows them.
+A page's rows and geometry never change, so scroll position is unaffected. Keys and the
+first frame never wait on the pass; a slow grammar only delays the upgrade, and a grammar
+that fails on a hunk leaves the scanner's colors.
 
 File-list labels are derived as files arrive. Each prepared page derives only its own
 rendered rows, split pairs, syntax spans, and character-detail spans.
@@ -135,7 +140,7 @@ Targets are recorded here and reviewed from script output. Tests never assert ti
 | Launch to the first frame written (`first-frame`) | 4 ms, one 240 Hz frame          |
 | Key press to redraw while the worker is busy      | 1 ms                            |
 | (`loading` keys)                                  |                                 |
-| A change block's last byte to its frame written   | 4 ms                            |
+| A hunk's last byte to its frame written           | 4 ms                            |
 | (`loading` updates)                               |                                 |
 | `movement` step, worst case                       | 1 ms                            |
 | Total preparation time                            | no target; a diagnostic only    |

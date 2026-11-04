@@ -1,5 +1,5 @@
 //! The streamed drivers, which read the input as the viewer does: `first-frame` times
-//! launch to the first frame written, and `loading` times keys and change blocks while
+//! launch to the first frame written, and `loading` times keys and hunks while
 //! the worker still loads. Rules: docs/spec/performance.md#benchmark-drivers.
 
 use std::{

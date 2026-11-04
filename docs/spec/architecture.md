@@ -103,7 +103,8 @@ tui.load(updates)                          applies arrived file updates; the nex
 
 Output is Ratatui's `Terminal<B: Backend>`. The interactive run's input is one
 standard-library channel of `loading::Message`: terminal events from the key-reader
-thread, and prepared files from the worker thread.
+thread, prepared files from the worker thread, and restyled lines from the highlighter
+thread.
 
 | Caller          | Terminal                                         | Events                          | Drives       |
 |-----------------|--------------------------------------------------|---------------------------------|--------------|
@@ -551,11 +552,24 @@ and lifecycle operations. The backend must support event reads from an explicit
 controlling-terminal handle when stdin contains diff data. Syntax highlighting goes
 through an hdiff-owned boundary. Mainstream languages use hdiff's own hand-rolled
 lexer/parser, built for the fastest diff display. Once hdiff's own highlighter is done,
-hdiff highlights again with Tree-sitter whenever the `tree-sitter` binary is available in
-the `PATH`, and applies its colors. The mainstream languages are Go, Rust, C, JavaScript,
-Python, Java, C++, C#, Kotlin, Swift, PHP, Ruby, Shell, SQL, HTML, CSS, SCSS, Less, JSON,
-YAML, TOML, Markdown, XML, INI, Dockerfile, Makefile, CMake, Terraform / HCL, Protocol
-Buffers, GraphQL, Dart, Scala, Lua, Perl, R, Julia, Haskell, OCaml, F#, Elixir, Erlang,
+hdiff highlights each hunk again with Tree-sitter grammars compiled into its binary,
+loaded in process through the `tree-sitter` crate, and applies their colors. Built-in
+defaults need no configuration; advanced users can configure Tree-sitter highlighting
+afterwards through hdiff's own config.
+nvim-treesitter is the source of the Tree-sitter language list. A maintainer-run Neovim
+generator (`nvim --headless -l`) writes the file-type mapping, each grammar's source
+location, and the translated highlight queries into the repository; building and running
+hdiff need no Neovim. Grammar sources and nvim-treesitter are Git submodules directly
+under `vendor/`, named by repository, each grammar pinned at nvim-treesitter's revision.
+The starter set compiled into hdiff is the mainstream languages below that
+nvim-treesitter carries. The generated table is hdiff's only language selection: a path
+maps to a file type, which names both the scanner table and the compiled grammar.
+Tree-sitter captures fold by prefix onto hdiff's syntax classes; overlaps resolve
+innermost first, then the later pattern.
+The mainstream languages are Go, Rust, C, JavaScript, Python, Java, C++, C#, Kotlin,
+Swift, PHP, Ruby, Shell, SQL, HTML, CSS, SCSS, Less, JSON, YAML, TOML, Markdown, XML,
+INI, Dockerfile, Makefile, CMake, Terraform / HCL, Protocol Buffers, GraphQL, Dart,
+Scala, Lua, Perl, R, Julia, Haskell, OCaml, F#, Elixir, Erlang,
 Clojure, Zig, Nim, Objective-C, Groovy, PowerShell, Visual Basic, Svelte, Vue, Crystal,
 Gleam, Assembly, and CUDA.
 Hand-rolled highlighting need only mostly match Tree-sitter's colors. Highlighting works
