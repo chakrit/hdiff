@@ -157,9 +157,9 @@ implementation remains unapproved.
    - [ ] The Tree-sitter second pass with compiled-in grammars, in this order:
      - [x] The second-pass decisions written into the [architecture](architecture.md)
        and [performance](performance.md) specs.
-     - [ ] The `vendor/nvim-treesitter/` submodule, the Neovim generator, and its first
+     - [x] The `vendor/nvim-treesitter/` submodule, the Neovim generator, and its first
        output for Go with the `vendor/tree-sitter-go/` submodule.
-     - [ ] Language selection on the generated table; scanner tests stay green
+     - [x] Language selection on the generated table; scanner tests stay green
        unchanged.
      - [ ] `build.rs` compiles Go; clean build time and binary size measured.
      - [ ] The highlighter thread, in-place syntax replacement, and capture fold; Go end

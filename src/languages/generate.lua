@@ -12,7 +12,8 @@
 local STARTER = { 'go' }
 
 -- hdiff's own entries, which win over Neovim's: fixed file types for names Neovim detects
--- by content, and names Neovim selects only by full path or does not know.
+-- by content, names Neovim selects only by full path or does not know, and names whose
+-- mainstream language hdiff prefers over Neovim's pick.
 local HDIFF_ENTRIES = {
   extension = {
     asm = 'asm',
@@ -22,9 +23,11 @@ local HDIFF_ENTRIES = {
     gy = 'groovy',
     h = 'c',
     ['h++'] = 'cpp',
+    inf = 'dosini',
     m = 'objc',
     make = 'make',
     mdx = 'markdown',
+    mm = 'objcpp',
     mount = 'systemd',
     nomad = 'hcl',
     phps = 'php',
@@ -39,7 +42,9 @@ local HDIFF_ENTRIES = {
     t = 'perl',
     target = 'systemd',
     targets = 'xml',
+    tf = 'terraform',
     timer = 'systemd',
+    tpp = 'cpp',
     xaml = 'xml',
   },
   filename = {
@@ -630,7 +635,7 @@ end
 local function rust_patterns(patterns)
   local lines = {}
   for _, pattern in ipairs(patterns) do
-    local line = ('    (%s(%s), %s),'):format(
+    local line = ('    (NamePattern::%s(%s), %s),'):format(
       pattern.shape,
       rust_string(pattern.literal),
       rust_string(pattern.file_type)
@@ -642,7 +647,7 @@ end
 
 local function file_types_source(resolved, preamble)
   return preamble
-    .. '\nuse super::NamePattern::{self, Contains, Exact, Prefix, Suffix};\n'
+    .. '\nuse super::NamePattern;\n'
     .. '\n/// Whole file names and the file types they select, sorted by file name.\n'
     .. 'pub static FILE_NAMES: &[(&str, &str)] = &[\n'
     .. rust_pairs(resolved.filename)

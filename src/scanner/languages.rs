@@ -1,340 +1,242 @@
-//! The languages the scanner reads, each with the file names and extensions that select
-//! it. Rules: docs/spec/architecture.md#technology-direction.
+//! The languages the scanner reads, each with the file types that select it. Rules:
+//! docs/spec/architecture.md#technology-direction.
 
 use super::{Spec, c::C, go::GO, javascript::JAVASCRIPT, python::PYTHON, rust::RUST};
+use crate::languages;
 
-/// A language the scanner reads, with what selects it: a whole file name, or else a file
-/// name's extension.
+/// A language the scanner reads, with the file types that select it.
 struct Language {
-    file_names: &'static [&'static str],
-    extensions: &'static [&'static str],
+    file_types: &'static [&'static str],
     spec: &'static Spec,
 }
 
-/// Every language the scanner reads. An extension two languages share selects the one
-/// listed first.
+/// Every language the scanner reads.
 static LANGUAGES: &[Language] = &[
     Language {
-        file_names: &[],
-        extensions: &["c", "h"],
+        file_types: &["c"],
         spec: &C,
     },
     Language {
-        file_names: &[],
-        extensions: &["go"],
+        file_types: &["go"],
         spec: &GO,
     },
     Language {
-        file_names: &[],
-        extensions: &["js", "jsx"],
+        file_types: &["javascript", "javascriptreact"],
         spec: &JAVASCRIPT,
     },
     Language {
-        file_names: &[],
-        extensions: &["py"],
+        file_types: &["python"],
         spec: &PYTHON,
     },
     Language {
-        file_names: &[],
-        extensions: &["rs"],
+        file_types: &["rust"],
         spec: &RUST,
     },
     Language {
-        file_names: &[],
-        extensions: &["s", "S", "asm", "nasm"],
+        file_types: &["asm", "nasm"],
         spec: &super::asm::ASM,
     },
     Language {
-        file_names: &[],
-        extensions: &["clj", "cljs", "cljc", "edn"],
+        file_types: &["clojure"],
         spec: &super::clojure::CLOJURE,
     },
     Language {
-        file_names: &["CMakeLists.txt"],
-        extensions: &["cmake"],
+        file_types: &["cmake"],
         spec: &super::cmake::CMAKE,
     },
     Language {
-        file_names: &[],
-        extensions: &[
-            "cc", "cpp", "cxx", "c++", "hh", "hpp", "hxx", "h++", "ipp", "tpp", "inl",
-        ],
+        file_types: &["cpp"],
         spec: &super::cpp::CPP,
     },
     Language {
-        file_names: &[],
-        extensions: &["cr"],
+        file_types: &["crystal"],
         spec: &super::crystal::CRYSTAL,
     },
     Language {
-        file_names: &[],
-        extensions: &["cs", "csx"],
+        file_types: &["cs"],
         spec: &super::csharp::CSHARP,
     },
     Language {
-        file_names: &[],
-        extensions: &["css"],
+        file_types: &["css"],
         spec: &super::css::CSS,
     },
     Language {
-        file_names: &[],
-        extensions: &["cu", "cuh"],
+        file_types: &["cuda"],
         spec: &super::cuda::CUDA,
     },
     Language {
-        file_names: &[],
-        extensions: &["dart"],
+        file_types: &["dart"],
         spec: &super::dart::DART,
     },
     Language {
-        file_names: &["Dockerfile", "Containerfile"],
-        extensions: &["dockerfile", "containerfile"],
+        file_types: &["dockerfile"],
         spec: &super::dockerfile::DOCKERFILE,
     },
     Language {
-        file_names: &["mix.lock"],
-        extensions: &["ex", "exs"],
+        file_types: &["elixir"],
         spec: &super::elixir::ELIXIR,
     },
     Language {
-        file_names: &["rebar.config"],
-        extensions: &["erl", "hrl"],
+        file_types: &["erlang"],
         spec: &super::erlang::ERLANG,
     },
     Language {
-        file_names: &[],
-        extensions: &["fs", "fsi", "fsx"],
+        file_types: &["fsharp"],
         spec: &super::fsharp::FSHARP,
     },
     Language {
-        file_names: &[],
-        extensions: &["gleam"],
+        file_types: &["gleam"],
         spec: &super::gleam::GLEAM,
     },
     Language {
-        file_names: &[],
-        extensions: &["graphql", "gql", "graphqls"],
+        file_types: &["graphql"],
         spec: &super::graphql::GRAPHQL,
     },
     Language {
-        file_names: &["Jenkinsfile"],
-        extensions: &["groovy", "gradle", "gvy", "gy", "gsh"],
+        file_types: &["groovy"],
         spec: &super::groovy::GROOVY,
     },
     Language {
-        file_names: &[],
-        extensions: &["hs", "lhs"],
+        file_types: &["haskell", "lhaskell"],
         spec: &super::haskell::HASKELL,
     },
     Language {
-        file_names: &[".terraformrc", "terraform.rc"],
-        extensions: &["tf", "tfvars", "hcl", "nomad"],
+        file_types: &["hcl", "terraform", "terraform-vars"],
         spec: &super::hcl::HCL,
     },
     Language {
-        file_names: &[],
-        extensions: &["html", "htm", "xhtml", "vue", "svelte"],
+        file_types: &["html", "svelte", "vue", "xhtml"],
         spec: &super::html::HTML,
     },
     Language {
-        file_names: &[
-            ".editorconfig",
-            ".gitconfig",
-            ".gitmodules",
-            ".npmrc",
-            ".pylintrc",
-            "pylintrc",
-            ".flake8",
-        ],
-        extensions: &[
-            "ini", "cfg", "inf", "desktop", "service", "socket", "timer", "mount", "target",
-            "slice",
+        file_types: &[
+            "cfg",
+            "desktop",
+            "dosini",
+            "editorconfig",
+            "gitconfig",
+            "systemd",
         ],
         spec: &super::ini::INI,
     },
     Language {
-        file_names: &[],
-        extensions: &["java"],
+        file_types: &["java"],
         spec: &super::java::JAVA,
     },
     Language {
-        file_names: &[
-            ".babelrc",
-            ".jshintrc",
-            ".swcrc",
-            "composer.lock",
-            "flake.lock",
-        ],
-        extensions: &["json", "jsonc", "json5", "geojson", "webmanifest"],
+        file_types: &["json", "json5", "jsonc"],
         spec: &super::json::JSON,
     },
     Language {
-        file_names: &[],
-        extensions: &["jl"],
+        file_types: &["julia"],
         spec: &super::julia::JULIA,
     },
     Language {
-        file_names: &[],
-        extensions: &["kt", "kts"],
+        file_types: &["kotlin"],
         spec: &super::kotlin::KOTLIN,
     },
     Language {
-        file_names: &[],
-        extensions: &["less"],
+        file_types: &["less"],
         spec: &super::less::LESS,
     },
     Language {
-        file_names: &[],
-        extensions: &["lua"],
+        file_types: &["lua"],
         spec: &super::lua::LUA,
     },
     Language {
-        file_names: &["Makefile", "makefile", "GNUmakefile", "BSDmakefile"],
-        extensions: &["mk", "mak", "make"],
+        file_types: &["make"],
         spec: &super::makefile::MAKEFILE,
     },
     Language {
-        file_names: &[],
-        extensions: &["md", "markdown", "mdown", "mkd", "mdx"],
+        file_types: &["markdown"],
         spec: &super::markdown::MARKDOWN,
     },
     Language {
-        file_names: &[],
-        extensions: &["nim", "nims", "nimble"],
+        file_types: &["nim"],
         spec: &super::nim::NIM,
     },
     Language {
-        file_names: &[],
-        extensions: &["m", "mm"],
+        file_types: &["objc", "objcpp"],
         spec: &super::objc::OBJC,
     },
     Language {
-        file_names: &[],
-        extensions: &["ml", "mli"],
+        file_types: &["ocaml"],
         spec: &super::ocaml::OCAML,
     },
     Language {
-        file_names: &[],
-        extensions: &["pl", "pm", "t"],
+        file_types: &["perl"],
         spec: &super::perl::PERL,
     },
     Language {
-        file_names: &[],
-        extensions: &["php", "phtml", "php3", "php4", "php5", "php7", "phps"],
+        file_types: &["php"],
         spec: &super::php::PHP,
     },
     Language {
-        file_names: &[],
-        extensions: &["ps1", "psm1", "psd1"],
+        file_types: &["ps1"],
         spec: &super::powershell::POWERSHELL,
     },
     Language {
-        file_names: &[],
-        extensions: &["proto"],
+        file_types: &["proto"],
         spec: &super::proto::PROTO,
     },
     Language {
-        file_names: &[".Rprofile"],
-        extensions: &["r", "R"],
+        file_types: &["r"],
         spec: &super::r::R,
     },
     Language {
-        file_names: &[
-            "Gemfile",
-            "Rakefile",
-            "Guardfile",
-            "Podfile",
-            "Vagrantfile",
-            "Brewfile",
-            "Fastfile",
-            "Capfile",
-        ],
-        extensions: &["rb", "rake", "gemspec", "ru", "rbw"],
+        file_types: &["ruby"],
         spec: &super::ruby::RUBY,
     },
     Language {
-        file_names: &[],
-        extensions: &["scala", "sc", "sbt"],
+        file_types: &["sbt", "scala"],
         spec: &super::scala::SCALA,
     },
     Language {
-        file_names: &[],
-        extensions: &["scss", "sass"],
+        file_types: &["sass", "scss"],
         spec: &super::scss::SCSS,
     },
     Language {
-        file_names: &[
-            ".bashrc",
-            ".bash_profile",
-            ".bash_logout",
-            ".bash_aliases",
-            ".profile",
-            ".zshrc",
-            ".zprofile",
-            ".zshenv",
-            ".envrc",
-            "PKGBUILD",
-        ],
-        extensions: &["sh", "bash", "zsh", "ksh"],
+        file_types: &["sh", "zsh"],
         spec: &super::shell::SHELL,
     },
     Language {
-        file_names: &[],
-        extensions: &["sql"],
+        file_types: &["sql"],
         spec: &super::sql::SQL,
     },
     Language {
-        file_names: &[],
-        extensions: &["swift"],
+        file_types: &["swift"],
         spec: &super::swift::SWIFT,
     },
     Language {
-        file_names: &["Cargo.lock", "Pipfile", "poetry.lock", "uv.lock"],
-        extensions: &["toml"],
+        file_types: &["toml"],
         spec: &super::toml::TOML,
     },
     Language {
-        file_names: &[],
-        extensions: &["vb", "vbs", "bas"],
+        file_types: &["basic", "vb"],
         spec: &super::vb::VB,
     },
     Language {
-        file_names: &[],
-        extensions: &[
-            "xml", "xsd", "xsl", "xslt", "svg", "plist", "rss", "atom", "wsdl", "xaml", "csproj",
-            "fsproj", "vbproj", "props", "targets", "resx",
-        ],
+        file_types: &["svg", "xml", "xsd", "xslt"],
         spec: &super::xml::XML,
     },
     Language {
-        file_names: &[".clang-format", ".clang-tidy", ".clangd"],
-        extensions: &["yaml", "yml"],
+        file_types: &["yaml"],
         spec: &super::yaml::YAML,
     },
     Language {
-        file_names: &[],
-        extensions: &["zig", "zon"],
+        file_types: &["zig"],
         spec: &super::zig::ZIG,
     },
 ];
 
-/// The spec of the language `path` selects: by its whole file name, or else by its
-/// extension; none for any other path.
+/// The spec of the language `path`'s file type selects; none for any other path.
 pub fn of_path(path: &str) -> Option<&'static Spec> {
-    let file_name = path.rsplit_once('/').map_or(path, |(_, name)| name);
-    let by_name = LANGUAGES
+    let file_type = languages::file_type(path)?;
+    LANGUAGES
         .iter()
-        .find(|language| language.file_names.contains(&file_name));
-    let by_extension = || {
-        let (_, extension) = file_name.rsplit_once('.')?;
-        LANGUAGES
-            .iter()
-            .find(|language| language.extensions.contains(&extension))
-    };
-
-    by_name.or_else(by_extension).map(|language| language.spec)
+        .find(|language| language.file_types.contains(&file_type))
+        .map(|language| language.spec)
 }
-
 #[cfg(test)]
 mod tests {
     use std::ptr;

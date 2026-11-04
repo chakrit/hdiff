@@ -17,6 +17,7 @@ pub mod finite_output;
 pub mod geometry;
 pub mod headers;
 pub mod input;
+pub mod languages;
 pub mod line_breaks;
 pub mod loading;
 pub mod malformed;

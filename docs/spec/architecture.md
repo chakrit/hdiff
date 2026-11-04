@@ -564,6 +564,11 @@ under `vendor/`, named by repository, each grammar pinned at nvim-treesitter's r
 The starter set compiled into hdiff is the mainstream languages below that
 nvim-treesitter carries. The generated table is hdiff's only language selection: a path
 maps to a file type, which names both the scanner table and the compiled grammar.
+Selection follows Neovim's order: whole file name, name patterns with non-negative
+priority, extension, then the remaining name patterns. Only name patterns that are a
+literal at the name's start, end, or anywhere are kept. The generator's own entries win
+over Neovim's: fixed file types for names Neovim detects by content, names Neovim selects
+only by full path or does not know, and names whose mainstream language hdiff prefers.
 Tree-sitter captures fold by prefix onto hdiff's syntax classes; overlaps resolve
 innermost first, then the later pattern.
 The mainstream languages are Go, Rust, C, JavaScript, Python, Java, C++, C#, Kotlin,
