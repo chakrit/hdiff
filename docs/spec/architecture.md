@@ -97,7 +97,8 @@ Tui::start(document, screen, color depth)  starts at the first listed page
 tui.run(&mut terminal, &messages)          draws, then answers each batch of messages and
                                            draws once, until Exit
 tui.step(&mut terminal, event)             event -> Event -> Exit | Redraw | Effect -> draw
-tui.load(pages, arrival)                   lists arrived files; the next draw shows them
+tui.load(updates)                          applies arrived file updates; the next draw
+                                           shows them
 ```
 
 Output is Ratatui's `Terminal<B: Backend>`. The interactive run's input is one
