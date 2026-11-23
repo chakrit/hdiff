@@ -1,0 +1,17 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a6fd6b674ba0935e6)
+error: unused import: `side::BySide`
+  --> src/navigation/extent.rs:16:5
+   |
+16 |     side::BySide,
+   |     ^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> src/lib.rs:1:9
+   |
+ 1 | #![deny(warnings)]
+   |         ^^^^^^^^
+   = note: `#[deny(unused_imports)]` implied by `#[deny(warnings)]`
+
+error: could not compile `hdiff` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `hdiff` (lib test) due to 1 previous error

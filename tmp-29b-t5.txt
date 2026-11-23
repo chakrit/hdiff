@@ -1,0 +1,44 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a6fd6b674ba0935e6)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.75s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 6 tests
+test navigation::extent::tests::maps_a_row_to_its_visible_offset_or_the_next_visible_row ... ok
+test navigation::extent::tests::finds_an_anchored_pair_again_in_a_rebuilt_extent ... ok
+test navigation::extent::tests::measures_the_widest_visible_row_in_terminal_cells ... ok
+test navigation::extent::tests::maps_an_anchor_to_its_wrapped_line_clamped_to_its_rows_lines ... ok
+test navigation::extent::tests::shows_context_rows_within_the_context_count_of_a_change_in_their_hunk ... ok
+test navigation::extent::tests::counts_and_shows_the_wrapped_lines_of_each_visible_row ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/26e3379d659c5fed/out/hdiff-26e3379d659c5fed)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/benchmark.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/0691e2088bb3f84e/out/benchmark-0691e2088bb3f84e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/979a3fd87c6f33c5/out/cli-979a3fd87c6f33c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+     Running tests/git_pager.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/ff73a070a38849a7/out/git_pager-ff73a070a38849a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/live/main.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/615dfef0c621efa4/out/live-615dfef0c621efa4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 151 filtered out; finished in 0.00s
+
