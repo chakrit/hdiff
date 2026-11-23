@@ -1,0 +1,29 @@
+    Blocking waiting for file lock on build directory
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a38b7ba9ed2f59540)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.67s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 5 tests
+test theme::tests::reads_crossterm_color_counts_as_depths ... ok
+test theme::tests::draws_unchanged_detail_text_dimmer_than_line_mode_text ... ok
+test theme::tests::draws_every_change_row_color_apart_from_its_background ... ok
+test theme::tests::draws_each_depth_only_with_colors_that_depth_shows ... ok
+test theme::tests::draws_every_syntax_color_apart_from_each_change_background ... FAILED
+
+failures:
+
+---- theme::tests::draws_every_syntax_color_apart_from_each_change_background stdout ----
+
+thread 'theme::tests::draws_every_syntax_color_apart_from_each_change_background' (89703745) panicked at src/theme.rs:474:21:
+assertion `left != right` failed: Basic New: a syntax color is drawn in its background color
+  left: Green
+ right: Green
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    theme::tests::draws_every_syntax_color_apart_from_each_change_background
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 198 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

@@ -1,0 +1,122 @@
+# Round 34 audit — rendering and annotation
+
+Assessment only, at HEAD `7458166` after round 34 (checks green in
+`.ace/audit/round34-checks.txt`). Scope, audited afresh: `src/styling.rs`, `syntax.rs`,
+`theme.rs`, `detail.rs`, `tab_stops.rs`, `line_breaks.rs`, `compact.rs`, `screen.rs`,
+`span.rs`, `side.rs`, `page_rows.rs`, `display_lines.rs`, `finite_output.rs`,
+`terminal/rows.rs`, `terminal/row_writer.rs`, `terminal/row_style.rs`, and the file-list
+row styling in `terminal/chrome.rs`; `docs/spec/architecture.md` interaction model, view
+model, continuity markers, palette and character detail, and lossless-and-safe rendering.
+Every file in scope was read end to end, production and tests.
+
+**Palette check, every depth, every drawn style.** Each colour of `TRUECOLOR`, `INDEXED`
+and `BASIC` was checked against the background it is drawn on:
+
+- change rows: marker, body and unchanged text differ from the row background at every
+  depth, and the marker is undimmed (round 33 fix holds);
+- **syntax spans over change rows: at 16 colours, `comment` and `number` are `Green`, the
+  addition row's background** (V1); every other syntax colour differs from both change
+  backgrounds at every depth;
+- character detail: changed spans take the marker colour undimmed, unchanged text is
+  dimmer than line-mode text;
+- hunk headers, context, separators, continuity markers, file names, directory headings,
+  the selected row (`selected_file` over `selected_file_background`) and the hint differ
+  from their backgrounds at every depth; the inner separator equals the outer one at 16
+  colours, which is the pending separator-tone ruling.
+
+**Probe.** A scratch crate (`tmp/r34r/probe/`, output `tmp/r34r/probe.out`) drew a Rust
+hunk whose changed lines end in a `//` comment through the public `Tui` into a
+`TestBackend` at each depth, and flagged every drawn cell whose foreground equals its
+background. It found nine such cells, all at 16 colours, all on the addition row's
+comment; none at true colour or 256 colours.
+
+Every finding is a Violation (no Borderline category). Pending and settled rulings in
+`.ace/audit/round15-plan.md` through `round34-plan.md` were not re-raised.
+
+**5 Violations, 1 of them a defect against the spec.**
+
+## Round 33 code watched
+
+- **V1, undimmed marker:** `row_style::change_marker` is the one marker style for the
+  gutter and changed spans, with `DIM` removed; `draws_each_change_marker_undimmed_in_its_
+  marker_color` covers every depth and side. Holds.
+- **V2, V3, `similar_word_changes`:** `one_word` with `BySide` `map`, `transpose` and
+  `merge`; each grapheme tag is classified once. Holds.
+- **V4, derived test values:** `changed_span` derives detail spans from the payload, and
+  the alignment test counts the patch's own lines. Holds.
+
+## Violations
+
+### V1. At 16 colours, comments and numbers on added lines are drawn in the row's background colour (defect)
+
+`src/theme.rs:240-249` and `:259-260`: `BASIC.syntax.comment` and `BASIC.syntax.number`
+are `Color::Green`, and `BASIC.rows.change.new.background` is `Color::Green`.
+`row_style::segment_style` draws a syntax span as `fg(theme.syntax.color(class))` over the
+row's `whole_row` style, so on an addition row a comment or number span is green on
+green. The probe shows the comment of `+let y = 42; // new note` at 16 colours:
+
+```
+x=42 "/" fg=Green bg=Green mod=NONE  <-- fg == bg
+...
+x=52 "e" fg=Green bg=Green mod=NONE  <-- fg == bg
+```
+
+The spec (`#palette-and-character-detail`) says rows without detail spans retain syntax
+styling, and lossless rendering never loses source text; here the text is drawn but
+cannot be seen, in line mode, on every added comment at 16 colours. The structure lets
+it happen: syntax colours and change backgrounds sit in separate palette groups, and
+`draws_every_change_row_color_apart_from_its_background` checks only the `ChangeColors`
+drawn over each background, not the syntax colours drawn there too. Fix: a test that
+every syntax colour differs from both change backgrounds at every depth (fails today at
+`Basic`), then 16-colour comment and number colours that differ from `Green` and `Red`.
+
+### V2. Character detail carries a run's side as an unnamed `(Option<Side>, …)` pair
+
+`src/detail.rs:77-93` and `:293-314`: both `changed_pair_spans` and
+`similar_word_changes` turn `diff_slices`' `(tag, run)` items into a new
+`(changed_side(tag), run)` tuple, then destructure it again (`(changed, run)`,
+`(next, _)`, `(_, opposite)`, `(changed, graphemes)`, `(_, graphemes)`). Rounds 12 V3,
+14 V9 and 15 cross-cutting V2 ruled pairs built only to be split again Violations, and the
+module already names what such a pair is. Fix: one named run type (the side a run changes,
+and its tokens or graphemes) that both functions build once from a diff item.
+
+### V3. `marks_only_the_replaced_graphemes_in_a_changed_pair` tests a whole-word replacement
+
+`src/detail.rs:430-441`: the test pairs `let café = old;` with `let café = new;`. `old`
+and `new` share no grapheme, so `similar_word_changes` returns `None` and both words are
+marked whole; the test checks the same path as
+`keeps_unrelated_identifier_replacements_whole`. Its name promises grapheme marking, which
+no `detail.rs` test exercises (only `styling.rs`'s
+`marks_changed_graphemes_and_the_unchanged_gaps_between_them` reaches it). Round 19 V6
+ruled test names that claim more than they check Violations. Fix: rename it for the
+whole-word replacement inside an unchanged line, or give it a similar word pair
+(`call`/`cell`) so the name holds.
+
+### V4. `hides_a_no_newline_marker_with_the_context_record_it_follows` never checks that anything hides
+
+`src/page_rows.rs:738-783`: for context counts 0 and 1 the test asserts only that the
+marker shows exactly when its record does. If visibility showed every line at every
+count, the test would still pass; nothing asserts the record and its marker are hidden at
+count 0 and shown at count 1. Round 19 V6 ruled test names that claim more than they
+check Violations. Fix: assert the record's visibility at each count (hidden at 0, shown
+at 1), then the marker's equality.
+
+### V5. The undimmed-marker test rebuilds the row-writer test helper by hand
+
+`src/terminal/row_writer.rs:519-547`: `draws_each_change_marker_undimmed_in_its_marker_
+color` writes its own `Rect`, `Buffer::empty` and `write_row` call, repeating
+`write_placed` (`:337-342`), because `write_placed` and `scrolled_buffer` draw only with
+the fixed `THEME`. Round 31 ruled test helpers duplicated within a module Violations
+(interaction V4, rendering V1). Fix: let the helper take the theme it draws with, so the
+depth test reuses it.
+
+## Out of scope
+
+- **Inner separator at 16 colours:** `dim_separator` equals `separator` in `BASIC`; this
+  is the pending separator-tone ruling.
+- **Hand-written depth list in the marker test:** the three depths repeat
+  `theme.rs`'s derived `every_depth()`; test helpers are not lifted across modules
+  (settled ruling).
+- **Wide cluster at a one-cell wrap width:** `LineBreaks` would place a two-cell cluster
+  on a one-cell line, which the row writer clips; the 20-column minimum keeps every
+  payload column at least two cells, so no screen reaches it.

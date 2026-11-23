@@ -1,0 +1,15 @@
+    Blocking waiting for file lock on build directory
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a38b7ba9ed2f59540)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.36s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 6 tests
+test detail::tests::keeps_unrelated_identifier_replacements_whole ... ok
+test detail::tests::preserves_matching_camel_case_tokens ... ok
+test detail::tests::marks_an_unrelated_replacement_word_whole_inside_an_unchanged_line ... ok
+test detail::tests::coalesces_tiny_equal_islands_between_changed_spans ... ok
+test detail::tests::marks_only_the_replaced_graphemes_in_a_changed_pair ... ok
+test detail::tests::unmatched_payloads_are_fully_changed_in_character_mode ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 198 filtered out; finished in 0.00s
+
