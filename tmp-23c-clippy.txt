@@ -1,0 +1,3 @@
+    Blocking waiting for file lock on package cache
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-ad654a1278956aed3)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s
