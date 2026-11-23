@@ -1,0 +1,17 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a028c9335a038fa91)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.76s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 9 tests
+test source_text::tests::strips_intermediate_escapes_and_sequences_an_introducer_restarts ... ok
+test source_text::tests::keeps_printable_text_and_tabs_only ... ok
+test source_text::tests::strips_c1_introduced_sequences_like_their_escape_spellings ... ok
+test source_text::tests::executes_controls_inside_sequences_and_shows_what_breaks_an_escape ... ok
+test source_text::tests::ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub ... ok
+test source_text::tests::lines_without_visible_text_do_not_split ... ok
+test source_text::tests::splits_after_the_first_visible_character ... ok
+test source_text::tests::splitting_matches_decoding_the_rest_separately ... ok
+test terminal::row_writer::tests::syntax_highlighting_preserves_source_text ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 185 filtered out; finished in 0.08s
+
