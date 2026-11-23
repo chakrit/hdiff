@@ -1,0 +1,24 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-af5f85228b48ee946)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.27s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 1 test
+test parser::tests::rejects_signed_header_counts ... FAILED
+
+failures:
+
+---- parser::tests::rejects_signed_header_counts stdout ----
+
+thread 'parser::tests::rejects_signed_header_counts' (88050135) panicked at src/parser.rs:607:13:
+assertion `left == right` failed: @@ -+1,+1 +1 @@
+  left: Ok(Files(DiffFiles { sections: NonEmpty { first: FileSection { leading: [], file: DiffFile { identity: Path { state: Modified, path: DisplayText("file") }, body: Unified(UnifiedBody { git: None, headers: BySide { old: FileHeader { line: SourceLine { bytes: [45, 45, 45, 32, 97, 47, 102, 105, 108, 101, 10], sanitized: "--- a/file" }, path: Path("a/file") }, new: FileHeader { line: SourceLine { bytes: [43, 43, 43, 32, 98, 47, 102, 105, 108, 101, 10], sanitized: "+++ b/file" }, path: Path("b/file") } }, hunks: NonEmpty { first: Hunk { header: SourceLine { bytes: [64, 64, 32, 45, 43, 49, 44, 43, 49, 32, 43, 49, 32, 64, 64, 10], sanitized: "@@ -+1,+1 +1 @@" }, records: [Record { kind: Deletion, payload: SourceLine { bytes: [111, 108, 100, 10], sanitized: "old" } }, Record { kind: Addition, payload: SourceLine { bytes: [110, 101, 119, 10], sanitized: "new" } }] }, rest: [] } }) } }, rest: [] }, trailing: [] }))
+ right: Err(Malformed { line: 3, reason: InvalidHunkHeader })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    parser::tests::rejects_signed_header_counts
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 166 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
