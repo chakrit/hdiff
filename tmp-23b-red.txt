@@ -1,0 +1,24 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a47c21249e6bd5652)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.89s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 1 test
+test source_text::tests::ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub ... FAILED
+
+failures:
+
+---- source_text::tests::ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub stdout ----
+
+thread 'source_text::tests::ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub' (88727006) panicked at src/source_text.rs:269:13:
+assertion `left == right` failed: [27, 93, 48, 59, 116, 105, 116, 108, 101, 27, 91, 51, 49, 109, 114, 101, 100]
+  left: ""
+ right: "red"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    source_text::tests::ends_strings_at_a_new_introducer_and_cancels_sequences_at_can_or_sub
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

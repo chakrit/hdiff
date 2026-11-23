@@ -1,0 +1,7 @@
+refactor: take the first tab chunk before the loop, import slice, name binary patch lines
+
+TabStops::walk told the first chunk from the rest by matching its index against zero and
+a catch-all; it now takes the first chunk before visiting the ones after a tab.
+styling imports slice in its existing std group instead of qualifying it inline, and
+metadata_lines names its iterator binary_patch_lines so it no longer shares a name with
+the patch it reads.

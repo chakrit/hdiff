@@ -1,0 +1,8 @@
+refactor: build changed rows totally, let a row name its changed lines, name of_lines
+
+Since each side of a changed block became one column, every position holds a line on at
+least one side, so the rows are now the paired prefix then the longer column's rest,
+with no row-or-nothing case to write. SideBySideRow::changed_lines gives detail a row's
+per-side lines instead of rebuilding them by hand. PageRows::new computes the layout from
+its input, so it is of_lines, beside of_file_view and of_text. The marker tests cite the
+core model, where the Record rule lives.

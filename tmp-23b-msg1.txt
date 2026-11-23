@@ -1,0 +1,7 @@
+fix: end a string sequence at a new introducer, and cancel any sequence at CAN or SUB
+
+A terminal reads an ESC or C1 introducer inside an OSC/DCS string as the start of a new
+sequence and abandons any sequence on CAN or SUB, so the text after it shows. The scanner
+kept both inside the sequence and hid that text, against the lossless-and-safe rendering
+rule. An ESC in a string now opens an escape, whose final byte \ still ends the string,
+so the separate string-escape state is gone.
