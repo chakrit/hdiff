@@ -1,0 +1,232 @@
+src/document.rs:39: pub struct FileView<'a> {
+src/document.rs:142: pub enum FileBody {
+src/document.rs:169: pub struct Hunk {
+src/document.rs:190:     pub fn header(self) -> &'a SourceLine {
+src/document.rs:223:     fn of(hunk: &'a Hunk) -> Self {
+src/document.rs:267: pub struct Record {
+src/document.rs:273: pub enum RecordKind {
+src/file_tree.rs:14: pub enum TreeRow {
+src/file_tree.rs:27:     pub fn label(self) -> &'static str {
+src/file_tree.rs:43:     pub const FIRST: Self = Self(0);
+src/file_tree.rs:45:     pub fn get(self) -> usize {
+src/file_tree.rs:102:     pub fn build(files: &'a DiffFiles) -> Self {
+src/file_tree.rs:121:     pub fn rows(&self) -> &[TreeRow] {
+src/file_tree.rs:157:     fn of(view: FileView<'a>) -> Self {
+src/file_tree.rs:176:     fn is_top_level(&self) -> bool {
+src/file_tree.rs:188:     fn of(path: &'a str) -> Self {
+src/file_tree.rs:229:     fn finish(self) -> FileTree {
+src/file_tree.rs:261:     fn document(input: &str) -> DiffDocument {
+src/file_tree.rs:265:     fn listing(document: &DiffDocument) -> ListedTree<'_> {
+src/file_tree.rs:272:     fn modified(path: &str) -> String {
+src/file_tree.rs:276:     fn row_text(row: &TreeRow) -> String {
+src/file_tree.rs:283:     fn rows(input: &str) -> Vec<String> {
+src/file_tree.rs:312:     fn selected(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+src/file_tree.rs:320:     fn a_window_ends_at_its_selection_or_starts_at_the_top() {
+src/file_tree.rs:365:     fn headings_name_only_directories_that_hold_files() {
+src/file_tree.rs:384:     fn keeps_repeated_paths_as_separate_files() {
+src/file_tree.rs:392:     fn marks_each_state_on_its_row() {
+src/source_text.rs:16:     pub fn decode(bytes: &[u8]) -> Self {
+src/source_text.rs:23:     pub fn bytes(&self) -> &[u8] {
+src/source_text.rs:147:     fn splitting_matches_decoding_the_rest_separately() {
+src/source_text.rs:165:     fn splits_after_the_first_visible_character() {
+src/source_text.rs:176:     fn lines_without_visible_text_do_not_split() {
+src/source_text.rs:183:     fn keeps_printable_text_and_tabs_only() {
+src/parser.rs:27:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/parser.rs:40: pub enum Malformed {
+src/parser.rs:57:     pub fn label(self) -> &'static str {
+src/parser.rs:130: fn line_start(text: &str) -> Result<LineStart, Malformed> {
+src/parser.rs:141: fn reject_unsupported_header(text: &str) -> Result<(), Malformed> {
+src/parser.rs:174: fn is_git_metadata(text: &str) -> bool {
+src/parser.rs:268: const NO_NEWLINE_MARKER: &str = "\ No newline at end of file";
+src/parser.rs:310: fn parse_record(line: SourceLine) -> Result<Record, Malformed> {
+src/parser.rs:367: fn range_count(range: &str, prefix: char) -> Option<usize> {
+src/parser.rs:411:     fn new(input: &'a [u8]) -> Self {
+src/parser.rs:419:     fn peek(&mut self) -> Option<&SourceLine> {
+src/parser.rs:434:     fn next(&mut self) -> Option<SourceLine> {
+src/parser.rs:517:     fn malformed(line: usize, reason: Malformed) -> Result<DiffDocument, Error> {
+src/parser.rs:550:     fn preserves_surrounding_text_in_source_order() {
+src/parser.rs:559:     fn rejects_nonempty_text_only_input() {
+src/parser.rs:567:     fn keeps_comparison_output_that_holds_only_text() {
+src/parser.rs:576:     fn rejects_malformed_and_combined_sections_after_valid_diff() {
+src/parser.rs:600:     fn rejects_diff_headers_inside_incomplete_hunks() {
+src/parser.rs:610:     fn rejects_records_exceeding_hunk_counts() {
+src/parser.rs:624:     fn rejects_the_record_that_overshoots_one_side_of_a_hunk() {
+src/parser.rs:638:     fn keeps_text_separate_from_metadata_only_files() {
+src/parser.rs:655:     fn keeps_binary_payload_and_surrounding_text_in_order() {
+src/parser.rs:674:     fn only_a_section_start_cuts_a_binary_payload_short() {
+src/parser.rs:696:     fn parses_file_hunk_and_records() {
+src/parser.rs:708:     fn parses_git_fixture_with_extended_headers_and_multiline_hunks() {
+src/parser.rs:723:     fn parses_colored_git_fixture_with_multiline_hunks() {
+src/parser.rs:732:     fn parses_git_metadata_without_a_file_header() {
+src/parser.rs:744:     fn parses_metadata_only_git_fixture() {
+src/parser.rs:757:     fn rejects_truncated_hunk() {
+src/parser.rs:767:     fn preserves_invalid_utf8_with_lossy_display_text() {
+src/parser.rs:778:     fn preserves_crlf_in_source_bytes() {
+src/parser.rs:807:     fn parses_deletion_payload_that_looks_like_a_file_header() {
+src/file_identity.rs:13: pub enum FileState {
+src/file_identity.rs:52:     fn unknown(first_line: &SourceLine) -> Self {
+src/file_identity.rs:74:     pub fn as_str(&self) -> &str {
+src/file_identity.rs:117:     fn new(state: FileState, path: Box<str>) -> Self {
+src/file_identity.rs:121:     fn in_state(self, state: FileState) -> Self {
+src/file_identity.rs:225:     fn identity(input: &str) -> FileIdentity {
+src/file_identity.rs:232:     fn path(state: FileState, path: &str) -> FileIdentity {
+src/file_identity.rs:239:     fn unknown(header: &str) -> FileIdentity {
+src/file_identity.rs:246:     fn reads_each_git_state() {
+src/file_identity.rs:293:     fn names_a_file_by_the_path_suffix_both_headers_share() {
+src/file_identity.rs:313:     fn git_dev_null_sections_take_their_name_from_the_git_header() {
+src/file_identity.rs:329:     fn decodes_git_quoted_paths() {
+src/file_identity.rs:345:     fn reads_metadata_only_paths_with_spaces_and_without_prefixes() {
+src/file_identity.rs:357:     fn a_rename_names_its_destination_whatever_its_headers_hold() {
+src/file_identity.rs:367:     fn marks_ambiguous_and_undecodable_sections_unknown() {
+src/prepared.rs:40:     pub fn prepare(document: &DiffDocument) -> Self {
+src/prepared.rs:44:     pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
+src/prepared.rs:64:     pub fn page_count(&self) -> PageCount {
+src/prepared.rs:71:     pub fn file_count(&self) -> usize {
+src/prepared.rs:78:     pub fn record_count(&self) -> usize {
+src/prepared.rs:134:     pub const FIRST: Self = Self(0);
+src/prepared.rs:163:     fn of(
+src/prepared.rs:195:     pub fn rows(&self) -> &PageRows {
+src/prepared.rs:204:     fn record_count(&self) -> usize {
+src/prepared.rs:219:     fn retains_surrounding_text_with_separate_repeated_file_views() {
+src/prepared.rs:255:     fn diagnostic_observation_preserves_every_prepared_rendering_component() {
+src/prepared.rs:275:     fn prepares_every_file_and_record() {
+src/prepared.rs:286:     fn prepares_character_detail_before_terminal_rendering() {
+src/cli.rs:38: pub const VERSION: &str = concat!(
+src/cli.rs:47: pub enum Invocation {
+src/cli.rs:56: pub enum Error {
+src/cli.rs:66:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/cli.rs:91: pub fn select_invocation(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
+src/cli.rs:107: fn select_bench(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
+src/cli.rs:118: fn select_input(arguments: &[OsString], stdin: StdinState) -> Result<Source, Error> {
+src/cli.rs:127: fn select_source(arguments: &[OsString]) -> Result<Source, Error> {
+src/cli.rs:177:     fn select_invocation_unpiped(words: &[&str]) -> Result<Invocation, Error> {
+src/cli.rs:181:     fn select_input_unpiped(words: &[&str]) -> Result<Source, Error> {
+src/cli.rs:185:     fn arguments(words: &[&str]) -> Vec<OsString> {
+src/cli.rs:190:     fn piped_stdin_is_accepted_only_where_an_operand_reads_it() {
+src/cli.rs:212:     fn piped_stdin_rejects_bench_operands_that_ignore_it() {
+src/cli.rs:222:     fn selects_install_without_input_operands() {
+src/cli.rs:230:     fn rejects_install_with_input_operands() {
+src/cli.rs:238:     fn selects_bench_driver_before_input_operands() {
+src/cli.rs:258:     fn rejects_bench_without_a_known_driver() {
+src/cli.rs:270:     fn treats_unknown_dash_arguments_as_paths() {
+src/cli.rs:280:     fn selects_stdin_without_operands() {
+src/cli.rs:285:     fn rejects_more_than_two_operands() {
+src/cli.rs:293:     fn reads_a_lone_dash_operand_from_stdin() {
+src/cli.rs:298:     fn compares_a_dash_operand_as_stdin() {
+src/cli.rs:312:     fn selects_recursive_comparison_wherever_the_flag_appears() {
+src/cli.rs:330:     fn rejects_recursion_without_two_operands() {
+src/input.rs:22: pub enum Source {
+src/input.rs:29:     pub fn reads_stdin(&self) -> bool {
+src/input.rs:37:     pub fn read(self) -> Result<Content, Error> {
+src/input.rs:53: fn read_stdin() -> io::Result<Vec<u8>> {
+src/input.rs:67:     pub fn inspect() -> Result<Self, Error> {
+src/input.rs:93:     pub fn bytes(&self) -> &[u8] {
+src/input.rs:109: pub enum Error {
+src/input.rs:116:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/comparison.rs:22: pub enum Operand {
+src/comparison.rs:38: pub enum Depth {
+src/bench.rs:40:     pub const fn label(self) -> &'static str {
+src/bench.rs:48:     pub fn from_name(name: &OsStr) -> Option<Self> {
+src/bench.rs:113:     pub fn start() -> Self {
+src/bench.rs:140:     fn prepare(self, document: &DiffDocument, observer: &mut impl Observer) -> Ready {
+src/bench.rs:187:     fn label(self) -> &'static str {
+src/bench.rs:226: fn write_profile(report: &mut String, profile: &Profile, preparation: Duration) {
+src/bench.rs:259: fn write_stage(report: &mut String, name: &str, parent: Parent, duration: Duration) {
+src/bench.rs:277: const MOVEMENT_AREA: Rect = Rect::new(0, 0, 120, 36);
+src/bench.rs:278: const MOVEMENTS: [Movement; 4] = [
+src/bench.rs:284: const MOVEMENT_ROUNDS: usize = 4;
+src/bench.rs:293: fn movement(prepared: PreparedDocument) -> io::Result<String> {
+src/bench.rs:364: fn timed_step<B: Backend>(
+src/bench.rs:379: fn key_event(key: char) -> Event {
+src/measurement.rs:31:     pub const fn label(self) -> &'static str {
+src/measurement.rs:69:     pub const fn label(self) -> &'static str {
+src/measurement.rs:96:     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T;
+src/measurement.rs:97:     fn count(&mut self, work: Work);
+src/measurement.rs:105:     fn measure<T>(&mut self, _: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
+src/measurement.rs:110:     fn count(&mut self, _: Work) {}
+src/measurement.rs:121:     pub fn duration(&self, stage: Stage) -> Duration {
+src/measurement.rs:125:     pub fn work(&self) -> &WorkCounts {
+src/measurement.rs:131:     fn measure<T>(&mut self, stage: Stage, operation: impl FnOnce(&mut Self) -> T) -> T {
+src/measurement.rs:138:     fn count(&mut self, work: Work) {
+src/measurement.rs:206:     fn get(&self, stage: Stage) -> &T {
+src/measurement.rs:219:     fn get_mut(&mut self, stage: Stage) -> &mut T {
+src/measurement.rs:240:     fn every_stage_holds_its_own_field() {
+src/measurement.rs:253:     fn each_parent_owns_one_contiguous_family() {
+src/headers.rs:187: fn escaped_byte(characters: &mut CharIndices) -> Option<u8> {
+src/headers.rs:210: fn octal_digit(character: char) -> Option<u8> {
+src/headers.rs:221:     fn header_paths_drop_timestamps_and_keep_their_prefix() {
+src/headers.rs:231:     fn quoted_fields_reject_text_after_the_closing_quote() {
+src/side.rs:13:     pub const BOTH: [Self; 2] = [Self::Old, Self::New];
+src/side.rs:24:     pub fn get(&self, side: Side) -> &T {
+src/side.rs:31:     pub fn get_mut(&mut self, side: Side) -> &mut T {
+src/side.rs:38:     pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> BySide<U> {
+src/side.rs:53:     pub fn as_ref(&self) -> BySide<&T> {
+src/side.rs:89:     fn into_iter(self) -> Self::IntoIter {
+src/non_empty.rs:30:     pub fn first(&self) -> &T {
+src/non_empty.rs:39:     pub fn len(&self) -> NonZeroUsize {
+src/non_empty.rs:43:     pub fn iter(&self) -> impl Iterator<Item = &T> {
+src/non_empty.rs:79:     fn index(&self, index: usize) -> &T {
+src/non_empty.rs:91:     fn into_iter(self) -> Self::IntoIter {
+src/non_empty.rs:101:     fn maps_the_last_item_apart_from_the_others() {
+src/non_empty.rs:113:     fn holds_collected_items_only_when_there_is_one() {
+src/non_empty.rs:122:     fn indexes_and_counts_the_first_item_with_the_rest() {
+src/utf8_path.rs:7: pub struct Utf8Path(Box<str>);
+src/utf8_path.rs:15:     pub fn as_path(&self) -> &Path {
+src/utf8_path.rs:19:     pub fn as_str(&self) -> &str {
+src/exit_status.rs:23:     pub fn code(self) -> u8 {
+src/exit_status.rs:38:     fn exited(code: i32) -> ExitStatus {
+src/exit_status.rs:43:     fn reads_diff_exit_codes() {
+src/exit_status.rs:51:     fn treats_a_signalled_diff_as_trouble() {
+src/error_output.rs:17:     fn prefixes_every_line_of_the_message() {
+src/shell_words.rs:37:     fn quotes_only_words_the_shell_would_change() {
+src/shell_words.rs:46:     fn quotes_words_that_change_meaning_as_a_command_name() {
+src/shell_words.rs:52:     fn joins_quoted_words_with_spaces() {
+src/main.rs:43: fn run() -> Result<(), RunError> {
+src/main.rs:71: fn install() -> Result<(), RunError> {
+src/main.rs:84: fn view(source: input::Source) -> Result<(), RunError> {
+src/main.rs:113: fn write_stdout(bytes: &[u8]) -> Result<(), RunError> {
+src/main.rs:122: enum RunError {
+src/main.rs:134:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/actions/mod.rs:45:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/actions/backup_global_git_config.rs:20:     pub fn run(self, _context: &mut GlobalGitConfigContext) -> Result<(), Error> {
+src/actions/child_process.rs:38:     fn of_output(name: &'static str, output: &Output) -> Self {
+src/actions/child_process.rs:48:     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+src/actions/child_process.rs:63:     fn a_silent_failure_names_its_command_and_exit_status() {
+src/actions/child_process.rs:73:     fn a_failure_is_explained_by_its_standard_error() {
+src/actions/child_process.rs:85:     fn a_missing_program_is_reported_by_its_command_name() {
+src/actions/child_process.rs:100:     fn an_accepted_status_returns_the_output() {
+src/actions/compare_files.rs:9: pub struct CompareFiles<'a> {
+src/actions/compare_files.rs:13: pub struct CompareFilesContext;
+src/actions/compare_files.rs:16:     pub fn run(self, _context: &mut CompareFilesContext) -> Result<Vec<u8>, Error> {
+src/actions/global_git_config.rs:18: const GIT_CONFIG_GLOBAL: &str = "GIT_CONFIG_GLOBAL";
+src/actions/global_git_config.rs:19: const HOME: &str = "HOME";
+src/actions/global_git_config.rs:20: const XDG_CONFIG_HOME: &str = "XDG_CONFIG_HOME";
+src/actions/install_git_diff_pager.rs:15: pub struct InstallGitDiffPager {
+src/actions/install_git_diff_pager.rs:19: pub struct InstallGitDiffPagerReport {
+src/actions/install_git_diff_pager.rs:24:     pub fn run(
+src/actions/install_git_diff_pager.rs:60:     pub fn label(self) -> &'static str {
+src/actions/install_git_diff_pager.rs:77:     fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
+src/actions/install_git_diff_pager.rs:132: fn configured_global_path(path: &OsStr) -> Result<PathBuf, Error> {
+src/actions/install_git_diff_pager.rs:141: fn exists(path: &Path) -> Result<bool, Error> {
+src/actions/install_git_diff_pager.rs:156: fn utf8(path: &Path, role: PathRole) -> Result<Utf8Path, Error> {
+src/actions/install_git_diff_pager.rs:167:     fn environment_for(config_path: &Path) -> GitConfigEnvironment {
+src/actions/install_git_diff_pager.rs:176:     fn rejects_a_non_utf8_executable_before_planning_any_write() {
+src/actions/install_git_diff_pager.rs:191:     fn rejects_a_disabled_global_config() {
+src/actions/install_git_diff_pager.rs:201:     fn plans_a_backup_only_for_an_existing_config() {
+src/actions/install_git_diff_pager.rs:217:     fn backs_up_to_the_config_name_with_bak_appended() {
+src/actions/report_error.rs:17:     pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> Result<(), Error> {
+src/actions/report_error.rs:32:     fn writes_the_prefixed_message_to_its_context() {
+src/actions/set_global_diff_pager.rs:14: const GIT: &str = "git";
+src/actions/set_global_diff_pager.rs:24:     pub fn run(self, context: &mut GlobalGitConfigContext) -> Result<(), Error> {
+src/actions/set_global_diff_pager.rs:36:     fn arguments(&self) -> [&str; 4] {
+src/actions/write_output.rs:5: pub struct WriteOutput<'a> {
+src/actions/write_output.rs:9: pub struct OutputContext<'a, Writer> {
+src/actions/write_output.rs:14:     pub fn run(self, context: &mut OutputContext<'_, impl Write>) -> Result<(), Error> {
+src/actions/write_output.rs:61:     fn writes_complete_output_across_partial_writes() {
+src/actions/write_output.rs:79:     fn treats_broken_pipe_as_a_quiet_success() {
+src/actions/write_output.rs:94:     fn propagates_other_write_failures() {
+tests/common/mod.rs:20: const TEST_TERM: &str = "dumb";
+tests/common/mod.rs:22: pub struct TestEnv {
+tests/common/mod.rs:27:     pub fn new() -> Self {
+tests/common/mod.rs:41:     pub fn path(&self, name: &str) -> PathBuf {
+tests/common/mod.rs:125:     fn isolate(&self, command: &mut Command) {

@@ -1,0 +1,203 @@
+src/comparison.rs:6:#[derive(Debug, PartialEq, Eq)]
+src/comparison.rs-7-pub struct Comparison {
+--
+src/comparison.rs:21:#[derive(Debug, Clone, PartialEq, Eq)]
+src/comparison.rs-22-pub enum Operand {
+--
+src/comparison.rs:37:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/comparison.rs-38-pub enum Depth {
+src/main.rs:121:#[derive(Debug)]
+src/main.rs-122-enum RunError {
+src/prepared.rs:34:#[derive(Debug, PartialEq, Eq)]
+src/prepared.rs-35-pub struct PreparedPage {
+--
+src/prepared.rs:130:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/prepared.rs-131-pub struct PageIndex(usize);
+--
+src/prepared.rs:151:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/prepared.rs-152-pub struct PageCount(NonZeroUsize);
+src/input.rs:21:#[derive(Debug, PartialEq, Eq)]
+src/input.rs-22-pub enum Source {
+--
+src/input.rs:60:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/input.rs-61-pub enum StdinState {
+--
+src/input.rs:84:#[derive(Debug, PartialEq, Eq)]
+src/input.rs-85-pub enum Content {
+--
+src/input.rs:108:#[derive(Debug)]
+src/input.rs-109-pub enum Error {
+src/cli.rs:46:#[derive(Debug, PartialEq, Eq)]
+src/cli.rs-47-pub enum Invocation {
+--
+src/cli.rs:55:#[derive(Debug, PartialEq, Eq)]
+src/cli.rs-56-pub enum Error {
+src/file_tree.rs:13:#[derive(Debug, PartialEq, Eq)]
+src/file_tree.rs-14-pub enum TreeRow {
+--
+src/file_tree.rs:20:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/file_tree.rs-21-pub enum StateMarker {
+--
+src/file_tree.rs:39:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/file_tree.rs-40-pub struct TreeRowIndex(usize);
+--
+src/file_tree.rs:67:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/file_tree.rs-68-pub struct RowWindow {
+--
+src/file_tree.rs:75:#[derive(Clone, Copy)]
+src/file_tree.rs-76-pub struct ListedFile<'a> {
+--
+src/file_tree.rs:82:#[derive(Debug, PartialEq, Eq)]
+src/file_tree.rs-83-pub struct FileTree {
+--
+src/file_tree.rs:88:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/file_tree.rs-89-pub struct FileSelection<'a> {
+--
+src/file_tree.rs:139:#[derive(Clone, Copy, Default, PartialEq, Eq)]
+src/file_tree.rs-140-enum Group<'a> {
+--
+src/file_tree.rs:148:#[derive(Clone, Copy)]
+src/file_tree.rs-149-struct Placed<'a> {
+--
+src/file_tree.rs:200:#[derive(Default)]
+src/file_tree.rs-201-struct TreeRows<'a> {
+src/parser.rs:18:#[derive(Debug, PartialEq, Eq)]
+src/parser.rs-19-pub enum Error {
+--
+src/parser.rs:39:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/parser.rs-40-pub enum Malformed {
+--
+src/parser.rs:122:#[derive(Debug, PartialEq, Eq)]
+src/parser.rs-123-enum LineStart {
+src/document.rs:17:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-18-pub enum DiffDocument {
+--
+src/document.rs:25:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-26-pub struct DiffFiles {
+--
+src/document.rs:32:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-33-pub(crate) struct FileSection {
+--
+src/document.rs:38:#[derive(Clone, Copy)]
+src/document.rs-39-pub struct FileView<'a> {
+--
+src/document.rs:96:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-97-pub struct DiffFile {
+--
+src/document.rs:141:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-142-pub enum FileBody {
+--
+src/document.rs:150:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-151-pub struct UnifiedBody {
+--
+src/document.rs:168:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-169-pub struct Hunk {
+--
+src/document.rs:183:#[derive(Clone, Copy)]
+src/document.rs-184-pub struct AddressedHunk<'a> {
+--
+src/document.rs:209:#[derive(Clone, Copy)]
+src/document.rs-210-pub struct AddressedRecord<'a> {
+--
+src/document.rs:216:#[derive(Clone, Copy)]
+src/document.rs-217-pub struct HunkRecords<'a, 'h> {
+--
+src/document.rs:248:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/document.rs-249-pub struct RecordPosition<'h> {
+--
+src/document.rs:263:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/document.rs-264-struct Brand<'h>(PhantomData<fn(&'h ()) -> &'h ()>);
+--
+src/document.rs:266:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-267-pub struct Record {
+--
+src/document.rs:272:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/document.rs-273-pub enum RecordKind {
+--
+src/document.rs:329:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/document.rs-330-pub struct RecordAddress {
+--
+src/document.rs:355:#[derive(Debug, PartialEq, Eq)]
+src/document.rs-356-pub struct RecordMap<T> {
+src/bench.rs:29:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/bench.rs-30-pub enum Driver {
+--
+src/bench.rs:180:#[derive(Clone, Copy)]
+src/bench.rs-181-enum PreparationRecord {
+src/actions/backup_global_git_config.rs:8:#[derive(Debug)]
+src/actions/backup_global_git_config.rs-9-pub struct BackupGlobalGitConfig {
+src/source_text.rs:9:#[derive(Debug, PartialEq, Eq)]
+src/source_text.rs-10-pub struct SourceLine {
+--
+src/source_text.rs:101:#[derive(Clone, Copy)]
+src/source_text.rs-102-enum State {
+src/measurement.rs:4:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/measurement.rs-5-pub enum Stage {
+--
+src/measurement.rs:60:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/measurement.rs-61-pub enum Parent {
+--
+src/measurement.rs:114:#[derive(Default)]
+src/measurement.rs-115-pub struct Profile {
+--
+src/measurement.rs:149:#[derive(Default)]
+src/measurement.rs-150-pub struct WorkCounts {
+--
+src/measurement.rs:159:#[derive(Default)]
+src/measurement.rs-160-struct ByStage<T> {
+src/actions/install_git_diff_pager.rs:52:#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+src/actions/install_git_diff_pager.rs-53-pub enum PathRole {
+src/actions/child_process.rs:29:#[derive(Debug)]
+src/actions/child_process.rs-30-pub struct ProcessFailure {
+src/file_identity.rs:12:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/file_identity.rs-13-pub enum FileState {
+--
+src/file_identity.rs:21:#[derive(Clone, Debug, PartialEq, Eq)]
+src/file_identity.rs-22-pub enum FileIdentity {
+--
+src/file_identity.rs:60:#[derive(Clone, Debug, PartialEq, Eq)]
+src/file_identity.rs-61-pub struct DisplayText(Box<str>);
+src/actions/mod.rs:18:#[derive(Debug)]
+src/actions/mod.rs-19-pub enum Error {
+src/side.rs:6:#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+src/side.rs-7-pub enum Side {
+--
+src/side.rs:17:#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+src/side.rs-18-pub struct BySide<T> {
+src/headers.rs:13:#[derive(Debug, PartialEq, Eq)]
+src/headers.rs-14-pub struct GitHeader {
+--
+src/headers.rs:41:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/headers.rs-42-pub enum GitMetadata<'a> {
+--
+src/headers.rs:86:#[derive(Debug, PartialEq, Eq)]
+src/headers.rs-87-pub struct FileHeader {
+--
+src/headers.rs:93:#[derive(Debug, PartialEq, Eq)]
+src/headers.rs-94-pub enum HeaderPath {
+src/exit_status.rs:5:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/exit_status.rs-6-pub enum DiffStatus {
+src/non_empty.rs:7:#[derive(Debug, Clone, PartialEq, Eq)]
+src/non_empty.rs-8-pub struct NonEmpty<T> {
+src/utf8_path.rs:6:#[derive(Debug, Clone, PartialEq, Eq)]
+src/utf8_path.rs-7-pub struct Utf8Path(Box<str>);
+src/preferences.rs:3:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-4-pub struct ViewPreferences {
+--
+src/preferences.rs:53:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-54-pub enum PreferenceChange {
+--
+src/preferences.rs:63:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-64-pub enum DiffLayout {
+--
+src/preferences.rs:88:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-89-pub enum DiffGranularity {
+--
+src/preferences.rs:110:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-111-pub enum Wrapping {
+--
+src/preferences.rs:133:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-134-pub struct ContextRecords(usize);
+--
+src/preferences.rs:155:#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+src/preferences.rs-156-pub enum FileList {
