@@ -1,0 +1,128 @@
+# Round 39 audit — rendering and annotation
+
+Assessment only, at HEAD `131e945` after round 39 (checks green in
+`.ace/audit/round39-checks.txt`). Scope, audited afresh: `src/styling.rs`, `syntax.rs`,
+`theme.rs`, `detail.rs`, `tab_stops.rs`, `line_breaks.rs`, `compact.rs`, `screen.rs`,
+`span.rs`, `page_rows.rs`, `display_lines.rs`, `finite_output.rs`, `terminal/rows.rs`,
+`terminal/row_writer.rs`, `terminal/row_style.rs`; `docs/spec/architecture.md` view
+model, palette and character detail, and lossless-and-safe rendering. Production code in
+every file was read end to end; the tests were read and scanned for index reads,
+hand-counted values and accumulator loops.
+
+**Palette, every depth, every drawn style.** The round 35 probe crate
+(`tmp/r35r/probe/`) was rebuilt against HEAD into the default target directory and rerun
+(`tmp/r39r-probe.out`): a five-file patch drawn through the public `Tui` at each depth
+across 14 key sequences, flagging every non-blank cell drawn in its own background and
+every dimmed gutter marker: `problems: 0`. The 16-colour inner separator equals the outer
+one (pending ruling).
+
+**Wrapping counts against what is drawn.** A new probe (`tmp/r39r/probe/`, output
+`tmp/r39r-wrap.out`) draws, with wrapping on and the file list hidden, a tab-separated
+row, a row of 20 two-cell CJK clusters, a row of 14 combining-accent clusters, and a row
+of 12 two-cell emoji-with-modifier clusters plus ASCII, at 21 and 30 columns, in line and
+character mode and the vertical layout. In every case each row takes exactly the lines
+`wrapped_line_count` gives it: the next row starts on the line after the last drawn
+cluster, no line is blank, and no cluster is lost or repeated. (The `TestBackend` keeps a
+stale symbol in a wide cluster's continuation cell, such as `界N`, because Ratatui's
+buffer diff skips those cells; a terminal covers them with the wide cluster, so this is a
+probe artifact, not a defect.)
+
+Every finding is a Violation (no Borderline category). Pending and settled rulings in
+`.ace/audit/round15-plan.md` through `round39-plan.md` were not re-raised.
+
+**5 Violations, none a defect against the spec.**
+
+## Round 39 code watched
+
+- **`LineBreaks::count_lines`:** one `scan` places the clusters and the last line plus
+  one is the count; `wrapped_line_count` and its test oracle no longer drop each
+  placement's line. Holds (but see V2).
+- **`StyledClusters`:** the segment walk is now the iterator's own state, so segments are
+  asked for in ascending order by construction. Holds (but see V1).
+- **Test spans and names:** the multiline-clipping test derives `whole` and the capture
+  length from named text; `in_line_order`'s doc gives the true reason; the rendering
+  rebindings have their own names. Hold.
+
+## Violations
+
+### V1 — `StyledClusters` ends the payload silently when no segment holds a cluster
+
+`src/terminal/row_writer.rs:211-226`:
+
+```rust
+if !current_contains {
+    self.current = self.rest.find(ends_after);
+}
+self.current.map(|boundary| StyledText { .. })
+```
+
+When `find` returns `None`, `next` returns `None` and the iterator stops: every cluster
+after that point is dropped from the drawn row without a sign. That such a cluster
+cannot exist rests only on the type's doc ("the segments end where the text ends").
+Code skill, No silent errors: "no default that papers over a failed lookup"; architect,
+Correct by Construction. Make the last segment end at the text's end by construction —
+for example `ExpandedPayload` holding its boundaries as a `NonEmpty` whose final end is
+`text.len()` by building, so the walk's last segment is always there — rather than
+ending the stream on the impossible case.
+
+### V2 — the wrap placement walk is written three times
+
+`LineBreaks` exposes `place`, and three callers each rebuild the same walk
+`.scan(LineBreaks::new(width), |breaks, x| Some(breaks.place(..))).flatten()`:
+
+- `src/line_breaks.rs:51-56`, `LineBreaks::count_lines`;
+- `src/terminal/row_writer.rs:143-151`, `write_wrapped_line`, which also pairs each
+  cluster with its line through `PlacedCluster`;
+- `src/line_breaks.rs:97-102`, the `breaks_before_a_cluster_…` test.
+
+The concept "each item with the wrapped line it lands on" has no owner, so the row
+writer and the line counter only agree because both copies are written the same. One
+`LineBreaks` operation that yields each placed item with its line (taking the item's
+text through a projection) should own the walk; `count_lines` becomes its last line plus
+one, and the row writer filters it to the wanted line. Architect, Abstraction ("the
+second concrete use"); code skill, one reading.
+
+### V3 — `is_context_line` names one record kind and sends the rest to a fallback
+
+`src/page_rows.rs:540-542`:
+
+```rust
+matches!(line.kind().record_kind(), Some(RecordKind::Context(_)))
+```
+
+`RecordKind` is closed (`Context`, `Deletion`, `Addition`) and the check names only
+`Context`, so a new record kind would be treated as not-context without the compiler
+asking. Round 38 model V3 ruled `matches!(…, State::Ground)` in production code a
+Violation for this reason, and round 39 fixed that site with a match naming every case.
+Name every `RecordKind` (and the `None` case) here too.
+
+### V4 — `PairCursor` keeps one side's cursor as three parallel `BySide` fields
+
+`src/detail.rs:102-130`. `PairCursor` holds `payloads: BySide<&str>`,
+`offsets: BySide<usize>` and `spans: BySide<Vec<PayloadSpan>>`, and `mark` indexes all
+three by the same side (`self.offsets.get(side)`, `self.payloads.get(side)`,
+`self.spans.get_mut(side)`, `*self.offsets.get_mut(side)`). The three fields are one
+per-side concept — a side's payload, how far the walk has read it, and the spans marked
+so far — split into three tables that only `mark` keeps in step. Combine them into one
+per-side cursor type held as `BySide<SideCursor>`, with `pass` and `mark` on it; the
+final `cursor.spans.zip(payloads)` then reads one value per side. Architect, Abstraction
+(existing types to combine).
+
+### V5 — two names that misdescribe or duplicate their values in `syntax.rs`
+
+- `src/syntax.rs:240`, `Language::of_path(text: &str)`: the parameter is a header's
+  path, not text; it is named for its type rather than its role, while the caller
+  passes `HeaderPath::Path(text)`.
+- `src/syntax.rs:439-450`, `Projection::map_span`: `capture_end` is a second name for
+  `capture.end`, and the same closure chain reads the value under both names
+  (`take_while` uses `capture_end`, `filter_map` uses `capture.end`). One value, two
+  names in one expression chain.
+
+Code skill, Names stay true; the round 35–38 rulings on one name per value.
+
+## Out of scope
+
+- **Interaction area:** at 16 columns the probe's too-narrow screen draws
+  `screen too narro` — the message is clipped by the screen it reports on
+  (`src/terminal/view.rs:42`, `:91`). Whether the message must fit is the interaction
+  audit's call.
