@@ -1,0 +1,249 @@
+src/non_empty.rs:105:        let mapped = several.map_with_last(|item| item.to_ascii_uppercase(), |item| *item);
+src/line_breaks.rs:51:pub fn wrapped_line_count(payload: MeasuredTextRef<'_>, width: NonZeroCells) -> ScreenLines {
+src/measurement.rs:48:            Self::Labels | Self::Layout | Self::Syntax | Self::Detail => Parent::Preparation,
+src/measurement.rs:49:            Self::Language | Self::Projection | Self::Parse | Self::Query => Parent::Syntax,
+src/prepared.rs:47:    pub fn prepare_observed(document: &DiffDocument, observer: &mut impl Observer) -> Self {
+src/prepared.rs:86:            Self::Files { pages, .. } => pages.iter().map(|file| file.page.record_count()).sum(),
+src/prepared.rs:227:        let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+src/prepared.rs:281:        let document = parse_patch(include_bytes!("../tests/fixtures/git-multiline.patch"))
+src/prepared.rs:302:                .any(|segment| matches!(segment.style, TextStyle::Detail(_, DetailStyle::Changed)))
+src/styling.rs:95:            DiffGranularity::Character => styles.character.as_ref().unwrap_or(&styles.syntax),
+src/styling.rs:329:        DetailStyle, Partition, RowTone, StyledRow, StyledText, TextStyle, character_partition,
+src/styling.rs:341:    fn segments<'a>(text: &'a str, partition: &'a Partition) -> Vec<StyledText<'a, TextStyle>> {
+src/styling.rs:354:    fn syntax(text: &str, bytes: Range<usize>, length: usize, class: SyntaxClass) -> SyntaxSpan {
+src/styling.rs:386:        let document = parse_patch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-αcall!\n+αcell!\n".as_bytes())
+src/styling.rs:388:        let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
+src/file_identity.rs:6:        FileHeader, GitHeader, GitMetadata, GitNames, HeaderPath, git_header_names, quoted_or_plain,
+src/file_identity.rs:130:fn read_headers(git_line: Option<&SourceLine>, paths: BySide<&HeaderPath>) -> Option<Located> {
+src/file_identity.rs:166:                Some(GitMetadata::CopyTo(field)) => quoted_or_plain(field).map(GitChange::Copied),
+src/file_identity.rs:252:                "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n",
+src/file_identity.rs:260:                "diff --git a/f b/f\nnew file mode 100644\n--- /dev/null\n+++ b/f\n@@ -0,0 +1 @@\n+a\n",
+src/file_identity.rs:264:                "diff --git a/f b/f\ndeleted file mode 100644\n--- a/f\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n",
+src/file_identity.rs:268:                "diff --git a/old b/dir/new\nsimilarity index 100%\nrename from old\nrename to dir/new\n",
+src/file_identity.rs:272:                "diff --git a/src b/copy\nsimilarity index 90%\ncopy from src\ncopy to copy\n--- a/src\n+++ b/copy\n@@ -1 +1 @@\n-a\n+b\n",
+src/file_identity.rs:319:                "diff --git i/src/new w/src/new\nnew file mode 100644\n--- /dev/null\n+++ w/src/new\n@@ -0,0 +1 @@\n+a\n"
+src/file_identity.rs:325:                "diff --git src/gone src/gone\ndeleted file mode 100644\n--- src/gone\n+++ /dev/null\n@@ -1 +0,0 @@\n-a\n"
+src/file_identity.rs:335:                "--- \"a/\\340\\270\\201 \\\"q\\\".txt\"\n+++ \"b/\\340\\270\\201 \\\"q\\\".txt\"\n@@ -1 +1 @@\n-a\n+b\n"
+src/file_identity.rs:341:                "diff --git \"a/tab\\there\" \"b/tab\\there\"\nold mode 100644\nnew mode 100755\n"
+src/file_identity.rs:350:            identity("diff --git a/with space b/with space\nold mode 100644\nnew mode 100755\n"),
+src/file_identity.rs:363:                "diff --git a/old b/new\nsimilarity index 90%\nrename from old\nrename to new\n--- \"a/broken\\q\"\n+++ b/new\n@@ -1 +1 @@\n-a\n+b\n"
+src/display_lines.rs:9:        AddressedRecord, DiffDocument, DiffFile, FileBody, FileView, RecordAddress, RecordKind,
+src/display_lines.rs:188:        let input = b"diff --git a/file b/file\nindex 1..2 100644\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n";
+src/tab_stops.rs:10:const TAB_WIDTH: NonZeroCells = NonZeroCells::new(Cells::new(2)).expect("tab stops are apart");
+src/file_tree.rs:255:        (true, next) => NonEmpty::new(first, next.into_iter().chain(top_level).chain(nested)),
+src/file_tree.rs:256:        (false, Some(head)) => NonEmpty::new(head, top_level.chain([first]).chain(nested)),
+src/file_tree.rs:404:                     diff --git a/dir/mode b/dir/mode\nold mode 100644\nnew mode 100755\n";
+src/theme.rs:8:use crate::{file_identity::FileState, file_tree::StateMarker, side::BySide, syntax::SyntaxClass};
+src/theme.rs:289:    use super::{ChangeColors, ChromePalette, ColorDepth, RowPalette, SyntaxPalette, Theme};
+src/theme.rs:295:            Color::Rgb(red, green, blue) => u16::from(red) + u16::from(green) + u16::from(blue),
+src/theme.rs:364:            *keyword, *string, *comment, *number, *function, *type_name, *operator, *property,
+src/page_rows.rs:228:    pub fn map_lines<T>(&self, mut value: impl FnMut(LineIndex, &RenderedLine) -> T) -> LineMap<T> {
+src/page_rows.rs:425:                pair_of_line: (0..block.len()).map(|row| first_pair.offset(row)).collect(),
+src/page_rows.rs:443:                (Some(old), Some(new)) => Some(SideBySideRow::Paired(BySide { old, new })),
+src/page_rows.rs:541:            b"before\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\r\n+new\n\\ No newline at end of file",
+src/page_rows.rs:566:            b"--- a/first\n+++ b/first\n@@ -1 +1 @@\n-old\n+new\n--- a/second\n+++ b/second\n@@ -1 +1 @@\n-old\n+new\n@@ -1 +1 @@\n-old-again\n+new-again\n",
+src/page_rows.rs:569:        let rows = PageRows::of_file_view(document.file_views().nth(1).expect("second file"));
+src/page_rows.rs:607:            b"--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n",
+src/terminal.rs:56:    pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
+src/terminal.rs:107:    pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), B::Error> {
+src/terminal.rs:122:fn autoresize_to_frame_size<B: Backend>(terminal: &mut Terminal<B>) -> Result<Size, B::Error> {
+src/effective_view.rs:96:        let payload_width = NonZeroCells::new(content_width.saturating_sub(MARKER_GUTTER_WIDTH));
+src/effective_view.rs:107:    pub(crate) fn horizontal_range(self, rows_width: Cells, content_width: Cells) -> Cells {
+src/effective_view.rs:206:        let range = |wrap: WrapWidth| wrap.horizontal_range(Cells::new(47), Cells::new(22));
+src/main.rs:112:            terminal::run_interactive(controlling_terminal, prepared).map_err(RunError::Terminal)
+src/finite_output.rs:24:        let input = b"\x1b[31mmessage\x1b[0m\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\x1b]8;;https://bad\x07footer\xff";
+src/finite_output.rs:31:            "message\r\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\nfooter\u{fffd}".as_bytes()
+src/finite_output.rs:80:        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n\x1b]8;;https://bad\x07+new\n";
+src/finite_output.rs:93:        let input = b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+tab\t e\xcc\x81 \xe7\x95\x8c \x1b[31mred\x1b[0m \x1b]8;;https://bad\x07link\x1bPbad\x1b\\\x01\n";
+src/finite_output.rs:122:            b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file";
+src/navigation.rs:44:    pub fn start(document: PreparedDocument, preferences: ViewPreferences, screen: Size) -> Self {
+src/navigation.rs:122:            Effect::Keymap(keymap) => self.interaction = interaction.keymap_switched(keymap),
+src/navigation.rs:136:    fn redisplay(&mut self, preferences: ViewPreferences, screen: Size, placement: Placement) {
+src/navigation.rs:222:        let document = parse_patch(b"--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n")
+src/navigation.rs:260:            b"--- a/file\n+++ b/file\n@@ -1 +1 @@\n-a long deleted line\n+a long added line\n",
+src/detail.rs:76:            ChangeTag::Delete => match changes.next_if(|(next, _)| *next == ChangeTag::Insert) {
+src/detail.rs:83:            ChangeTag::Insert => match changes.next_if(|(next, _)| *next == ChangeTag::Delete) {
+src/detail.rs:239:            Self::Replaced { deleted, inserted } => match similar_word_changes(deleted, inserted) {
+src/detail.rs:317:fn coalesce_tiny_equal_islands(spans: Vec<PayloadSpan>, payload: &str) -> Vec<PayloadSpan> {
+src/detail.rs:339:    use crate::{page_rows::PageRows, parser::parse_patch, side::BySide, span::PayloadSpan};
+src/detail.rs:372:            let rows = PageRows::of_file_view(document.file_views().next().expect("first file"));
+src/detail.rs:383:                    wanted.map(|(_, bytes)| PayloadSpan::within(line.payload(), bytes.clone()));
+src/geometry.rs:72:                    Layout::horizontal([Constraint::Length(FILE_COLUMN_WIDTH), Constraint::Min(0)])
+src/input.rs:124:            Self::PatchFile { path, source } => write!(formatter, "{}: {source}", path.display()),
+src/document.rs:130:                    for RecordEntry { position, value } in entries(&body.headers, records) {
+src/document.rs:180:    pub fn with_records<T>(&self, visit: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+src/source_text.rs:118:            Self::Escape | Self::ControlSequence | Self::StringSequence | Self::StringEscape => {
+src/source_text.rs:188:                b"\x1b[31mred\x1b[0m\ttab \x1b]8;;u\x07link\x1bPdcs\x1b\\\x01\xc2\x9b\xffend\r\n"
+src/cli.rs:23:            "  [FILE ...]  Read one patch file, compare two files or directories, or read\n",
+src/cli.rs:72:                formatter.write_str("--install cannot be combined with diff input operands")
+src/cli.rs:82:                "piped standard input cannot be combined with file operands; name it with -",
+src/cli.rs:87:            Self::TooManyOperands => formatter.write_str("expected zero, one, or two operands"),
+src/cli.rs:95:pub fn select_invocation(arguments: &[OsString], stdin: StdinState) -> Result<Invocation, Error> {
+src/cli.rs:107:        operands => select_input(operands, stdin).map(|source| Invocation::View { source }),
+src/syntax.rs:102:                styled_records.map_sides(|side, styled| Projection::from_hunk(hunk, side, styled));
+src/syntax.rs:115:                    self.highlight_projection(language, &projections.new, old.base, observer);
+src/syntax.rs:126:                            self.highlight_projection(language, projection, None, observer)
+src/syntax.rs:147:        let highlighter = observer.measure(Stage::Language, |_| self.highlighter_for(language));
+src/syntax.rs:301:        let query = Query::new(&grammar, highlights).expect("a bundled highlight query is valid");
+src/syntax.rs:314:            .expect("a parser with a language, no timeout, and no cancellation returns a tree")
+src/syntax.rs:333:            let name_index = usize::try_from(capture.index).expect("capture indexes fit in usize");
+src/syntax.rs:334:            let Some(class) = SyntaxClass::from_capture_name(capture_names[name_index]) else {
+src/syntax.rs:403:    fn from_hunk(hunk: HunkRecords<'_, 'h>, side: Side, styled_records: StyledRecords) -> Self {
+src/syntax.rs:557:    fn observed_highlights_of(patch: &[u8], observer: &mut impl Observer) -> Vec<Vec<SyntaxSpan>> {
+src/syntax.rs:572:    fn with_first_hunk<T>(patch: &[u8], test: impl for<'h> FnOnce(HunkRecords<'_, 'h>) -> T) -> T {
+src/syntax.rs:577:    fn with_first_unified<T>(patch: &[u8], test: impl FnOnce(&DiffFile, &UnifiedBody) -> T) -> T {
+src/syntax.rs:588:    fn with_added_projection<T>(lines: &[&str], test: impl FnOnce(&Projection) -> T) -> T {
+src/syntax.rs:631:            highlights_of(b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+fn added() {}\n");
+src/syntax.rs:643:            b"--- a/source.rs\n+++ b/source.rs\n@@ -1,3 +1,3 @@\n-/*\n+// before\n let value = 1;\n-*/\n+// after\n",
+src/syntax.rs:663:        let patch = b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+src/syntax.rs:671:                .highlight_projection(Language::Rust, &new_projection, None, &mut Unobserved)
+src/syntax.rs:738:            b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
+src/syntax.rs:758:            b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",
+src/bench.rs:65:    pub fn run(self, clock: PreparationClock, document: &DiffDocument) -> io::Result<String> {
+src/bench.rs:68:                let Ready { startup, prepared } = clock.prepare(document, &mut Unobserved);
+src/bench.rs:81:                    preparation_report(PreparationRecord::Diagnostic, &startup, &prepared);
+src/bench.rs:219:            "startup version=1 input_ns={} parse_ns={} preparation_ns={} ready_ns={} bytes={}",
+src/bench.rs:389:    terminal::character_for(command).expect("every driven command has a character binding")
+src/terminal/session.rs:63:    let color_depth = ColorDepth::from_color_count(crossterm::style::available_color_count());
+src/terminal/session.rs:195:        left_screen.and_then(|result| RestoreFailure::of(RestoreStep::AlternateScreen, result)),
+src/parser.rs:5:        DiffDocument, DiffFile, FileBody, FileSection, Hunk, Record, RecordKind, UnifiedBody,
+src/parser.rs:9:        FileHeader, GitHeader, GitMetadata, HeaderPath, file_header_field, git_header_names,
+src/parser.rs:140:        HeaderPath::of_header(text, Side::Old).map_or(LineStart::Text, LineStart::OldFileHeader);
+src/parser.rs:157:fn parse_git_section(header: SourceLine, lines: &mut SourceLines<'_>) -> Result<DiffFile, Error> {
+src/parser.rs:158:    let mut metadata = iter::from_fn(|| lines.next_if(is_git_metadata)).collect::<Vec<_>>();
+src/parser.rs:285:        lines.next_if(|text| remaining != exhausted || text.starts_with(NO_NEWLINE_MARKER))
+src/parser.rs:306:fn count_record(remaining: BySide<usize>, kind: RecordKind) -> Result<BySide<usize>, Malformed> {
+src/parser.rs:463:    fn next_if_map<T>(&mut self, extract: impl FnOnce(&str) -> Option<T>) -> Option<Taken<T>> {
+src/parser.rs:486:            HeaderRead::Malformed(reason) => HeaderRead::Malformed(self.last_line_error(reason)),
+src/parser.rs:560:        let input = b"commit message\r\n\r\n--- a/one\n+++ b/one\n@@ -1 +1 @@\n-old\n+new\n\nbetween files\n--- a/two\n+++ b/two\n@@ -1 +1 @@\n-before\n+after\ntrailing text";
+src/parser.rs:649:            b"message\ndiff --git a/file b/file\nold mode 100644\nnew mode 100755\nfooter\n";
+src/parser.rs:665:        let input = b"message\ndiff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\nKcmZQzWC8#H2LJ>B\n\nliteral 0\nHcmV?d00001\n\nfooter\n";
+src/parser.rs:686:                "diff --git a/image b/image\nindex 1..2 100644\nGIT binary patch\nliteral 3\n{payload}\n\n"
+src/parser.rs:742:        let input = include_bytes!("../tests/fixtures/git-metadata-without-file-header.patch");
+src/parser.rs:805:            let input = [b"--- a/file\n+++ b/file\n@@ -1 +0,0 @@\n".as_slice(), line].concat();
+src/terminal/keymap_popup.rs:128:        let padding = blank(Cells::from(KEYS_WIDTH).saturating_sub(Cells::of_text(&keys)));
+src/terminal/keymap_popup.rs:177:            let over_dot = blank(Cells::of_text(&left_label) + Cells::of_text(DIAMOND_SPACE));
+src/terminal/keymap_popup.rs:216:        let mut terminal = Terminal::new(TestBackend::new(width, 30)).expect("test terminal");
+src/terminal/keymap_popup.rs:240:            let row = (start.x..buffer.area.right()).map(|x| buffer[(x, start.y)].symbol());
+src/terminal/keymap_popup.rs:319:        let at = |text: &str| position(&buffer, text).unwrap_or_else(|| panic!("{text} is drawn"));
+src/navigation/scroll.rs:119:    fn bounds(maximum_vertical_offset: usize, maximum_horizontal_offset: usize) -> ScrollBounds {
+src/navigation/scroll.rs:128:    fn moved(movement: Movement, scroll: ScrollPosition, bounds: ScrollBounds) -> ScrollPosition {
+src/navigation/interaction.rs:83:            Command::Keymap(command) => Outcome::Effect(Effect::Keymap(self.keymap.after(command))),
+src/navigation/interaction.rs:134:        PreferenceChange::NextLayout | PreferenceChange::ToggleGranularity => Placement::Keep,
+src/navigation/interaction.rs:160:            (Self::Open, Command::Movement(_) | Command::Page(_) | Command::Preference(_)) => None,
+src/navigation/interaction.rs:168:            (Self::Open, KeymapCommand::Toggle) | (_, KeymapCommand::Close) => Self::Closed,
+src/navigation/interaction.rs:263:        AnchorLine, Command, Effect, Event, Interaction, KeymapCommand, KeymapPopup, Movement,
+src/navigation/interaction.rs:310:        let Effect::Redisplay { preferences, .. } = preference_effect(interaction, change) else {
+src/navigation/interaction.rs:318:        let Effect::Redisplay { placement, .. } = preference_effect(interaction, change) else {
+src/navigation/interaction.rs:420:        let respond = |interaction: Interaction, event| interaction.respond(event, TWO_PAGES);
+src/navigation/extent.rs:186:    pub(super) fn reshow(&mut self, document: &PreparedDocument, settings: ExtentSettings) {
+src/navigation/extent.rs:241:    fn offset_of(&self, document: &PreparedDocument, anchor: RowLine<LineIndex>) -> ScreenLines {
+src/navigation/extent.rs:548:    fn texts(document: &PreparedDocument, lines: impl Iterator<Item = LineIndex>) -> Vec<String> {
+src/navigation/extent.rs:558:    fn single_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<LineIndex>> {
+src/navigation/extent.rs:568:    fn pair_lines(extent: &ScrollExtent, offset: usize, limit: usize) -> Vec<RowLine<PairIndex>> {
+src/navigation/extent.rs:596:            b"--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n far0\n far1\n",
+src/navigation/extent.rs:612:            "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c2\n-old\n+new\n c3\n@@ -20,2 +20,2 @@\n"
+src/navigation/extent.rs:616:            "--- a/file\n+++ b/file\n@@ -1,6 +1,6 @@\n c0\n c1\n c2\n-old\n+new\n c3\n c4\n@@ -20,2 +20,2 @@\n"
+src/navigation/extent.rs:623:            "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n far context that is hidden at one line\n near\n-old\n+\t界界界界界界界界界界\n"
+src/navigation/extent.rs:627:        let width = |shape, context| extent_of(&document, shape, context, WrapWidth::Off).width();
+src/navigation/extent.rs:637:            prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
+src/navigation/extent.rs:653:            b"--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-abcdefghijklmnopqrstuvwxyz0123456789abcdefghi\n+abc\n context\n",
+src/navigation/extent.rs:703:            prepared(b"--- a/file\n+++ b/file\n@@ -1,5 +1,5 @@\n c0\n c1\n c2\n-old\n+new\n c3\n");
+src/actions/set_global_diff_pager.rs:45:fn set_or_remove(git: &mut Command, EnvironmentVariable { name, value }: EnvironmentVariable) {
+src/terminal/row_style.rs:31:        RowTone::UnchangedRecord | RowTone::HunkHeader | RowTone::Plain => [spacing, spacing],
+src/terminal/chrome.rs:70:    let help_box = FloatingBox::bottom_left_of(area, Size::new(hint_width, HELP_HINT_HEIGHT));
+src/terminal/chrome.rs:120:        let border = Block::bordered().border_style(Style::default().fg(palette.separator));
+src/terminal/chrome.rs:129:pub(super) fn draw_outer_separator(buffer: &mut Buffer, area: Rect, palette: &ChromePalette) {
+src/terminal/chrome.rs:353:        let mut terminal = Terminal::new(TestBackend::new(24, 18)).expect("test terminal");
+src/terminal/view.rs:35:pub(super) fn render_prepared_frame(frame: &mut Frame, navigation: &Navigation, theme: &Theme) {
+src/terminal/view.rs:164:            let shown_separator = Rect::new(separator.x, content.y, separator.width, height);
+tests/benchmark.rs:35:        ["labels", "layout", "syntax", "detail", "unattributed"].map(|name| ("preparation", name));
+tests/benchmark.rs:37:        ["language", "projection", "parse", "query", "unattributed"].map(|name| ("syntax", name));
+src/terminal/bindings.rs:5:use crossterm::event::{Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+src/terminal/bindings.rs:96:            Self::Control(_) | Self::Tab | Self::ShiftTab | Self::Esc | Self::Down | Self::Up => {
+src/actions/mod.rs:47:            Self::Spawn { name, source } => write!(formatter, "cannot run {name}: {source}"),
+src/actions/mod.rs:54:                formatter.write_str("GIT_CONFIG_GLOBAL=/dev/null disables global Git configuration")
+src/actions/mod.rs:56:            Self::NonUtf8Path(role) => write!(formatter, "{} is not valid UTF-8", role.label()),
+src/terminal/row_writer.rs:366:            b"--- a/example.rs\n+++ b/example.rs\n@@ -1,3 +1,3 @@\n fn example() {\n-    let excluded = ace.excluded_mcp();\n+    let excluded = ace.excluded_mcp()?;\n }\n",
+src/terminal/row_writer.rs:386:            "--- a/file\r\n+++ b/file\r\n@@ -1 +1 @@\r\n-旧\r\n\\ No newline at end of file\r\n\r\n界\r\n+新\r\n\\ No newline at end of file".as_bytes(),
+src/terminal/row_writer.rs:455:        let (first, second, past_the_end) = (wrapped_line(0), wrapped_line(1), wrapped_line(2));
+tests/live/harness.rs:55:        let document = parse_comparison(output.as_bytes()).expect("valid comparison output");
+tests/live/harness.rs:62:            Terminal::new(TestBackend::new(size.width, size.height)).expect("test terminal");
+tests/live/harness.rs:204:        let (marker_label, _) = row.split_once(' ').expect("a marker, a space, and a name");
+tests/live/harness.rs:228:            .filter(|row| change_label(row).is_some_and(|label| label.starts_with("old_")))
+tests/live/harness.rs:245:            .unwrap_or_else(|| panic!("{text:?} is not on screen:\n{}", self.rows().join("\n")))
+tests/live/harness.rs:251:pub fn positions<'a>(buffer: &'a Buffer, text: &'a str) -> impl Iterator<Item = Position> + 'a {
+tests/live/harness.rs:256:            let drawn = x < buffer.area.right() && buffer[(x, start.y)].symbol() == *grapheme;
+src/actions/write_output.rs:110:            matches!(&error, Error::Write(source) if source.kind() == io::ErrorKind::PermissionDenied),
+tests/git_pager.rs:10:use common::{TestEnv, assert_error, assert_fixture_succeeded, run_fixture, success_output};
+tests/git_pager.rs:53:    for (content, message) in [("first\n", "First change"), ("second\n", "Second change")] {
+tests/live/panes.rs:97:    let mut live = Live::sized(&patch, Mode::line(DiffLayout::Vertical), Size::new(80, 8));
+tests/live/fixtures.rs:14:            format!("--- a/file_{file:02}.rs\n+++ b/file_{file:02}.rs\n@@ -1 +1 @@\n-old\n+new\n")
+tests/live/fixtures.rs:45:    format!("--- a/ctx.rs\n+++ b/ctx.rs\n@@ -1,7 +1,7 @@\n-changed_old\n+changed_new\n{context}")
+tests/live/fixtures.rs:106:    "--- a/file\n+++ b/file\n@@ -1,3 +1,2 @@\n-old first\n-old second\n+new first\n context\n";
+tests/live/fixtures.rs:109:pub const ONE_LETTER_CHANGE: &str = "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-one\n+ore\n";
+tests/live/navigation.rs:14:    fixtures::{MIXED_LANGUAGES, context_patch, hidden_context_patch, long_patch, paired_patch},
+tests/live/navigation.rs:345:        PreparedDocument::prepare(&parse_patch(MIXED_LANGUAGES.as_bytes()).expect("valid patch")),
+tests/benchmark-runner.sh:147:printf 'startup version=1 input_ns=10 parse_ns=10 preparation_ns=%s ready_ns=%s bytes=6\n' \
+tests/benchmark-runner.sh:156:        printf 'stage name=%s parent=preparation duration_ns=%s\n' "$stage" "$stage_duration"
+tests/benchmark-runner.sh:232:for case_name in malformed invalid-total mismatch failed build-failure duplicate-timing measured-failure; do
+tests/live/styles.rs:85:        "--- a/file\n+++ b/file\n@@ -1,2 +1,3 @@\n-old first\n+new first\n+new second\n context\n",
+tests/live/styles.rs:156:        "--- a/source.rs\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n context\n-fn removed() { let label = \"value\"; }\n+fn added() { let label = \"value\"; }\n",
+tests/live/styles.rs:313:        "--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-old\n+new\n@@ -3 +3 @@\n-before\n+after\n",
+bench/fixtures.sh:62:for fixture in "$repo_root"/tests/fixtures/*.patch "$run_root/movement-$movement_hunks.patch"; do
+bench/kubernetes.sh:26:    [ "${#validation_value}" -le 17 ] || fail "$validation_name exceeds safe arithmetic range"
+bench/kubernetes.sh:78:            printf 'cleanup_signal_status=%s\n' "$cleanup_status" >> "$run_root/status.txt"
+bench/kubernetes.sh:102:        printf 'stdin=%s\nstdout=%s\nstderr=%s\n' "$command_input" "$command_output" "$command_error"
+bench/kubernetes.sh:127:                IFS=' ' read -r label duration_field files_field records_field _extra <<EOF
+bench/kubernetes.sh:136:                canonical="$report_kind duration_ns=$duration files=$file_count records=$record_count"
+bench/kubernetes.sh:140:                IFS=' ' read -r label _version input_field parse_field prep_field ready_field bytes_field _extra <<EOF
+bench/kubernetes.sh:154:                canonical="$canonical preparation_ns=$preparation_ns ready_ns=$ready_ns bytes=$report_bytes"
+bench/kubernetes.sh:156:                [ "$duration" -eq "$preparation_ns" ] || fail 'preparation durations differ'
+bench/kubernetes.sh:157:                [ "$ready_ns" -ge $((input_ns + parse_ns + preparation_ns)) ] || fail 'invalid ready total'
+bench/kubernetes.sh:158:                [ "$report_bytes" -eq "$corpus_bytes" ] || fail 'input bytes differ from corpus'
+bench/kubernetes.sh:173:        expected=' preparation:labels preparation:layout preparation:syntax preparation:detail preparation:unattributed syntax:language syntax:projection syntax:parse syntax:query syntax:unattributed work'
+bench/kubernetes.sh:175:        [ "$preparation_stage_sum" -eq "$duration" ] || fail 'preparation stages do not partition their parent'
+bench/kubernetes.sh:176:        [ "$syntax_stage_sum" -eq "$syntax_duration" ] || fail 'syntax stages do not partition their parent'
+bench/kubernetes.sh:190:            [ "$1" = "stage name=$stage_name parent=$stage_parent duration_ns=$stage_duration" ] ||
+bench/kubernetes.sh:197:                preparation) preparation_stage_sum=$((preparation_stage_sum + stage_duration)) ;;
+bench/kubernetes.sh:211:            canonical="work hunks=$hunks parse_calls=$parse_calls captures=$captures projected_bytes=$projected_bytes"
+bench/kubernetes.sh:221:    [ "$(git -C "$repo_root" rev-parse --verify HEAD)" = "$baseline_commit" ] || fail 'source revision changed during run'
+bench/kubernetes.sh:225:    [ "$(digest "$run_root/identity-source.patch")" = "$candidate_digest" ] || fail 'source changed during run'
+bench/kubernetes.sh:229:    [ "$(digest "$candidate_binary")" = "$candidate_binary_digest" ] || fail 'candidate binary changed during run'
+bench/kubernetes.sh:231:        [ "$(digest "$baseline_binary")" = "$baseline_binary_digest" ] || fail 'baseline binary changed during run'
+bench/kubernetes.sh:232:        baseline_status=$(git -C "$baseline_checkout" status --porcelain --untracked-files=all)
+bench/kubernetes.sh:244:    warmup_output="$run_root/$numerator-8-warmup-$warmup_number-$warmup_role.benchmark.txt"
+bench/kubernetes.sh:245:    record_command "$warmup_output.command" "$patch" "$warmup_output" "$warmup_output.stderr" "$warmup_binary" --bench prepare
+bench/kubernetes.sh:246:    "$warmup_binary" --bench prepare < "$patch" > "$warmup_output" 2> "$warmup_output.stderr"
+bench/kubernetes.sh:252:        "$run_root/$numerator-8.profile.txt" "$run_root/$numerator-8.profile.stderr" "$candidate_binary" --bench stages
+bench/kubernetes.sh:260:        "$run_root/$numerator-8.sampled-benchmark.txt" "$run_root/$numerator-8.sampled-benchmark.stderr" "$candidate_binary" --bench prepare
+bench/kubernetes.sh:261:    "$candidate_binary" --bench prepare < "$patch" > "$run_root/$numerator-8.sampled-benchmark.txt" \
+bench/kubernetes.sh:271:        printf 'sample_start_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$sampling_log"
+bench/kubernetes.sh:312:    record_command "$run_root/$sample_name.command" "$measured_patch" "$benchmark_output" \
+bench/kubernetes.sh:345:            case "$timing_fields" in *" $timing_key "*) fail "duplicate timing field: $timing_key" ;; esac
+bench/kubernetes.sh:411:    raw_sample="$raw_sample input_ns=$input_ns parse_ns=$parse_ns ready_ns=$ready_ns bytes=$report_bytes"
+bench/kubernetes.sh:477:        printf 'protocol=two-warmups-three-pairs order=baseline-candidate,candidate-baseline,baseline-candidate heuristic=max-absolute-deviation\n'
+bench/kubernetes.sh:483:printf 'RUSTFLAGS=%s\nCARGO_ENCODED_RUSTFLAGS=%s\nRUSTC_WRAPPER=%s\nRUSTC_WORKSPACE_WRAPPER=%s\n' \
+bench/kubernetes.sh:500:printf 'measurement_commands=*.command warmup_commands=*.command profile_commands=*.command\n'
+bench/kubernetes.sh:515:[ "$mode" != profile ] || [ -x "$sample_command" ] || fail "missing executable: $sample_command"
+bench/kubernetes.sh:531:    fail 'hdiff candidate contains untracked build inputs; add them to the index before benchmarking'
+bench/kubernetes.sh:557:    [ "$checked_out_baseline" = "$baseline_commit" ] || fail 'baseline worktree has unexpected revision'
+bench/kubernetes.sh:558:    baseline_status=$(git -C "$baseline_checkout" status --porcelain --untracked-files=all)
+bench/kubernetes.sh:560:    printf 'build=cargo +%s build --release --locked --manifest-path %s --target-dir %s\n' \
+bench/kubernetes.sh:564:        cargo +"$toolchain" build --release --locked --manifest-path "$baseline_checkout/Cargo.toml" \
+bench/kubernetes.sh:566:    cargo +"$toolchain" build --release --locked --manifest-path "$baseline_checkout/Cargo.toml" \
+bench/kubernetes.sh:598:        "$run_root/$numerator-8.corpus.stderr" git -C "$checkout" diff --no-ext-diff --no-textconv \
+bench/kubernetes.sh:600:    git -C "$checkout" diff --no-ext-diff --no-textconv "$base_commit" "$kubernetes_commit" -- '*.go' \
+bench/kubernetes.sh:604:    printf 'range=%s/8 corpus_base=%s corpus_target=%s corpus_sha256=%s corpus_bytes=%s\n' \
+bench/kubernetes.sh:605:        "$numerator" "$base_commit" "$kubernetes_commit" "$corpus_digest" "$corpus_bytes" >> "$provenance"
+bench/kubernetes.sh:620:            measurement=$(measure "$candidate_binary" "$candidate_revision" candidate "$numerator" "$repeat" only "$patch")
+bench/kubernetes.sh:621:            IFS=' ' read -r _duration _cycles _instructions _memory _rss files records _ready <<EOF
+bench/kubernetes.sh:625:            [ -z "$measured_counts" ] || [ "$measured_counts" = "$counts" ] || fail 'sample counts changed'
+bench/kubernetes.sh:629:        printf 'measurement run_id=%s range=%s/8 samples=3\n' "$run_id" "$numerator" | tee -a "$results"
+bench/kubernetes.sh:674:            baseline_memory baseline_rss baseline_files baseline_records baseline_ready <<EOF
+bench/kubernetes.sh:679:            candidate_memory candidate_rss candidate_files candidate_records candidate_ready <<EOF
+bench/kubernetes.sh:686:        [ -z "$baseline_schema" ] || [ "$baseline_schema" = "$baseline_version" ] || fail 'baseline schema changed'
+bench/kubernetes.sh:687:        [ -z "$candidate_schema" ] || [ "$candidate_schema" = "$candidate_version" ] || fail 'candidate schema changed'
+bench/kubernetes.sh:690:        if [ "$baseline_version" = startup-v1 ] && [ "$candidate_version" = startup-v1 ]; then
+bench/kubernetes.sh:806:    summary="$summary preparation_saving_ns=$((average_baseline_duration - average_candidate_duration))"
+bench/kubernetes.sh:807:    summary="$summary ready_saving_ns=$ready_saving baseline_schema=$baseline_schema candidate_schema=$candidate_schema"
