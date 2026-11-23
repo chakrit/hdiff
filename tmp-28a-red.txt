@@ -1,0 +1,38 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-aa545e699f3cb11f9)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.02s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 7 tests
+test parser::hunk::tests::preserves_crlf_in_source_bytes ... ok
+test finite_output::tests::preserves_a_no_newline_marker_without_adding_a_line_ending ... ok
+test finite_output::tests::sanitizes_surrounding_text_and_preserves_line_endings ... ok
+test source_text::tests::reads_the_line_ending_through_the_scanner ... FAILED
+test display_lines::tests::writes_the_crlf_ending_git_colors_as_a_whitespace_error ... FAILED
+test page_rows::tests::payloads_exclude_the_record_marker_and_line_ending ... ok
+test terminal::row_writer::tests::preserves_unicode_crlf_blank_context_and_no_newline_markers ... ok
+
+failures:
+
+---- source_text::tests::reads_the_line_ending_through_the_scanner stdout ----
+
+thread 'source_text::tests::reads_the_line_ending_through_the_scanner' (89032690) panicked at src/source_text.rs:393:13:
+assertion `left == right` failed: [43, 27, 91, 51, 50, 109, 98, 27, 91, 109, 27, 91, 52, 49, 109, 13, 27, 91, 109, 10]
+  left: Lf
+ right: CrLf
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- display_lines::tests::writes_the_crlf_ending_git_colors_as_a_whitespace_error stdout ----
+
+thread 'display_lines::tests::writes_the_crlf_ending_git_colors_as_a_whitespace_error' (89032685) panicked at src/display_lines.rs:238:9:
+assertion `left == right` failed
+  left: "--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,3 +1,3 @@\n a\r\n \r\n-b\r\n+c\n"
+ right: "--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,3 +1,3 @@\n a\r\n \r\n-b\r\n+c\r\n"
+
+
+failures:
+    display_lines::tests::writes_the_crlf_ending_git_colors_as_a_whitespace_error
+    source_text::tests::reads_the_line_ending_through_the_scanner
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
