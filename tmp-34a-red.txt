@@ -1,0 +1,24 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-af68993a4bce0aa61)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.80s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 1 test
+test terminal::row_writer::tests::draws_each_change_marker_undimmed_in_its_marker_color ... FAILED
+
+failures:
+
+---- terminal::row_writer::tests::draws_each_change_marker_undimmed_in_its_marker_color stdout ----
+
+thread 'terminal::row_writer::tests::draws_each_change_marker_undimmed_in_its_marker_color' (89643098) panicked at src/terminal/row_writer.rs:536:17:
+assertion `left == right` failed: TrueColor Old: Cell { symbol: Some("-"), fg: Rgb(206, 74, 74), bg: Rgb(50, 30, 30), underline_color: Reset, modifier: DIM, diff_option: None, skip: false }
+  left: (Rgb(206, 74, 74), true)
+ right: (Rgb(206, 74, 74), false)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    terminal::row_writer::tests::draws_each_change_marker_undimmed_in_its_marker_color
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 201 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

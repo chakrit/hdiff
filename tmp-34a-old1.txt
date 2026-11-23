@@ -1,0 +1,4 @@
+            let marker = StyledText {
+                text: RecordKind::change_of(side).marker(),
+                style: Style::default().fg(palette.change.get(side).marker),
+            };
