@@ -1,0 +1,30 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-ad34389763e56159f)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.44s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 7 tests
+test source_text::tests::keeps_printable_text_and_tabs_only ... ok
+test source_text::tests::splits_after_the_first_visible_character ... ok
+test source_text::tests::lines_without_visible_text_do_not_split ... ok
+test source_text::tests::strips_c1_introduced_sequences_like_their_escape_spellings ... ok
+test source_text::tests::splitting_matches_decoding_the_rest_separately ... ok
+test source_text::tests::strips_intermediate_escapes_and_sequences_an_introducer_restarts ... FAILED
+test terminal::row_writer::tests::syntax_highlighting_preserves_source_text ... ok
+
+failures:
+
+---- source_text::tests::strips_intermediate_escapes_and_sequences_an_introducer_restarts stdout ----
+
+thread 'source_text::tests::strips_intermediate_escapes_and_sequences_an_introducer_restarts' (88600378) panicked at src/source_text.rs:232:13:
+assertion `left == right` failed: [45, 27, 40, 66, 27, 91, 109, 111, 108, 100]
+  left: "-Bold"
+ right: "-old"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    source_text::tests::strips_intermediate_escapes_and_sequences_an_introducer_restarts
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `--lib`
