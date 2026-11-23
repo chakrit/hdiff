@@ -1,0 +1,94 @@
+  rest); `changed_row` and its `(None, None)` arm are gone (round 22 V2 holds).
+- `character_details` reads a row's per-side lines through `SideBySideRow::changed_lines`
+  (round 22 V3 holds; V2 and V3 below are what that lift left behind).
+- `binary_patch_lines`, `slice::from_ref`, `PageRows::of_lines`, and the `#core-model`
+  citations hold (round 22 V4, V5, V7, cross-cutting V1). `TabStops::walk` no longer
+  matches an index (round 22 V6 holds; V4 below is its replacement's guard).
+- Marker layouts re-probed: `both-uneven.patch` keeps each side's marker right after its
+  record (`(-c, new marker)`, `OldOnly(old marker)`); `old-marker-short.patch` pairs the
+  old marker opposite `+b` with `+c` alone after it; neither marker gets detail and both
+  take the unchanged-record tone.
+
+## Violations
+
+### V1. The scanner's sequence states mishandle C0 controls and C1 non-introducers
+
+`State::after` (`source_text.rs:136-158`) treats every character the escape states do not
+name as ending the escape, and treats every C1 control that is not an introducer as an
+ordinary byte inside a control or string sequence. A VT parser does neither: a C0 control
+(other than CAN, SUB and ESC) is executed without leaving the escape or sequence, DEL is
+ignored everywhere, and any C1 control is an "anywhere" transition (ST and the
+non-introducing C1 controls return to text; the introducers open their sequence). So the
+scanner shows sequence text a terminal hides, and hides text a terminal shows
+(`tmp/r23r/scan.out`):
+
+- `ESC BEL [31m red` sanitizes to `[31mred` (a terminal shows `red`): BEL drops the
+  escape to `Text`, so the CSI's `[31m` shows;
+- `ESC DEL [31m red` sanitizes to `[31mred` (a terminal ignores DEL and shows `red`);
+- `ESC ( BEL B red` sanitizes to `Bred` (the final byte `B` shows);
+- `ESC [31 ST(U+009C) red`, `ESC [31 NEL(U+0085) red` and `ESC [31 IND(U+0084) red`
+  sanitize to `ed`: the C1 control stays inside the CSI and `r` is taken as its final
+  byte;
+- `ESC ]0;t NEL red` sanitizes to `""`.
+
+The spec has rendering strip input control sequences and show the rest
+(`architecture.md:606-609`, section "Lossless and safe rendering"); these lines either
+show sequence parameters as text or lose visible source text, the class rounds 20 V3,
+21 V3 and 22 V1 fixed for other states. Nothing unsafe reaches the terminal, since every
+`ESC` and C1 control is still hidden. Fix by construction: classify each character once
+(C0 control, DEL, C1 introducer, ST or other C1 control, intermediate, parameter, final,
+text) and drive every state from that class, so the C0, DEL and C1 rules are written once
+for all states rather than as per-state catch-all arms. Red test: each probe line
+sanitizes to `red`.
+
+### V2. `OldOnly` and `NewOnly` are one row kind written as two mirrored variants
+
+`SideBySideRow` (`page_rows.rs:58-64`) spells "a change to one side" as two variants that
+differ only in the side, so every consumer writes the same arm twice with the side swapped:
+
+- `SideBySideRow::map` (`page_rows.rs:72-73`);
+- `SideBySideRow::changed_lines` (`page_rows.rs:111-118`);
+- `values_on_lines` (`page_rows.rs:373-374`), which also re-derives what `changed_lines`
+  already answers (each side's changed line) instead of zipping `changed_lines()` with
+  `values`;
+- `BlockRows::changed` (`page_rows.rs:484-489`), which builds `old_only` and `new_only`
+  with two mirrored pipelines;
+- `pane_pair` (`terminal/rows.rs:37-44`), which builds the text-plus-peer pair twice.
+
+The side is data, not a kind. Fix: one variant carrying its side (for example
+`Unmatched { side: Side, line: T }`), so each consumer writes the one-sided case once
+with `side` and `side.other()`-style access, and let `values_on_lines` use
+`changed_lines`.
+
+### V3. A value on one side and none on the other is hand-written in two modules
+
+`SideBySideRow::changed_lines` (`page_rows.rs:102-119`) writes
+`BySide { old: Some(line), new: None }` and its mirror, and spells the shared case
+`BySide { old: None, new: None }` where `detail.rs` uses `BySide::default()` for the same
+value. `changed_payload_details` (`detail.rs:46-58`) then writes `(Some(old), None)` and
+`(None, Some(new))` as two mirrored arms that each build a one-sided `BySide` around
+`whole(side, line)`. That is the hand-walked-sides shape round 15 (rendering V5,
+`PairCursor::pass` through `BySide::map`) ruled a Violation, now in two places. Fix: a
+`BySide` constructor for one side's value (for example `BySide::only(side, value)`), used
+by `changed_lines`; and in `changed_payload_details`, keep the `(Some, Some)` pair case
+and handle the one-sided case once with `lines.map_sides(|side, line| line.and_then(
+|line| whole(side, line)))`.
+
+### V4. `TabStops::walk` guards a case `str::split` cannot produce
+
+`walk` (`tab_stops.rs:30-41`) starts with `let Some(first) = chunks.next() else {
+return; };`, but `str::split` always yields at least one item (the empty string for empty
+`text`), so the `else` branch is unreachable code that reads as a real case. The round 22
+V6 repair replaced the index match with this guard. Fix: write the walk so no impossible
+case is spelled, for example over `text.split_inclusive('\t')`, visiting each piece's text
+and advancing to the next tab stop after a piece that ends in a tab.
+
+## Out of scope
+
+- A printable non-ASCII character or an invalid UTF-8 byte inside a CSI ends it as a
+  final byte (`ESC [31 é red` and `ESC [31 \xff red` both sanitize to `ed`). VT parsers
+  differ on bytes above 0x7F in a CSI (DEC's treats GR like GL; UTF-8 terminals decode
+  first), and the spec says nothing, so this needs a ruling rather than a repair.
+- `tmp/r22r/hidden-context-marker.patch` declares `-1,5 +1,5` for four lines a side and
+  is rejected as truncated, as it was in round 22; the corrected
+  `tmp/r23r/hidden-marker.patch` parses.
