@@ -1,0 +1,119 @@
+# Round 22 audit — model, input, actions, bench (2026-10-19)
+
+Assessment only; nothing edited or committed. Scope: `src/{main,lib,cli,input,parser,
+parser/hunk,parser/binary_patch,source_text,headers,side,shell_words,comparison,document,
+file_identity,file_tree,prepared,preferences,exit_status,finite_output,bench,measurement,
+non_empty,one_of,utf8_path,error_output}.rs`, `src/actions/*`,
+`tests/{common/mod,cli,git_pager,benchmark}.rs`, and the `architecture.md` /
+`performance.md` sections governing them, including the round 22 amendments (a
+no-newline marker ends its side; `DiffFile` holds an optional binary patch; the
+`--install` refusals), at HEAD `9c9d340`. Laws: `code`, `architect`, `rust-coding`. No
+Borderline category. Settled or pending items were not re-reported (the rulings in
+`.ace/audit/round15-plan.md` through `round22-plan.md`, plus bundled-grammar `expect`s,
+hand-written `Driver::ALL`, `AGENTS.md` width, item docs naming one of several
+module-cited anchors, the two `--install` runs that cannot use `TestEnv`, the
+prepared-page equality derives a test uses, the marker known by its `\ ` prefix, the
+hunk-header tail stricter than `git apply`, an empty `GIT_CONFIG_GLOBAL` left to Git, a
+malformed `@@` before any file reporting `UnexpectedDiffHeader`, the deferred
+format-patch signature, empty hunks parsing, `ESC` inside an OSC/DCS string staying part
+of the string, and the marker-after-side rule enforced at the parser boundary). No
+finding proposes reversing an earlier round's repair. Checks at HEAD:
+`.ace/audit/round22-checks.txt` (fmt, clippy, tests, benchmark harness green; no comment
+over 90 columns; the round 21 crash input exits 2).
+
+Edge-case inputs were run through a fresh build (`target/debug/hdiff`, finite output
+because stdout is not a terminal); patches and outputs are in `tmp/r22m/`. Real producer
+output parsed and round-tripped byte for byte: a `git diff --cached --binary` holding a
+`literal` binary change, a rename with edits, a mode change, an empty new file, files
+with and without a final newline (`all.patch`, `nobin.patch`); a `delta` binary patch
+(`delta.patch`); and four Apple `diff -u` outputs covering a marker on a deletion, on
+trailing context after an edit, on context after an addition, and a blank line in
+context (`d1`–`d4.patch`). No real defect was found this round.
+
+**5 Violations.**
+
+## Round 22 code judged
+
+- The marker-ends-side rule (`parse_hunk`, `check_side_open`, the `ended` sides carried
+  across a file's hunks); `RecordAfterNoNewlineMarker`; `parser::hunk`; `BinaryPatch` /
+  `BinaryBlock` held apart from extended headers, with identity read from extended
+  headers only; `decimal_count` in the parser; `range_count` reading start then count;
+  `UnexpectedGitHeaderInHunk`; the scanner's `EscapeIntermediate` state and restart on a
+  new introducer; the spec's new input-contract and `--install` refusal paragraphs.
+- These hold and match the spec, except where V1 (metadata invariant), V2 (ended-side
+  state), V3 (base-85 literal), V4 (hunk tests) and V5 (hunk docs) say otherwise.
+
+## Violations
+
+### V1 — a metadata body's "at least one extended header" is a runtime check, not a type
+
+`src/document.rs:155-171` — `MetadataBody` wraps a `GitHeader` whose `metadata` is a
+`Box<[SourceLine]>`, and `MetadataBody::of` returns `None` when it is empty. Every other
+at-least-one sequence in the model is a `NonEmpty` (`UnifiedBody::hunks`,
+`BinaryPatch::blocks`, `BinaryBlock::payload`), so the invariant holds by construction
+there and by an `is_empty` branch here.
+
+`GitHeader` is shared with unified sections, where an empty extended header list is
+valid, so the fix is not to make `GitHeader::metadata` non-empty. `MetadataBody` holds
+the `diff --git` line and a `NonEmpty<SourceLine>` of extended headers directly (built
+with `NonEmpty::of` in `parse_git_section`), and `git()` callers (`display_lines`,
+`file_identity`) read the line and headers from it. Rules: `architect` (correct by
+construction); `code` (invariants go in types).
+
+### V2 — `parse_hunk` threads the ended sides through an in-out `&mut BySide<bool>`
+
+`src/parser/hunk.rs:17-38`, `src/parser.rs:231-236` — `parse_unified` creates
+`let mut ended = BySide::<bool>::default()` and lends it to every `parse_hunk`, which
+both reads it (for `check_side_open`) and writes the sides its own marker ends. The
+sides a hunk ends are a fact of the parsed hunk — the marker on its records — so the
+mutable accumulator keeps a second copy of state the `Hunk` already holds.
+
+The fix passes the sides earlier hunks ended into `parse_hunk` by value, has `Hunk`
+answer which sides its marker ends (`Hunk::ended_sides`, derived from its records), and
+folds those in `parse_unified` (`ended = ended | hunk.ended_sides()`). Rules: `code`
+(pure functions and immutability by default); `architect` (derive, don't duplicate).
+
+### V3 — the base-85 group's byte count is a bare `4`, beside the named group width
+
+`src/parser/binary_patch.rs:104-108` — `is_payload_line` names the characters per group
+(`BASE85_GROUP = 5`) but writes the bytes per group as a literal twice: `groups * 4`
+and `held - 4`. The fix is a `BASE85_GROUP_BYTES` constant beside `BASE85_GROUP`.
+Rules: `code` (enums, not magic constants); rounds 13 and 20 ruled bare literals that
+stand for a named quantity Violations.
+
+### V4 — hunk-reading tests stay in `parser.rs` after hunk reading moved to `parser::hunk`
+
+Round 22 moved hunk reading into `src/parser/hunk.rs` (177 lines, no test module), but
+its tests — hunk header spacing and signed counts, unmarked lines, blank context,
+no-newline marker placement and the marker-ends-side rule (`parser.rs` tests such as
+`rejects_hunk_headers_spaced_other_than_producers_write`,
+`rejects_unmarked_lines_inside_hunks`, `reads_an_empty_line_inside_a_hunk_as_blank_context`,
+`rejects_a_no_newline_marker_that_follows_no_record`,
+`rejects_a_record_after_the_marker_that_ended_its_side`) — remain in `parser.rs`. The
+sibling split in round 21 moved `parser::binary_patch`'s tests with its code. The fix
+moves the hunk tests into a `#[cfg(test)] mod tests` in `parser/hunk.rs`, reusing the
+parent's helpers through `super::super` or a shared test helper in `parser`. Rules:
+`rust-coding` (unit tests inline in the same file); `code` (proximity).
+
+### V5 — `parser::hunk`'s docs misstate where a no-newline marker sits
+
+- `src/parser/hunk.rs:1-2`: the module doc says a hunk is its header "then the records
+  and no-newline markers inside those counts", but a marker may follow the last record,
+  after the counts are used up (`next_if` admits it once `remaining == exhausted`).
+- `src/parser/hunk.rs:13-16`: `parse_hunk`'s doc says "each with the no-newline marker
+  that follows it, which may follow the last of them", which reads as every record
+  carrying a marker.
+
+The fix states it once and plainly: the records inside the declared counts, and the at
+most one marker per record that may follow any of them, including the last. Rules: `code`
+(One Reading; comments carry what the code cannot, truthfully).
+
+## Out of scope
+
+- A hunk after a side has ended may still declare a range beyond that side's end (for
+  example `@@ -5,0 +2 @@` holding only additions after the old side ended); the spec
+  states no rule tying hunk ranges to file length, and no producer writes it.
+- An `ESC` followed by a C0 control such as tab ends the escape and drops that control,
+  where terminals execute C0 controls inside escapes; ECMA-48 leaves it undefined and no
+  producer writes it.
+- `RecordAddress` branding and the two dated `docs/vendor` records remain as recorded.

@@ -1,0 +1,8 @@
+        }
+
+        let binary =
+            "diff --git a/image b/image\nindex 1..2\nGIT binary patch\nliteral +12\npayload\n\n";
+        assert_eq!(
+            parse_patch(binary.as_bytes()),
+            malformed(4, Malformed::InvalidBinaryPatchHeader)
+        );
