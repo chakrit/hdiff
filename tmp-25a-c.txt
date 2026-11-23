@@ -1,0 +1,4 @@
+fmt rc=0
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a84365e0a0c657013)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.24s
+clippy rc=0
