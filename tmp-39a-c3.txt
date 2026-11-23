@@ -1,0 +1,2 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a57c8abb3b4697089)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.78s
