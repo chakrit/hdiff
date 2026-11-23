@@ -1,0 +1,38 @@
+- **Scanner (round 24 V1, V4):** `Step::Shown(State)` carries the next state; a tab
+  inside an escape, escape intermediate or control sequence shows and the sequence
+  continues; DCS, SOS, PM and APC strings hold BEL; only `OscString` ends at BEL. Every
+  round 24 probe now sanitizes as a terminal shows it: `A ESC TAB [31m red` → `A\tred`,
+  `A ESC ( TAB B red` → `A\tred`, `A ESC [3 TAB 1m red` → `A\tred`,
+  `A ESC P q BEL red ESC \ Z` → `AZ`, `A ESC _ x BEL red ESC \ Z` → `AZ`, and OSC with
+  BEL → `Ared` (`tmp/r25r/*.out`). Every state is spelled bare in `State::read`. The
+  transitions match the vendor note and the DEC reference for every state and class
+  checked (CAN/SUB, ESC, C1 introducers, ST and other C1 anywhere; C0 executing in
+  escape and CSI states; DEL ignored; `P`, `X`, `^`, `_` opening strings). Holds.
+- **Rows to lines (round 24 V2):** `line_values_by_pair` and `BlockRows::changed` both
+### V1. A split line's rest keeps its text but drops the state it was read in
+
+Round 25's plan required `SourceLine::split_first` (`source_text.rs:36-46`) to "carry the
+scanner state its remainder starts in". It carries the *text* instead: the rest is a
+`SourceLine` whose `bytes` are the suffix but whose `sanitized` is this line's text after
+the first character, read in whatever state that character left. When the first visible
+character is a tab inside a sequence (`ESC TAB -old`, `ESC [3 TAB 1m red`), the rest's
+`sanitized` is not what its own bytes decode to: `SourceLine::decode(rest.bytes())` gives
+different text, and nothing in the value records why. One type now means two things — a
+line read from plain text, whose text is its bytes' decoding (`decode`'s doc), and a
+remainder read from a state the value doesn't hold — told apart only by
+`split_first`'s doc. That is the "invariants go in types" and "semantically different
+things must look different" laws (`code`, Types and Contrast).
+
+The test `splitting_matches_decoding_the_rest_in_the_state_the_first_character_left`
+has to reach into the private `Visible { decoded, state }` to rebuild the expected text,
+because the public value can't.
+
+It is not reachable through a record today: a record marker (`-`, `+`, space) always
+returns the scanner to plain text, and a line whose first visible character is a tab is
+not a record, so the parser drops the inconsistent rest. Fix by construction: give the
+rest the state it starts in (a payload type holding its bytes, its start state and the
+text read from it), or define `split_first` only for a first character that leaves the
+scanner in plain text, which is every record marker, so the rest is an ordinary decoded
+`SourceLine`.
+
+### V2. Per-side values computed from the side are written out side by side

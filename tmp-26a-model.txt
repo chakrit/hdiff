@@ -1,0 +1,59 @@
+### V1 — the spec says DCS, SOS, PM and APC strings end "only" at ST, CAN, SUB, ESC or a C1 introducer, but any C1 control ends them
+
+`architecture.md#lossless-and-safe-rendering` (line 614): "DCS, SOS, PM and APC strings
+end only at ST, CAN, SUB, `ESC` or a C1 introducer". The code (`source_text.rs:253-256`,
+`(CommandString, Class::OtherC1) => Hidden(Ground)`) and the reference ("All C1 controls
+cancel any escape sequence, control sequence or control string in progress") also end a
+string at NEL and every other C1 control. Probe `tmp/r25m/dcsnel.patch`
+(`-a ESC P q NEL red ESC \`) shows `-ared`, which the code and a terminal agree on and
+the spec's "only" forbids. Fix: the spec sentence names ST, CAN, SUB, `ESC` and every
+other C1 control.
+
+### V2 — `RecordKind::sides` builds its answer from a placeholder unit value
+
+`document.rs:400-408`: `BySide::only(side, ()).map(|on_side| on_side.is_some())` makes a
+`BySide<Option<()>>` only to turn it into the `BySide<bool>` it wants. Round 23 V2 ruled
+the same shape (a throwaway value mapped to visit both sides) a Violation. Fix: say the
+answer directly, e.g. a `BySide::of_fn(|each| each == side)` beside `only`, or a
+`BySide<bool>::just(side)`.
+
+### V3 — each line is scanned from plain text, but the spec says the scanner shows what a terminal shows
+
+`SourceLines::peek` decodes every line on its own (`parser.rs:300`, `SourceLine::decode`),
+and `visible` starts each at `State::Ground` (`source_text.rs:69-73`). A sequence left
+open at a line's end therefore ends with the line, where a terminal carries it on:
+`-a ESC ] 8;;http://x` then `+b` (`tmp/r25m/osc_unterm.patch`) shows `+b`, and `-a ESC`
+then `+b` (`esc_lf.patch`) shows `+b`; a terminal reading the patch hides `+b` and `b`
+respectively. Per-line scanning is forced by the format (each line's marker must be
+read), and it only ever shows more, never less, but the spec's rule states otherwise and
+records no line boundary. Fix: add the rule to `#lossless-and-safe-rendering` — each
+line is read from plain text, so a sequence open at a line's end ends with it.
+
+### V4 — the vendor note maps hdiff's own states, and attributes BEL ending OSC without provenance
+
+`docs/vendor/terminal-control-parser.md` "States" is a table of `src/source_text.rs`
+states and how hdiff folds the reference's fourteen into five. That fold is hdiff's own
+design, which the filing gate puts in `spec/` or in the code, not `vendor/`;
+`source_text.rs:127-128` points readers at the note for it. The note's "xterm also ends
+it at BEL" cites no source, though `docs/vendor/README.md` says to mark provenance, and
+the cited reference itself ignores BEL in `osc_string` ("C0 controls other than CAN, SUB
+and ESC are ignored during reception of the control string"). Fix: move the fold onto
+the `State` variants' docs; keep the reference's states and transitions in the note; cite
+xterm's control-sequence documentation for BEL.
+
+### V5 — `State::read` splits ground's shown classes across two arms with one result
+
+`source_text.rs:240-241`: `(Ground, Tab | Intermediate | Parameter) => Shown(Ground)` and
+`(Ground, Final(_) | Printable) => Shown(Ground)` are one rule written twice; every other
+arm groups classes by outcome, so a reader looks for a difference that isn't there. Fix:
+one arm (rustfmt will wrap it as it wraps the hidden-ground arm below).
+
+## Out of scope
+
+- SUB: the reference notes a VT terminal displays an error character for SUB; hdiff hides
+  it. Terminals differ and the spec has no rule; a ruling would be needed.
+- `split_first`'s rest is a `SourceLine` whose sanitized text is read in the carried
+  state, so it can differ from `SourceLine::decode(rest.bytes())`. Only a tab can leave a
+  sequence open, and a tab is never a record marker, so no parsed record is affected.
+- Carried over: `RecordAddress` branding, the dated `docs/vendor` records, `run_fixture`'s
+  output clone, `--word-diff=porcelain`.

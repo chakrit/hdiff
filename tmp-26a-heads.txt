@@ -1,0 +1,28 @@
+5:# hdiff architecture
+14:## Product intent
+25:## Engineering standard
+37:## First-release boundary
+39:### In scope
+56:### Explicitly out of scope
+65:## Program structure
+87:### Interactive loop
+114:## Core model
+168:## Input contract
+239:## Initial CLI surface
+267:### Current argument selection
+282:### Error output
+290:## Interaction model
+318:### File tree
+357:## View model
+415:### Continuity markers
+436:### Palette and character detail
+471:### Keyboard bindings
+509:## Technology direction
+544:## Input and terminal boundary
+562:## Interaction and layout state
+570:### Viewport coordinates
+589:### Eager prepared rendering
+594:## Lossless and safe rendering
+634:## Failure and safety posture
+644:## Terminal lifecycle
+656:## Open decisions for review

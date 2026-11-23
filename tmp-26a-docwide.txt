@@ -1,0 +1,7 @@
+docs/spec/architecture.md:95:tui.step(&mut terminal, event)             event -> Event -> Exit | Redraw | Effect -> draw
+docs/spec/architecture.md:101:| Caller          | Terminal                                         | Events                         | Drives       |
+docs/spec/architecture.md:102:|-----------------|--------------------------------------------------|--------------------------------|--------------|
+docs/spec/architecture.md:103:| interactive run | `CrosstermBackend<File>` on `/dev/tty`, through  | `TtyEvents` (coalesces resize) | `tui.run`    |
+docs/spec/architecture.md:104:|                 | `TerminalSession`                                |                                |              |
+docs/spec/architecture.md:105:| live tests      | `TestBackend`                                    | one key per call               | `tui.step`   |
+docs/spec/architecture.md:106:| `movement`      | `CrosstermBackend<io::Sink>`                     | fixed key sequence             | timed `step` |
