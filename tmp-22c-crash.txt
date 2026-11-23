@@ -1,0 +1,2 @@
+preparation duration_ns=222958 files=1 records=2
+startup version=1 input_ns=79500 parse_ns=607625 preparation_ns=222958 ready_ns=910083 bytes=94
