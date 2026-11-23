@@ -1,0 +1,47 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-ac62a50b0444b5c87)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.04s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 2 tests
+test terminal::keymap_popup::tests::colors_headings_keys_and_actions_from_the_existing_palettes ... ok
+test terminal::keymap_popup::tests::groups_every_shortcut_under_headings_in_columns_that_fit ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 197 filtered out; finished in 0.03s
+
+     Running unittests src/main.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/26e3379d659c5fed/out/hdiff-26e3379d659c5fed)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/benchmark.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/0691e2088bb3f84e/out/benchmark-0691e2088bb3f84e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/979a3fd87c6f33c5/out/cli-979a3fd87c6f33c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+     Running tests/git_pager.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/ff73a070a38849a7/out/git_pager-ff73a070a38849a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/live/main.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/615dfef0c621efa4/out/live-615dfef0c621efa4)
+
+running 7 tests
+test file_list::opens_the_keymap_popup_over_the_diff_not_the_file_list ... ok
+test navigation::keymap_popup::stacked_line ... ok
+test navigation::keymap_popup::vertical_character ... ok
+test navigation::keymap_popup::unified_line ... ok
+test navigation::keymap_popup::stacked_character ... ok
+test navigation::keymap_popup::vertical_line ... ok
+test navigation::keymap_popup::unified_character ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 144 filtered out; finished in 0.19s
+
