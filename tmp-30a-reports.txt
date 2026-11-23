@@ -1,0 +1,232 @@
+# Round 29 audit — model, input, actions, bench (2026-10-20)
+
+Assessment only; nothing edited or committed. Scope: the whole model area, audited
+afresh (`src/{main,lib,cli,input,parser,parser/hunk,parser/binary_patch,source_text,
+headers,side,shell_words,comparison,document,file_identity,file_tree,prepared,
+preferences,exit_status,finite_output,bench,measurement,non_empty,one_of,utf8_path,
+error_output}.rs`, `src/actions/*`, `tests/{common/mod,cli,git_pager,benchmark}.rs`),
+`docs/vendor/terminal-control-parser.md`, and the `architecture.md` sections governing
+them, at HEAD `ddad546`. Laws: `code`, `architect`, `rust-coding`. No Borderline
+category. Settled and pending rulings in `.ace/audit/round15-plan.md` through
+`round29-plan.md`, the standing list from the round 23 prompts, `git diff
+--word-diff=porcelain` staying outside the input contract, and `payload_record` kept as a
+two-way answer with `RowTone::of` matching `LineKind` directly were not re-reported. No
+finding proposes reversing an earlier round's repair. Checks at HEAD:
+`.ace/audit/round29-checks.txt` (all green).
+
+Probes ran through a fresh `target/debug/hdiff`; patches and outputs are in `tmp/r29m/`.
+
+- The round 28 Git probes (`tmp/r28m/`) still hold: `--color=always`, with
+  `--ws-error-highlight=all` on CRLF files, `-R`, `--color-moved=zebra`, `git log -p
+  --color=always` and Apple `diff -u --color=always` each render byte for byte the same as
+  their plain counterparts, and the plain patches round-trip.
+- A patch written with CRLF line endings throughout (headers, hunk header, records and
+  the no-newline marker) parses and round-trips byte for byte.
+- A hunk count past `usize` is `invalid hunk header` at its line; NUL inside a record is
+  hidden as a control; a blank CRLF context line, `@@ -0,0 +1 @@` and an unquoted
+  spaced `diff --git a/x y b/x y` mode change all parse.
+- CLI: one operand naming a directory, two directories with and without `-r`, a file
+  against a directory, `- -`, identical operands, `--bench` without or with an unknown
+  driver, three operands and a lone `-r` each behave as the input contract and CLI
+  surface say.
+
+**3 Violations.** None is a behaviour defect.
+
+## Round 29 code judged
+
+- The scanner settling the line ending in its one fold (`EndingSoFar`, `CarriageReturn`
+  and `LineFeed` classes): holds; every `reads_the_line_ending_through_the_scanner` case
+  and the colored CRLF probes agree with the spec sentence.
+- `BySide::of_side`, and `merge`/`iter` in `file_identity::read_headers`,
+  `page_rows::split_first` and `CompareFiles`: hold.
+- `LineKind::is_no_newline_marker` deleted: holds; no caller remains.
+
+## Violations
+
+### V1 — a hunk range's start and a binary block's size are parsed into numbers only to be dropped
+
+`src/parser/hunk.rs:178-186` (`range_count`) and `src/parser/binary_patch.rs:76-77`
+(`check_binary_block_size`). `decimal_count(start)?;` parses the start into a `usize`
+and discards it, `decimal_count(range).map(|_| 1)` does the same for a countless range,
+and `binary_block_field(header).and_then(decimal_count).is_some()` parses the block size
+only to ask whether it parsed. Round 14 V11 ruled exactly this shape a Violation ("some
+values are parsed only to check them and then dropped: the binary block size in
+`parse_binary_patch` and `start` in `range_count`"); round 15 fixed it with
+`is_decimal_count`, and round 19's `decimal_count` merge brought the parse-and-drop back.
+A side effect is an unstated rule: a start or size beyond `usize::MAX` is rejected as
+malformed, which the input contract's "in ASCII digits" does not say.
+
+Fix: give the parser one `is_decimal(field)` check (ASCII digits, nonempty) beside
+`decimal_count`, used where only well-formedness matters, so a dropped value cannot be
+written.
+
+### V2 — `Family::stages` is non-empty only by `chunk_by`'s guarantee, and its parent is read by index
+
+`src/measurement.rs:21-28,55-58`. `Stage::families` builds each `Family` from a
+`chunk_by` slice and reads `stages[0].parent()`. The slice is never empty, but nothing in
+`Family`'s type says so, and the index is the read-by-position shape earlier rounds ruled
+out (round 13, round 16 V7); `NonEmpty` exists for at-least-one sequences (round 12 V1).
+
+Fix: destructure the chunk (`let [first, ..] = stages`, or `split_first`) where the
+family is built, so the parent comes from a named first stage, or hold the family's
+stages in a type that cannot be empty.
+
+### V3 — `std::os::unix::fs::symlink` is written out in full twice
+
+`src/actions/install_git_diff_pager.rs:362,388` (tests). `rust-coding` imports a path
+used more than once, and a four-segment path is imported even when used once. The test
+module already imports `fs`.
+
+Fix: `use std::os::unix::fs::symlink;` in the test module and call `symlink(..)`.
+
+## Out of scope
+
+- `@@ -0,1 +0,1 @@` (a start of 0 with a nonzero count) parses; `git apply` rejects it,
+  but the input contract states no start rule, so whether to adopt one is a spec
+  question.
+- `EndingSoFar::after` guards its CR and LF arms on `Step::Hidden(_)`, though the
+  scanner never shows either; the unreachable shown cases fall to the catch-up arm. The
+  match stays exhaustive and correct.
+- `SourceLine::split_plain_first` builds the rest from slices of the line's own fields
+  rather than decoding the rest's bytes; the test pins the equality, and decoding again
+  would cost a second scan (performance pass).
+# Round 29 audit — rendering and annotation
+
+Assessment only, at HEAD `ddad546` after round 29 (checks green in
+`.ace/audit/round29-checks.txt`). Scope, audited afresh: `src/styling.rs`, `syntax.rs`,
+`theme.rs`, `detail.rs`, `tab_stops.rs`, `line_breaks.rs`, `compact.rs`, `screen.rs`,
+`span.rs`, `side.rs`, `page_rows.rs`, `display_lines.rs`, `finite_output.rs`,
+`one_of.rs`, `terminal/rows.rs`, `terminal/row_writer.rs`, `terminal/row_style.rs`, plus
+`source_text.rs` as the one scanner rendering uses; `docs/spec/architecture.md` palette,
+character detail and lossless-and-safe rendering sections. The round 29 diff for these
+files (`git diff c096057 HEAD`, saved as `tmp/r29r/diff.txt`) was read in full, and the
+whole area was swept for the patterns earlier rounds ruled (hand-walked sides, `.old` /
+`.new` reductions, inline `std::` paths, wildcard arms, one name for two values; output
+in `tmp/r29r/sweep.txt`). A fresh binary was built in the default target directory and
+run on CRLF probes (`tmp/r29r/p1.patch`): a coloured CR, a CR inside a CSI followed by a
+plain CRLF, and a CR inside an OSC string all write the ending the spec states. Every
+finding is a Violation (no Borderline category). Pending and settled rulings in
+`.ace/audit/round15-plan.md` through `round29-plan.md` were not re-raised, nor
+`payload_record` staying a two-way answer.
+
+**3 Violations, no defect against the spec.**
+
+## Round 28 code watched
+
+- **Line ending (round 28 V1):** `ReadLine` settles it through `EndingSoFar`, with CR and
+  LF classes; `LineEnding::of` and its bool are gone. Holds.
+- **One visible-text fold (V2):** `sanitize` returns `ReadLine::of(bytes).sanitized`;
+  `Visible` remains only for `split_plain_first`. Holds.
+- **Replaced run (V3):** `BySide::of_side(side, run, opposite)`. Holds.
+- **Side loop in `advance` (V4):** no longer calls `get`, but see V2.
+- **`RowTone::of` (V5):** every arm names its case. Holds; see V1 for its binding.
+
+## Violations
+
+### V1. `RowTone::of` binds a `RecordKind` under its `LineKind` parameter's name
+
+`src/styling.rs:116-124`: `fn of(kind: LineKind)` matches `kind` and, in the payload arm,
+binds the record's `RecordKind` as `kind`, then calls `kind.changed_side()` — one name
+for two values of two types in one expression, which rounds 11, 12 and 28 ruled a
+Violation (`code`, One Reading). Fix: bind the field as `record_kind: kind`, or name the
+parameter `line_kind`.
+
+### V2. A pair is walked with its sides by pairing it with a separate `Side::BOTH` list
+
+`src/detail.rs:246` writes `Side::BOTH.into_iter().zip(*runs)`, and the theme test
+`draws_unchanged_detail_text_dimmer_than_line_mode_text` (`src/theme.rs:424-425`) loops
+`for side in Side::BOTH` and reads `change.get(side)`, the shape round 13 and round 28
+V4 ruled out. The zip is correct only because `Side::BOTH` and `BySide`'s `IntoIterator`
+both happen to list old first; nothing ties the two orders together (`architect`,
+Correct by Construction). Fix: one `BySide` method that yields each value with its side
+(for example `into_sides() -> [(Side, T); 2]` or an iterator built from `map_sides`),
+used by both sites.
+
+### V3. `ColorDepth::of_color_count` decides its third case with a wildcard arm
+
+`src/theme.rs:22-26` matches the count against `u16::MAX`, `256..` and `_ => Basic`. The
+last arm names no case; `..=255` does, and the match stays exhaustive. Rounds 13, 14 and
+26 ruled wildcard arms that stand for a nameable case a Violation (`code`, One
+Reading). Fix: `..=255 => Self::Basic`.
+
+## Out of scope
+
+- `src/terminal/view.rs` (interaction area) builds the separator's content rect as
+  `BySide::of(|side| panes.get(side).content())`, walking an existing `BySide` by `get`
+  inside `of`; `panes.as_ref().map(...)` (or `map` before `merge`) says it directly.
+- `syntax.rs` `_ => None` arms over capture and extension strings are default-deny over
+  open string sets, not wildcards over a nameable case.
+- `syntax.rs:108-117` names `projections.old` then `projections.new` because the new pass
+  starts from the old pass's tree: a sequence, not a reduction of the pair.
+# Round 29 cross-cutting audit — 2026-10-20
+
+Assessment only, at HEAD `ddad546` (all round 29 repairs merged; checks green in
+`.ace/audit/round29-checks.txt`). Scope: all of `src/`, `tests/`, `bench/`, `build.rs`
+and `Cargo.toml` at the global level, plus `docs/spec/*.md`, `docs/guides/*.md` and
+`docs/vendor/*.md` against their READMEs. No Borderline category. Pending and settled
+rulings in `.ace/audit/round15-plan.md` through `round29-plan.md` are not reported, nor
+the standing exclusions listed in `round23-cross-cutting.md`. No finding proposes
+reversing an earlier round's repair unless the current form breaks a named rule, which
+the finding names.
+
+Checks run (output in `tmp/r29x/`):
+
+- Round 28 fixes: `file_identity.rs`, `page_rows.rs` and `compare_files.rs` reduce their
+  pairs through `merge`/`iter`; `view.rs` counts split rows once as pane pairs and spans
+  the separator over both panes' content; `LineKind::is_no_newline_marker` is gone and
+  `payload_record` is the one payload question. Every remaining `.old`/`.new` read in
+  `src/` was listed (`tmp/r29x/scan.txt`): the old header line in `file_identity.rs:43`,
+  the old pass feeding the new in `syntax.rs:110-113`, and theme fields read in
+  `row_writer` tests are asymmetric uses, not reductions.
+- `docs/spec/architecture.md#lossless-and-safe-rendering` checked against
+  `src/source_text.rs`: the CR/LF classes and `EndingSoFar` match the CRLF sentence,
+  including a CR inside a sequence not counting and an LF after shown text closing the
+  line; tab, string-ending and line-boundary rules match `State::read`.
+- `docs/vendor/terminal-control-parser.md` follows `docs/vendor/README.md` (front
+  matter, sources with dates, reference only; hdiff's own rules point to the spec).
+- `docs/spec/README.md` indexes every spec file.
+- Spec citations: all 21 distinct `docs/spec/<file>.md#<anchor>` targets resolve.
+- Identifiers named in `docs/guides/` all exist in code; type names in `docs/spec/` all
+  exist except the settled pending `DiffSemantics` (see Out of scope for one more).
+- Constructors: no `from_*`/`for_*` constructor survives except the settled
+  `ByLanguage::from_fn` and the std `FromIterator::from_iter`.
+- Comment width: no comment line in `src/`, `tests/` or `bench/` exceeds 90 columns; no
+  doc prose line exceeds 90 outside tables and code blocks.
+- File size: the largest hand-authored file is `bench/kubernetes.sh` at 814 lines, then
+  `src/page_rows.rs` at 796; none exceeds 1,000.
+- No `awk` in `src/`, `tests/`, `bench/`, `build.rs`, `Cargo.toml`, `docs/` or
+  `AGENTS.md`.
+
+## Violations
+
+### V1 — a side is paired with its value by hand in three places
+
+`BySide` owns the old-then-new order and offers `map`, `map_sides`, `iter`, `zip` and
+`merge`, but three sites still walk the sides by pairing a `Side` with its value
+themselves:
+
+- `src/detail.rs:246`: `Side::BOTH.into_iter().zip(*runs)` pairs each side with its run
+  for `cursor.mark(side, …)`. The pairing relies on `BySide`'s iteration order matching
+  `Side::BOTH`, knowledge that belongs to `BySide` alone. Round 29 introduced this form
+  for round 28 rendering V4; it breaks the round 13 ruling that sides are walked through
+  `BySide`'s own iteration, not rebuilt from `Side::BOTH`.
+- `src/theme.rs:424-425`: the palette test loops `for side in Side::BOTH` and reads
+  `change.get(side)`, the exact shape round 13 ruled a Violation.
+- `src/terminal/view.rs:166`: `BySide::of(|side| panes.get(side).content())` rebuilds a
+  `map` through `of` and `get`; it is `panes.as_ref().map(ContinuityFrame::content)`
+  (or equivalent) before `merge(Rect::union)`.
+
+Fix: give `BySide` one iteration that yields each side with its value (for example
+`sides()` yielding `(Side, &T)`, or `into_sides()` by value), use it at
+`detail.rs:246` and `theme.rs:424`, and write `view.rs:166` as a `map` over the pair.
+Owners: `side.rs`, `detail.rs`, `theme.rs` (test), `terminal/view.rs`.
+
+## Out of scope
+
+- `docs/spec/performance.md:154` names `Layout::shows_unified_row`, which no longer
+  exists. The passage is a dated measurement record of the code it measured, and the
+  next subsection records the change that replaced it; it is left for the performance
+  pass to restate.
+- `SourceLine::split_plain_first` rescans the line's bytes that `decode` already read;
+  a performance item.
+- Live-harness buffer clones and `run_fixture`'s output copy: the performance pass.
