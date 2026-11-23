@@ -1,0 +1,10 @@
+## States and actions
+
+States: ground, escape, escape_intermediate, csi_entry, csi_param, csi_intermediate,
+csi_ignore, dcs_entry, dcs_param, dcs_intermediate, dcs_passthrough, dcs_ignore,
+osc_string and sos_pm_apc_string.
+
+Actions: ignore, print, execute, clear, collect, param, esc_dispatch, csi_dispatch,
+hook, put, unhook, osc_start, osc_put and osc_end. Print displays a character and only
+happens in ground; execute runs a C0 or C1 control function. The others act on a
+sequence's content or its handler.
