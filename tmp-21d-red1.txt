@@ -1,0 +1,18 @@
+
+running 1 test
+test effective_view::tests::collapses_the_file_list_before_any_pane_loses_its_payload_column ... FAILED
+
+failures:
+
+---- effective_view::tests::collapses_the_file_list_before_any_pane_loses_its_payload_column stdout ----
+
+thread 'effective_view::tests::collapses_the_file_list_before_any_pane_loses_its_payload_column' (88462686) panicked at src/effective_view.rs:204:21:
+Unified at 28 columns shows the file list over a pane without a payload column
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    effective_view::tests::collapses_the_file_list_before_any_pane_loses_its_payload_column
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 181 filtered out; finished in 0.00s
+
