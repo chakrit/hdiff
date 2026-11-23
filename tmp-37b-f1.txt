@@ -1,0 +1,12 @@
+Diff in /Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a732b77e6af18e74a/src/document.rs:108:
+     /// the positions it returns can only name records of that hunk.
+     pub fn record_map<E>(
+         &self,
+[31m-        entries: impl for<'h> FnMut(
+[m[31m-            &BySide<FileHeader>,
+[m[31m-            HunkRecords<'_, 'h>,
+[m[31m-        ) -> Vec<RecordEntry<'h, E>>,
+[m[32m+        entries: impl for<'h> FnMut(&BySide<FileHeader>, HunkRecords<'_, 'h>) -> Vec<RecordEntry<'h, E>>,
+[m     ) -> RecordMap<Vec<E>> {
+         match &self.body {
+             FileBody::Metadata(_) => RecordMap::empty(),
