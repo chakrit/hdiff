@@ -1,0 +1,16 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-ab0aea600fc4841e8)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.54s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 8 tests
+test actions::install_git_diff_pager::tests::backs_up_to_the_config_name_with_bak_appended ... ok
+test actions::install_git_diff_pager::tests::rejects_a_disabled_global_config ... ok
+test actions::install_git_diff_pager::tests::rejects_a_non_utf8_executable_before_planning_any_write ... ok
+test actions::install_git_diff_pager::tests::plans_a_backup_only_for_an_existing_config ... ok
+test actions::install_git_diff_pager::tests::registers_the_executable_without_dot_segments ... ok
+test actions::install_git_diff_pager::tests::backs_up_the_home_xdg_config_when_xdg_config_home_is_empty ... ok
+test actions::install_git_diff_pager::tests::registers_a_symlinked_executable_by_its_link ... ok
+test actions::install_git_diff_pager::tests::rejects_an_executable_whose_dot_dot_leaves_a_linked_directory ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 176 filtered out; finished in 0.00s
+

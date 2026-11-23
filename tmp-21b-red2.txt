@@ -1,0 +1,45 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-ab0aea600fc4841e8)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.66s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 8 tests
+test actions::install_git_diff_pager::tests::backs_up_to_the_config_name_with_bak_appended ... ok
+test actions::install_git_diff_pager::tests::rejects_a_disabled_global_config ... ok
+test actions::install_git_diff_pager::tests::plans_a_backup_only_for_an_existing_config ... ok
+test actions::install_git_diff_pager::tests::rejects_a_non_utf8_executable_before_planning_any_write ... ok
+test actions::install_git_diff_pager::tests::registers_the_executable_without_dot_segments ... FAILED
+test actions::install_git_diff_pager::tests::rejects_an_executable_whose_dot_dot_leaves_a_linked_directory ... FAILED
+test actions::install_git_diff_pager::tests::backs_up_the_home_xdg_config_when_xdg_config_home_is_empty ... ok
+test actions::install_git_diff_pager::tests::registers_a_symlinked_executable_by_its_link ... FAILED
+
+failures:
+
+---- actions::install_git_diff_pager::tests::registers_the_executable_without_dot_segments stdout ----
+
+thread 'actions::install_git_diff_pager::tests::registers_the_executable_without_dot_segments' (88469974) panicked at src/actions/install_git_diff_pager.rs:292:9:
+assertion `left == right` failed: InstallPlan { backup: None, pager_command: "/private/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpLIDsvl/hdiff" }
+  left: "/private/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpLIDsvl/hdiff"
+ right: "/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpLIDsvl/hdiff"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- actions::install_git_diff_pager::tests::rejects_an_executable_whose_dot_dot_leaves_a_linked_directory stdout ----
+
+thread 'actions::install_git_diff_pager::tests::rejects_an_executable_whose_dot_dot_leaves_a_linked_directory' (88469977) panicked at src/actions/install_git_diff_pager.rs:335:9:
+the spelled path names no executable: Ok(InstallPlan { backup: None, pager_command: "/private/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpJtoJsy/elsewhere/hdiff" })
+
+---- actions::install_git_diff_pager::tests::registers_a_symlinked_executable_by_its_link stdout ----
+
+thread 'actions::install_git_diff_pager::tests::registers_a_symlinked_executable_by_its_link' (88469973) panicked at src/actions/install_git_diff_pager.rs:316:9:
+assertion `left == right` failed: InstallPlan { backup: None, pager_command: "/private/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpi5mPjO/cellar/1.0/bin/hdiff" }
+  left: "/private/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpi5mPjO/cellar/1.0/bin/hdiff"
+ right: "/var/folders/t7/9fryplq577q281q5mfvytcmr0000gn/T/.tmpi5mPjO/bin/hdiff"
+
+
+failures:
+    actions::install_git_diff_pager::tests::registers_a_symlinked_executable_by_its_link
+    actions::install_git_diff_pager::tests::registers_the_executable_without_dot_segments
+    actions::install_git_diff_pager::tests::rejects_an_executable_whose_dot_dot_leaves_a_linked_directory
+
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 176 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

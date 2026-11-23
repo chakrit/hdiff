@@ -1,0 +1,46 @@
+src/non_empty.rs:15:    pub fn new(first: T, rest: impl IntoIterator<Item = T>) -> Self {
+src/line_breaks.rs:20:    pub fn new(width: NonZeroCells) -> Self {
+src/terminal.rs:56:    pub fn new(document: PreparedDocument, screen: Size, color_depth: ColorDepth) -> Self {
+src/file_identity.rs:119:    fn new(state: FileState, path: Box<str>) -> Self {
+src/preferences.rs:150:    pub const fn new(records: usize) -> Self {
+src/page_rows.rs:190:    fn new<'a>(lines: impl Iterator<Item = DisplayLine<'a>>) -> Self {
+src/screen.rs:33:    pub const fn new(cells: usize) -> Self {
+src/screen.rs:141:    pub const fn new(cells: Cells) -> Option<Self> {
+src/screen.rs:167:    pub const fn new(lines: usize) -> Self {
+src/document.rs:49:    pub(crate) fn new(sections: Vec<FileSection>, trailing: Box<[SourceLine]>) -> Self {
+src/document.rs:377:    fn new(hunk: usize, record: usize) -> Self {
+src/prepared.rs:229:        let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+src/main.rs:75:    let executable = env::current_exe().map_err(RunError::Executable)?;
+src/detail.rs:108:    fn new(payloads: BySide<&'a str>) -> Self {
+src/parser.rs:429:    fn new(input: &'a [u8]) -> Self {
+src/navigation/scroll.rs:86:    pub(super) const fn new(
+src/terminal/row_writer.rs:162:    fn new(row: StyledRow<'_>) -> Self {
+src/actions/mod.rs:36:    InspectConfig { path: PathBuf, source: io::Error },
+src/actions/mod.rs:37:    /// `--install` could not resolve the executable to its canonical path.
+src/actions/mod.rs:38:    ResolveExecutable { path: PathBuf, source: io::Error },
+src/actions/mod.rs:59:            Self::InspectConfig { path, source } | Self::ResolveExecutable { path, source } => {
+src/actions/install_git_diff_pager.rs:85:    /// canonical path so the command still resolves after the directory `executable` was
+src/actions/install_git_diff_pager.rs:87:    fn new(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
+src/actions/install_git_diff_pager.rs:88:        let canonical =
+src/actions/install_git_diff_pager.rs:89:            fs::canonicalize(executable).map_err(|source| Error::ResolveExecutable {
+src/actions/install_git_diff_pager.rs:94:        Self::of_canonical(environment, &canonical)
+src/actions/install_git_diff_pager.rs:97:    /// The plan for `environment` and an already canonical `executable`; any path that is
+src/actions/install_git_diff_pager.rs:99:    fn of_canonical(environment: &GitConfigEnvironment, executable: &Path) -> Result<Self, Error> {
+src/actions/install_git_diff_pager.rs:176:    fs::exists(path).map_err(|source| Error::InspectConfig {
+src/actions/install_git_diff_pager.rs:213:        let plan = InstallPlan::of_canonical(&environment_for(&config_path), executable);
+src/actions/install_git_diff_pager.rs:223:        let plan = InstallPlan::of_canonical(
+src/actions/install_git_diff_pager.rs:240:        let absent = InstallPlan::of_canonical(&environment_for(&config_path), executable)
+src/actions/install_git_diff_pager.rs:243:        let present = InstallPlan::of_canonical(&environment_for(&config_path), executable)
+src/actions/install_git_diff_pager.rs:271:        let plan = InstallPlan::of_canonical(&environment, Path::new("/bin/hdiff")).expect("plan");
+src/actions/install_git_diff_pager.rs:280:    fn registers_the_executables_canonical_path() {
+src/actions/install_git_diff_pager.rs:291:        let canonical = fs::canonicalize(&executable).expect("canonical executable");
+src/actions/install_git_diff_pager.rs:294:            canonical.to_str(),
+tests/benchmark.rs:14:const PATCH: &str = "--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+tests/benchmark.rs:287:    env.write_file("new.rs", "fn new() {}\n");
+tests/common/mod.rs:31:    pub fn new() -> Self {
+tests/common/mod.rs:37:    /// The canonical sandbox root; macOS reaches temporary directories through a symlink.
+tests/common/mod.rs:41:            .canonicalize()
+tests/common/mod.rs:42:            .expect("canonical temporary directory")
+src/syntax.rs:674:        let patch = b"--- a/source.rs\n+++ b/source.rs\n@@ -1 +1 @@\n-fn old() {}\n+fn new() {}\n";
+src/syntax.rs:758:            b"--- a/source.py\n+++ b/source.rs\n@@ -1,2 +1,2 @@\n fn kept() {}\n-def old(): pass\n+fn new() {}\n",
+src/syntax.rs:778:            b"--- a/source.py\n+++ b/source.rs\n@@ -1 +1,2 @@\n fn kept() {}\n+fn new() {}\n",

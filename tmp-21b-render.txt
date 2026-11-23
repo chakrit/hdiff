@@ -1,0 +1,17 @@
+### V3. A C1 control-sequence introducer is hidden but its parameters render as text
+
+`State::after` (`source_text.rs:124-141`) enters a control sequence only on 7-bit
+`ESC`. The single-character C1 introducers — CSI `U+009B`, OSC `U+009D`, DCS `U+0090`,
+SOS `U+0098`, PM `U+009E`, APC `U+009F`, UTF-8 encoded — are dropped by `shows` as control
+characters, but the state stays `Text`, so their parameters and string payloads are
+shown. Probe `tmp/r20r/c1.patch` with `+\xc2\x9b31mred \xc2\x9d8;;https://x\x07link`
+renders `+31mred 8;;https://xlink`; the 7-bit spelling of the same line renders
+`+red link`. The spec has rendering strip input control sequences
+(`architecture.md:595-598`). Nothing unsafe reaches the terminal, but the sequence is not
+stripped and source control parameters appear as payload text. The scanner test
+`keeps_printable_text_and_tabs_only` covers `\xc2\x9b` only when followed by invalid UTF-8.
+Fix: map `U+009B` to `ControlSequence` and the C1 string introducers to `StringSequence`,
+and end a string sequence on `U+009C` as on `ESC \`. `source_text.rs` is the one scanner
+for both parsing and display, so the fix lands there (model-area file).
+
+### V4. The row-writer clip test still subtracts hand-counted cells

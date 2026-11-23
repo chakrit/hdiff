@@ -1,0 +1,32 @@
+### V1 — `--install` registers the symlink target, which breaks on package upgrades
+
+- **Evidence:** `install_git_diff_pager.rs` `InstallPlan::new` registers
+  `fs::canonicalize(executable)`. Canonicalizing removes `..` but also follows every
+  symlink. Reproduced: with `bin/hdiff -> ../cellar/1.0/bin/hdiff` (Homebrew's layout:
+  `/opt/homebrew/bin/hdiff` links into the versioned `Cellar/hdiff/<version>/`),
+  `tmp/r20m/bin/hdiff --install` wrote `pager.diff = …/tmp/r20m/cellar/1.0/bin/hdiff`.
+  `brew upgrade` plus cleanup removes that version directory, and Nix store paths are
+  garbage-collected the same way, so the registered pager stops resolving — the exact
+  failure round 19 V9 set out to prevent.
+- **Test:** `registers_the_executables_canonical_path` uses `fs::canonicalize` itself as
+  the oracle, so it asserts the implementation rather than the intent (the macOS
+  `/var` → `/private/var` link it resolves is one more symlink followed).
+- **Rule:** `code` Testing ("tests assert intent, not incumbent behavior");
+  `architect` correct-by-construction; the spec's own purpose for the path.
+- **Fix:** register the executable's absolute path with `.` and `..` removed lexically,
+  keeping symlinks as the user reached them; replace the oracle with a literal expected
+  path, and add a symlinked-layout case. Amend `architecture.md#initial-cli-surface`'s
+  "canonical path" wording to match.
+
+### V2 — The spec says every hunk range has a count; the code accepts the omitted form
+### V6 — Two `--install` failures print identically
+
+- **Evidence:** `actions/mod.rs` `Display` renders `InspectConfig { path, source }` and
+  the round 20 `ResolveExecutable { path, source }` through one arm as
+  `"{path}: {source}"`, so `hdiff: /x/hdiff: No such file or directory` does not say
+  whether hdiff was checking a config file or resolving its own executable.
+- **Rule:** `code` Contrast (semantically different failures must look different).
+- **Fix:** give each its own message, naming the operation (for example
+  `resolving the hdiff executable …` and `checking Git config …`).
+
+### V7 — `Malformed` variants are listed in the order rounds added them
