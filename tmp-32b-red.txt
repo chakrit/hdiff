@@ -1,0 +1,31 @@
+    Blocking waiting for file lock on build directory
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a7dc4671ca2286fa9)
+error[E0080]: evaluation panicked: the layout cycle is longer than ALL
+   --> src/preferences.rs:83:32
+    |
+ 78 | impl DiffLayout {
+...
+ 83 |     pub const ALL: [Self; 3] = Self::cycle_from(Self::Unified);
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `preferences::DiffLayout::ALL` failed inside this call
+    |
+note: inside `DiffLayout::cycle_from::<3>`
+   --> src/preferences.rs:106:9
+    |
+ 78 |   impl DiffLayout {
+...
+ 96 |       const fn cycle_from<const COUNT: usize>(first: Self) -> [Self; COUNT] {
+...
+106 | /         assert!(
+107 | |             layouts[COUNT - 1].next() as u8 == first as u8,
+108 | |             "the layout cycle is longer than ALL"
+109 | |         );
+    | |_________^ the failure occurred here
+
+note: erroneous constant encountered
+  --> src/preferences.rs:67:28
+   |
+67 | const _: [DiffLayout; 3] = DiffLayout::ALL;
+   |                            ^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0080`.
+error: could not compile `hdiff` (lib) due to 1 previous error

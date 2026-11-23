@@ -1,0 +1,107 @@
+# Round 31 audit — navigation, effective view, geometry, extent, terminal, live tests
+
+Assessment only, at HEAD after round 31. Scope: `src/navigation.rs`,
+`src/navigation/{extent,interaction,scroll}.rs`, `src/effective_view.rs`,
+`src/geometry.rs`, `src/terminal.rs`,
+`src/terminal/{bindings,chrome,keymap_popup,rows,session,view}.rs`, `tests/live/*`, and
+`DiffLayout` in `src/preferences.rs`, against `code`, `architect`, `rust-coding` and
+`docs/spec/architecture.md` (interaction model, view model, viewport coordinates,
+keyboard bindings, continuity markers). The whole area was read afresh, not only the
+round 31 diff. No Borderline category.
+
+Checks run for this audit (default target dir, output in `tmp/r31i/checks.txt`):
+`cargo fmt --check` passed; `cargo clippy --all-targets --locked -- -D warnings` clean;
+`cargo test --locked` passed 199, 9, 16, 6 and 151 tests; no comment line over 90
+columns.
+
+Excluded as pending user rulings or settled, per `.ace/audit/round15-plan.md` through
+`round31-plan.md` and the standing audit list: geometry constant values and cell
+positions derived from them (including `panes.rs` and `styles.rs` cell coordinates, the
+help-box rows, and the 2-row too-short screen), start-preference assertions (including
+`context_adjustment`'s `-` presses and `ContextRecords::new(4)` after one increase),
+animated half-page movement, module headers, the split direction kept in
+`VisibleRows`, the extent's and the geometry's shape built from one value, item docs
+naming one of several module-cited anchors, performance items (buffer clones, per-frame
+vectors, `ScreenGeometry::of` building the diff-only areas before it knows it needs
+them), the `pane_middle_line` oracle, `ScrollExtent` taking the document,
+`Live::count` on row strings, undocumented trivial accessors and test or scenario
+functions, `MeasuredRows::from_iter`'s fold, `event_for`'s key-kind guard, crossterm
+`_ => None` default-deny arms, `render_split_rows` reading the palette through
+`pane_drawing.theme`, `WrapWidth::NoPayload` for too-narrow screens, the
+no-newline-marker peer tone, test helpers not lifted across modules (including the
+per-layout pane counts in `panes.rs` and `rendering.rs`, out of scope in round 30), the
+panic path's dropped write, `list[selected_row - 1]` as a neighbour lookup, and
+`MORE_FILES_THAN_ROWS`' `as` conversion in a `const`.
+
+Round 30 state verified: `DiffLayout::next` takes the layout after `self` in
+`DiffLayout::ALL`, so the cycle order has one home, and both layout-cycle tests press
+once per entry in `ALL`; the extent tests read lines through one `reading` helper and
+start the wrapped-lines test from offsets the extents report; the keymap popup tests
+search the buffer one way, cell by cell through `position`; `listed_row` and
+`MODIFIED_ROW_PREFIX` spell a listed one-change file once and
+`listed_modified_files` is named and documented for what it counts; the chrome test
+reads `HELP_HINT`. No behaviour defect found: key bindings, scroll bounds, resize,
+page turns, popup filtering, file-list collapse, and the help box and popup placement
+all match the spec.
+
+## Violations
+
+### V1 — A test maps `DiffLayout::ALL` through a closure that ignores each layout
+
+`src/navigation.rs:240` writes
+`let [.., unified] = DiffLayout::ALL.map(|_| redisplayed(PreferenceChange::NextLayout));`.
+The array of layouts is mapped only to repeat a side effect once per layout; the closure
+discards the layout it is given, so the expression reads as computing something from
+each layout when it computes nothing from them. Round 8 V16 and round 26 V1 ruled a
+closure that ignores its argument a Violation. Fix: repeat the change once per layout
+without mapping over the layouts — `for _ in DiffLayout::ALL { redisplayed(..); }` and
+then read `*navigation.interaction()`, as `tests/live/navigation.rs`' `layout_cycle`
+does, or `iter::repeat_with(..).take(DiffLayout::ALL.len()).last()`.
+
+### V2 — `ExtentSettings` and `ScrollBounds` are public though only navigation uses them
+
+`src/navigation/extent.rs:22` declares `pub struct ExtentSettings` with public fields,
+and `src/navigation/scroll.rs:77` declares `pub struct ScrollBounds`. Neither appears
+outside `src/navigation.rs` and its children, and every function that takes or returns
+them is `pub(super)` or private (`ScrollExtent::of`, `reshow`, `reanchor`,
+`BoundedScroll::moved`, `ScrollBounds::new`, `clamp`). Round 28 V1 ruled public items
+that only `navigation.rs` uses a Violation and narrowed the interaction enums to
+`pub(super)`; these two were left. Fix: `pub(super)` for both types and
+`ExtentSettings`' fields.
+
+### V3 — The wrapped-deletion fixture spells its deletion twice and its wrap width by hand
+
+`src/navigation/extent.rs:520-525`: `WRAPPED_DELETION_PATCH` holds the 45-character
+deletion inside the patch bytes, and `WRAPPED_DELETION` spells the same line again; the
+two copies are tied only by `line_reading` panicking when they drift. The patch's doc
+says it "wraps to three lines at 20 cells", and the two tests that rely on that write
+`WrapWidth::at(20)` by hand (`:688` and `:730`). Rounds 26 V4 and 27 V3 ruled a fixture
+that writes one value twice a Violation. Fix: build the patch from `WRAPPED_DELETION`
+(a fixture function, or `format!` in a helper), and name the wrap width the doc states
+as one constant both tests use.
+
+### V4 — `panes.rs` spells the one-change patch the shared fixtures already build
+
+`tests/live/panes.rs:17` defines
+`ONE_FILE = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n"`, the exact text
+`fixtures::one_change_file("file")` (`tests/live/fixtures.rs:26`) builds for
+`many_files` and `files_in_directories`. Round 29 V9 made `one_change_file` the one
+spelling of a one-change file; `fixtures.rs` is the module for "patches the scenarios
+share", so using it is not lifting a helper across modules. Fix: make
+`one_change_file` public in `fixtures` and build `ONE_FILE`'s uses from it.
+
+## Out of scope
+
+- `src/terminal.rs:117` discards the drawn frame with `.map(|_| ())`. Unlike V1 the
+  closure produces nothing from any input; it is the standard way to drop an `Ok`
+  value, though `.map(drop)` would name the intent.
+- `src/navigation/interaction.rs`' `redisplays_the_same_page_with_the_changed_preference`
+  checks five of the six preference changes and omits `DecreaseContext`; its expected
+  value depends on the start context count, which waits on the start-preference
+  ruling.
+- `tests/live/styles.rs:68-72` builds a `+row_N` patch inline where
+  `fixtures::long_patch` would also put lines below the pane; it needs only a
+  continuity marker, and the two patches differ in size and content.
+- `FloatingBox::EDGES` (`src/terminal/chrome.rs:82`) is built by struct literal in
+  chrome while the other two frames' edges are constants in `geometry`; each frame's
+  edges live with the code that owns that frame.
