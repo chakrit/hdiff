@@ -1,0 +1,29 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a70f1c52a10f2e0cf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.72s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 1 test
+test parser::tests::rejects_a_record_after_the_marker_that_ended_its_side ... FAILED
+
+failures:
+
+---- parser::tests::rejects_a_record_after_the_marker_that_ended_its_side stdout ----
+
+thread 'parser::tests::rejects_a_record_after_the_marker_that_ended_its_side' (88612226) panicked at src/parser.rs:701:13:
+assertion `left == right` failed: @@ -1,2 +1 @@
+-a
+\ No newline at end of file
+-b
++c
+
+  left: Ok(Files(DiffFiles { sections: NonEmpty { first: FileSection { leading: [], file: DiffFile { identity: Path { state: Modified, path: DisplayText("f") }, body: Unified(UnifiedBody { git: None, headers: BySide { old: FileHeader { line: SourceLine { bytes: [45, 45, 45, 32, 97, 47, 102, 10], sanitized: "--- a/f" }, path: Path("a/f") }, new: FileHeader { line: SourceLine { bytes: [43, 43, 43, 32, 98, 47, 102, 10], sanitized: "+++ b/f" }, path: Path("b/f") } }, hunks: NonEmpty { first: Hunk { header: SourceLine { bytes: [64, 64, 32, 45, 49, 44, 50, 32, 43, 49, 32, 64, 64, 10], sanitized: "@@ -1,2 +1 @@" }, records: [Record { kind: Deletion, payload: SourceLine { bytes: [97, 10], sanitized: "a" }, no_newline: Some(SourceLine { bytes: [92, 32, 78, 111, 32, 110, 101, 119, 108, 105, 110, 101, 32, 97, 116, 32, 101, 110, 100, 32, 111, 102, 32, 102, 105, 108, 101, 10], sanitized: "\\ No newline at end of file" }) }, Record { kind: Deletion, payload: SourceLine { bytes: [98, 10], sanitized: "b" }, no_newline: None }, Record { kind: Addition, payload: SourceLine { bytes: [99, 10], sanitized: "c" }, no_newline: None }] }, rest: [] } }) } }, rest: [] }, trailing: [] }))
+ right: Err(Malformed { line: 6, reason: RecordAfterNoNewlineMarker })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    parser::tests::rejects_a_record_after_the_marker_that_ended_its_side
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

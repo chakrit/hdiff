@@ -1,0 +1,1 @@
+hdiff: line 6: record follows the no-newline marker that ended its side
