@@ -1,0 +1,27 @@
+   Compiling hdiff v0.1.0 (/Users/chakrit/Documents/chakrit/hdiff/.claude/worktrees/agent-a384530884d297cf8)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.53s
+     Running unittests src/lib.rs (/Users/chakrit/Documents/chakrit/hdiff/target/debug/build/hdiff/3bdaa481a1c40f6a/out/hdiff-3bdaa481a1c40f6a)
+
+running 4 tests
+test theme::tests::reads_crossterm_color_counts_as_depths ... ok
+test theme::tests::draws_unchanged_detail_text_dimmer_than_line_mode_text ... ok
+test theme::tests::draws_each_depth_only_with_colors_that_depth_shows ... ok
+test theme::tests::draws_every_change_row_color_apart_from_its_background ... FAILED
+
+failures:
+
+---- theme::tests::draws_every_change_row_color_apart_from_its_background stdout ----
+
+thread 'theme::tests::draws_every_change_row_color_apart_from_its_background' (89561344) panicked at src/theme.rs:449:21:
+assertion `left != right` failed: Basic Old: marker is drawn in its background color
+  left: Red
+ right: Red
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    theme::tests::draws_every_change_row_color_apart_from_its_background
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 196 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
