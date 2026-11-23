@@ -1,0 +1,151 @@
+src/page_rows.rs-478-        };
+src/page_rows.rs:479:        let columns = BySide {
+src/page_rows.rs-480-            old: column(Side::Old),
+src/page_rows.rs-481-            new: column(Side::New),
+src/page_rows.rs-482-        };
+--
+src/page_rows.rs-692-                SideBySideRow::Shared("@@ -1,3 +1,2 @@".to_owned()),
+src/page_rows.rs:693:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-694-                    old: "-old first".to_owned(),
+src/page_rows.rs-695-                    new: "+new first".to_owned(),
+src/page_rows.rs-696-                }),
+--
+src/page_rows.rs-719-            [
+src/page_rows.rs:720:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-721-                    old: "-old".to_owned(),
+src/page_rows.rs-722-                    new: "+new".to_owned(),
+src/page_rows.rs-723-                }),
+src/page_rows.rs:724:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-725-                    old: marker.to_owned(),
+src/page_rows.rs-726-                    new: marker.to_owned(),
+src/page_rows.rs-727-                }),
+--
+src/page_rows.rs-744-            [
+src/page_rows.rs:745:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-746-                    old: "-a".to_owned(),
+src/page_rows.rs-747-                    new: "+c".to_owned(),
+src/page_rows.rs-748-                }),
+src/page_rows.rs:749:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-750-                    old: "-b".to_owned(),
+src/page_rows.rs-751-                    new: "+d".to_owned(),
+src/page_rows.rs-752-                }),
+src/page_rows.rs:753:                SideBySideRow::Paired(BySide {
+src/page_rows.rs-754-                    old: marker.to_owned(),
+src/page_rows.rs-755-                    new: "+e".to_owned(),
+src/page_rows.rs-756-                }),
+src/document.rs-402-            Some(side) => BySide::only(side, ()).map(|on_side| on_side.is_some()),
+src/document.rs:403:            None => BySide {
+src/document.rs-404-                old: true,
+src/document.rs-405-                new: true,
+src/document.rs-406-            },
+src/detail.rs-428-            spans_of(old, new),
+src/detail.rs:429:            BySide {
+src/detail.rs-430-                old: vec![PayloadSpan::within(old, 12..15)],
+src/detail.rs-431-                new: vec![PayloadSpan::within(new, 12..15)],
+src/detail.rs-432-            }
+--
+src/detail.rs-441-            spans_of(old, new),
+src/detail.rs:442:            BySide {
+src/detail.rs-443-                old: vec![PayloadSpan::within(old, 0..10)],
+src/detail.rs-444-                new: vec![PayloadSpan::within(new, 0..15)],
+src/detail.rs-445-            }
+--
+src/detail.rs-454-            spans_of(old, new),
+src/detail.rs:455:            BySide {
+src/detail.rs-456-                old: vec![PayloadSpan::within(old, 6..10)],
+src/detail.rs-457-                new: vec![PayloadSpan::within(new, 6..10)],
+src/detail.rs-458-            }
+--
+src/detail.rs-467-            spans_of(old, new),
+src/detail.rs:468:            BySide {
+src/detail.rs-469-                old: vec![PayloadSpan::within(old, 0..12)],
+src/detail.rs-470-                new: vec![PayloadSpan::within(new, 0..14)],
+src/detail.rs-471-            }
+src/side.rs-39-    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> BySide<U> {
+src/side.rs:40:        BySide {
+src/side.rs-41-            old: f(self.old),
+src/side.rs-42-            new: f(self.new),
+src/side.rs-43-        }
+--
+src/side.rs-47-    pub fn map_sides<U>(self, mut f: impl FnMut(Side, T) -> U) -> BySide<U> {
+src/side.rs:48:        BySide {
+src/side.rs-49-            old: f(Side::Old, self.old),
+src/side.rs-50-            new: f(Side::New, self.new),
+src/side.rs-51-        }
+--
+src/side.rs-54-    pub fn as_ref(&self) -> BySide<&T> {
+src/side.rs:55:        BySide {
+src/side.rs-56-            old: &self.old,
+src/side.rs-57-            new: &self.new,
+src/side.rs-58-        }
+--
+src/side.rs-67-    pub fn zip<U>(self, other: BySide<U>) -> BySide<(T, U)> {
+src/side.rs:68:        BySide {
+src/side.rs-69-            old: (self.old, other.old),
+src/side.rs-70-            new: (self.new, other.new),
+src/side.rs-71-        }
+--
+src/side.rs-78-        match side {
+src/side.rs:79:            Side::Old => BySide {
+src/side.rs-80-                old: Some(value),
+src/side.rs-81-                new: None,
+src/side.rs-82-            },
+src/side.rs:83:            Side::New => BySide {
+src/side.rs-84-                old: None,
+src/side.rs-85-                new: Some(value),
+src/side.rs-86-            },
+--
+src/side.rs-91-    pub fn transpose(self) -> Option<BySide<T>> {
+src/side.rs:92:        Some(BySide {
+src/side.rs-93-            old: self.old?,
+src/side.rs-94-            new: self.new?,
+src/side.rs-95-        })
+src/cli.rs-308-            Source::Comparison(Comparison {
+src/cli.rs:309:                operands: BySide {
+src/cli.rs-310-                    old: Operand::Stdin,
+src/cli.rs-311-                    new: Operand::Path(PathBuf::from("after")),
+src/cli.rs-312-                },
+--
+src/cli.rs-320-        let recursive = Source::Comparison(Comparison {
+src/cli.rs:321:            operands: BySide {
+src/cli.rs-322-                old: Operand::Path(PathBuf::from("a")),
+src/cli.rs-323-                new: Operand::Path(PathBuf::from("b")),
+src/cli.rs-324-            },
+src/theme.rs-154-    rows: RowPalette {
+src/theme.rs:155:        change: BySide {
+src/theme.rs-156-            old: ChangeColors {
+src/theme.rs-157-                background: Color::Rgb(50, 30, 30),
+src/theme.rs-158-                body: Color::Rgb(150, 150, 150),
+--
+src/theme.rs-202-    rows: RowPalette {
+src/theme.rs:203:        change: BySide {
+src/theme.rs-204-            old: ChangeColors {
+src/theme.rs-205-                background: Color::Indexed(52),
+src/theme.rs-206-                body: Color::Indexed(245),
+--
+src/theme.rs-250-    rows: RowPalette {
+src/theme.rs:251:        change: BySide {
+src/theme.rs-252-            old: ChangeColors {
+src/theme.rs-253-                background: Color::Red,
+src/theme.rs-254-                body: Color::DarkGray,
+src/parser/hunk.rs-167-
+src/parser/hunk.rs:168:    BySide {
+src/parser/hunk.rs-169-        old: range_count(old),
+src/parser/hunk.rs-170-        new: range_count(new),
+src/parser/hunk.rs-171-    }
+src/syntax.rs-92-            .filter(|language| Some(*language) == languages.new);
+src/syntax.rs:93:        let styled_records = BySide {
+src/syntax.rs-94-            old: StyledRecords::Changes,
+src/syntax.rs-95-            new: match shared_language {
+src/syntax.rs-96-                Some(_) => StyledRecords::ChangesAndContext,
+--
+src/syntax.rs-115-                    self.highlight_projection(language, &projections.new, old_pass.base, observer);
+src/syntax.rs:116:                BySide {
+src/syntax.rs-117-                    old: old_pass.spans,
+src/syntax.rs-118-                    new: new_highlighted.spans,
+src/syntax.rs-119-                }
+src/terminal/rows.rs-31-        match self {
+src/terminal/rows.rs:32:            Self::Shared(row) => BySide {
+src/terminal/rows.rs-33-                old: PaneRow::Text(row),
+src/terminal/rows.rs-34-                new: PaneRow::Text(row),
+src/terminal/rows.rs-35-            },
