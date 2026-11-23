@@ -1,0 +1,91 @@
+# Round 37 audit — model, input, actions, bench (2026-10-20)
+
+Assessment only; no source or spec edited, nothing committed. Scope: the whole model area,
+audited afresh (`src/{main,lib,cli,input,parser,parser/hunk,parser/binary_patch,
+source_text,headers,side,shell_words,comparison,document,file_identity,file_tree,prepared,
+preferences,exit_status,finite_output,bench,measurement,non_empty,one_of,utf8_path,
+error_output}.rs`, `src/actions/*`, `tests/{common/mod,cli,git_pager,benchmark}.rs`), and
+the `architecture.md` sections governing them. Laws: `code`, `architect`, `rust-coding`.
+No Borderline category. Settled and pending rulings in `.ace/audit/round15-plan.md`
+through `round37-plan.md`, the standing list from the round 23 prompts, `git diff
+--word-diff=porcelain` outside the input contract, `payload_record` as a two-way answer,
+the `--install` existence check, `DiffLayout::ALL` as a hand-written list, and `diff -N`'s
+epoch-timestamp headers (pending) were not re-reported. No finding proposes reversing an
+earlier round's repair. Checks green in `.ace/audit/round37-checks.txt`.
+
+## Round 36 fixes
+
+All hold. `DiffFile::record_map` matches both `FileBody` variants with no `return`
+(`document.rs:113-116`); every value round 36 V2 listed has its own name (`range_fields`,
+`header`/`marked`, `input_clock`/`parse_clock`/`preparation_clock`, `remaining`,
+`item_iter`/`sorted_rest`, `executable_path`/`config_path`, `output`).
+
+## Probes
+
+Through a fresh `target/debug/hdiff` built into the default target directory (files in
+`tmp/r37m/`).
+
+- Every earlier probe in `tmp/r20m` through `tmp/r36m` with a recorded output was re-run
+  (`tmp/r37m/rerun.sh`, `rerun.txt`): 87 reproduce it byte for byte, and the 9 that
+  differ are exactly round 36's 9 (`tmp/r37m/diffs.txt` against `prevdiffs.txt`).
+- The scratch Git repo `tmp/r35m/repo`: `show`, `show --stat -p`, `log -p -2` and
+  `show -M --binary` round-trip byte for byte, and with `--color=always
+  --ws-error-highlight=all` each renders byte for byte as its plain form.
+- New edge cases (`tmp/r37m/*.patch`): Git C-quoted octal paths, a 100% rename with no
+  hunks, leading and trailing text around a plain diff, a Git `Binary files … differ`
+  section, an all-CRLF patch, two plain-diff files, `diff -u` timestamps, a mode-only
+  section followed by a unified one, and empty input all round-trip (empty input shows
+  nothing, as `#current-argument-selection` and `#input-contract` allow). A context line
+  after an old-side no-newline marker is rejected at line 7, as the input contract says.
+- The pattern scan (`tmp/r37m/{letelse,wild,ignoring,casts}.txt`): no `as` cast; every
+  `_` arm matches an open type (chars, strings, slices, bytes, non-exhaustive
+  `io::ErrorKind`) or a tuple position meant as "any"; the production `let`-`else`s
+  unwrap `Option`/`Result` as `rust-coding`'s guard idiom; the remaining single-variant
+  `let`-`else`s over `FileBody` and `DiffDocument` are in tests.
+
+No behaviour defects found. **4 Violations.**
+
+## Violations
+
+### V1 — `Observer::measure` hands every stage an observer most of them ignore
+
+`measurement.rs:93`: `fn measure<T>(&mut self, stage, operation: impl FnOnce(&mut Self)
+-> T)`. Of its nine call sites, five pass a closure that ignores the observer:
+`prepared.rs:122` (`|_| ListedTree::build(files)`) in this area, and `styling.rs:36`,
+`:50`, `:62` and `syntax.rs:145` in rendering. Rounds 26, 31 and 36 ruled a closure that
+ignores its argument a Violation; here the cause is the API shape — one operation serves
+two kinds of caller (stages that count work inside and stages that only take time) through
+a parameter half of them discard. Split it so each call site says which it is (for
+example `time(stage, || …)` beside `measure(stage, |observer| …)`), and keep the timing in
+one place.
+
+### V2 — `range_count` writes its start check as a `then(…).flatten()` trick
+
+`parser/hunk.rs:197`: `Some((start, count)) => is_decimal(start).then(||
+decimal_count(count)).flatten()`. Round 16 V7 ruled guards written as combinator tricks
+(`.then_some(())?`) a Violation and round 17 rewrote `range_count` as a plain check;
+round 30's `is_decimal` change brought the trick back in another spelling, building an
+`Option<Option<usize>>` only to flatten it. Write the guard plainly (`if !is_decimal(start)
+{ return None }` then `decimal_count(count)`), as `decimal_count` itself does at
+`parser.rs:263-267`.
+
+### V3 — `registered_path` builds `Error::ResolveExecutable` two ways
+
+`actions/install_git_diff_pager.rs:119-131`: a `resolve_failed` closure builds
+`Error::ResolveExecutable { path: executable.to_owned(), source }` for two calls, then a
+second inline closure builds the same variant by hand for the third, differing only in
+the path (`registered.clone()`). One constructor taking the path (`resolve_failed(path)`
+returning the `map_err` closure, or an `Error::resolving(path)` helper) says once how a
+failed resolution is reported.
+
+### V4 — `FileBody::Unified` is undocumented beside its documented sibling
+
+`document.rs:125-126`: `Metadata(MetadataBody)` carries a doc comment ("A Git section
+without unified headers, …"); `Unified(Box<UnifiedBody>)` has none. Rounds 13, 15 and 17
+ruled an item undocumented beside documented siblings a Violation (round 17's sweep rule
+2).
+
+## Out of scope
+
+- The rendering-area call sites of `Observer::measure` (`styling.rs`, `syntax.rs`) change
+  with V1; they are named there so the repair covers them.

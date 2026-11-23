@@ -1,0 +1,93 @@
+# Round 37 audit — navigation, effective view, geometry, extent, terminal, live tests
+
+Assessment only, at HEAD after round 37 (`7ee2d4f`). Scope: `src/navigation.rs`,
+`src/navigation/{extent,interaction,scroll}.rs`, `src/effective_view.rs`,
+`src/geometry.rs`, `src/terminal.rs`,
+`src/terminal/{bindings,chrome,keymap_popup,rows,session,view}.rs`, `tests/live/*`, and
+`DiffLayout` in `src/preferences.rs`, against `code`, `architect`, `rust-coding` and
+`docs/spec/architecture.md` (interaction model, file tree, view model, viewport
+coordinates, keyboard bindings, continuity markers, terminal lifecycle). The whole area was
+read afresh, not only the round 37 diff. No Borderline category.
+
+Checks run for this audit (default target dir, output in `tmp/r37i-checks.txt`):
+`cargo fmt --check` passed; `cargo clippy --all-targets --locked -- -D warnings` clean;
+`cargo test --locked` passed 204, 9, 16, 6 and 151 tests; no comment line over 90
+columns.
+
+Excluded as pending user rulings or settled, per `.ace/audit/round15-plan.md` through
+`round37-plan.md` and the standing audit list: geometry constant values and the cell
+positions, rows and screen sizes derived from them, start-preference assertions
+(including `context_adjustment`'s `-` presses), animated half-page movement, module
+headers, the split direction kept in `VisibleRows`, the extent's and geometry's shape
+built from one value, item docs naming one of several module-cited anchors, performance
+items (the eager `diff_only` geometry, buffer clones, `render_split_rows` collecting its
+pairs), the `pane_middle_line` oracle, `ScrollExtent` taking the document, `Live::count`
+on row strings, undocumented trivial accessors and test or scenario functions,
+`MeasuredRows::from_iter`'s fold, `event_for`'s key-kind guard, crossterm `_ => None`
+default-deny arms (`event_for`, `Key::of`, `coalesce_resize`'s `Resize` checks),
+`render_split_rows` transposing its pairs with `BySide::of` and `get`,
+`WrapWidth::NoPayload` for too-narrow screens, the alignment-peer tone, test helpers not
+lifted across modules, the panic path's dropped write, `list[selected_row - 1]` as a
+neighbour lookup, `MORE_FILES_THAN_ROWS`' `as` conversion, the extent tests' oracle
+offsets and line counts, `DiffLayout::ALL` hand-written with an exhaustive `next` and a
+cycle test, and the live tests' file row format read as a user-visible oracle.
+
+Round 36 state verified: `Tui::draw` propagates the draw error with `?` and returns
+`Ok(())`, with no closure ignoring the completed frame; `ScrollBounds` has no positional
+constructor, and `bounds_of` builds it from its three documented named fields. The
+keyboard table, the popup's grouping and placement over the diff, the help box over the
+diff's bottom-left corner, the file-list collapse, page-turn wrap-around, the too-small
+messages and the zero horizontal range while wrapping match the spec.
+
+## Violations
+
+### V1 — `line_height` leaves its value-producing match with `return`
+
+`src/navigation/extent.rs:493-504`:
+
+```rust
+let cells = match wrap {
+    WrapWidth::At(cells) => cells,
+    WrapWidth::Off | WrapWidth::NoPayload => return ScreenLines::ONE,
+};
+```
+
+The match produces the wrap width, but one arm leaves the function from inside it. Rounds
+12, 14 and 16 ruled a value-producing match that exits with `return` a Violation, and
+round 37 removed the same shape from `distances_from_previous_change`, `Language::of_header`
+and `write_row` in the rendering area. This one came in with round 35's naming of every
+`WrapWidth` case. Fix: let each arm finish its job — `WrapWidth::At(cells)` yields the
+measured height (one line when the payload fits, else `wrapped_line_count`), and
+`Off | NoPayload` yields `ScreenLines::ONE` — so the match is the function's value.
+
+### V2 — same-typed positional arguments that swap silently
+
+Round 36 V2 ruled that two positional arguments of one type, which a caller can swap
+without a compile error and silently break behaviour, are a Violation (`ScrollBounds::new`,
+after round 13 V9's `FloatingBox`). Three operations in this area still take that shape:
+
+- `WrapWidth::horizontal_range(self, rows_width: Cells, content_width: Cells)`
+  (`src/effective_view.rs:67`, called at `src/navigation/extent.rs:135`). Swapped, it
+  returns `content_width - rows_width` saturated to zero, so unwrapped rows silently stop
+  scrolling horizontally.
+- `ScrollExtent::shown(…, offset: ScreenLines, limit: ScreenLines)`
+  (`src/navigation/extent.rs:140-146`, called at `src/navigation.rs:84`) and the
+  `MeasuredRows::lines_from(offset, limit)` it calls (`extent.rs:308`). Swapped, the pane
+  draws from the wrong line for the wrong count.
+- `geometry::halfway(start: u16, length: u16)` (`src/geometry.rs:376`, called four times in
+  `src/terminal/chrome.rs:98, 99, 181, 208`). Swapped, the popup, the side markers and the
+  window markers land off-centre.
+
+Fix: give each pair a named shape the call site spells — for example named fields (as
+`ScrollBounds` and `LineWindow { first, total }` already do), or one value that carries
+both (a span of a start and a length for `halfway`; the requested window for `shown` and
+`lines_from`).
+
+## Out of scope
+
+- `tests/live/styles.rs:321` picks the hunk-header rows 3 and 6 by position; these are
+  live-test cell positions of the kind the standing list treats as user-visible oracles.
+- `navigation.rs` test `keeps_the_page_and_position_through_kept_preference_changes`
+  takes `.last().expect(…)` of a repetition sized by the non-empty `DiffLayout::ALL`;
+  `expect` in tests is the rust-coding norm, and the alternatives either ignore a closure
+  argument or count by hand.
